@@ -5,6 +5,11 @@ init.defaultBranch=main
 core.pager=delta
 core.editor=vi
 
+# Include personal overrides if present (deployed by a personal dotfiles repo).
+# A missing file is silently ignored by git, so this is safe even on
+# machines without a dotfiles repo.
+include.path=~/.gitconfig.local
+
 # delta (pager with better diffs)
 interactive.diffFilter=delta --color-only
 delta.navigate=true
