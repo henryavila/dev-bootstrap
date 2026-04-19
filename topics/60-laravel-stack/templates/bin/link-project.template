@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# link-project — scaffold a *.localhost alias for a Laravel project under $CODE_DIR.
+# Managed by dev-bootstrap / 60-laravel-stack.
+set -euo pipefail
+
+CODE_DIR="${CODE_DIR:-${CODE_DIR}}"
+[ -z "$CODE_DIR" ] && CODE_DIR="$HOME/code/web"
+
+name="${1:-}"
+if [ -z "$name" ]; then
+    echo "Usage: link-project <name>" >&2
+    echo "Creates: $CODE_DIR/<name>/public must exist; <name>.localhost will be served by nginx catchall." >&2
+    exit 1
+fi
+
+proj_dir="$CODE_DIR/$name"
+if [ ! -d "$proj_dir/public" ]; then
+    echo "✗ $proj_dir/public does not exist. Create the project first." >&2
+    exit 1
+fi
+
+# Add hosts entry on WSL (mac resolves *.localhost natively)
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    if ! grep -q "^127\.0\.0\.1[[:space:]]*$name\.localhost\$" /etc/hosts; then
+        echo "→ adding $name.localhost to /etc/hosts"
+        echo "127.0.0.1  $name.localhost" | sudo tee -a /etc/hosts >/dev/null
+    fi
+fi
+
+echo "✓ $name.localhost ready — http://$name.localhost"

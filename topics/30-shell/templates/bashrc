@@ -1,0 +1,50 @@
+# ~/.bashrc — managed by dev-bootstrap / 30-shell
+# Edit local overrides in ~/.bashrc.local (loaded last, never overwritten).
+
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return ;;
+esac
+
+# ---------- History ----------
+HISTCONTROL=ignoreboth:erasedups
+HISTSIZE=100000
+HISTFILESIZE=200000
+shopt -s histappend
+shopt -s checkwinsize
+
+# ---------- Base PATH ----------
+if [ -d "$HOME/.local/bin" ] ; then
+    PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Homebrew prefix (macOS and Linuxbrew, if present)
+for brew in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
+    if [ -x "$brew" ]; then
+        eval "$("$brew" shellenv)"
+        break
+    fi
+done
+
+# keg-only gettext on macOS (envsubst in PATH)
+if [ -d "/opt/homebrew/opt/gettext/bin" ]; then
+    export PATH="/opt/homebrew/opt/gettext/bin:$PATH"
+elif [ -d "/usr/local/opt/gettext/bin" ]; then
+    export PATH="/usr/local/opt/gettext/bin:$PATH"
+fi
+
+# ---------- Editor ----------
+export EDITOR="${EDITOR:-vi}"
+export VISUAL="${VISUAL:-$EDITOR}"
+
+# ---------- Modular fragments ----------
+if [ -d "$HOME/.bashrc.d" ]; then
+    for f in "$HOME"/.bashrc.d/*.sh; do
+        [ -r "$f" ] && . "$f"
+    done
+    unset f
+fi
+
+# ---------- Local overrides (never versioned) ----------
+[ -f "$HOME/.bashrc.local" ] && . "$HOME/.bashrc.local"

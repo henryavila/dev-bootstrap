@@ -1,0 +1,8 @@
+# 60-laravel-stack deploy mappings
+# NGINX_CONF_DIR is set by install.$OS.sh:
+#   wsl: /etc/nginx/sites-enabled
+#   mac: $BREW_PREFIX/etc/nginx/servers
+# CODE_DIR defaults to ~/code/web and is exported by bootstrap.sh.
+
+nginx-catchall.conf.template=${NGINX_CONF_DIR}/catchall.conf
+bin/link-project.template=${HOME}/.local/bin/link-project

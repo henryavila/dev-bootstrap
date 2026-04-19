@@ -1,0 +1,14 @@
+# Local logs and temporary outputs
+/tmp/
+*.log
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Backups from lib/deploy.sh (never committed)
+*.bak-*

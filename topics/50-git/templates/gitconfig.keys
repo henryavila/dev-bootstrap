@@ -1,0 +1,38 @@
+# gitconfig.keys — applied by topic 50-git via `git config --global <key> <value>`.
+# user.* and credential.* lines are IGNORED (never overwrite identity).
+
+init.defaultBranch=main
+core.pager=delta
+core.editor=vi
+
+# delta (pager with better diffs)
+interactive.diffFilter=delta --color-only
+delta.navigate=true
+delta.side-by-side=false
+delta.line-numbers=true
+delta.syntax-theme=Catppuccin-Mocha
+
+# merge / pull / push behavior
+merge.conflictstyle=zdiff3
+pull.rebase=false
+push.autoSetupRemote=true
+push.default=simple
+fetch.prune=true
+rebase.autoStash=true
+
+# color
+color.ui=auto
+
+# aliases — quick navigation
+alias.co=checkout
+alias.br=branch
+alias.st=status
+alias.ci=commit
+alias.sw=switch
+alias.last=log -1 HEAD
+alias.unstage=reset HEAD --
+alias.lg=log --oneline --graph --decorate --all
+alias.amend=commit --amend --no-edit
+alias.undo=reset HEAD~1 --mixed
+alias.df=diff
+alias.dfc=diff --cached

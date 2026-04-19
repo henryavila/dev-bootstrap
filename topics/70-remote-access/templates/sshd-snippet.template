@@ -1,0 +1,19 @@
+# /etc/ssh/sshd_config.d/99-${USER}.conf
+# Managed by dev-bootstrap / 70-remote-access. Edits lost on next deploy.
+
+# Basic hardening
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+UsePAM yes
+
+# Quality of life
+ClientAliveInterval 60
+ClientAliveCountMax 3
+TCPKeepAlive yes
+
+# Scope: let this user keep their usual workflow
+AllowUsers ${USER}

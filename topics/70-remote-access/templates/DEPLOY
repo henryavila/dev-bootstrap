@@ -1,0 +1,5 @@
+# 70-remote-access deploy mappings
+# Deploys an sshd config snippet with light hardening, scoped to this user.
+# deploy.sh elevates with sudo automatically for paths outside $HOME.
+
+sshd-snippet.template=/etc/ssh/sshd_config.d/99-${USER}.conf

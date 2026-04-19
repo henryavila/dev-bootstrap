@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# typora-wait — open a file in Typora and block until the window is closed.
+# Usable as $EDITOR for `git commit`, `crontab -e`, etc.
+set -euo pipefail
+
+# Locate Typora across platforms
+TYPORA=""
+case "$(uname -s)" in
+    Darwin)
+        if [ -x "/Applications/Typora.app/Contents/MacOS/Typora" ]; then
+            TYPORA="/Applications/Typora.app/Contents/MacOS/Typora"
+        fi
+        ;;
+    Linux)
+        if command -v typora >/dev/null 2>&1; then
+            TYPORA="$(command -v typora)"
+        fi
+        ;;
+esac
+
+if [ -z "$TYPORA" ]; then
+    echo "typora-wait: Typora executable not found" >&2
+    exit 1
+fi
+
+"$TYPORA" --wait "$@"

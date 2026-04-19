@@ -1,0 +1,28 @@
+# Catch-all for *.localhost → ${CODE_DIR}/<project>/public
+# Managed by dev-bootstrap / 60-laravel-stack. Edits lost on next deploy.
+
+server {
+    listen 80;
+    server_name ~^(?<project>[^.]+)\.localhost$;
+
+    root ${CODE_DIR}/$project/public;
+    index index.php index.html;
+
+    access_log /var/log/nginx/${project}.localhost.access.log;
+    error_log  /var/log/nginx/${project}.localhost.error.log;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
