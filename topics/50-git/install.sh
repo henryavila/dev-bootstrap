@@ -11,7 +11,7 @@ if ! command -v git >/dev/null 2>&1; then
     exit 1
 fi
 
-keys_file="$HERE/templates/gitconfig.keys"
+keys_file="$HERE/data/gitconfig.keys"
 if [[ ! -f "$keys_file" ]]; then
     fail "missing $keys_file"
     exit 1

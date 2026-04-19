@@ -3,8 +3,7 @@
 # Managed by dev-bootstrap / 60-laravel-stack.
 set -euo pipefail
 
-CODE_DIR="${CODE_DIR:-${CODE_DIR}}"
-[ -z "$CODE_DIR" ] && CODE_DIR="$HOME/code/web"
+: "${CODE_DIR:=$HOME/code/web}"
 
 name="${1:-}"
 if [ -z "$name" ]; then

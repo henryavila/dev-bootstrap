@@ -33,13 +33,13 @@ fi
 # fnm needs its shell init; handled by bashrc.d/zshrc.d fragments below.
 # Still, install LTS now if absent.
 eval "$("$BREW_PREFIX/bin/fnm" env)"
-if ! "$BREW_PREFIX/bin/fnm" list | grep -q lts-latest; then
+if "$BREW_PREFIX/bin/fnm" list 2>/dev/null | grep -qE '\bv[0-9]+\.[0-9]+\.[0-9]+'; then
+    ok "Node already installed via fnm ($("$BREW_PREFIX/bin/fnm" current 2>/dev/null || echo '?'))"
+else
     info "fnm install --lts"
     "$BREW_PREFIX/bin/fnm" install --lts
-    default_ver="$("$BREW_PREFIX/bin/fnm" list | awk '/\*/ {print $2}' | head -1 || true)"
+    default_ver="$("$BREW_PREFIX/bin/fnm" list | awk '/^\s*v[0-9]/ {print $NF}' | tail -1 || true)"
     [[ -n "$default_ver" ]] && "$BREW_PREFIX/bin/fnm" default "$default_ver" || true
-else
-    ok "Node LTS already installed via fnm"
 fi
 
 ok "10-languages done"

@@ -64,18 +64,53 @@ fi
 
 banner "dev-bootstrap :: $OS"
 
-# ---------- Detect Brew (macOS only, best-effort) ----------
+# ---------- Detect Brew (macOS only; may be absent on fresh install) ----------
 BREW_BIN=""
 BREW_PREFIX=""
-if [[ "$OS" == "mac" ]]; then
+
+detect_brew_if_mac() {
+    # Populates BREW_BIN and BREW_PREFIX. Safe to call repeatedly — on WSL/Linux
+    # it's a no-op. On Mac it refreshes both if brew has since been installed.
+    if [[ "$OS" != "mac" ]]; then
+        return 0
+    fi
     if out=$(bash "$HERE/lib/detect-brew.sh" 2>/dev/null); then
         eval "$out"
+        export BREW_BIN BREW_PREFIX
+    fi
+}
+
+derive_nginx_conf_dir() {
+    # 60-laravel-stack deploys a catchall nginx config. The destination differs
+    # by OS; derive it here so deploy.sh (a fresh subshell) can see it via envsubst.
+    case "$OS" in
+        wsl|linux)
+            NGINX_CONF_DIR="/etc/nginx/sites-enabled"
+            ;;
+        mac)
+            if [[ -n "$BREW_PREFIX" ]]; then
+                NGINX_CONF_DIR="$BREW_PREFIX/etc/nginx/servers"
+            else
+                NGINX_CONF_DIR=""
+            fi
+            ;;
+        *)
+            NGINX_CONF_DIR=""
+            ;;
+    esac
+    export NGINX_CONF_DIR
+}
+
+detect_brew_if_mac
+derive_nginx_conf_dir
+
+if [[ "$OS" == "mac" ]]; then
+    if [[ -n "$BREW_BIN" ]]; then
         info "brew found at $BREW_BIN (prefix $BREW_PREFIX)"
     else
         warn "brew not installed yet; topic 00-core will install it"
     fi
 fi
-export BREW_BIN BREW_PREFIX
 
 # ---------- Defaults for inherited vars ----------
 export DOTFILES_REPO="${DOTFILES_REPO:-}"
@@ -182,6 +217,14 @@ run_topic() {
                 return 0
             fi
         fi
+    fi
+
+    # Refresh brew detection + derived vars. Cheap, and catches the case where
+    # 00-core (or any earlier topic) just installed brew on a fresh Mac.
+    if [[ "$OS" == "mac" ]] && [[ -z "$BREW_BIN" ]]; then
+        detect_brew_if_mac
+        derive_nginx_conf_dir
+        [[ -n "$BREW_BIN" ]] && info "brew now available at $BREW_BIN"
     fi
 
     passed+=("$topic")

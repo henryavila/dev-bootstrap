@@ -34,15 +34,34 @@ fi
 sudo_needed=0
 declare -a mapping_src mapping_dst
 
+# Variables allowed in template substitution. Restricting the set keeps
+# envsubst from mangling unrelated $tokens (e.g. nginx's $project capture,
+# shell positional $1, php's $_SERVER). Add here if a new topic needs more.
+ENVSUBST_ALLOWLIST='${USER} ${HOME} ${BREW_PREFIX} ${CODE_DIR} ${NGINX_CONF_DIR} ${DOTFILES_DIR}'
+
 # ---------- Build mapping list ----------
 
 expand_dst() {
-    # Resolve ~ and ${VARS} in destination path.
+    # Resolve ~ and allowlisted ${VARS} in the destination path only.
     local raw="$1"
     raw="${raw/#\~/$HOME}"
-    # Expand ${VAR} references against current environment.
-    # Printing via envsubst is safe here (no user-controlled content other than our env).
-    printf '%s' "$raw" | envsubst
+    printf '%s' "$raw" | envsubst "$ENVSUBST_ALLOWLIST"
+}
+
+check_no_empty_refs() {
+    # Returns 1 and logs if $raw references any ${VAR} that is currently empty.
+    # Used to avoid catastrophic destinations like "/catchall.conf" from an unset var.
+    local raw="$1" src_label="$2"
+    local rest="$raw" vname missing=0
+    while [[ "$rest" =~ \$\{([A-Za-z_][A-Za-z0-9_]*)\} ]]; do
+        vname="${BASH_REMATCH[1]}"
+        if [[ -z "${!vname:-}" ]]; then
+            fail "deploy.sh: DEPLOY references \${$vname} but it is empty (src=$src_label, raw=$raw)"
+            missing=1
+        fi
+        rest="${rest//${BASH_REMATCH[0]}/}"
+    done
+    return "$missing"
 }
 
 auto_map_name() {
@@ -98,6 +117,10 @@ if [[ -f "$templates_dir/DEPLOY" ]]; then
             continue
         fi
 
+        if ! check_no_empty_refs "$dst" "$src"; then
+            exit 1
+        fi
+
         expanded_dst="$(expand_dst "$dst")"
         mapping_src+=("$src")
         mapping_dst+=("$expanded_dst")
@@ -150,13 +173,10 @@ deploy_one() {
     local src_rel="$1" dst="$2"
     local src_abs="$templates_dir/$src_rel"
     local staged="$tmp_staging/$(basename "$src_rel")"
-    local name_no_tmpl="${src_rel##*/}"
-    name_no_tmpl="${name_no_tmpl%.template}"
 
-    # Read, strip CRLF, and optionally run envsubst
+    # Read, strip CRLF, and optionally run envsubst (allowlist only)
     if [[ "$src_rel" == *.template ]]; then
-        # Strip CRLF first, then envsubst on the whole file
-        tr -d '\r' < "$src_abs" | envsubst > "$staged"
+        tr -d '\r' < "$src_abs" | envsubst "$ENVSUBST_ALLOWLIST" > "$staged"
     else
         tr -d '\r' < "$src_abs" > "$staged"
     fi

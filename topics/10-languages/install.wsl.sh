@@ -20,12 +20,14 @@ if [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
 fi
 if command -v fnm >/dev/null 2>&1; then
     eval "$(fnm env)"
-    if ! fnm list | grep -q lts-latest; then
+    # fnm list prints entries like "* v20.11.1" — detect any installed version
+    if fnm list 2>/dev/null | grep -qE '\bv[0-9]+\.[0-9]+\.[0-9]+'; then
+        ok "Node already installed via fnm ($(fnm current 2>/dev/null || echo '?'))"
+    else
         info "installing Node LTS via fnm"
         fnm install --lts
-        fnm default "$(fnm list | awk '/\*/ {print $2}' | head -1)" || true
-    else
-        ok "Node LTS already installed via fnm"
+        latest="$(fnm list | awk '/^\s*v[0-9]/ {print $NF}' | tail -1)"
+        [[ -n "$latest" ]] && fnm default "$latest" || true
     fi
 fi
 
