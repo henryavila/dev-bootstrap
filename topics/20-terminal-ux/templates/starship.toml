@@ -1,8 +1,17 @@
 "$schema" = 'https://starship.rs/config-schema.json'
 
-# ---------- Catppuccin Mocha palette ----------
+# ---------- Top-level config (MUST come before any [section]) ----------
+# TOML gotcha: keys without a preceding [header] belong to the last declared
+# section. If add_newline or format are placed after [palettes.catppuccin_mocha],
+# the starship parser tries to read them as palette colors and errors with
+# "invalid type: boolean true, expected a string".
 palette = "catppuccin_mocha"
+add_newline = true
+format = """
+[╭─](surface0) $username$hostname$directory$git_branch$git_status$git_state
+[╰─](surface0)$character"""
 
+# ---------- Catppuccin Mocha palette ----------
 [palettes.catppuccin_mocha]
 rosewater = "#f5e0dc"
 flamingo  = "#f2cdcd"
@@ -31,12 +40,7 @@ base      = "#1e1e2e"
 mantle    = "#181825"
 crust     = "#11111b"
 
-# ---------- Layout ----------
-add_newline = true
-format = """
-[╭─](surface0) $username$hostname$directory$git_branch$git_status$git_state
-[╰─](surface0)$character"""
-
+# ---------- Modules ----------
 [character]
 success_symbol = "[❯](green)"
 error_symbol   = "[❯](red)"
