@@ -2,8 +2,9 @@
 # ~/.zshrc — managed by dev-bootstrap / 30-shell
 # Edit local overrides in ~/.zshrc.local (loaded last, never overwritten).
 #
-# shellcheck runs this file with bash mode; directives below mute known
-# zsh-specific false positives.
+# NOTE: this file runs under zsh; the shell=bash directive above is only
+# to satisfy the linter (shellcheck has no native zsh mode). Other inline
+# disables below mute known false positives.
 
 # ---------- History ----------
 HISTFILE=~/.zsh_history
