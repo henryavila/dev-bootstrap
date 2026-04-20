@@ -177,7 +177,13 @@ if [[ "$OS" == "wsl" || "$OS" == "linux" ]] && [[ "${DRY_RUN:-}" != "1" ]]; then
 fi
 
 # ---------- Collect topics ----------
-mapfile -t all_topics < <(find "$HERE/topics" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+# Portable across bash 3.2 (macOS default) and bash 4+: no `mapfile`, no
+# GNU find `-printf`. Parameter expansion `${p##*/}` does basename without
+# a fork, and the while-read loop fills the array in bash-3-friendly syntax.
+all_topics=()
+while IFS= read -r topic_dir; do
+    all_topics+=("${topic_dir##*/}")
+done < <(find "$HERE/topics" -mindepth 1 -maxdepth 1 -type d | sort)
 
 in_list() {
     local needle="$1"
