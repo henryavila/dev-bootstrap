@@ -83,18 +83,8 @@ else
     ok "tailscaled MTU drop-in already correct"
 fi
 
-# Auto-remove legacy NOPASSWD sudoers entry if present.
-# Previous versions of this topic (pre v2026-04-21) created
-# /etc/sudoers.d/10-${USER}-nopasswd with "${USER} ALL=(ALL) NOPASSWD: ALL"
-# for install-time convenience. That's overkill — `sudo -v` before bootstrap
-# refreshes the cache (default 5-15min) which covers the entire bootstrap run.
-# Leaving NOPASSWD permanent is unnecessary attack surface.
-legacy_nopasswd="/etc/sudoers.d/10-${USER}-nopasswd"
-if [[ -f "$legacy_nopasswd" ]]; then
-    info "removing legacy NOPASSWD sudoers entry at $legacy_nopasswd"
-    sudo rm -f "$legacy_nopasswd"
-    ok "legacy NOPASSWD sudoers removed (use 'sudo -v' before bootstrap if you want cache)"
-fi
+# Note: legacy NOPASSWD cleanup moved to bootstrap.sh (unconditional)
+# since v2026-04-22 hotfix — see there for context.
 
 ok "70-remote-access (wsl) done"
 warn "tailscale up requires interactive auth: 'sudo tailscale up'"

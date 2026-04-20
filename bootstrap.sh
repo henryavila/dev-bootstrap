@@ -135,6 +135,20 @@ if [[ "${DRY_RUN:-}" != "1" ]]; then
     fi
 fi
 
+# ---------- Legacy cleanup (unconditional) ----------
+# Pre-v2026-04-22 versions of topic 70-remote-access created a permanent
+# NOPASSWD sudoers entry. That's attack surface we don't want. Clean it
+# up on every bootstrap run — independent of opt-ins — so forks inherit
+# the fix even if they don't re-run 70-remote-access.
+if [[ "$OS" == "wsl" || "$OS" == "linux" ]] && [[ "${DRY_RUN:-}" != "1" ]]; then
+    legacy_nopasswd="/etc/sudoers.d/10-${USER}-nopasswd"
+    if [[ -f "$legacy_nopasswd" ]] || sudo test -f "$legacy_nopasswd" 2>/dev/null; then
+        info "removing legacy NOPASSWD sudoers entry at $legacy_nopasswd"
+        sudo rm -f "$legacy_nopasswd"
+        ok "legacy NOPASSWD sudoers removed"
+    fi
+fi
+
 # ---------- Collect topics ----------
 mapfile -t all_topics < <(find "$HERE/topics" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
 
