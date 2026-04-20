@@ -2,7 +2,9 @@
 
 Ativado com `INCLUDE_REMOTE=1 bash bootstrap.sh`.
 
-**Instala:** `openssh-server` + `mosh` + `tailscale`. Ativa sshd, habilita systemd no WSL (`/etc/wsl.conf`) e cria sudoers NOPASSWD para o usuário atual.
+**Instala:** `openssh-server` + `mosh` + `tailscale`. Ativa sshd, habilita systemd no WSL (`/etc/wsl.conf`).
+
+**Remove legacy NOPASSWD** (desde v2026-04-22): versões anteriores do topic criavam `/etc/sudoers.d/10-${USER}-nopasswd` com `NOPASSWD: ALL` para conveniência durante bootstrap. Isso era attack surface permanente desnecessária — o `bootstrap.sh` principal agora roda `sudo -v` no início (warmup do cache, ~5-15min), cobrindo toda a duração do bootstrap com um único prompt. Forks que já tinham o arquivo: este topic remove automaticamente na próxima execução.
 
 **Aplica (WSL):** drop-in systemd para corrigir MTU do tailscale0 — ver seção "Tailscale MTU gotcha" abaixo.
 

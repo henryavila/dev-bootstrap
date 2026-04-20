@@ -123,6 +123,18 @@ export INCLUDE_REMOTE="${INCLUDE_REMOTE:-0}"
 export INCLUDE_EDITOR="${INCLUDE_EDITOR:-0}"
 export NO_COLOR="${NO_COLOR:-}"
 
+# ---------- Sudo cache warmup ----------
+# Bootstrap needs sudo for apt, systemctl, /etc/ writes in several topics.
+# Prompt once upfront; subsequent sudo calls within the cache window
+# (default 5-15min via /etc/sudoers timestamp_timeout) are silent.
+# If the run takes longer than the cache, the next sudo call will re-prompt —
+# acceptable trade-off vs. permanent NOPASSWD which is attack surface.
+if [[ "${DRY_RUN:-}" != "1" ]]; then
+    if ! sudo -v 2>/dev/null; then
+        warn "sudo cache warmup failed (non-fatal — topics will prompt individually)"
+    fi
+fi
+
 # ---------- Collect topics ----------
 mapfile -t all_topics < <(find "$HERE/topics" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
 

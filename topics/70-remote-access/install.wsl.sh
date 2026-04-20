@@ -83,15 +83,17 @@ else
     ok "tailscaled MTU drop-in already correct"
 fi
 
-# NOPASSWD sudoers entry — idempotent
-sudoers_file="/etc/sudoers.d/10-${USER}-nopasswd"
-line="${USER} ALL=(ALL) NOPASSWD: ALL"
-if [[ ! -f "$sudoers_file" ]] || ! sudo grep -qF "$line" "$sudoers_file"; then
-    info "adding NOPASSWD sudoers entry at $sudoers_file"
-    echo "$line" | sudo tee "$sudoers_file" >/dev/null
-    sudo chmod 0440 "$sudoers_file"
-else
-    ok "NOPASSWD sudoers already set"
+# Auto-remove legacy NOPASSWD sudoers entry if present.
+# Previous versions of this topic (pre v2026-04-21) created
+# /etc/sudoers.d/10-${USER}-nopasswd with "${USER} ALL=(ALL) NOPASSWD: ALL"
+# for install-time convenience. That's overkill — `sudo -v` before bootstrap
+# refreshes the cache (default 5-15min) which covers the entire bootstrap run.
+# Leaving NOPASSWD permanent is unnecessary attack surface.
+legacy_nopasswd="/etc/sudoers.d/10-${USER}-nopasswd"
+if [[ -f "$legacy_nopasswd" ]]; then
+    info "removing legacy NOPASSWD sudoers entry at $legacy_nopasswd"
+    sudo rm -f "$legacy_nopasswd"
+    ok "legacy NOPASSWD sudoers removed (use 'sudo -v' before bootstrap if you want cache)"
 fi
 
 ok "70-remote-access (wsl) done"
