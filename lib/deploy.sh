@@ -32,7 +32,11 @@ if ! command -v envsubst >/dev/null 2>&1; then
 fi
 
 sudo_needed=0
-declare -a mapping_src mapping_dst
+# Explicit empty init rather than `declare -a mapping_src mapping_dst` because
+# bash 3.2 (macOS default) leaves `declare -a foo` as "declared but unbound",
+# and the first `"${#mapping_src[@]}"` check at line ~145 would trip set -u.
+mapping_src=()
+mapping_dst=()
 
 # Variables allowed in template substitution. Restricting the set keeps
 # envsubst from mangling unrelated $tokens (e.g. nginx's $project capture,

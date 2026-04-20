@@ -86,9 +86,12 @@ run_menu() {
 
     local need_dotfiles=0
     # whiptail returns items quoted & space-separated: "laravel" "remote"
-    local -a selected
+    # `local -a selected=()` (not just `local -a selected`) is needed for bash 3.2:
+    # without an explicit empty-array initializer, `read -ra` into a still-undeclared
+    # array name and subsequent `"${selected[@]}"` trip `set -u`.
+    local -a selected=()
     read -ra selected <<< "${choices//\"/}"
-    for choice in "${selected[@]}"; do
+    for choice in "${selected[@]+"${selected[@]}"}"; do
         case "$choice" in
             laravel)  export INCLUDE_LARAVEL=1 ;;
             remote)   export INCLUDE_REMOTE=1 ;;

@@ -208,12 +208,27 @@ optin_var_for() {
 LOG="/tmp/dev-bootstrap-$OS-$(date +%Y%m%d-%H%M%S).log"
 info "full log: $LOG"
 
-# shellcheck disable=SC2206
-skip_list=(${SKIP_TOPICS:-})
-# shellcheck disable=SC2206
-only_list=(${ONLY_TOPICS:-})
+# bash 3.2 (macOS default) + `set -u` is peculiar about empty arrays:
+# `skip_list=(${SKIP_TOPICS:-})` leaves `skip_list` "declared but unbound"
+# when the env var is empty, so any later `"${skip_list[@]}"` trips
+# "unbound variable". Workaround: only build the array when the source
+# var has content; otherwise stay explicit empty.
+skip_list=()
+only_list=()
+if [[ -n "${SKIP_TOPICS:-}" ]]; then
+    # shellcheck disable=SC2206
+    skip_list=($SKIP_TOPICS)
+fi
+if [[ -n "${ONLY_TOPICS:-}" ]]; then
+    # shellcheck disable=SC2206
+    only_list=($ONLY_TOPICS)
+fi
 
-declare -a passed=() failed=() skipped=()
+# Avoid `declare -a foo=() bar=() baz=()` one-liner — bash 3.2 parses it
+# inconsistently. Split into 3 plain assignments.
+passed=()
+failed=()
+skipped=()
 
 run_topic() {
     local topic="$1"
@@ -290,10 +305,14 @@ run_topic() {
 }
 
 for topic in "${all_topics[@]}"; do
-    if [[ "${#only_list[@]}" -gt 0 ]] && ! in_list "$topic" "${only_list[@]}"; then
+    # Defensive `${arr[@]+"${arr[@]}"}` expansion — under bash 3.2 + set -u,
+    # empty arrays passed via plain `"${arr[@]}"` raise "unbound variable".
+    # The `+` form expands to nothing when the array is empty, to the full
+    # contents otherwise. Works identically on bash 4+ / 5.x.
+    if [[ "${#only_list[@]}" -gt 0 ]] && ! in_list "$topic" "${only_list[@]+"${only_list[@]}"}"; then
         continue
     fi
-    if in_list "$topic" "${skip_list[@]}"; then
+    if in_list "$topic" "${skip_list[@]+"${skip_list[@]}"}"; then
         info "skip $topic (SKIP_TOPICS)"
         skipped+=("$topic")
         continue
