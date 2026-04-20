@@ -28,15 +28,32 @@ Reinicie, abra o Ubuntu recém-instalado e siga abaixo.
 
 ### WSL2/Ubuntu ou macOS
 
+**Modo interativo (default):**
+
 ```bash
 git clone https://github.com/henryavila/dev-bootstrap ~/dev-bootstrap
 cd ~/dev-bootstrap
-
-# rodar tudo (não-opt-in): 7 topics
 bash bootstrap.sh
+```
 
+Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
+
+1. Quais topics opt-in ativar (laravel-stack / remote-access / editor / dotfiles-pessoal).
+2. `GIT_NAME` / `GIT_EMAIL` (só se não estiverem setados).
+3. `DOTFILES_REPO` (só se você marcou `95-dotfiles-personal`).
+4. Confirmação com resumo — cancelar em qualquer tela aborta sem efeito.
+
+Se `whiptail` não estiver instalado, o bootstrap o instala antes de abrir o menu (`apt-get install whiptail` no Linux/WSL; `brew install newt` no Mac).
+
+**Modo automação / CI** (sem menu — usa env vars e flags):
+
+```bash
 # ver plano sem executar
 DRY_RUN=1 bash bootstrap.sh
+
+# pular menu mesmo no TTY
+NON_INTERACTIVE=1 bash bootstrap.sh
+bash bootstrap.sh --non-interactive
 
 # só alguns topics
 ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
@@ -48,7 +65,9 @@ INCLUDE_LARAVEL=1 INCLUDE_REMOTE=1 bash bootstrap.sh
 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
 ```
 
-Na primeira linha do bootstrap roda `sudo -v` (warmup do cache — prompta senha 1x, os topics subsequentes são silenciosos durante a janela de ~5–15min).
+O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) qualquer var de controle (`INCLUDE_*`, `DOTFILES_REPO`, `ONLY_TOPICS`) já vem do env; (c) não há TTY (pipe, cron, CI).
+
+Na primeira linha (após o menu) roda `sudo -v` (warmup do cache — prompta senha 1x, os topics subsequentes são silenciosos durante a janela de ~5–15min).
 
 ## Topics
 
@@ -70,8 +89,11 @@ Cada topic tem um `README.md` próprio com detalhes. Fluxo internamente: `instal
 
 ## Env vars reconhecidas
 
+Primariamente para modo automação/CI. Em modo interativo (default), o menu preenche as mesmas vars.
+
 | Var | Efeito |
 |-----|--------|
+| `NON_INTERACTIVE=1` | pula o menu mesmo em TTY (equivalente a `--non-interactive`) |
 | `SKIP_TOPICS` | lista espaço-separada de topics a pular |
 | `ONLY_TOPICS` | rodar apenas estes topics |
 | `DRY_RUN=1` | imprime o que rodaria sem executar (pula `sudo -v`) |
@@ -91,7 +113,7 @@ Saída completa de cada execução em `/tmp/dev-bootstrap-<os>-<timestamp>.log`.
 ```
 dev-bootstrap/
 ├── bootstrap.sh              # runner — detect OS, warmup sudo, roda topics
-├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh
+├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh, menu.sh
 ├── topics/NN-<nome>/         # unidades idempotentes de instalação
 │   ├── install.$OS.sh        # WSL ou Mac
 │   ├── templates/            # arquivos deployados via lib/deploy.sh

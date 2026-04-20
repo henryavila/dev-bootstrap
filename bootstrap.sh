@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # bootstrap.sh — run every topic in order on this machine.
 #
-# Env vars:
+# Interactive by default: prompts for opt-in topics and identity via whiptail.
+# Skip the menu by passing --non-interactive or pre-seeding any control var.
+#
+# Env vars (primarily for automation/CI):
+#   NON_INTERACTIVE=1   skip the menu even on a TTY
 #   SKIP_TOPICS         space-separated list of topics to skip
 #   ONLY_TOPICS         space-separated list of topics to run exclusively
 #   DRY_RUN=1           print actions without executing
@@ -14,7 +18,7 @@
 #   INCLUDE_EDITOR=1    enables 90-editor
 #   NO_COLOR=1          disable colored output (auto if not a TTY)
 #
-# Usage: bash bootstrap.sh [--help]
+# Usage: bash bootstrap.sh [--help] [--non-interactive]
 
 set -euo pipefail
 
@@ -28,30 +32,44 @@ usage() {
     cat <<'EOF'
 dev-bootstrap — set up a development machine
 
-Usage:
-  bash bootstrap.sh                 run every topic in order
-  DRY_RUN=1 bash bootstrap.sh       print actions without executing
-  SKIP_TOPICS="NN-x" ...            skip specific topics
-  ONLY_TOPICS="NN-x NN-y" ...       run only these topics
-  bash bootstrap.sh --help          this message
+Interactive mode (default):
+  bash bootstrap.sh                 prompts for opt-ins + identity, then runs
 
-Opt-in topics (require env var):
+Automation / CI mode:
+  NON_INTERACTIVE=1 bash bootstrap.sh       skip menu even on a TTY
+  bash bootstrap.sh --non-interactive       same, flag form
+  DRY_RUN=1 bash bootstrap.sh               print actions without executing
+  bash bootstrap.sh --dry-run               same, flag form
+  SKIP_TOPICS="NN-x" ...                    skip specific topics
+  ONLY_TOPICS="NN-x NN-y" ...               run only these topics
+
+Opt-in topics (menu toggles these, or set env var in automation):
   60-laravel-stack      INCLUDE_LARAVEL=1
   70-remote-access      INCLUDE_REMOTE=1
   90-editor             INCLUDE_EDITOR=1
   95-dotfiles-personal  DOTFILES_REPO=<url>
 
-Useful env vars:
+Other env vars:
   GIT_NAME, GIT_EMAIL, CODE_DIR, DOTFILES_DIR, NO_COLOR
 
 See topics/*/README.md for topic-specific documentation.
 EOF
 }
 
-if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
-    usage
-    exit 0
-fi
+for arg in "$@"; do
+    case "$arg" in
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --non-interactive)
+            export NON_INTERACTIVE=1
+            ;;
+        --dry-run)
+            export DRY_RUN=1
+            ;;
+    esac
+done
 
 # ---------- Detect OS ----------
 OS="$(bash "$HERE/lib/detect-os.sh")"
@@ -109,6 +127,15 @@ if [[ "$OS" == "mac" ]]; then
         info "brew found at $BREW_BIN (prefix $BREW_PREFIX)"
     else
         warn "brew not installed yet; topic 00-core will install it"
+    fi
+fi
+
+# ---------- Interactive menu (default on TTYs; skipped for automation) ----------
+# shellcheck disable=SC1091
+source "$HERE/lib/menu.sh"
+if should_show_menu; then
+    if ensure_whiptail; then
+        run_menu
     fi
 fi
 
