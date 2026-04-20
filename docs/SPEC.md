@@ -1,75 +1,75 @@
-# dev-bootstrap — Especificação
+# dev-bootstrap — Specification
 
-**Versão:** 1.0
-**Data:** 2026-04-19
-**Status:** aprovado para implementação
+**Version:** 1.0
+**Date:** 2026-04-19
+**Status:** approved for implementation
 
-## 1. Contexto e Propósito
+## 1. Context and purpose
 
-### Problema
+### Problem
 
-Não há processo reproduzível para configurar máquinas de desenvolvimento (pessoais ou de devs terceirados) no ecossistema de trabalho do Henry. O projeto anterior (`wsl-dev-setup`) ficou complexo (Node + Ink + React + 94KB de bash monolítico), quebrou, e cobre apenas WSL.
+There's no reproducible process for setting up development machines (personal or outsourced devs) across Henry's work ecosystem. The earlier project (`wsl-dev-setup`) grew complex (Node + Ink + React + 94 KB of monolithic bash), broke, and only covers WSL.
 
-### Objetivo
+### Goal
 
-Repo público `dev-bootstrap` que:
+Public `dev-bootstrap` repo that:
 
-1. **Configura máquinas novas** em 3 ambientes: Windows (bootstrap do WSL), WSL2/Ubuntu nativo, macOS.
-2. **Instala stack reproduzível**: git, Node, PHP 8.4, Python corrente, Claude Code, terminal UX moderno, tmux, Laravel stack opcional, remote access opcional.
-3. **Serve dev terceirado**: ninguém precisa entender framework pesado. Bash legível, documentação clara.
-4. **Integra dotfiles pessoais** (repo privado por dev) via variável de ambiente — sem misturar configs pessoais com o repo público.
+1. **Configures new machines** across 3 environments: Windows (WSL bootstrap), native WSL2/Ubuntu, macOS.
+2. **Installs a reproducible stack**: git, Node, PHP 8.4, current Python, Claude Code, modern terminal UX, tmux, optional Laravel stack, optional remote access.
+3. **Serves outsourced devs**: nobody needs to understand a heavy framework. Readable bash, clear documentation.
+4. **Integrates personal dotfiles** (private repo per dev) via an env var — without mixing personal configs into the public repo.
 
-### Não-objetivos
+### Non-goals
 
-- Configuration management de múltiplas máquinas (fleet) — se escalar, considerar Ansible/Nix.
-- Suporte a Windows nativo para desenvolvimento (sem WSL).
-- Linux não-Ubuntu (Arch, Fedora) no MVP.
-- Multi-versão de linguagens via mise (fnm só pra Node basta para o stack atual).
+- Fleet configuration management — if we scale, consider Ansible/Nix.
+- Native Windows support for development (no WSL).
+- Non-Ubuntu Linux (Arch, Fedora) in the MVP.
+- Multi-version language management via mise (fnm alone is enough for Node in the current stack).
 
-## 2. Arquitetura dos 3 repos
+## 2. Architecture of the 3 repos
 
-| Repo | Visibilidade | Propósito | Dono |
-|------|--------------|-----------|------|
-| `henryavila/dev-bootstrap` | público | Setup reproduzível de máquina (software + configs opinionated) | Henry |
-| `henryavila/dotfiles-template` | público, marcado como template | Skeleton para dotfiles pessoais de qualquer dev | Henry |
-| `henryavila/dotfiles` | **privado** | Dotfiles pessoais do Henry (criado a partir do template) | Henry |
-| `dev-X/dotfiles` | privado de cada dev | Dotfiles pessoais do dev terceirado | Dev terceirado |
+| Repo | Visibility | Purpose | Owner |
+|------|------------|---------|-------|
+| `henryavila/dev-bootstrap` | public | Reproducible machine setup (software + opinionated configs) | Henry |
+| `henryavila/dotfiles-template` | public, marked as template | Skeleton for any dev's personal dotfiles | Henry |
+| `henryavila/dotfiles` | **private** | Henry's personal dotfiles (created from the template) | Henry |
+| `dev-X/dotfiles` | each dev's private repo | Outsourced dev's personal dotfiles | Outsourced dev |
 
-### Fluxo de uso
+### Usage flow
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │ 0. git clone https://github.com/henryavila/dev-bootstrap
-│    (Windows: em %USERPROFILE%; WSL/Mac: em ~)
-│ 1. Dev tem máquina Windows → windows\install-wsl.ps1 │
-│ 2. Dev tem WSL/Mac → bash bootstrap.sh               │
-│ 3. (opcional) Dev cria seu dotfiles a partir do     │
-│    template público `dotfiles-template`              │
-│ 4. DOTFILES_REPO=... bash bootstrap.sh aplica as     │
-│    configs pessoais no final                         │
+│    (Windows: in %USERPROFILE%; WSL/Mac: in ~)
+│ 1. Dev on Windows → windows\install-wsl.ps1
+│ 2. Dev on WSL/Mac → bash bootstrap.sh
+│ 3. (optional) Dev creates their own dotfiles from
+│    the public `dotfiles-template`
+│ 4. DOTFILES_REPO=... bash bootstrap.sh applies the
+│    personal configs at the end
 └─────────────────────────────────────────────────────┘
 ```
 
-## 3. Padrão Topic
+## 3. Topic pattern
 
-### Convenção
+### Convention
 
-Cada **topic** é uma pasta em `topics/` com prefixo numérico (ordem de execução):
+Each **topic** is a folder under `topics/` with a numeric prefix (execution order):
 
 ```
-topics/NN-<nome>/
-├── install.wsl.sh          # específico WSL/Ubuntu
-├── install.mac.sh          # específico macOS
-├── install.sh              # OU OS-agnóstico (fallback se não houver install.$OS.sh)
-├── verify.sh               # verifica instalação correta (usado por CI)
-├── templates/              # arquivos a serem deployados (opcional)
-│   └── <qualquer-arquivo>
-├── packages.txt            # lista apt (só WSL, opcional)
-├── Brewfile                # lista brew (só Mac, opcional)
-└── README.md               # propósito, dependências, customização
+topics/NN-<name>/
+├── install.wsl.sh          # WSL/Ubuntu-specific
+├── install.mac.sh          # macOS-specific
+├── install.sh              # OR OS-agnostic (fallback if no install.$OS.sh)
+├── verify.sh               # verifies correct install (used by CI)
+├── templates/              # files to deploy (optional)
+│   └── <any-file>
+├── packages.txt            # apt list (WSL only, optional)
+├── Brewfile                # brew list (Mac only, optional)
+└── README.md               # purpose, dependencies, customization
 ```
 
-### Runner resolve `installer` assim
+### Runner resolves the installer like this
 
 ```bash
 if [ -f "$topic/install.$OS.sh" ]; then
@@ -77,91 +77,91 @@ if [ -f "$topic/install.$OS.sh" ]; then
 elif [ -f "$topic/install.sh" ]; then
     installer="$topic/install.sh"
 else
-    # topic sem install (só templates)
+    # topic with no install (templates only)
     skip
 fi
 ```
 
-### Contratos de um topic
+### Topic contracts
 
-Todo `install.*.sh` DEVE:
+Every `install.*.sh` MUST:
 
-1. `set -euo pipefail` no topo
-2. **Ser idempotente**: rodar 2x sem alterar estado (segunda execução = no-op ou skip-messages)
-3. Checar pré-requisitos (`command -v X` antes de usar X) e falhar com mensagem clara se faltam
-4. Logar ações em stdout: `echo "→ instalando X"`, `echo "✓ X já instalado"`
-5. Não modificar arquivos fora de `$HOME` sem `sudo` explícito
-6. Não mudar `cwd` permanentemente (usar subshells quando necessário)
+1. `set -euo pipefail` at the top
+2. **Be idempotent**: run twice without changing state (second run = no-op or skip messages)
+3. Check prerequisites (`command -v X` before using X) and fail with a clear message if missing
+4. Log actions to stdout: `echo "→ installing X"`, `echo "✓ X already installed"`
+5. Never modify files outside `$HOME` without explicit `sudo`
+6. Never permanently change `cwd` (use subshells when needed)
 
-Todo `verify.sh` DEVE:
+Every `verify.sh` MUST:
 
-1. Retornar exit 0 se tudo OK, exit 1 se algo faltando
-2. Printar linha por item verificado: `  ✓ xxx` ou `  ✗ xxx MISSING`
+1. Return exit 0 if all OK, exit 1 if something is missing
+2. Print one line per checked item: `  ✓ xxx` or `  ✗ xxx MISSING`
 
 ## 4. Runner — `bootstrap.sh`
 
 ### Interface
 
 ```bash
-bash bootstrap.sh                          # todos os topics em ordem
+bash bootstrap.sh                          # all topics in order
 SKIP_TOPICS="60-laravel-stack" bash bootstrap.sh
 ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
-DRY_RUN=1 bash bootstrap.sh                # imprime o que rodaria sem executar
-bash bootstrap.sh --help                   # lista topics + env vars
+DRY_RUN=1 bash bootstrap.sh                # print what would run without executing
+bash bootstrap.sh --help                   # list topics + env vars
 ```
 
-### Env vars reconhecidas
+### Recognized env vars
 
-| Var | Efeito |
+| Var | Effect |
 |-----|--------|
-| `SKIP_TOPICS` | Lista de topics a pular (separados por espaço) |
-| `ONLY_TOPICS` | Rodar apenas estes (ignora o resto) |
-| `DRY_RUN=1` | Não executa, só lista |
-| `DOTFILES_REPO` | URL do repo dotfiles pessoal (usado pelo topic `95-dotfiles-personal`) |
-| `DOTFILES_DIR` | Diretório de destino do clone (default: `~/dotfiles`) |
-| `GIT_NAME`, `GIT_EMAIL` | Identidade para `50-git` |
-| `CODE_DIR` | Onde ficam os projetos (default: `~/code/web`; no Mac do Henry: `/Volumes/External/code`) |
-| `INCLUDE_LARAVEL=1` | Ativa topic `60-laravel-stack` (default: skip) |
-| `INCLUDE_REMOTE=1` | Ativa topic `70-remote-access` (default: skip) |
-| `INCLUDE_EDITOR=1` | Ativa topic `90-editor` (default: skip) |
-| `NO_COLOR=1` | Desabilita output colorido (auto se não for TTY) |
+| `SKIP_TOPICS` | list of topics to skip (space-separated) |
+| `ONLY_TOPICS` | run only these (ignore the rest) |
+| `DRY_RUN=1` | don't execute, just list |
+| `DOTFILES_REPO` | URL of the personal dotfiles repo (used by topic `95-dotfiles-personal`) |
+| `DOTFILES_DIR` | clone destination (default: `~/dotfiles`) |
+| `GIT_NAME`, `GIT_EMAIL` | identity for `50-git` |
+| `CODE_DIR` | where projects live (default: `~/code/web`; on Henry's Mac: `/Volumes/External/code`) |
+| `INCLUDE_LARAVEL=1` | enable topic `60-laravel-stack` (default: skip) |
+| `INCLUDE_REMOTE=1` | enable topic `70-remote-access` (default: skip) |
+| `INCLUDE_EDITOR=1` | enable topic `90-editor` (default: skip) |
+| `NO_COLOR=1` | disable colored output (auto when not a TTY) |
 
-### Fluxo
+### Flow
 
 ```
 1. OS=$(bash lib/detect-os.sh); export OS
-2. se OS=mac: eval "$(bash lib/detect-brew.sh)"; export BREW_BIN BREW_PREFIX
-   (se brew ainda não instalado na primeira execução, tudo bem — topic 00-core
-    não depende de brew; detecção recomeça após 00-core se precisar)
-3. listar topics/*/ em ordem alfabética
-4. aplicar SKIP_TOPICS / ONLY_TOPICS filters
-5. para topics opt-in, checar env var correspondente:
-     60-laravel-stack    requer INCLUDE_LARAVEL=1    (senão skip com mensagem)
-     70-remote-access    requer INCLUDE_REMOTE=1
-     90-editor           requer INCLUDE_EDITOR=1
-     95-dotfiles-personal requer DOTFILES_REPO setado
-6. para cada topic não filtrado:
-   a. se DRY_RUN: imprimir "would run: <installer>" e continuar
-   b. resolve installer: prefere install.$OS.sh, fallback para install.sh
-   c. bash $installer 2>&1 | tee -a $LOG   (herda $OS, $BREW_PREFIX, $CODE_DIR, $GIT_NAME, etc.)
-   d. se $topic/templates/ existe: bash lib/deploy.sh $topic/templates
-   e. capturar exit code; marcar falha mas continuar (não abort em erro parcial)
-7. imprimir resumo (passed/failed/skipped)
-8. exit 0 se tudo passou, 1 caso contrário
+2. if OS=mac: eval "$(bash lib/detect-brew.sh)"; export BREW_BIN BREW_PREFIX
+   (if brew isn't installed yet on the first run, that's fine — topic 00-core
+    doesn't depend on brew; detection re-runs after 00-core if needed)
+3. list topics/*/ in alphabetical order
+4. apply SKIP_TOPICS / ONLY_TOPICS filters
+5. for opt-in topics, check the corresponding env var:
+     60-laravel-stack    requires INCLUDE_LARAVEL=1    (skip with message otherwise)
+     70-remote-access    requires INCLUDE_REMOTE=1
+     90-editor           requires INCLUDE_EDITOR=1
+     95-dotfiles-personal requires DOTFILES_REPO set
+6. for each unfiltered topic:
+   a. if DRY_RUN: print "would run: <installer>" and continue
+   b. resolve installer: prefer install.$OS.sh, fall back to install.sh
+   c. bash $installer 2>&1 | tee -a $LOG   (inherits $OS, $BREW_PREFIX, $CODE_DIR, $GIT_NAME, etc.)
+   d. if $topic/templates/ exists: bash lib/deploy.sh $topic/templates
+   e. capture exit code; mark failure but keep going (no abort on partial error)
+7. print summary (passed/failed/skipped)
+8. exit 0 if everything passed, 1 otherwise
 ```
 
-**Variáveis exportadas pelo runner** (herdadas por todos os installers e deploy.sh):
-`OS`, `BREW_BIN`, `BREW_PREFIX` (se Mac), `USER`, `HOME`, `DOTFILES_REPO`, `DOTFILES_DIR`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_LARAVEL`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `NGINX_CONF_DIR` (derivado pelo topic 60 antes do deploy), `NO_COLOR`.
+**Variables exported by the runner** (inherited by all installers and deploy.sh):
+`OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `DOTFILES_REPO`, `DOTFILES_DIR`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_LARAVEL`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
 
 ### Log
 
-`/tmp/dev-bootstrap-<os>-<timestamp>.log` com stdout+stderr de todos os topics.
+`/tmp/dev-bootstrap-<os>-<timestamp>.log` with stdout+stderr from every topic.
 
-## 5. `lib/` — utilitários compartilhados
+## 5. `lib/` — shared utilities
 
 ### `lib/detect-os.sh`
 
-Exporta string única na saída padrão: `wsl`, `mac`, `linux`, `unknown`.
+Outputs a single string to stdout: `wsl`, `mac`, `linux`, `unknown`.
 
 ```bash
 case "$(uname -s)" in
@@ -179,20 +179,20 @@ esac
 
 ### `lib/detect-brew.sh`
 
-Detecta o prefix do Homebrew em **qualquer localização conhecida** (evita falhas com brew em HD externo ou path customizado). Usado principalmente pelos topics macOS, mas inofensivo de rodar em WSL/Linux (exit 1 silencioso se brew ausente).
+Detects the Homebrew prefix in **any known location** (avoids failures when brew is on an external drive or in a custom path). Used mostly by macOS topics but harmless to run on WSL/Linux (silent exit 1 if brew is missing).
 
-**Contrato:** escreve na stdout linhas no formato `KEY=VALUE` consumíveis por `eval`. Exit 0 se encontrou brew, 1 se não.
+**Contract:** prints `KEY=VALUE` lines to stdout, consumable by `eval`. Exit 0 if brew found, 1 otherwise.
 
-**Consumo pelo caller:**
+**Caller usage:**
 ```bash
 if out=$(bash lib/detect-brew.sh); then
-    eval "$out"    # popula BREW_BIN e BREW_PREFIX no shell atual
+    eval "$out"    # populates BREW_BIN and BREW_PREFIX in the current shell
 fi
 ```
 
-**Implementação:**
+**Implementation:**
 ```bash
-# ordem de busca: PATH → padrão ARM → padrão Intel → customizado → linuxbrew
+# search order: PATH → ARM default → Intel default → custom → linuxbrew
 for cand in "$(command -v brew 2>/dev/null)" \
             "/opt/homebrew/bin/brew" \
             "/usr/local/bin/brew" \
@@ -209,17 +209,17 @@ exit 1
 
 ### `lib/deploy.sh`
 
-Recebe diretório de templates, aplica cada arquivo em destino derivado do nome. Idempotente com backup timestamped, strip CRLF, keep-5-backups. Suporta substituição de variáveis via `envsubst` quando o arquivo tem sufixo `.template`. Detecta destinos fora de `$HOME` e usa `sudo` automaticamente.
+Takes a templates directory, applies each file to a destination derived from its name. Idempotent with timestamped backup, CRLF stripping, keep-5-backups. Supports variable substitution via `envsubst` when the file has a `.template` suffix. Detects destinations outside `$HOME` and switches to `sudo` automatically.
 
 ```bash
-# Uso: bash lib/deploy.sh <templates-dir>
-# O diretório pode conter um arquivo DEPLOY opcional definindo mappings não-convencionais.
+# Usage: bash lib/deploy.sh <templates-dir>
+# The directory may contain an optional DEPLOY file with non-convention mappings.
 ```
 
-Convenção de mapeamento **automática** (se nome bate, não precisa DEPLOY). **Qualquer arquivo da tabela pode ter sufixo `.template`**; o sufixo é removido no destino após envsubst.
+**Automatic mapping convention** (no DEPLOY file needed if the name matches). **Any file in the table can have a `.template` suffix**; the suffix is stripped in the destination after envsubst.
 
-| Nome no template (com ou sem `.template`) | Destino |
-|-------------------------------------------|---------|
+| Template name (with or without `.template`) | Destination |
+|-----------------------------------------------|-------------|
 | `bashrc` | `~/.bashrc` |
 | `zshrc` | `~/.zshrc` |
 | `inputrc` | `~/.inputrc` |
@@ -227,228 +227,228 @@ Convenção de mapeamento **automática** (se nome bate, não precisa DEPLOY). *
 | `starship.toml` | `~/.config/starship.toml` |
 | `bashrc.d-NN-<name>.sh` | `~/.bashrc.d/NN-<name>.sh` |
 | `zshrc.d-NN-<name>.sh` | `~/.zshrc.d/NN-<name>.sh` |
-| `bin/<name>` | `~/.local/bin/<name>` (executável, chmod +x) |
+| `bin/<name>` | `~/.local/bin/<name>` (executable, chmod +x) |
 
-Exemplos: `starship.toml.template` → `~/.config/starship.toml` (com envsubst). `bin/link-project.template` → `~/.local/bin/link-project`.
+Examples: `starship.toml.template` → `~/.config/starship.toml` (envsubst'd). `bin/link-project.template` → `~/.local/bin/link-project`.
 
-### Formato do arquivo `DEPLOY` (opcional)
+### `DEPLOY` file format (optional)
 
-Para mappings fora da convenção (ex: destinos em `/etc/`, paths com substituição), o topic fornece `templates/DEPLOY`:
+For mappings outside the convention (e.g. destinations in `/etc/`, paths with substitution), the topic provides `templates/DEPLOY`:
 
 ```
-# Formato: <src-relativo-ao-templates-dir>=<destino-absoluto-ou-tildeified>
-# Linhas em branco e linhas começando com # são ignoradas.
-# Variáveis em ${VAR} no destino são expandidas pelo deploy.sh.
-# Se src tem sufixo .template, envsubst é aplicado no CONTEÚDO antes de copiar.
+# Format: <src-relative-to-templates-dir>=<absolute-or-tildeified-destination>
+# Blank lines and lines starting with # are ignored.
+# ${VAR} in the destination is expanded by deploy.sh.
+# If src has a .template suffix, envsubst is applied to the CONTENT before copying.
 
 sshd-snippet.template=/etc/ssh/sshd_config.d/99-${USER}.conf
 nginx-catchall.conf=${NGINX_CONF_DIR}/catchall.conf
 ```
 
-`lib/deploy.sh` prioriza o arquivo `DEPLOY` se existir; senão usa a convenção automática acima.
+`lib/deploy.sh` picks up the `DEPLOY` file if present; otherwise it falls back to the automatic convention above.
 
-### Substituição de variáveis (`.template` suffix)
+### Variable substitution (`.template` suffix)
 
-Arquivos com sufixo `.template` passam por `envsubst` durante o deploy. Variáveis do ambiente do runner (`$USER`, `$HOME`, `$BREW_PREFIX`, `$CODE_DIR`, `$NGINX_CONF_DIR`, etc.) são expandidas. O sufixo `.template` é **removido no destino** (ex: `bin/link-project.template` → `~/.local/bin/link-project`, não `~/.local/bin/link-project.template`).
+Files with a `.template` suffix go through `envsubst` during deploy. Variables from the runner's environment (`$USER`, `$HOME`, `$BREW_PREFIX`, `$CODE_DIR`, `$NGINX_CONF_DIR`, etc.) are expanded. The `.template` suffix is **stripped at the destination** (e.g. `bin/link-project.template` → `~/.local/bin/link-project`, not `~/.local/bin/link-project.template`).
 
-### Privilégios elevados para destinos fora de `$HOME`
+### Elevated privileges for destinations outside `$HOME`
 
-Quando o destino resolvido começa com `/etc/`, `/usr/local/etc/`, ou qualquer path fora de `$HOME`, `lib/deploy.sh`:
+When the resolved destination starts with `/etc/`, `/usr/local/etc/`, or any path outside `$HOME`, `lib/deploy.sh`:
 
-1. Pede confirmação **uma vez** no início do deploy (evita prompts repetidos)
-2. Renova cache do sudo (`sudo -v`)
-3. Usa `sudo cp`, `sudo mv`, `sudo chmod` para escrever o destino
-4. Falha com mensagem clara se sudo for negado
+1. Asks for confirmation **once** at the start of the deploy (avoids repeated prompts).
+2. Refreshes the sudo cache (`sudo -v`).
+3. Uses `sudo cp`, `sudo mv`, `sudo chmod` to write the destination.
+4. Fails with a clear message if sudo is denied.
 
-Topics que escrevem em `/etc/` (ex: `70-remote-access` sshd snippet, `60-laravel-stack` nginx config) dependem dessa lógica. Nunca chamar deploy.sh num contexto não-interativo sem `sudo -n` validado.
+Topics that write under `/etc/` (e.g. `70-remote-access` sshd snippet, `60-laravel-stack` nginx config) depend on this logic. Never call deploy.sh in a non-interactive context without having validated `sudo -n` beforehand.
 
 ### `lib/log.sh`
 
-Helpers de output colorido: `info`, `ok`, `warn`, `fail`, `banner`. Carregado via `source` pelos scripts.
+Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `source` by scripts.
 
-## 6. Os 11 topics
+## 6. The 11 topics
 
 ### `00-core`
 
-**Propósito:** ferramentas mínimas que todo dev precisa, + dependências do próprio runner (envsubst).
+**Purpose:** minimum tools every dev needs, plus the runner's own dependencies (envsubst).
 
-**Conteúdo:**
-- WSL: `git curl wget ca-certificates gnupg build-essential jq unzip gettext-base` (o último fornece `envsubst` usado por `lib/deploy.sh`)
-- Mac: `git curl wget gnupg jq unzip gettext` (build-essential ≈ xcode-select, já vem; `gettext` via brew traz `envsubst` compatível)
+**Contents:**
+- WSL: `git curl wget ca-certificates gnupg build-essential jq unzip gettext-base` (the last one provides `envsubst`, used by `lib/deploy.sh`)
+- Mac: `git curl wget gnupg jq unzip gettext` (`build-essential` ≈ xcode-select, already present; brew's `gettext` provides a compatible `envsubst`)
 
-**Templates:** nenhum.
+**Templates:** none.
 
-**Nota de dependência circular:** `00-core` é o único topic que **NÃO pode** depender de `lib/deploy.sh` (que usa envsubst), já que é o topic que instala envsubst. Por isso `00-core` não tem templates.
+**Circular-dependency note:** `00-core` is the one topic that **cannot** depend on `lib/deploy.sh` (which uses envsubst), since it's the topic that installs envsubst. That's why `00-core` has no templates.
 
 ### `10-languages`
 
-**Propósito:** Node (via fnm), PHP 8.4 (+ extensões comuns), Composer, Python corrente.
+**Purpose:** Node (via fnm), PHP 8.4 (+ common extensions), Composer, current Python.
 
-**Conteúdo:**
-- WSL: fnm (installer), Node LTS, `add-apt-repository ppa:ondrej/php`, php8.4 + ext, composer (installer oficial com checksum), python3 (apt)
+**Contents:**
+- WSL: fnm (installer), Node LTS, `add-apt-repository ppa:ondrej/php`, php8.4 + ext, composer (official installer with checksum), python3 (apt)
 - Mac: fnm (brew), Node LTS, `brew install php@8.4 composer python@3.13`
 
 **Templates:**
-- `bashrc.d-10-languages.sh` — init de fnm (`eval "$(fnm env --use-on-cd)"`), PATH para `$HOME/.composer/vendor/bin`
-- `zshrc.d-10-languages.sh` — equivalente para zsh
+- `bashrc.d-10-languages.sh` — fnm init (`eval "$(fnm env --use-on-cd)"`), PATH for `$HOME/.composer/vendor/bin`
+- `zshrc.d-10-languages.sh` — zsh equivalent
 
-**Env vars:** nenhuma.
+**Env vars:** none.
 
 ### `20-terminal-ux`
 
-**Propósito:** terminal moderno pronto out-of-the-box.
+**Purpose:** modern terminal, ready out-of-the-box.
 
-**Conteúdo:**
-- WSL: `fzf bat eza zoxide ripgrep fd-find` via apt; `starship lazygit git-delta` via installer (não estão no apt default); Nerd Font via install-wsl.ps1 (Windows side)
-- Mac: tudo via brew + `brew tap homebrew/cask-fonts` + `brew install --cask font-caskaydia-cove-nerd-font`
+**Contents:**
+- WSL: `fzf bat eza zoxide ripgrep fd-find` via apt; `starship lazygit git-delta` via installer (not in the default apt); Nerd Font via `install-wsl.ps1` (Windows side)
+- Mac: all via brew + `brew tap homebrew/cask-fonts` + `brew install --cask font-caskaydia-cove-nerd-font`
 
 **Templates:**
-- `starship.toml` com **Catppuccin Mocha** embutido (palette completa, ícones Nerd Font)
-- `bashrc.d-20-terminal-ux.sh` com: `eval "$(starship init bash)"`, fzf keybindings (`Ctrl+R`, `Ctrl+T`), `eval "$(zoxide init bash)"`, aliases `ls='eza'`, `cat='bat'` (condicional)
-- `zshrc.d-20-terminal-ux.sh` equivalente para zsh
+- `starship.toml` with **Catppuccin Mocha** baked in (full palette, Nerd Font glyphs)
+- `bashrc.d-20-terminal-ux.sh` with: `eval "$(starship init bash)"`, fzf keybindings (`Ctrl+R`, `Ctrl+T`), `eval "$(zoxide init bash)"`, aliases `ls='eza'`, `cat='bat'` (conditional)
+- `zshrc.d-20-terminal-ux.sh` — zsh equivalent
 
 ### `30-shell`
 
-**Propósito:** bashrc/zshrc modulares com loader de `~/.bashrc.d/` e `~/.zshrc.d/`.
+**Purpose:** modular bashrc/zshrc with `~/.bashrc.d/` and `~/.zshrc.d/` loaders.
 
-**Conteúdo:**
-- WSL: default shell = bash, mas também configura zsh se preferido
-- Mac: default shell = zsh (macOS padrão)
+**Contents:**
+- WSL: default shell = bash, but also configures zsh if preferred
+- Mac: default shell = zsh (macOS default)
 
 **Templates:**
-- `bashrc` — minimal: opções do shell, history, PATH base, carrega `~/.bashrc.d/*.sh`, carrega `~/.bashrc.local` no fim
-- `zshrc` — equivalente para zsh, carrega `~/.zshrc.d/*.sh` e `~/.zshrc.local`
+- `bashrc` — minimal: shell options, history, base PATH, loads `~/.bashrc.d/*.sh`, sources `~/.bashrc.local` at the end
+- `zshrc` — zsh equivalent, loads `~/.zshrc.d/*.sh` and `~/.zshrc.local`
 - `inputrc` — readline keybindings (Ctrl+←/→, history search)
 
 ### `40-tmux`
 
-**Propósito:** tmux + config com prefixo Ctrl+A, mouse, splits intuitivos.
+**Purpose:** tmux + config with Ctrl+A prefix, mouse, intuitive splits.
 
-**Conteúdo:**
+**Contents:**
 - WSL: `apt install tmux`
 - Mac: `brew install tmux`
 
 **Templates:**
-- `tmux.conf` com: prefix C-a, mouse on, splits `|` e `-`, status bar limpo, reload config
+- `tmux.conf` with: prefix C-a, mouse on, `|` and `-` splits, clean status bar, reload config
 
 ### `50-git`
 
-**Propósito:** gitconfig com delta como pager, merge.conflictstyle=zdiff3, init.defaultBranch=main, aliases comuns.
+**Purpose:** gitconfig with delta as pager, `merge.conflictstyle=zdiff3`, `init.defaultBranch=main`, common aliases.
 
-**Conteúdo:**
-- WSL/Mac: configura via `git config --global` lendo `gitconfig.keys` (um key=value por linha)
-- Preserva `[user]` e `[credential]` existentes (nunca sobrescreve email/name)
+**Contents:**
+- WSL/Mac: configures via `git config --global` reading `gitconfig.keys` (one key=value per line)
+- Preserves existing `[user]` and `[credential]` (never overwrites email/name)
 
 **Templates:**
-- `gitconfig.keys` — 20-30 linhas com `core.pager=delta`, `delta.side-by-side=false`, aliases (`alias.co=checkout`, `alias.br=branch`, etc.)
+- `gitconfig.keys` — 20–30 lines with `core.pager=delta`, `delta.side-by-side=false`, aliases (`alias.co=checkout`, `alias.br=branch`, etc.)
 
 ### `60-laravel-stack` (opt-in)
 
-**Propósito:** stack local para Laravel dev — MySQL, Redis, Nginx com catch-all `*.localhost`, PHP-FPM, mkcert.
+**Purpose:** local stack for Laravel dev — MySQL, Redis, Nginx with a `*.localhost` catch-all, PHP-FPM, mkcert.
 
-**Ativação:** `INCLUDE_LARAVEL=1 bash bootstrap.sh`
+**Activation:** `INCLUDE_LARAVEL=1 bash bootstrap.sh`
 
-**Conteúdo:**
+**Contents:**
 - WSL: `apt install mysql-server redis-server nginx php8.4-fpm`, `curl | bash` mkcert
 - Mac: `brew install mysql redis nginx mkcert` + `brew services start`
 
 **Templates:**
-- `nginx-catchall.conf.template` — deploy via `DEPLOY` file:
+- `nginx-catchall.conf.template` — deployed via the `DEPLOY` file:
   - WSL: `$NGINX_CONF_DIR=/etc/nginx/sites-enabled`
-  - Mac: `$NGINX_CONF_DIR=$BREW_PREFIX/etc/nginx/servers` (usa `lib/detect-brew.sh`)
-- `bin/link-project.template` — script que linka `$CODE_DIR/<nome>/public` → `<nome>.localhost` (usa env var `CODE_DIR`, default `~/code/web`)
+  - Mac: `$NGINX_CONF_DIR=$BREW_PREFIX/etc/nginx/servers` (uses `lib/detect-brew.sh`)
+- `bin/link-project.template` — script that wires `$CODE_DIR/<name>/public` → `<name>.localhost` (uses env var `CODE_DIR`, default `~/code/web`)
 
-**Env vars usadas:** `CODE_DIR`, `BREW_PREFIX` (via detect-brew no Mac).
+**Env vars used:** `CODE_DIR`, `BREW_PREFIX` (via detect-brew on Mac).
 
-**Pós-install:** imprimir `start-services.sh` como referência.
+**Post-install:** print `start-services.sh` as a reference.
 
 ### `70-remote-access` (opt-in)
 
-**Propósito:** acesso remoto via SSH + Tailscale + mosh + tmux, sudoers NOPASSWD.
+**Purpose:** remote access via SSH + Tailscale + mosh + tmux, sudoers NOPASSWD.
 
-**Ativação:** `INCLUDE_REMOTE=1 bash bootstrap.sh`
+**Activation:** `INCLUDE_REMOTE=1 bash bootstrap.sh`
 
-**Conteúdo:**
-- WSL: enable sshd, instala Tailscale, mosh, configura `.wslconfig` com systemd, sudoers NOPASSWD
-- Mac: enable Remote Login (sshd), instala Tailscale, mosh
+**Contents:**
+- WSL: enable sshd, install Tailscale, mosh, configure `.wslconfig` with systemd, sudoers NOPASSWD
+- Mac: enable Remote Login (sshd), install Tailscale, mosh
 
 **Templates:**
-- `sshd-snippet.template` deployado via `DEPLOY` file como `/etc/ssh/sshd_config.d/99-${USER}.conf` (hardening básico — `envsubst` expande `$USER`)
+- `sshd-snippet.template` deployed via the `DEPLOY` file as `/etc/ssh/sshd_config.d/99-${USER}.conf` (basic hardening — `envsubst` expands `$USER`)
 
 ### `80-claude-code`
 
-**Propósito:** instalar Claude Code CLI.
+**Purpose:** install Claude Code CLI.
 
-**Conteúdo:**
-- Cross-OS: `curl -fsSL https://claude.ai/install.sh | bash` (ambos WSL e Mac)
-- Validar `claude --version` após instalar
+**Contents:**
+- Cross-OS: `curl -fsSL https://claude.ai/install.sh | bash` (both WSL and Mac)
+- Validate `claude --version` after installing
 
-**Templates:** nenhum.
+**Templates:** none.
 
 ### `90-editor` (opt-in)
 
-**Propósito:** wrapper `typora-wait` para usar Typora como `$EDITOR` (preferência do Henry, documentado em memory).
+**Purpose:** `typora-wait` wrapper to use Typora as `$EDITOR` (Henry's preference, documented in memory).
 
-**Ativação:** `INCLUDE_EDITOR=1 bash bootstrap.sh`
+**Activation:** `INCLUDE_EDITOR=1 bash bootstrap.sh`
 
-**Conteúdo:** nenhum install (Typora é GUI, usuário instala separado).
+**Contents:** no install (Typora is a GUI, installed separately by the user).
 
 **Templates:**
-- `bin/typora-wait` — wrapper que espera fechar antes de retornar (usado como `EDITOR=typora-wait git commit`)
+- `bin/typora-wait` — wrapper that waits for the window to close before returning (used as `EDITOR=typora-wait git commit`)
 
 ### `95-dotfiles-personal`
 
-**Propósito:** aplicar dotfiles pessoais do dev (opt-in via env var).
+**Purpose:** apply the dev's personal dotfiles (opt-in via env var).
 
-**Ativação:** `DOTFILES_REPO=git@github.com:user/dotfiles.git bash bootstrap.sh`
+**Activation:** `DOTFILES_REPO=git@github.com:user/dotfiles.git bash bootstrap.sh`
 
-**Conteúdo:**
-1. Se `DOTFILES_REPO` não setado → skip com mensagem.
-2. Senão:
-   - Clona em `~/dotfiles` (ou `$DOTFILES_DIR` se setado)
-   - Se `~/dotfiles/install.sh` existe: `bash ~/dotfiles/install.sh`
+**Contents:**
+1. If `DOTFILES_REPO` isn't set → skip with message.
+2. Otherwise:
+   - Clone into `~/dotfiles` (or `$DOTFILES_DIR` if set)
+   - If `~/dotfiles/install.sh` exists: `bash ~/dotfiles/install.sh`
 
-**Templates:** nenhum.
+**Templates:** none.
 
 ## 7. Shell rc fragments (`.bashrc.d/`, `.zshrc.d/`)
 
 ### Pattern
 
 ```bash
-# ~/.bashrc (criado pelo topic 30-shell)
-# ... opções básicas do shell ...
+# ~/.bashrc (created by topic 30-shell)
+# ... basic shell options ...
 for f in ~/.bashrc.d/*.sh; do [ -r "$f" ] && source "$f"; done
 [ -f ~/.bashrc.local ] && source ~/.bashrc.local
 ```
 
 ### Naming
 
-Fragmentos em `~/.bashrc.d/` seguem prefixo numérico igual dos topics:
+Fragments under `~/.bashrc.d/` follow the same numeric prefix as the topics:
 - `10-languages.sh` (fnm env, composer PATH)
 - `20-terminal-ux.sh` (starship init, fzf keybindings, zoxide init, aliases)
-- `60-laravel-stack.sh` (aliases laravel, se opt-in)
+- `60-laravel-stack.sh` (laravel aliases, if opt-in)
 
-Ordem de carregamento = ordem alfabética (garante dependências).
+Load order = alphabetical (enforces dependencies).
 
-### Nota sobre ordem vs loader
+### Order vs loader note
 
-O topic `30-shell` cria os loaders `~/.bashrc` e `~/.zshrc` que iteram `~/.bashrc.d/*.sh`. Topics anteriores (`10-languages`, `20-terminal-ux`) já gravam fragments em `~/.bashrc.d/` mesmo **antes** de `30-shell` rodar.
+Topic `30-shell` creates the `~/.bashrc` and `~/.zshrc` loaders that iterate `~/.bashrc.d/*.sh`. Earlier topics (`10-languages`, `20-terminal-ux`) already drop fragments under `~/.bashrc.d/` **before** `30-shell` runs.
 
-Isso é intencional e não causa bug:
-- Durante bootstrap: os installers não dependem dos fragments para funcionar (cada `install.sh` roda sem precisar do shell rc).
-- Após bootstrap: `30-shell` cria o loader; user abre novo shell → tudo carrega na ordem correta.
+This is intentional and bug-free:
+- During bootstrap: installers don't need the fragments to function (each `install.sh` runs without needing the shell rc).
+- After bootstrap: `30-shell` creates the loader; the user opens a new shell → everything loads in the right order.
 
-O único caso onde faltaria carregar seria se o user rodar `source ~/.bashrc` no meio do bootstrap — recomendação é aguardar o fim e abrir novo shell.
+The only case where nothing would load is if the user runs `source ~/.bashrc` mid-bootstrap — the recommendation is to wait until the end and open a new shell.
 
-## 8. `dotfiles-template` — especificação
+## 8. `dotfiles-template` — specification
 
-### Estrutura
+### Structure
 
 ```
 dotfiles-template/
 ├── README.md                    # "Use this template" workflow
 ├── install.sh                   # self-contained: diff + backup + symlink
-├── .gitignore                   # secrets, sistema, backups
+├── .gitignore                   # secrets, system files, backups
 ├── ssh/
 │   └── config.example
 ├── git/
@@ -459,29 +459,29 @@ dotfiles-template/
 └── docs/README.md
 ```
 
-### Convenção `.example`
+### `.example` convention
 
-Arquivos com sufixo `.example` são placeholders comentados. O `install.sh` **pula** arquivos `.example` e processa apenas arquivos sem o sufixo. Usuário renomeia (`cp config.example config`) e customiza.
+Files with the `.example` suffix are commented placeholders. `install.sh` **skips** `.example` files and only processes files without the suffix. The user renames them (`cp config.example config`) and customizes.
 
-### `install.sh` do template
+### Template `install.sh`
 
-Self-contained (NÃO depende de `lib/deploy.sh` do `dev-bootstrap`). Duplica ~40 linhas de lógica de deploy. Motivo: template deve funcionar standalone.
+Self-contained (does NOT depend on `dev-bootstrap`'s `lib/deploy.sh`). Duplicates ~40 lines of deploy logic. Reason: the template should work standalone.
 
-Comportamento:
-- Para cada arquivo não-`.example` em `ssh/`, `git/`, `shell/`:
-  - Calcula destino (`ssh/config` → `~/.ssh/config`)
-  - Se diff: backup + symlink
-  - Se igual: skip
+Behavior:
+- For each non-`.example` file under `ssh/`, `git/`, `shell/`:
+  - Compute destination (`ssh/config` → `~/.ssh/config`)
+  - If it differs: backup + symlink
+  - If it matches: skip
 
-### Marcação template no GitHub
+### GitHub template marker
 
-Após push inicial: `gh repo edit henryavila/dotfiles-template --template` (ou via UI → Settings → check "Template repository").
+After the initial push: `gh repo edit henryavila/dotfiles-template --template` (or via UI → Settings → check "Template repository").
 
 ## 9. CI/CD
 
 ### Workflows
 
-**`.github/workflows/lint.yml` — Tier 1 (todo push)**
+**`.github/workflows/lint.yml` — Tier 1 (every push)**
 
 ```yaml
 on: [push, pull_request]
@@ -497,7 +497,7 @@ jobs:
         run: find topics lib -name "*.sh" -exec bash -n {} \;
 ```
 
-**`.github/workflows/integration.yml` — Tier 2 (PRs para main)**
+**`.github/workflows/integration.yml` — Tier 2 (PRs to main)**
 
 ```yaml
 on:
@@ -525,7 +525,7 @@ jobs:
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
 
   test-mac:
-    runs-on: macos-latest    # macOS 26 quando disponível
+    runs-on: macos-latest    # macOS 26 when available
     steps:
       - uses: actions/checkout@v4
       - name: bootstrap
@@ -541,118 +541,118 @@ jobs:
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
 ```
 
-**Tier 3 (daily E2E):** desabilitado inicialmente. Ativar quando estabilizar — agendar `cron: '0 6 * * *'` com cobertura de `60-laravel-stack` e `70-remote-access`.
+**Tier 3 (daily E2E):** disabled initially. Turn on once stable — schedule `cron: '0 6 * * *'` with coverage for `60-laravel-stack` and `70-remote-access`.
 
-### Custos estimados
+### Estimated costs
 
-- Tier 1: ~30s por push. Gratuito em repo público.
-- Tier 2: ~15-25min wall-clock por PR (3 jobs paralelos). Gratuito em repo público.
-- Tier 3: ~30-45min por run. Ativar depois que Tier 2 estabilizar.
+- Tier 1: ~30 s per push. Free on public repos.
+- Tier 2: ~15–25 min wall-clock per PR (3 parallel jobs). Free on public repos.
+- Tier 3: ~30–45 min per run. Enable after Tier 2 stabilizes.
 
-## 10. Convenções de código
+## 10. Code conventions
 
 ### Bash
 
 - Shebang: `#!/usr/bin/env bash`
-- Prólogo: `set -euo pipefail`
-- Aspas duplas em todas as expansões: `"$var"`, nunca `$var`
-- Arrays para listas: `local pkgs=(a b c); "${pkgs[@]}"`
-- `[[ ]]` para condicionais (não `[ ]`)
-- Funções: snake_case, locais: `local x="..."`
-- Indentação: 4 espaços (não tab)
+- Prologue: `set -euo pipefail`
+- Double-quote every expansion: `"$var"`, never bare `$var`
+- Arrays for lists: `local pkgs=(a b c); "${pkgs[@]}"`
+- Use `[[ ]]` for conditionals (not `[ ]`)
+- Functions: snake_case, locals: `local x="..."`
+- Indent: 4 spaces (not tabs)
 
 ### Output
 
-- `→` para ação em andamento
-- `✓` para sucesso
-- `!` para aviso
-- `✗` para erro
-- Cores via ANSI em `lib/log.sh`; desabilitar se `NO_COLOR=1` ou não for TTY
+- `→` for in-progress action
+- `✓` for success
+- `!` for warning
+- `✗` for error
+- Colors via ANSI in `lib/log.sh`; disable when `NO_COLOR=1` or not a TTY
 
-### Idempotência
+### Idempotency
 
-Antes de instalar qualquer coisa:
+Before installing anything:
 
 ```bash
 if command -v X >/dev/null 2>&1; then
-    echo "✓ X já instalado"
+    echo "✓ X already installed"
     return 0
 fi
 ```
 
-Antes de modificar arquivo:
+Before modifying a file:
 
 ```bash
-if grep -qF 'LINHA_DE_MARCA' "$file"; then
-    echo "✓ $file já configurado"
+if grep -qF 'MARKER_LINE' "$file"; then
+    echo "✓ $file already configured"
     return 0
 fi
 ```
 
 ## 11. Error handling
 
-- Falha em 1 topic **não aborta** `bootstrap.sh` — continua nos demais
-- Resumo final lista falhas
-- Exit code final: 0 se tudo OK, 1 se qualquer falhou
-- `run_cmd()` helper para sudo com retry: se `sudo` falha por timeout, tenta de novo uma vez após renovar cache (`sudo -v`)
+- A single-topic failure **does not abort** `bootstrap.sh` — it continues with the rest
+- The final summary lists failures
+- Final exit code: 0 if everything OK, 1 if any failed
+- `run_cmd()` helper for sudo with retry: if `sudo` fails due to timeout, retry once after refreshing the cache (`sudo -v`)
 
-## 12. Critérios de aceitação
+## 12. Acceptance criteria
 
-MVP aceito quando:
+MVP accepted when:
 
-- [ ] `dev-bootstrap` contém 11 topics + `bootstrap.sh` + `lib/` + README
-- [ ] `dotfiles-template` contém skeleton funcional + `install.sh` self-contained + marcado como template no GitHub
-- [ ] `henryavila/dotfiles` privado criado a partir do template, contendo o `ssh/config` atual migrado
-- [ ] Rodar `bash bootstrap.sh` no WSL atual (já configurado) retorna "todos os topics skipados" ou resultado equivalente (idempotência)
-- [ ] CI Tier 1 (lint) passa em ambos os repos
-- [ ] CI Tier 2 (integration) passa em ubuntu-22.04, ubuntu-24.04, macos-latest
-- [ ] README explica fluxo completo (Windows → WSL → bootstrap → dotfiles-template → dotfiles)
-- [ ] `wsl-dev-setup` antigo arquivado no GitHub com aviso de deprecation
+- [ ] `dev-bootstrap` contains 11 topics + `bootstrap.sh` + `lib/` + README
+- [ ] `dotfiles-template` contains a working skeleton + self-contained `install.sh` + marked as template on GitHub
+- [ ] `henryavila/dotfiles` private repo created from the template, containing the current `ssh/config` migrated
+- [ ] Running `bash bootstrap.sh` on the current (already configured) WSL returns "all topics skipped" or an equivalent (idempotency)
+- [ ] CI Tier 1 (lint) passes on both repos
+- [ ] CI Tier 2 (integration) passes on ubuntu-22.04, ubuntu-24.04, macos-latest
+- [ ] README explains the full flow (Windows → WSL → bootstrap → dotfiles-template → dotfiles)
+- [ ] Legacy `wsl-dev-setup` archived on GitHub with a deprecation notice
 
-## 13. Fora do escopo (desta versão)
+## 13. Out of scope (this version)
 
-- Suporte Linux não-Ubuntu (Arch, Fedora, Debian)
-- Windows nativo como ambiente de dev (só bootstrap do WSL)
-- mise/asdf (fnm é suficiente para stack atual)
+- Non-Ubuntu Linux support (Arch, Fedora, Debian)
+- Native Windows as a dev environment (WSL bootstrap only)
+- mise/asdf (fnm is enough for the current stack)
 - Ansible/Nix
-- CI Tier 3 end-to-end (planejado para v1.1)
-- Roles/perfis por tipo de dev (ex: "frontend-only" vs "fullstack") — todos os dev são fullstack por default
-- Auto-update do dev-bootstrap (`dev-bootstrap update` command)
-- Múltiplas versões de PHP ou Node simultâneas (fnm resolve Node; PHP fica em 8.4 fixo)
+- CI Tier 3 end-to-end (planned for v1.1)
+- Roles/profiles per dev type (e.g. "frontend-only" vs "fullstack") — every dev is fullstack by default
+- Auto-update of dev-bootstrap (`dev-bootstrap update` command)
+- Multiple PHP or Node versions at once (fnm covers Node; PHP stays pinned at 8.4)
 
-## 14. Roadmap pós-MVP
+## 14. Post-MVP roadmap
 
-**v1.1 (backlog, sem compromisso):**
-- CI Tier 3 (daily E2E com `60-laravel-stack` + `70-remote-access`)
-- Topic `45-docker` (Docker Desktop ou Docker Engine dentro do WSL)
-- Command `dev-bootstrap update` — pull + re-run bootstrap
-- Detector de mudança no `~/.zshrc` local vs template (warn antes de sobrescrever)
+**v1.1 (backlog, no commitment):**
+- CI Tier 3 (daily E2E with `60-laravel-stack` + `70-remote-access`)
+- Topic `45-docker` (Docker Desktop or Docker Engine inside WSL)
+- `dev-bootstrap update` command — pull + re-run bootstrap
+- Detector for changes in the local `~/.zshrc` vs template (warn before overwriting)
 
 **v1.2:**
-- Suporte a Linux nativo (não-WSL)
-- Perfis opcionais (`--profile minimal`, `--profile laravel`, `--profile devops`)
-- Migração de fnm para mise se stack crescer
+- Native Linux support (non-WSL)
+- Optional profiles (`--profile minimal`, `--profile laravel`, `--profile devops`)
+- Migrate from fnm to mise if the stack grows
 
-## 15. Referências
+## 15. References
 
-- wsl-dev-setup original: https://github.com/henryavila/wsl-dev-setup (a ser arquivado)
-- Padrão topic-based: inspirado em `holman/dotfiles`
-- Padrão `.d/` folders: systemd, `/etc/profile.d/`, oh-my-zsh plugins
-- deploy.sh idempotente com diff/backup: adaptado do `deploy-dotfiles.sh` do wsl-dev-setup
+- Original wsl-dev-setup: https://github.com/henryavila/wsl-dev-setup (to be archived)
+- Topic-based pattern: inspired by `holman/dotfiles`
+- `.d/` folder pattern: systemd, `/etc/profile.d/`, oh-my-zsh plugins
+- Idempotent deploy.sh with diff/backup: adapted from wsl-dev-setup's `deploy-dotfiles.sh`
 
-## 16. Aprovação
+## 16. Sign-off
 
-- [x] Arquitetura topic-based (vs 3-layer / single-script / chezmoi)
-- [x] Nerd Font auto-install
-- [x] Catppuccin Mocha embutido no starship.toml
-- [x] fnm para Node (não mise)
+- [x] Topic-based architecture (vs 3-layer / single-script / chezmoi)
+- [x] Auto-installed Nerd Font
+- [x] Catppuccin Mocha baked into starship.toml
+- [x] fnm for Node (not mise)
 - [x] PHP 8.4 via ondrej/brew
-- [x] CI Tier 1 + Tier 2 ativos desde MVP
-- [x] CI Tier 3 adiado para após estabilização
+- [x] CI Tier 1 + Tier 2 active since MVP
+- [x] CI Tier 3 deferred to post-stabilization
 - [x] Matrix: ubuntu-22.04, ubuntu-24.04, macos-latest
-- [x] Ansible descartado
-- [x] `dotfiles-template` público, marcado como template
-- [x] `dotfiles` pessoal privado, criado a partir do template
-- [x] Arquivar `wsl-dev-setup` antigo
+- [x] Ansible discarded
+- [x] `dotfiles-template` public, marked as template
+- [x] Personal `dotfiles` private, created from the template
+- [x] Archive legacy `wsl-dev-setup`
 
-**Pronto para implementação.**
+**Ready for implementation.**

@@ -1,5 +1,5 @@
 # 40-tmux
 
-Instala tmux e deploya `~/.tmux.conf` com prefixo `Ctrl+a`, mouse ativo, splits com `|` e `-`, e um status bar clean.
+Installs tmux and deploys `~/.tmux.conf` with `Ctrl+a` prefix, mouse enabled, splits via `|` and `-`, and a clean status bar.
 
-**Reload:** dentro do tmux, `Ctrl+a r`.
+**Reload:** inside tmux, `Ctrl+a r`.

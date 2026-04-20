@@ -1,36 +1,36 @@
 # 50-git
 
-Aplica `gitconfig.keys` em `~/.gitconfig` via `git config --global`, preservando `user.*` e `credential.*` já existentes. **Desde v2026-04-19** também instala fragment de shell com aliases git curtos.
+Applies `gitconfig.keys` to `~/.gitconfig` via `git config --global`, preserving any existing `user.*` and `credential.*`. **Since v2026-04-19** it also installs a shell fragment with short git aliases.
 
-## O que é deployado
+## What gets deployed
 
 ### 1. `git config --global` (via `install.sh`)
 
-Aplica `data/gitconfig.keys` — cada linha vira `git config --global <key> <value>`. Destaques:
+Applies `data/gitconfig.keys` — each line becomes `git config --global <key> <value>`. Highlights:
 
 - `init.defaultBranch=main`, `core.pager=delta`, `merge.conflictstyle=zdiff3`
 - `push.autoSetupRemote=true`, `fetch.prune=true`, `rebase.autoStash=true`
-- `include.path=~/.gitconfig.local` — permite que dotfiles pessoais sobrescrevam sem mexer no config principal
-- Aliases dentro do git: `co`, `br`, `st`, `ci`, `sw`, `lg`, `amend`, `undo`, `last`, `unstage`, `df`, `dfc`
+- `include.path=~/.gitconfig.local` — lets personal dotfiles override without touching the main config
+- Git-level aliases: `co`, `br`, `st`, `ci`, `sw`, `lg`, `amend`, `undo`, `last`, `unstage`, `df`, `dfc`
 
 ### 2. Shell fragment (via `templates/` + `lib/deploy.sh`)
 
 - `bashrc.d-50-git.sh` → `~/.bashrc.d/50-git.sh`
 - `zshrc.d-50-git.sh` → `~/.zshrc.d/50-git.sh`
 
-Aliases de shell (curtos, para o prompt, não confundir com os `git config alias.*` acima):
+Shell aliases (short, prompt-friendly — not to be confused with the `git config alias.*` ones above):
 
 - `g`, `gs`, `gl`, `gd`, `gds`, `gco`, `gb`, `gp`, `gaa`, `gc`, `grb`, `gsh`, `glog`, `gloga`
-- `whoops` — reset hard + clean -df (destrutivo)
+- `whoops` — reset hard + clean -df (destructive)
 - `gmm` — merge main into current branch
 
-Bash ainda recebe `__git_complete g|gco|gb|gp|gd` para autocompletar os aliases como se fossem o próprio git.
+Bash additionally gets `__git_complete g|gco|gb|gp|gd` so those aliases autocomplete as if they were plain `git`.
 
-## Identidade
+## Identity
 
-Se `user.name` / `user.email` não estão setados e `GIT_NAME` / `GIT_EMAIL` foram exportados, são aplicados. Caso contrário, preserva o que estiver no config. Em fluxo normal, identidade vai no dotfiles pessoal via `~/.gitconfig.local`.
+If `user.name` / `user.email` aren't set and `GIT_NAME` / `GIT_EMAIL` were exported, they are applied. Otherwise, whatever is already in the config is preserved. In the normal flow, identity comes from the personal dotfiles via `~/.gitconfig.local`.
 
-## Adicionar/remover configs
+## Adding/removing configs
 
-- **Git config global:** edite `data/gitconfig.keys` e rode `ONLY_TOPICS=50-git bash bootstrap.sh`.
-- **Aliases shell:** edite `templates/bashrc.d-50-git.sh` (e o zsh equivalente), rode o bootstrap. Para sobrescrever localmente sem editar o bootstrap, use `~/.bashrc.d/99-personal-aliases.sh` no seu dotfiles pessoal (carregado depois).
+- **Global git config:** edit `data/gitconfig.keys` and run `ONLY_TOPICS=50-git bash bootstrap.sh`.
+- **Shell aliases:** edit `templates/bashrc.d-50-git.sh` (and the zsh equivalent), then rerun the bootstrap. To override locally without editing the bootstrap, use `~/.bashrc.d/99-personal-aliases.sh` in your personal dotfiles (loaded later).

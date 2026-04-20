@@ -1,10 +1,10 @@
 # 00-core
 
-Instala as ferramentas mínimas que todo topic posterior assume e que o próprio runner depende.
+Installs the minimum tools every later topic assumes and that the runner itself depends on.
 
-**Pacotes WSL:** `git curl wget ca-certificates gnupg build-essential jq unzip gettext-base`
-**Pacotes macOS:** `git curl wget gnupg jq unzip gettext` (+ instala Homebrew se ausente)
+**WSL packages:** `git curl wget ca-certificates gnupg build-essential jq unzip gettext-base`
+**macOS packages:** `git curl wget gnupg jq unzip gettext` (+ installs Homebrew when missing)
 
-**Sem templates** — este topic não pode depender de `lib/deploy.sh`, porque o `deploy.sh` usa `envsubst`, que este topic instala. Qualquer configuração shell correspondente mora em `30-shell`.
+**No templates** — this topic cannot depend on `lib/deploy.sh`, because `deploy.sh` uses `envsubst`, which this topic installs. Any corresponding shell configuration lives in `30-shell`.
 
-**Customização:** edite `install.$OS.sh` para adicionar pacotes mínimos usados em todo lugar.
+**Customization:** edit `install.$OS.sh` to add minimum packages used everywhere.

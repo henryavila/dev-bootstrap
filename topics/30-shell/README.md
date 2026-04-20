@@ -1,20 +1,20 @@
 # 30-shell
 
-Cria os loaders modulares para bash e zsh, mais `~/.inputrc` compartilhado com readline.
+Creates the modular loaders for bash and zsh, plus a shared `~/.inputrc` for readline.
 
-**Install:** cria `~/.bashrc.d/`, `~/.zshrc.d/`, `~/.config/`, `~/.local/bin/`.
+**Install:** creates `~/.bashrc.d/`, `~/.zshrc.d/`, `~/.config/`, `~/.local/bin/`.
 
-**Templates (deployados via `lib/deploy.sh`):**
+**Templates (deployed via `lib/deploy.sh`):**
 
-- `bashrc` → `~/.bashrc`: enxuto, carrega `~/.bashrc.d/*.sh` em ordem alfabética e depois `~/.bashrc.local`.
-- `zshrc` → `~/.zshrc`: equivalente para zsh.
-- `inputrc` → `~/.inputrc`: keybindings readline compartilhados por bash, psql, gdb etc. Inclui:
-  - word-wise navigation (`Ctrl+Left`/`Right` com fallbacks para terminais que emitem escape sequences diferentes)
+- `bashrc` → `~/.bashrc`: lean, loads `~/.bashrc.d/*.sh` alphabetically and then `~/.bashrc.local`.
+- `zshrc` → `~/.zshrc`: equivalent for zsh.
+- `inputrc` → `~/.inputrc`: readline keybindings shared by bash, psql, gdb, etc. Includes:
+  - word-wise navigation (`Ctrl+Left`/`Right` with fallbacks for terminals emitting different escape sequences)
   - word kill (`Ctrl+Backspace`, `Ctrl+Delete`)
   - Home / End
-  - history prefix-search com setas Up/Down
-  - defaults de completion sensatos (case-insensitive, colored stats, mark-directories, skip-completed-text, bell-style none)
+  - history prefix-search with Up/Down
+  - sensible completion defaults (case-insensitive, colored stats, mark-directories, skip-completed-text, bell-style none)
 
-**Por que um loader?** Cada topic posterior (`10-languages`, `20-terminal-ux`, `50-git`, `60-laravel-stack`) grava seu próprio fragment em `~/.bashrc.d/NN-<name>.sh` independentemente. O loader monta tudo na ordem correta quando o shell abre.
+**Why a loader?** Every later topic (`10-languages`, `20-terminal-ux`, `50-git`, `60-laravel-stack`) writes its own fragment under `~/.bashrc.d/NN-<name>.sh` independently. The loader wires everything in the right order when the shell opens.
 
-**Personalização:** customizações pessoais (identidade do shell, prompt, aliases de projeto) vão em `~/.bashrc.local` / `~/.zshrc.local` — esses arquivos nunca são versionados pelo bootstrap nem sobrescritos. Sua camada de dotfiles pessoais pode gerenciá-los.
+**Personalization:** personal customizations (shell identity, prompt, project-specific aliases) live in `~/.bashrc.local` / `~/.zshrc.local` — these files are never versioned by the bootstrap nor overwritten. Your personal dotfiles layer manages them.

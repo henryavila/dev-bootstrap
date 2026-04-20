@@ -1,22 +1,24 @@
 # dev-bootstrap
 
-Configuração reproduzível de máquinas de desenvolvimento em WSL2/Ubuntu, macOS 26 e Windows (via WSL).
+Reproducible dev-machine setup for WSL2/Ubuntu, macOS, and Windows (via WSL).
 
-Um dos três repos de uma arquitetura em camadas:
+> **Languages:** English (this file) · [Português](README.pt-BR.md)
 
-| Repo | Papel | Visibilidade |
-|------|-------|--------------|
-| **dev-bootstrap** (este) | Instala ferramentas e aplica configs opinionadas globais | público |
-| [dotfiles-template](https://github.com/henryavila/dotfiles-template) | Skeleton para dotfiles pessoais (`.example` files + `install.sh`) | público (marcado como template) |
-| `<user>/dotfiles` | Dotfiles pessoais, derivado do template via "Use this template" | **privado** (cada dev) |
+One of three repos in a layered architecture:
 
-**Divisão de responsabilidades**: bootstrap instala CLI/daemon/stack e grava configs universais (bashrc, inputrc, gitconfig global, fragments em `~/.bashrc.d/`); dotfiles pessoal aplica identidade + overrides.
+| Repo | Role | Visibility |
+|------|------|------------|
+| **dev-bootstrap** (this) | Installs tools and applies opinionated global configs | public |
+| [dotfiles-template](https://github.com/henryavila/dotfiles-template) | Skeleton for personal dotfiles (`.example` files + `install.sh`) | public (GitHub template) |
+| `<user>/dotfiles` | Personal dotfiles, derived from the template via *Use this template* | **private** (per user) |
+
+**Separation of concerns:** the bootstrap installs CLI/daemons/stack and writes universal configs (bashrc, inputrc, global gitconfig, fragments in `~/.bashrc.d/`); personal dotfiles apply identity + overrides on top.
 
 ## Quickstart
 
-### Windows (sem WSL)
+### Windows (before WSL)
 
-PowerShell **como administrador**:
+PowerShell **as Administrator**:
 
 ```powershell
 git clone https://github.com/henryavila/dev-bootstrap "$env:USERPROFILE\dev-bootstrap"
@@ -24,11 +26,11 @@ cd "$env:USERPROFILE\dev-bootstrap"
 .\windows\install-wsl.ps1
 ```
 
-Reinicie, abra o Ubuntu recém-instalado e siga abaixo.
+Restart, open the freshly-installed Ubuntu, and follow the WSL instructions below.
 
-### WSL2/Ubuntu ou macOS
+### WSL2/Ubuntu or macOS
 
-**Modo interativo (default):**
+**Interactive mode (default):**
 
 ```bash
 git clone https://github.com/henryavila/dev-bootstrap ~/dev-bootstrap
@@ -36,131 +38,139 @@ cd ~/dev-bootstrap
 bash bootstrap.sh
 ```
 
-Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
+Running without any control env var opens a `whiptail` menu that asks:
 
-1. Quais topics opt-in ativar (laravel-stack / remote-access / editor / dotfiles-pessoal).
-2. `GIT_NAME` / `GIT_EMAIL` (só se não estiverem setados).
-3. `DOTFILES_REPO` (só se você marcou `95-dotfiles-personal`).
-4. Confirmação com resumo — cancelar em qualquer tela aborta sem efeito.
+1. Which opt-in topics to enable (`60-laravel-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` — all pre-checked by default; deselect what you don't want).
+2. `GIT_NAME` / `GIT_EMAIL` (skipped silently when `git config --global` already has them).
+3. `DOTFILES_REPO` + `DOTFILES_DIR` (only when `95-dotfiles-personal` is checked).
+4. `CODE_DIR` (only when `60-laravel-stack` is checked).
+5. Final confirmation with a summary — cancelling at any screen aborts cleanly (no partial state).
 
-Se `whiptail` não estiver instalado, o bootstrap o instala antes de abrir o menu (`apt-get install whiptail` no Linux/WSL; `brew install newt` no Mac).
+If `whiptail` isn't installed, the bootstrap installs it first (`apt install whiptail` on Linux/WSL; `brew install newt` on Mac — whiptail ships inside the `newt` formula).
 
-**Modo automação / CI** (sem menu — usa env vars e flags):
+**Automation / CI mode** (no menu — env vars and flags):
 
 ```bash
-# ver plano sem executar
-DRY_RUN=1 bash bootstrap.sh
+# preview the plan without executing
+bash bootstrap.sh --dry-run
 
-# pular menu mesmo no TTY
+# skip the menu even on a TTY
 NON_INTERACTIVE=1 bash bootstrap.sh
 bash bootstrap.sh --non-interactive
 
-# só alguns topics
+# run specific topics only
 ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
 
-# ativar Laravel + remote access
+# enable opt-in topics
 INCLUDE_LARAVEL=1 INCLUDE_REMOTE=1 bash bootstrap.sh
 
-# aplicar também dotfiles pessoais no fim
+# pull personal dotfiles at the end
 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
 ```
 
-O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) qualquer var de controle (`INCLUDE_*`, `DOTFILES_REPO`, `ONLY_TOPICS`) já vem do env; (c) não há TTY (pipe, cron, CI).
+The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `DOTFILES_REPO`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
 
-Na primeira linha (após o menu) roda `sudo -v` (warmup do cache — prompta senha 1x, os topics subsequentes são silenciosos durante a janela de ~5–15min).
+Right after the menu (or immediately, when skipped), the bootstrap runs `sudo -v` to warm up the sudo cache — one password prompt, then subsequent `sudo` calls within the cache window (~5–15min) are silent.
 
 ## Topics
 
-| Topic | Instala / Aplica | Opt-in via |
-|-------|------------------|------------|
+| Topic | Installs / applies | Opt-in |
+|-------|--------------------|--------|
 | `00-core` | git, curl, build-essential, jq, unzip, envsubst (gettext) | — |
 | `10-languages` | Node via fnm + LTS, PHP 8.4 (ondrej ppa / brew), Python 3 | — |
-| `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (com Catppuccin Mocha embutido), lazygit, delta + Nerd Font CaskaydiaCove | — |
-| `30-shell` | `~/.bashrc`/`~/.zshrc` loaders + `~/.inputrc` (word-kill, completion niceties) | — |
-| `40-tmux` | tmux + `~/.tmux.conf` (prefixo `Ctrl+a`) | — |
-| `50-git` | gitconfig global opinionado (delta, zdiff3, aliases) + fragment `~/.bashrc.d/50-git.sh` com aliases `g`/`gs`/`gco`/… | — |
-| `60-laravel-stack` | MySQL, Redis, Nginx, PHP-FPM, mkcert, catchall `*.localhost` | `INCLUDE_LARAVEL=1` |
-| `70-remote-access` | sshd (com hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + **drop-in systemd** que seta MTU 1200 em `tailscale0` pra prevenir SSH KEX PQ hang | `INCLUDE_REMOTE=1` |
-| `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — fundação do Claude Sync cross-machine do dotfiles | — |
-| `90-editor` | wrapper `typora-wait` para usar como `$EDITOR` | `INCLUDE_EDITOR=1` |
-| `95-dotfiles-personal` | clona `$DOTFILES_REPO` em `$DOTFILES_DIR` (default `~/dotfiles`) + roda `install.sh` | `DOTFILES_REPO=<url>` |
+| `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove | — |
+| `30-shell` | `~/.bashrc` / `~/.zshrc` loaders + `~/.inputrc` (word-kill, completion niceties) | — |
+| `40-tmux` | tmux + `~/.tmux.conf` (prefix `Ctrl+a`) | — |
+| `50-git` | opinionated global gitconfig (delta, zdiff3, aliases) + `~/.bashrc.d/50-git.sh` with aliases `g` / `gs` / `gco` / `whoops` / `gmm` + `__git_complete` | — |
+| `60-laravel-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, `*.localhost` catchall | `INCLUDE_LARAVEL=1` |
+| `70-remote-access` | sshd (hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + systemd drop-in setting MTU 1200 on `tailscale0` (prevents SSH KEX PQ hang) | `INCLUDE_REMOTE=1` |
+| `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — foundation for cross-machine Claude Sync via the dotfiles layer | — |
+| `90-editor` | `~/.local/bin/typora-wait` — opens `.md` files in the Typora GUI from the terminal; WSL delegates to `Typora.exe` via interop (`wslpath -w`), macOS uses `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
+| `95-dotfiles-personal` | clones `$DOTFILES_REPO` into `$DOTFILES_DIR` (default `~/dotfiles`) + runs its `install.sh` | `DOTFILES_REPO=<url>` |
 
-Cada topic tem um `README.md` próprio com detalhes. Fluxo internamente: `install.$OS.sh` (se existe) ou `install.sh` (fallback OS-agnóstico), depois `lib/deploy.sh` processa `templates/` quando houver. Templates `bashrc.d-<topic>.sh` / `zshrc.d-<topic>.sh` mapeam automaticamente pra `~/.bashrc.d/<topic>.sh` / `~/.zshrc.d/<topic>.sh`.
+Every topic has its own `README.md`. Internal flow: `install.$OS.sh` (if present) or `install.sh` (OS-agnostic fallback), then `lib/deploy.sh` processes `templates/` when applicable. Templates named `bashrc.d-<topic>.sh` / `zshrc.d-<topic>.sh` map automatically to `~/.bashrc.d/<topic>.sh` / `~/.zshrc.d/<topic>.sh`.
 
-## Env vars reconhecidas
+## Env vars and CLI flags
 
-Primariamente para modo automação/CI. Em modo interativo (default), o menu preenche as mesmas vars.
+Primarily for automation / CI — the interactive menu fills these in for human use. Any pre-existing env var wins over menu defaults.
 
-| Var | Efeito |
-|-----|--------|
-| `NON_INTERACTIVE=1` | pula o menu mesmo em TTY (equivalente a `--non-interactive`) |
-| `SKIP_TOPICS` | lista espaço-separada de topics a pular |
-| `ONLY_TOPICS` | rodar apenas estes topics |
-| `DRY_RUN=1` | imprime o que rodaria sem executar (pula `sudo -v`) |
-| `DOTFILES_REPO` | URL/path do repo dotfiles pessoal (aceita `file://` para testes locais) |
-| `DOTFILES_DIR` | destino do clone (default `~/dotfiles`) |
-| `GIT_NAME` / `GIT_EMAIL` | identidade — aplicada só se `user.name`/`user.email` não existem (topic 50-git preserva existentes) |
-| `CODE_DIR` | raiz de projetos (default `~/code/web`) |
-| `INCLUDE_LARAVEL` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | ativa topic opt-in |
-| `NO_COLOR=1` | desabilita output colorido (auto se não for TTY) |
+| Var / flag | Effect |
+|------------|--------|
+| `--non-interactive` / `NON_INTERACTIVE=1` | Skip the menu even on a TTY |
+| `--dry-run` / `DRY_RUN=1` | Print what would run without executing (also skips `sudo -v`) |
+| `--help` / `-h` | Usage message |
+| `SKIP_TOPICS` | space-separated list of topics to skip |
+| `ONLY_TOPICS` | run only these topics |
+| `DOTFILES_REPO` | URL/path of the personal dotfiles repo (accepts `file://` for local testing) |
+| `DOTFILES_DIR` | clone destination (default `~/dotfiles`) |
+| `GIT_NAME` / `GIT_EMAIL` | identity — applied only when `user.name` / `user.email` aren't set yet (topic 50-git preserves existing values) |
+| `CODE_DIR` | projects root (default `~/code/web`) |
+| `INCLUDE_LARAVEL` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | enable opt-in topics |
+| `NO_COLOR=1` | disable colored output (auto when not a TTY) |
+
+## MySQL 8 notes
+
+- **WSL**: installs `mysql-server-8.0` explicitly — not the meta `mysql-server` package, which can resolve to MariaDB on some Debian derivatives.
+- **Mac**: brew formula `mysql@8.0` (the default `mysql` formula tracks 9.x). Because `mysql@8.0` is keg-only, the installer runs `brew link --force --overwrite mysql@8.0` so `mysql` / `mysqladmin` / `mysqldump` end up on `$PATH`.
+- **Mac escape hatch**: if `brew install mysql@8.0` fails for any reason, install via Oracle's [DMG installer](https://dev.mysql.com/downloads/mysql/) (it drops binaries in `/usr/local/mysql`). The bootstrap detects that path and skips brew automatically.
 
 ## Logs
 
-Saída completa de cada execução em `/tmp/dev-bootstrap-<os>-<timestamp>.log`. O bootstrap imprime o path no início.
+Full output of every run is written to `/tmp/dev-bootstrap-<os>-<timestamp>.log`. The bootstrap prints the path near the top.
 
-## Estrutura
+## Project structure
 
 ```
 dev-bootstrap/
-├── bootstrap.sh              # runner — detect OS, warmup sudo, roda topics
+├── bootstrap.sh              # runner — OS detection, interactive menu, sudo warmup, topic orchestration
 ├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh, menu.sh
-├── topics/NN-<nome>/         # unidades idempotentes de instalação
-│   ├── install.$OS.sh        # WSL ou Mac
-│   ├── templates/            # arquivos deployados via lib/deploy.sh
-│   ├── verify.sh             # checagem não-destrutiva
-│   └── README.md             # doc por topic
-├── windows/install-wsl.ps1   # bootstrap Windows → WSL2 + Nerd Font
-├── docs/SPEC.md              # especificação técnica completa
+├── topics/NN-<name>/         # idempotent installation units
+│   ├── install.$OS.sh        # WSL or Mac
+│   ├── templates/            # files deployed via lib/deploy.sh
+│   ├── verify.sh             # non-destructive check
+│   └── README.md             # per-topic docs
+├── windows/install-wsl.ps1   # Windows bootstrap → WSL2 + Nerd Font
+├── docs/SPEC.md              # technical specification
 └── .github/workflows/        # CI
 ```
 
 ## Releases
 
-| Tag | Destaque |
-|-----|---------|
-| `v2026-04-19` | Enriqueceu `~/.inputrc` (word-kill, completion niceties) + novo fragment `topics/50-git/templates/bashrc.d-50-git.sh` com aliases `g`/`gs`/`gco`/`whoops`/`gmm` + `__git_complete` (bash). |
-| `v2026-04-20` | Topic `80-claude-code` split em `install.wsl.sh` / `install.mac.sh`; **instala Syncthing daemon** pro Claude Sync cross-machine (folder `claude/` no dotfiles-template usa `.stignore` pra controlar o que replica). |
-| `v2026-04-21` | Topic `70-remote-access` automatiza o fix Tailscale MTU via drop-in `/etc/systemd/system/tailscaled.service.d/mtu.conf` (Linux). Mac tem script `scripts/mac-tailscale-mtu-fix.sh` on-demand. |
-| *(hotfixes pós-v2026-04-21)* | Fix TOML scope bug em `20-terminal-ux/templates/starship.toml`; bootstrap passou a rodar `sudo -v` warmup no início; remoção de legacy `/etc/sudoers.d/10-${USER}-nopasswd` (attack surface indesejada — `sudo -v` cache resolve). |
+| Tag | Highlights |
+|-----|------------|
+| `v2026-04-19` | Enriched `~/.inputrc` (word-kill, completion niceties) + new `topics/50-git/templates/bashrc.d-50-git.sh` with aliases `g`/`gs`/`gco`/`whoops`/`gmm` + `__git_complete` (bash). |
+| `v2026-04-20` | Topic `80-claude-code` split into `install.wsl.sh` / `install.mac.sh`; **installs Syncthing daemon** for cross-machine Claude Sync (the `claude/` folder in dotfiles-template uses `.stignore` to control what replicates). |
+| `v2026-04-21` | Topic `70-remote-access` automates the Tailscale MTU fix via drop-in `/etc/systemd/system/tailscaled.service.d/mtu.conf` (Linux). Mac ships an on-demand `scripts/mac-tailscale-mtu-fix.sh`. Hotfixes: starship TOML scope bug fix, `sudo -v` warmup on bootstrap start, removal of legacy `/etc/sudoers.d/10-${USER}-nopasswd`. |
+| `v2026-04-22` | **Interactive whiptail menu is the new default** (opt-in topic selection + git identity + paths); `--non-interactive` and `--dry-run` CLI flags. MySQL 8 pinned explicitly (`mysql-server-8.0` WSL / `mysql@8.0` Mac) with Oracle DMG escape hatch. Topic `90-editor` repositioned: `typora-wait` handles WSL→Windows Typora via `wslpath -w` interop and uses `open -W -a Typora` on macOS (LaunchServices-based discovery). |
 
-### Discipline de release
+### Release discipline
 
-Mudanças estruturais (novo topic, mudança em `lib/`, `install.sh`, `bootstrap.sh`) levam:
+Structural changes (new topic, changes in `lib/`, `install.sh`, `bootstrap.sh`) go through:
 
-1. Commit com **migration note** no corpo — "forks existentes que já rodaram X devem Y". Tempo estimado, arquivos afetados, comando para aplicar.
-2. Tag datada: `git tag -a v2026-MM-DD -m "resumo"`.
-3. `gh release create v2026-MM-DD --notes-from-tag` pós-push.
+1. Commit with a **migration note** in the body — *forks that already ran X should Y*. Estimated time, affected files, command to apply.
+2. Dated tag: `git tag -a v2026-MM-DD -m "summary"`.
+3. `gh release create v2026-MM-DD --notes-from-tag` after pushing.
 
-Hotfixes sem mudança estrutural (bug em template, typo em README) usam commit normal sem tag.
+Hotfixes with no structural change (template bug, README typo) use regular commits without a tag.
 
 ## CI
 
-- `.github/workflows/lint.yml` (Tier 1) — shellcheck + `bash -n` em todo push/PR.
-- `.github/workflows/integration.yml` (Tier 2, previsto em v1.1) — roda `bootstrap.sh` em matrix `ubuntu-22.04`, `ubuntu-24.04`, `macos-latest`, valida idempotência (2º run = noop) e executa `verify.sh` de cada topic.
+- `.github/workflows/lint.yml` (Tier 1) — shellcheck + `bash -n` on every push/PR.
+- `.github/workflows/integration.yml` (Tier 2, planned for v1.1) — runs `bootstrap.sh` against a matrix of `ubuntu-22.04`, `ubuntu-24.04`, `macos-latest`, validates idempotency (2nd run = noop), and executes each topic's `verify.sh`.
 
-## Dotfiles pessoais
+## Personal dotfiles
 
-Este repo **nunca** versiona configs pessoais (SSH, identidade git, aliases project-specific). Para isso, use [dotfiles-template](https://github.com/henryavila/dotfiles-template): clique "Use this template" no GitHub, marque o repo como **privado**, e aponte `DOTFILES_REPO=<url>` antes de rodar `bootstrap.sh`.
+This repo **never** versions personal configs (SSH, git identity, project-specific aliases). For that, use [dotfiles-template](https://github.com/henryavila/dotfiles-template): click *Use this template* on GitHub, mark the new repo **private**, and either let the interactive menu collect `DOTFILES_REPO` or set the env var before running `bootstrap.sh`.
 
-## Contribuir
+## Contributing
 
-1. Adicionar topic novo: copiar estrutura de `topics/00-core/`.
-2. Idempotência obrigatória: segunda execução = no-op (`already installed`, `up to date`). CI valida.
-3. Antes de abrir PR: `shellcheck topics/<topic>/*.sh` deve passar.
+1. Adding a new topic: copy the structure of `topics/00-core/`.
+2. Idempotency required: a second run must be a no-op (`already installed`, `up to date`). CI enforces this.
+3. Before opening a PR: `shellcheck topics/<topic>/*.sh` must pass.
 
-## Veja também
+## See also
 
-- [`docs/SPEC.md`](docs/SPEC.md) — especificação técnica (arquitetura, critérios de aceitação, roadmap).
-- [`docs/ALIASES.md`](docs/ALIASES.md) — inventário dos aliases universais (shell + git) que todo dev que rodou o bootstrap recebe.
-- `topics/<topic>/README.md` — customização e gotchas por topic.
-- [`dotfiles-template`](https://github.com/henryavila/dotfiles-template) — o outro lado da camada: overrides pessoais.
+- [`docs/SPEC.md`](docs/SPEC.md) — technical specification (architecture, acceptance criteria, roadmap).
+- [`docs/ALIASES.md`](docs/ALIASES.md) — inventory of universal aliases (shell + git) that every dev who ran the bootstrap receives.
+- `topics/<topic>/README.md` — per-topic customization and gotchas.
+- [`dotfiles-template`](https://github.com/henryavila/dotfiles-template) — the flip side of the layer: personal overrides.

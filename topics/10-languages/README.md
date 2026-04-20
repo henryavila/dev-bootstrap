@@ -1,12 +1,12 @@
 # 10-languages
 
-Instala runtimes de linguagem:
+Installs language runtimes:
 
-- **Node LTS** via `fnm` (WSL: installer oficial; Mac: brew)
-- **PHP 8.4** + extensões comuns (WSL: PPA `ondrej/php`; Mac: `brew install php@8.4`)
-- **Composer** (WSL: installer oficial com verificação de checksum; Mac: brew)
-- **Python corrente** (WSL: `python3` apt; Mac: `python@3.13` brew)
+- **Node LTS** via `fnm` (WSL: official installer; Mac: brew)
+- **PHP 8.4** + common extensions (WSL: `ondrej/php` PPA; Mac: `brew install php@8.4`)
+- **Composer** (WSL: official installer with checksum verification; Mac: brew)
+- **Current Python** (WSL: `python3` via apt; Mac: `python@3.13` via brew)
 
-Os fragments em `templates/` configuram `fnm env --use-on-cd` e o `PATH` do Composer para bash e zsh.
+The fragments in `templates/` configure `fnm env --use-on-cd` and Composer's `PATH` for both bash and zsh.
 
-**Customização:** trocar versão do PHP editando `install.*.sh`. Para versões múltiplas de Node, use `fnm use <versão>` por projeto.
+**Customization:** change PHP version by editing `install.*.sh`. For multiple Node versions, use `fnm use <version>` per project.

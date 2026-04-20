@@ -1,87 +1,87 @@
 # 70-remote-access (opt-in)
 
-Ativado com `INCLUDE_REMOTE=1 bash bootstrap.sh`.
+Enabled via `INCLUDE_REMOTE=1 bash bootstrap.sh`.
 
-**Instala:** `openssh-server` + `mosh` + `tailscale`. Ativa sshd, habilita systemd no WSL (`/etc/wsl.conf`).
+**Installs:** `openssh-server` + `mosh` + `tailscale`. Activates sshd, enables systemd on WSL (`/etc/wsl.conf`).
 
-**Remove legacy NOPASSWD** (desde v2026-04-22): versões anteriores do topic criavam `/etc/sudoers.d/10-${USER}-nopasswd` com `NOPASSWD: ALL` para conveniência durante bootstrap. Isso era attack surface permanente desnecessária — o `bootstrap.sh` principal agora roda `sudo -v` no início (warmup do cache, ~5-15min), cobrindo toda a duração do bootstrap com um único prompt. Forks que já tinham o arquivo: este topic remove automaticamente na próxima execução.
+**Legacy NOPASSWD removal** (since v2026-04-22): earlier versions of this topic created `/etc/sudoers.d/10-${USER}-nopasswd` with `NOPASSWD: ALL` as a convenience during bootstrap. That was unnecessary permanent attack surface — the main `bootstrap.sh` now runs `sudo -v` at startup (cache warmup, ~5–15 min), covering the whole bootstrap duration with a single prompt. Forks that already had the file: this topic removes it automatically on the next run.
 
-**Aplica (WSL):** drop-in systemd para corrigir MTU do tailscale0 — ver seção "Tailscale MTU gotcha" abaixo.
+**Applies (WSL):** systemd drop-in to fix the tailscale0 MTU — see the "Tailscale MTU gotcha" section below.
 
 **Deploys:**
-- `/etc/ssh/sshd_config.d/99-${USER}.conf` com hardening (PasswordAuth off, PubkeyAuth on, AllowUsers restrito).
-  `envsubst` expande `${USER}`. `lib/deploy.sh` detecta o path fora de `$HOME` e eleva via sudo automaticamente.
-- **(WSL)** `/etc/systemd/system/tailscaled.service.d/mtu.conf` — drop-in que roda `ip link set tailscale0 mtu 1200` a cada start do `tailscaled`. Idempotente: só reescreve se conteúdo difere.
+- `/etc/ssh/sshd_config.d/99-${USER}.conf` with hardening (PasswordAuth off, PubkeyAuth on, AllowUsers restricted).
+  `envsubst` expands `${USER}`. `lib/deploy.sh` detects the path sits outside `$HOME` and elevates via sudo automatically.
+- **(WSL)** `/etc/systemd/system/tailscaled.service.d/mtu.conf` — drop-in that runs `ip link set tailscale0 mtu 1200` at every `tailscaled` start. Idempotent: only rewrites if content differs.
 
-**Pós-install:**
-1. Sair e rodar `wsl --shutdown` (Windows) para aplicar systemd.
-2. `sudo tailscale up` para autenticar.
-3. Copiar chave pública no `~/.ssh/authorized_keys` do usuário.
+**Post-install:**
+1. Exit and run `wsl --shutdown` (Windows) to apply systemd.
+2. `sudo tailscale up` to authenticate.
+3. Copy your public key into the user's `~/.ssh/authorized_keys`.
 
 ---
 
-## Tailscale MTU gotcha (SSH KEX pós-quântico)
+## Tailscale MTU gotcha (post-quantum SSH KEX)
 
-### Sintoma
+### Symptom
 
-`ssh <host>` via Tailscale trava indefinidamente em `SSH2_MSG_KEX_ECDH_REPLY`, mesmo com `tailscale ping` respondendo em <10ms. Afeta apenas conexões com OpenSSH 9.6+ (que negocia KEX pós-quântico por padrão).
+`ssh <host>` over Tailscale hangs forever at `SSH2_MSG_KEX_ECDH_REPLY`, even with `tailscale ping` returning in <10 ms. Only affects connections with OpenSSH 9.6+ (which negotiates post-quantum KEX by default).
 
-### Causa
+### Cause
 
-Pipeline do bug:
+Bug pipeline:
 
-1. Tailscale usa WireGuard com MTU 1280 (default).
-2. OpenSSH 9.6+ negocia `sntrup761x25519-sha512@openssh.com` → mensagens KEX ~3–4 KB.
-3. No túnel MTU 1280, sem Path MTU Discovery confiável, fragmentos grandes se perdem silenciosamente.
-4. Cliente espera `KEX_ECDH_REPLY` que nunca chega → timeout após ~2min.
+1. Tailscale uses WireGuard with a default MTU of 1280.
+2. OpenSSH 9.6+ negotiates `sntrup761x25519-sha512@openssh.com` → KEX messages of ~3–4 KB.
+3. Inside an MTU-1280 tunnel, without reliable Path MTU Discovery, large fragments are silently dropped.
+4. The client waits on a `KEX_ECDH_REPLY` that never arrives → timeout after ~2 min.
 
-Reduzir MTU **cliente-side via `~/.ssh/config` (`KexAlgorithms curve25519`) sozinho NÃO resolve** — hostkeys, banners e outras mensagens do handshake também podem exceder MTU.
+Reducing MTU **client-side via `~/.ssh/config` (`KexAlgorithms curve25519`) alone does NOT fix it** — host keys, banners, and other handshake messages can also exceed MTU.
 
-### Fix aplicado (WSL — automatizado)
+### Fix applied (WSL — automated)
 
-Este topic grava em `/etc/systemd/system/tailscaled.service.d/mtu.conf`:
+This topic writes `/etc/systemd/system/tailscaled.service.d/mtu.conf`:
 
 ```ini
 [Service]
 ExecStartPost=/usr/sbin/ip link set tailscale0 mtu 1200
 ```
 
-O drop-in roda **toda vez** que `tailscaled` inicia, então persiste reboots + re-installs do Tailscale. Custo teórico em throughput dentro do túnel: ~6%. Imperceptível em uso SSH/mosh.
+The drop-in runs **every time** `tailscaled` starts, so it survives reboots and Tailscale reinstalls. Theoretical throughput cost inside the tunnel: ~6%. Imperceptible for SSH/mosh usage.
 
-Idempotência: install.wsl.sh lê o arquivo antes de reescrever — se já tem o conteúdo exato, não toca. Se difere, reescreve + `daemon-reload` + (se `tailscaled` ativo) `restart tailscaled`.
+Idempotency: `install.wsl.sh` reads the file before writing — if content matches exactly, it doesn't touch it. If it differs, it rewrites + `daemon-reload` + (if `tailscaled` is active) `restart tailscaled`.
 
-### Fix no macOS (manual)
+### Fix on macOS (manual)
 
-Tailscale no Mac é distribuído como `.app` (via `brew install --cask tailscale`). O daemon é gerenciado pela app; sem drop-in systemd equivalente. A interface é `utun<N>` com N variável.
+Tailscale on Mac ships as a `.app` (via `brew install --cask tailscale`). The daemon is managed by the app itself; no equivalent systemd drop-in. The interface is `utun<N>` with variable N.
 
-O topic instala `scripts/mac-tailscale-mtu-fix.sh` que:
-1. Detecta a interface Tailscale atual (via `tailscale ip -4` + `ifconfig` scan das `utun*`).
-2. Roda `ifconfig <utun> mtu 1200`.
+The topic installs `scripts/mac-tailscale-mtu-fix.sh`, which:
+1. Detects the current Tailscale interface (via `tailscale ip -4` + `ifconfig` scan of `utun*`).
+2. Runs `ifconfig <utun> mtu 1200`.
 
-**Uso on-demand** (se experimentar hang em SSH via Tailscale):
+**On-demand usage** (when SSH hangs via Tailscale):
 
 ```bash
 sudo bash ~/dev-bootstrap/topics/70-remote-access/scripts/mac-tailscale-mtu-fix.sh
 ```
 
-Não persiste reboot — re-rodar após boot ou re-login. Para automação persistente, criar LaunchDaemon custom que rode o script a cada inicialização (TODO — não automatizado para não ser invasivo com a app gerenciada pelo usuário).
+Does not persist reboots — re-run after boot or re-login. For persistent automation, add a custom LaunchDaemon that runs the script at startup (TODO — not automated to avoid being invasive with the user-managed app).
 
-### Verificação
+### Verification
 
-- **WSL**: `ip link show tailscale0` deve mostrar `mtu 1200`. O `verify.sh` deste topic checa o drop-in + o MTU aplicado se a interface estiver up.
-- **Mac**: `ifconfig utun<N> | grep mtu` onde `<N>` é a interface Tailscale atual.
+- **WSL**: `ip link show tailscale0` should report `mtu 1200`. The topic's `verify.sh` checks the drop-in + the applied MTU if the interface is up.
+- **Mac**: `ifconfig utun<N> | grep mtu` where `<N>` is the current Tailscale interface.
 
-### Referências
+### References
 
-Diagnóstico detalhado + variações conhecidas em `ssh-tailscale-mtu-gotcha.md` (memory file do dotfiles pessoal).
+Detailed diagnostics + known variations in `ssh-tailscale-mtu-gotcha.md` (memory file in the personal dotfiles).
 
 ---
 
 ## Skip
 
-Se você não usa Tailscale nem mosh:
+If you don't use Tailscale or mosh:
 
 ```bash
-# não setar INCLUDE_REMOTE=1 (default skip)
+# don't set INCLUDE_REMOTE=1 (default skip)
 bash bootstrap.sh
 ```

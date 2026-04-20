@@ -1,5 +1,5 @@
 # docs
 
-- [`SPEC.md`](SPEC.md) — especificação técnica (arquitetura, topics, critérios de aceitação, roadmap).
+- [`SPEC.md`](SPEC.md) — technical specification (architecture, topics, acceptance criteria, roadmap).
 
-Topic-specific READMEs ficam em `topics/<topic>/README.md`.
+Topic-specific READMEs live under `topics/<topic>/README.md`.

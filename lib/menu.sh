@@ -78,9 +78,9 @@ run_menu() {
         --checklist \
         "Select optional topics to install (SPACE to toggle, ENTER to confirm):" \
         20 78 5 \
-        "laravel"  "60-laravel-stack     — PHP 8.4 + nginx + MariaDB"       ON \
+        "laravel"  "60-laravel-stack     — PHP 8.4 + nginx + MySQL 8"       ON \
         "remote"   "70-remote-access     — SSH server + Tailscale + Syncthing" ON \
-        "editor"   "90-editor            — Neovim (LazyVim preset)"         ON \
+        "editor"   "90-editor            — typora-wait: open .md in Typora GUI from CLI" ON \
         "dotfiles" "95-dotfiles-personal — clone your personal dotfiles"    ON \
         3>&1 1>&2 2>&3) || _menu_cancel
 

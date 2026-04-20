@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 60-laravel-stack (WSL): MySQL, Redis, Nginx, PHP-FPM 8.4, mkcert.
+# 60-laravel-stack (WSL): MySQL 8, Redis, Nginx, PHP-FPM 8.4, mkcert.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +9,10 @@ source "$HERE/../../lib/log.sh"
 # Expose NGINX_CONF_DIR for deploy.sh (see DEPLOY file)
 export NGINX_CONF_DIR="/etc/nginx/sites-enabled"
 
-pkgs=(mysql-server redis-server nginx php8.4-fpm)
+# Explicit mysql-server-8.0 (not the meta `mysql-server`) to guarantee MySQL 8
+# on any Ubuntu release — the meta-package can resolve to MariaDB on some
+# Debian-derived distros.
+pkgs=(mysql-server-8.0 redis-server nginx php8.4-fpm)
 missing=()
 for p in "${pkgs[@]}"; do
     if dpkg -s "$p" >/dev/null 2>&1; then

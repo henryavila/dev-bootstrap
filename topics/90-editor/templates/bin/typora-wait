@@ -1,26 +1,82 @@
 #!/usr/bin/env bash
-# typora-wait — open a file in Typora and block until the window is closed.
-# Usable as $EDITOR for `git commit`, `crontab -e`, etc.
+# typora-wait — open a .md file in Typora and block until the window is closed.
+#
+# Primary use case: reading .md files from the terminal in the Typora GUI.
+# On WSL, Typora lives on the Windows side — this script delegates to
+# Typora.exe via interop and converts paths through `wslpath -w`.
+#
+# Not meant as $EDITOR anymore (nvim covers that). Invoke directly:
+#   typora-wait notes.md
 set -euo pipefail
 
-# Locate Typora across platforms
-TYPORA=""
-case "$(uname -s)" in
-    Darwin)
-        if [ -x "/Applications/Typora.app/Contents/MacOS/Typora" ]; then
-            TYPORA="/Applications/Typora.app/Contents/MacOS/Typora"
-        fi
-        ;;
-    Linux)
-        if command -v typora >/dev/null 2>&1; then
-            TYPORA="$(command -v typora)"
-        fi
-        ;;
-esac
-
-if [ -z "$TYPORA" ]; then
-    echo "typora-wait: Typora executable not found" >&2
-    exit 1
+if [ $# -eq 0 ]; then
+    echo "typora-wait: usage: typora-wait <file.md> [...]" >&2
+    exit 2
 fi
 
-"$TYPORA" --wait "$@"
+case "$(uname -s)" in
+    Darwin)
+        # Delegate to LaunchServices via `open -W -a Typora`: resolves the app
+        # by name in any registered location (/Applications, ~/Applications,
+        # or wherever Spotlight indexed it), and -W blocks until Typora exits.
+        # More robust than hardcoding /Applications/Typora.app/Contents/MacOS.
+        if ! osascript -e 'id of app "Typora"' >/dev/null 2>&1; then
+            echo "typora-wait: Typora.app not installed / not registered with LaunchServices" >&2
+            echo "  install: brew install --cask typora" >&2
+            exit 1
+        fi
+        exec open -W -a Typora "$@"
+        ;;
+
+    Linux)
+        # WSL detected → call Windows Typora.exe via interop.
+        if grep -qi microsoft /proc/version 2>/dev/null; then
+            win_typora=""
+            for candidate in \
+                "/mnt/c/Program Files/Typora/Typora.exe" \
+                "/mnt/c/Program Files (x86)/Typora/Typora.exe" \
+                "/mnt/c/Users/${USER}/AppData/Local/Programs/Typora/Typora.exe"; do
+                if [ -x "$candidate" ]; then
+                    win_typora="$candidate"
+                    break
+                fi
+            done
+
+            if [ -z "$win_typora" ]; then
+                echo "typora-wait: Typora.exe not found on Windows side" >&2
+                echo "  searched:" >&2
+                echo "    C:\\Program Files\\Typora\\" >&2
+                echo "    C:\\Program Files (x86)\\Typora\\" >&2
+                echo "    %LOCALAPPDATA%\\Programs\\Typora\\" >&2
+                exit 1
+            fi
+
+            # Convert any existing file arg from Linux → Windows path form.
+            # Non-file args (flags) pass through untouched.
+            args=()
+            for arg in "$@"; do
+                if [ -e "$arg" ]; then
+                    args+=("$(wslpath -w "$arg")")
+                else
+                    args+=("$arg")
+                fi
+            done
+            exec "$win_typora" --wait "${args[@]}"
+        fi
+
+        # Native Linux Typora (.deb / AppImage already on PATH)
+        if command -v typora >/dev/null 2>&1; then
+            exec typora --wait "$@"
+        fi
+
+        echo "typora-wait: Typora not found" >&2
+        echo "  WSL: install Typora on Windows and re-run" >&2
+        echo "  Linux: install typora .deb/AppImage and ensure it's on PATH" >&2
+        exit 1
+        ;;
+
+    *)
+        echo "typora-wait: unsupported platform $(uname -s)" >&2
+        exit 1
+        ;;
+esac
