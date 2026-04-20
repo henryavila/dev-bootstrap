@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 10-languages shell fragment (zsh)
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 

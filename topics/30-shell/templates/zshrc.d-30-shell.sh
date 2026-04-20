@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 30-shell shell fragment (zsh)
 # zsh equivalents of the bash fragment: completion + dircolors + grep aliases.
 # zsh has its own globstar-like glob built-in (extended_glob); enable it.

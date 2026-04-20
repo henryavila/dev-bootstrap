@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 20-terminal-ux shell fragment (zsh)
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 
@@ -17,6 +18,7 @@ for f in \
     /usr/local/opt/fzf/shell/completion.zsh \
     /usr/share/doc/fzf/examples/key-bindings.zsh \
     /usr/share/doc/fzf/examples/completion.zsh; do
+    # shellcheck source=/dev/null
     [ -f "$f" ] && source "$f"
 done
 

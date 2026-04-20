@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # ~/.bashrc — managed by dev-bootstrap / 30-shell
 # Edit local overrides in ~/.bashrc.local (loaded last, never overwritten).
 
@@ -41,10 +42,12 @@ export VISUAL="${VISUAL:-$EDITOR}"
 # ---------- Modular fragments ----------
 if [ -d "$HOME/.bashrc.d" ]; then
     for f in "$HOME"/.bashrc.d/*.sh; do
+        # shellcheck source=/dev/null
         [ -r "$f" ] && . "$f"
     done
     unset f
 fi
 
 # ---------- Local overrides (never versioned) ----------
+# shellcheck source=/dev/null
 [ -f "$HOME/.bashrc.local" ] && . "$HOME/.bashrc.local"

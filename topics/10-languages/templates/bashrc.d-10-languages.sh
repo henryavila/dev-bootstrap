@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 10-languages shell fragment
 # Loaded by ~/.bashrc from ~/.bashrc.d/
 

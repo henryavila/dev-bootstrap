@@ -1,9 +1,14 @@
+# shellcheck shell=bash
 # ~/.zshrc — managed by dev-bootstrap / 30-shell
 # Edit local overrides in ~/.zshrc.local (loaded last, never overwritten).
+#
+# shellcheck runs this file with bash mode; directives below mute known
+# zsh-specific false positives.
 
 # ---------- History ----------
 HISTFILE=~/.zsh_history
 HISTSIZE=100000
+# shellcheck disable=SC2034  # used natively by zsh
 SAVEHIST=200000
 setopt APPEND_HISTORY SHARE_HISTORY HIST_IGNORE_DUPS HIST_IGNORE_ALL_DUPS HIST_FIND_NO_DUPS
 
@@ -33,10 +38,12 @@ export VISUAL="${VISUAL:-$EDITOR}"
 # ---------- Modular fragments ----------
 if [ -d "$HOME/.zshrc.d" ]; then
     for f in "$HOME"/.zshrc.d/*.sh; do
+        # shellcheck source=/dev/null
         [ -r "$f" ] && source "$f"
     done
     unset f
 fi
 
 # ---------- Local overrides (never versioned) ----------
+# shellcheck source=/dev/null
 [ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"

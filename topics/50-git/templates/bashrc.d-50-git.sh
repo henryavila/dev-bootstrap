@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 50-git shell fragment (bash)
 # Loaded by ~/.bashrc from ~/.bashrc.d/
 # Shell-level git shortcuts. These complement the `git config alias.*` entries

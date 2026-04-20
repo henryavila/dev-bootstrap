@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 50-git shell fragment (zsh)
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 # Shell-level git shortcuts. See bashrc.d-50-git.sh for rationale.

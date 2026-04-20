@@ -172,7 +172,8 @@ trap 'rm -rf "$tmp_staging"' EXIT
 deploy_one() {
     local src_rel="$1" dst="$2"
     local src_abs="$templates_dir/$src_rel"
-    local staged="$tmp_staging/$(basename "$src_rel")"
+    local staged
+    staged="$tmp_staging/$(basename "$src_rel")"
 
     # Read, strip CRLF, and optionally run envsubst (allowlist only)
     if [[ "$src_rel" == *.template ]]; then

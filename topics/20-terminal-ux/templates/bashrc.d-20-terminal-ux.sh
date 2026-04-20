@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 20-terminal-ux shell fragment (bash)
 # Loaded by ~/.bashrc from ~/.bashrc.d/
 

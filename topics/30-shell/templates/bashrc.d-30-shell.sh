@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 30-shell shell fragment (bash)
 # Fundamentals every dev wants: bash completion, dircolors, sane defaults.
 # Loaded by ~/.bashrc from ~/.bashrc.d/ (ordered alphabetically — 30 runs
