@@ -1,19 +1,35 @@
 # ~/.inputrc — readline settings shared by bash, psql, etc.
 
-# Word-wise navigation with Ctrl+arrows
+# ---------- Word-wise navigation ----------
+# Ctrl+Right / Ctrl+Left → next / previous word
 "\e[1;5C": forward-word
 "\e[1;5D": backward-word
 
-# Home / End
+# Fallback escape sequences (some terminals emit these instead)
+"\e[5C": forward-word
+"\e[5D": backward-word
+
+# ---------- Word kill ----------
+# Ctrl+Backspace → delete previous word (many terminals send \C-h here)
+"\C-h": backward-kill-word
+# Ctrl+Delete → delete next word
+"\e[3;5~": kill-word
+
+# ---------- Home / End ----------
 "\e[H": beginning-of-line
 "\e[F": end-of-line
 
-# History prefix search with Up/Down
+# ---------- History prefix-search with arrow keys ----------
 "\e[A": history-search-backward
 "\e[B": history-search-forward
 
+# ---------- Completion behavior ----------
 set completion-ignore-case on
 set show-all-if-ambiguous on
 set colored-stats on
+set mark-directories on
+set mark-symlinked-directories on
+set visible-stats on
 set menu-complete-display-prefix on
+set skip-completed-text on
 set bell-style none
