@@ -139,5 +139,6 @@ Este repo **nunca** versiona configs pessoais (SSH, identidade git, aliases proj
 ## Veja também
 
 - [`docs/SPEC.md`](docs/SPEC.md) — especificação técnica (arquitetura, critérios de aceitação, roadmap).
+- [`docs/ALIASES.md`](docs/ALIASES.md) — inventário dos aliases universais (shell + git) que todo dev que rodou o bootstrap recebe.
 - `topics/<topic>/README.md` — customização e gotchas por topic.
 - [`dotfiles-template`](https://github.com/henryavila/dotfiles-template) — o outro lado da camada: overrides pessoais.
