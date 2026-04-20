@@ -71,7 +71,7 @@ Não persiste reboot — re-rodar após boot ou re-login. Para automação persi
 
 ### Referências
 
-Diagnóstico completo em `ssh-tailscale-mtu-gotcha.md` (memory file do dotfiles pessoal do Henry) e `docs/ssh-tailscale-mtu.md` no template.
+Diagnóstico detalhado + variações conhecidas em `ssh-tailscale-mtu-gotcha.md` (memory file do dotfiles pessoal).
 
 ---
 
