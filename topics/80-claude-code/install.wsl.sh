@@ -10,6 +10,29 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
 
+# ---------- Bun runtime ----------
+# Required by claude-mem plugin (worker service managed by Bun on port 37777).
+# The plugin ships a smart-install.js that auto-installs Bun via hook when
+# missing — but that only fires on first Claude session with the plugin active,
+# which is a fragile chain. Installing explicitly here guarantees claude-mem
+# works from the first use.
+if command -v bun >/dev/null 2>&1; then
+    ok "bun already installed ($(bun --version 2>&1))"
+elif [[ -x "$HOME/.bun/bin/bun" ]]; then
+    export PATH="$HOME/.bun/bin:$PATH"
+    ok "bun installed at ~/.bun/bin/bun ($("$HOME/.bun/bin/bun" --version))"
+else
+    info "installing Bun via official installer (adds ~/.bun/bin to shell rc)"
+    curl -fsSL https://bun.sh/install | bash
+    if [[ -x "$HOME/.bun/bin/bun" ]]; then
+        export PATH="$HOME/.bun/bin:$PATH"
+        ok "bun installed ($("$HOME/.bun/bin/bun" --version))"
+    else
+        fail "bun install failed — check output above"
+        exit 1
+    fi
+fi
+
 # ---------- Claude Code CLI ----------
 if command -v claude >/dev/null 2>&1; then
     ok "claude already installed ($(claude --version 2>&1 | head -1))"

@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Ensure ~/.local/bin on PATH for CI where a new shell hasn't loaded ~/.bashrc
+# Ensure ~/.local/bin and ~/.bun/bin on PATH for CI where a new shell hasn't loaded ~/.bashrc
 [[ -d "$HOME/.local/bin" ]] && export PATH="$HOME/.local/bin:$PATH"
+[[ -d "$HOME/.bun/bin"   ]] && export PATH="$HOME/.bun/bin:$PATH"
 
 all_ok=1
+
+# Bun runtime (required by claude-mem plugin worker)
+if command -v bun >/dev/null 2>&1; then
+    echo "  ✓ bun ($(bun --version))"
+else
+    echo "  ✗ bun MISSING (claude-mem worker will not start)"
+    all_ok=0
+fi
 
 # Claude Code CLI
 if command -v claude >/dev/null 2>&1; then

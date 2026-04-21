@@ -1,14 +1,22 @@
 # 80-claude-code
 
-Installs the two tools that make up the cross-machine "Claude stack":
+Installs the three tools that make up the cross-machine "Claude stack":
 
-## 1. Claude Code CLI
+## 1. Bun runtime
+
+Via the official installer: `curl -fsSL https://bun.sh/install | bash`. Binary lands at `~/.bun/bin/bun`; `~/.bun/bin` is added to shell rc automatically.
+
+**Why here:** the `claude-mem@thedotmack` plugin (installed by the user as part of their Claude plugin set) runs a **worker service** on port 37777 that is managed by Bun. The plugin ships a `smart-install.js` hook that auto-installs Bun if missing, but that only fires on the first Claude session with the plugin active — a fragile dependency chain. Installing Bun explicitly in the bootstrap removes that timing/connectivity coupling and guarantees claude-mem works from the first session.
+
+If you don't use the `claude-mem` plugin, Bun is unused but harmless.
+
+## 2. Claude Code CLI
 
 Via the official installer: `curl -fsSL https://claude.ai/install.sh | bash`. Binary lands at `~/.local/bin/claude` (the `PATH` is already covered by topic `30-shell`).
 
 **Login:** after installing, run `claude` and authenticate once per machine (OAuth with Anthropic — not transferable).
 
-## 2. Syncthing (P2P file sync daemon)
+## 3. Syncthing (P2P file sync daemon)
 
 Used to sync a curated subset of `~/.claude/` and `~/.claude-mem/` across N personal machines, **with no intermediate cloud**. The daemon runs as a user-level service and discovers peers via LAN + STUN/relay.
 
