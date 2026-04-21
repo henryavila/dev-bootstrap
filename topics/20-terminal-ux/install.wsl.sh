@@ -20,8 +20,12 @@ source "$HERE/../../lib/log.sh"
 # ─── apt packages ───────────────────────────────────────────────────────
 # zsh-autosuggestions + zsh-syntax-highlighting install to /usr/share/ with
 # stable paths — zshrc.local's apt-fallback branch points there.
+# Phase E modern CLI additions: btop (top), duf (df), gping (ping), sd
+# (sed), tealdeer (tldr). Not in apt on 24.04: procs, dust, xh — install
+# via cargo later if needed.
 apt_pkgs=(fzf bat eza zoxide ripgrep fd-find
-          zsh zsh-autosuggestions zsh-syntax-highlighting)
+          zsh zsh-autosuggestions zsh-syntax-highlighting
+          btop duf gping sd tealdeer)
 
 missing=()
 for p in "${apt_pkgs[@]}"; do

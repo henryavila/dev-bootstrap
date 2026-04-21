@@ -24,7 +24,8 @@ source "$HERE/../../lib/log.sh"
 #   - zsh-you-should-use           nags when you skip an alias you defined.
 pkgs=(fzf bat eza zoxide ripgrep fd starship lazygit git-delta tmux \
       zsh-completions zsh-autosuggestions zsh-syntax-highlighting \
-      zsh-history-substring-search atuin forgit zsh-you-should-use)
+      zsh-history-substring-search atuin forgit zsh-you-should-use \
+      btop dust duf gping xh sd tealdeer procs)
 
 for p in "${pkgs[@]}"; do
     if "$BREW_BIN" list --formula "$p" >/dev/null 2>&1; then
