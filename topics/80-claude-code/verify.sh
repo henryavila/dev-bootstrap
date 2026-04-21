@@ -3,6 +3,10 @@ set -euo pipefail
 # Ensure ~/.local/bin and ~/.bun/bin on PATH for CI where a new shell hasn't loaded ~/.bashrc
 [[ -d "$HOME/.local/bin" ]] && export PATH="$HOME/.local/bin:$PATH"
 [[ -d "$HOME/.bun/bin"   ]] && export PATH="$HOME/.bun/bin:$PATH"
+# Probe common brew prefixes (Apple Silicon, Intel, external-volume custom)
+for _brew_prefix in /opt/homebrew /usr/local /Volumes/External/homebrew; do
+    [[ -d "$_brew_prefix/bin" ]] && export PATH="$_brew_prefix/bin:$PATH"
+done
 
 all_ok=1
 
@@ -25,8 +29,14 @@ fi
 # Syncthing binary
 if command -v syncthing >/dev/null 2>&1; then
     echo "  ✓ syncthing installed"
-    # Is the daemon running? (Linux: systemctl user; both: pgrep fallback)
-    if systemctl --user is-active syncthing.service >/dev/null 2>&1; then
+    # Is the daemon running? Detection ladder (any hit = OK):
+    #   1. UI on :8384 (covers all launch paths — systemd, brew services, custom LaunchAgent)
+    #   2. systemctl --user (Linux/WSL)
+    #   3. brew services list (Mac with brew's own plist)
+    #   4. pgrep for bare process
+    if curl -sf -o /dev/null --max-time 2 http://127.0.0.1:8384 2>/dev/null; then
+        echo "  ✓ syncthing UI responding on :8384"
+    elif systemctl --user is-active syncthing.service >/dev/null 2>&1; then
         echo "  ✓ syncthing service active (systemd --user)"
     elif command -v brew >/dev/null 2>&1 && brew services list 2>/dev/null | awk '$1=="syncthing"{print $2}' | grep -qx 'started'; then
         echo "  ✓ syncthing service active (brew services)"
