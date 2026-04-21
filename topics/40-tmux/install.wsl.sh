@@ -20,12 +20,15 @@ fi
 # re-running this script after bumping the branch reference.
 CATP_TMUX="$HOME/.local/share/catppuccin-tmux"
 CATP_TAG="v1.0.3"
+# The v1.0.3 commit is also tagged as the rolling 'v1' — either is fine.
+# Anything else (main branch, fork, stale) gets a non-fatal warning.
 if [ -d "$CATP_TMUX/.git" ]; then
-    if git -C "$CATP_TMUX" describe --tags --exact-match 2>/dev/null | grep -q "^$CATP_TAG$"; then
-        ok "catppuccin-tmux already at $CATP_TAG"
-    else
-        info "catppuccin-tmux present but on a different ref — leaving as-is (manual review)"
-    fi
+    current_ref="$(git -C "$CATP_TMUX" describe --tags --exact-match 2>/dev/null || true)"
+    case "$current_ref" in
+        v1|v1.0.3)  ok "catppuccin-tmux pinned to $current_ref" ;;
+        "")         info "catppuccin-tmux on a non-tagged commit — leaving as-is" ;;
+        *)          info "catppuccin-tmux on tag $current_ref — leaving as-is (manual review)" ;;
+    esac
 else
     info "cloning catppuccin/tmux $CATP_TAG → $CATP_TMUX"
     git clone --quiet --depth 1 --branch "$CATP_TAG" \
