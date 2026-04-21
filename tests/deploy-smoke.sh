@@ -265,6 +265,92 @@ else
     fail_count=$((fail_count + 1))
 fi
 
+# ---------- Test 8: real 30-shell brew loop works under bash AND zsh ----------
+
+echo
+echo "Test 8: deployed .bashrc/.zshrc brew loop iterates correctly (bash + zsh if available)"
+fx8="$(new_fixture test8)"
+# Fake brew binary: prints a shellenv that sets a sentinel var
+mkdir -p "$fx8/fake-brew/bin"
+cat > "$fx8/fake-brew/bin/brew" <<'STUB'
+#!/bin/sh
+case "$1" in
+    shellenv)
+        echo 'export HOMEBREW_PREFIX="'"$(cd "$(dirname "$0")"/.. && pwd)"'"'
+        echo 'export HOMEBREW_PREFIX_LOADED_BY_TEST=yes'
+        ;;
+esac
+STUB
+chmod +x "$fx8/fake-brew/bin/brew"
+
+# Use the real repo templates (not synthetic) to catch actual template bugs
+cp "$REPO_ROOT/topics/30-shell/templates/bashrc.template" "$fx8/templates/"
+cp "$REPO_ROOT/topics/30-shell/templates/zshrc.template" "$fx8/templates/"
+
+export HOME="$fx8/home"
+export BREW_PREFIX="$fx8/fake-brew"
+export CODE_DIR="" NGINX_CONF_DIR="" DOTFILES_DIR=""
+
+bash "$DEPLOY_SH" "$fx8/templates" >"$fx8/log" 2>&1 || {
+    echo "  ✗ deploy.sh failed"
+    cat "$fx8/log"
+    fail_count=$((fail_count + 1))
+}
+
+# Source the deployed .bashrc in a fresh bash and check the sentinel
+probe_bashrc=$(bash --norc -c "
+    unset HOMEBREW_PREFIX HOMEBREW_PREFIX_LOADED_BY_TEST
+    HOME='$HOME'
+    # Skip the 'if not interactive return' guard by forcing -i
+    source '$HOME/.bashrc' 2>/dev/null
+    echo \"\$HOMEBREW_PREFIX_LOADED_BY_TEST\"
+" 2>/dev/null || true)
+# Note: .bashrc has `case \$- in *i*) ;; *) return ;; esac` — non-interactive
+# sourcing returns early. We bypass this by using bash -i in a subprocess.
+probe_bashrc_interactive=$(bash -ic "
+    echo \"MARKER=\$HOMEBREW_PREFIX_LOADED_BY_TEST\"
+" 2>/dev/null </dev/null || true)
+# Bash -i sources /etc/bash.bashrc which may emit WSL noise etc.
+# We prefixed our echo with MARKER= to find our specific line.
+probe_bashrc_interactive="$(echo "$probe_bashrc_interactive" | grep -oE 'MARKER=[a-z]*' | head -1 | sed 's/MARKER=//')"
+if [[ "$probe_bashrc_interactive" == "yes" ]]; then
+    echo "  ✓ bash loop evaluated brew shellenv (fake brew at BREW_PREFIX)"
+    pass_count=$((pass_count + 1))
+else
+    echo "  ✗ bash did NOT eval brew shellenv — word-splitting bug?"
+    echo "    probe output: [$probe_bashrc_interactive]"
+    echo "    .bashrc snippet:"
+    grep -n -A 10 '__bootstrap_brew_prefix' "$HOME/.bashrc" | head -12
+    fail_count=$((fail_count + 1))
+fi
+
+# If zsh is available, run the same check under zsh (catches bash-only patterns)
+if command -v zsh >/dev/null 2>&1; then
+    probe_zshrc=$(zsh -c "
+        source '$HOME/.zshrc' 2>/dev/null
+        echo \"MARKER=\$HOMEBREW_PREFIX_LOADED_BY_TEST\"
+    " 2>/dev/null || true)
+    probe_zshrc="$(echo "$probe_zshrc" | grep -oE 'MARKER=[a-z]*' | head -1 | sed 's/MARKER=//')"
+    if [[ "$probe_zshrc" == "yes" ]]; then
+        echo "  ✓ zsh loop evaluated brew shellenv"
+        pass_count=$((pass_count + 1))
+    else
+        echo "  ✗ zsh did NOT eval brew shellenv (regression of the zsh word-split bug)"
+        echo "    probe output: [$probe_zshrc]"
+        fail_count=$((fail_count + 1))
+    fi
+else
+    echo "  – zsh not installed; skipping zsh-specific check"
+fi
+
+# Also guard-rail: refuse the old word-split pattern in the deployed files
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if grep -qE 'for brew in \$__brew_candidates' "$rc" 2>/dev/null; then
+        echo "  ✗ $rc still uses word-splitting pattern (not zsh-safe)"
+        fail_count=$((fail_count + 1))
+    fi
+done
+
 # ---------- Summary ----------
 
 echo

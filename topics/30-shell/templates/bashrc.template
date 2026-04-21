@@ -25,17 +25,22 @@ fi
 # lib/detect-brew.sh. Empty on machines without brew at bootstrap time —
 # the loop then falls through to the fallback list, which also handles
 # post-bootstrap brew installs.
+#
+# Uses a literal list (not $var word-splitting) so the same form works
+# under bash AND zsh — zsh doesn't word-split unquoted scalars.
 __bootstrap_brew_prefix='${BREW_PREFIX}'
-__brew_candidates="/opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew"
-[ -n "$__bootstrap_brew_prefix" ] && \
-    __brew_candidates="$__bootstrap_brew_prefix/bin/brew $__brew_candidates"
-for brew in $__brew_candidates; do
+for brew in \
+    "$__bootstrap_brew_prefix/bin/brew" \
+    /opt/homebrew/bin/brew \
+    /usr/local/bin/brew \
+    /home/linuxbrew/.linuxbrew/bin/brew; do
+    [ "$brew" = "/bin/brew" ] && continue
     if [ -x "$brew" ]; then
         eval "$("$brew" shellenv)"
         break
     fi
 done
-unset __bootstrap_brew_prefix __brew_candidates brew
+unset __bootstrap_brew_prefix brew
 
 # keg-only gettext on macOS (envsubst in PATH). Prefer the resolved prefix
 # from shellenv above when brew was found; otherwise standard fallbacks.
