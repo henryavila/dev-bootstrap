@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# 20-terminal-ux shell fragment (bash)
+# 20-terminal-ux shell fragment (bash) — managed by dev-bootstrap
 # Loaded by ~/.bashrc from ~/.bashrc.d/
 
 # starship prompt
@@ -12,20 +12,30 @@ if command -v zoxide >/dev/null 2>&1; then
     eval "$(zoxide init bash)"
 fi
 
-# fzf keybindings (Ctrl+R history, Ctrl+T file finder, Alt+C dir jump)
+# fzf keybindings (Ctrl+R history, Ctrl+T file finder, Alt+C dir jump).
+# ${BREW_PREFIX} substituted at deploy time — supports brew in non-standard
+# prefixes. Priority: Debian docs → configured brew prefix → standard paths.
+__bootstrap_brew_prefix='${BREW_PREFIX}'
 if [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
     # Ubuntu / Debian
     source /usr/share/doc/fzf/examples/key-bindings.bash
-    [ -f /usr/share/doc/fzf/examples/completion.bash ] && source /usr/share/doc/fzf/examples/completion.bash
+    [ -f /usr/share/doc/fzf/examples/completion.bash ] && \
+        source /usr/share/doc/fzf/examples/completion.bash
+elif [ -n "$__bootstrap_brew_prefix" ] \
+     && [ -f "$__bootstrap_brew_prefix/opt/fzf/shell/key-bindings.bash" ]; then
+    source "$__bootstrap_brew_prefix/opt/fzf/shell/key-bindings.bash"
+    [ -f "$__bootstrap_brew_prefix/opt/fzf/shell/completion.bash" ] && \
+        source "$__bootstrap_brew_prefix/opt/fzf/shell/completion.bash"
 elif [ -f /opt/homebrew/opt/fzf/shell/key-bindings.bash ]; then
     # Mac ARM
     source /opt/homebrew/opt/fzf/shell/key-bindings.bash
     source /opt/homebrew/opt/fzf/shell/completion.bash
 elif [ -f /usr/local/opt/fzf/shell/key-bindings.bash ]; then
-    # Mac Intel / custom prefix fallback
+    # Mac Intel
     source /usr/local/opt/fzf/shell/key-bindings.bash
     source /usr/local/opt/fzf/shell/completion.bash
 fi
+unset __bootstrap_brew_prefix
 
 # Aliases for modern replacements
 if command -v eza >/dev/null 2>&1; then

@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# 20-terminal-ux shell fragment (zsh)
+# 20-terminal-ux shell fragment (zsh) — managed by dev-bootstrap
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 
 if command -v starship >/dev/null 2>&1; then
@@ -10,17 +10,26 @@ if command -v zoxide >/dev/null 2>&1; then
     eval "$(zoxide init zsh)"
 fi
 
-# fzf integration (brew install fzf installs shell-integration in these paths)
+# fzf integration. ${BREW_PREFIX} substituted at deploy time by envsubst
+# (deploy.sh allowlist) — supports brew in non-standard prefixes. Falls
+# through to standard Homebrew + Debian paths.
+__bootstrap_brew_prefix='${BREW_PREFIX}'
 for f in \
+    "$__bootstrap_brew_prefix/opt/fzf/shell/key-bindings.zsh" \
+    "$__bootstrap_brew_prefix/opt/fzf/shell/completion.zsh" \
     /opt/homebrew/opt/fzf/shell/key-bindings.zsh \
     /opt/homebrew/opt/fzf/shell/completion.zsh \
     /usr/local/opt/fzf/shell/key-bindings.zsh \
     /usr/local/opt/fzf/shell/completion.zsh \
     /usr/share/doc/fzf/examples/key-bindings.zsh \
     /usr/share/doc/fzf/examples/completion.zsh; do
+    # Skip the empty-prefix entries on non-brew machines
+    [ "$f" = "/opt/fzf/shell/key-bindings.zsh" ] && continue
+    [ "$f" = "/opt/fzf/shell/completion.zsh" ] && continue
     # shellcheck source=/dev/null
     [ -f "$f" ] && source "$f"
 done
+unset __bootstrap_brew_prefix f
 
 if command -v eza >/dev/null 2>&1; then
     alias ls='eza'

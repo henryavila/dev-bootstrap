@@ -19,14 +19,28 @@ autoload -Uz compinit && compinit -i
 # ---------- Base PATH ----------
 [ -d "$HOME/.local/bin" ] && export PATH="$HOME/.local/bin:$PATH"
 
-for brew in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
+# Homebrew detection. ${BREW_PREFIX} is substituted at deploy time by
+# lib/deploy.sh (envsubst allowlist) with the prefix detected on this
+# machine by lib/detect-brew.sh. Empty on machines without brew at
+# bootstrap time — the loop then falls through to the fallback list,
+# which also handles post-bootstrap brew installs.
+__bootstrap_brew_prefix='${BREW_PREFIX}'
+__brew_candidates="/opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew"
+[ -n "$__bootstrap_brew_prefix" ] && \
+    __brew_candidates="$__bootstrap_brew_prefix/bin/brew $__brew_candidates"
+for brew in $__brew_candidates; do
     if [ -x "$brew" ]; then
         eval "$("$brew" shellenv)"
         break
     fi
 done
+unset __bootstrap_brew_prefix __brew_candidates brew
 
-if [ -d "/opt/homebrew/opt/gettext/bin" ]; then
+# keg-only gettext on macOS (envsubst in PATH). Prefer the resolved prefix
+# from shellenv above when brew was found; otherwise standard fallbacks.
+if [ -n "${HOMEBREW_PREFIX:-}" ] && [ -d "$HOMEBREW_PREFIX/opt/gettext/bin" ]; then
+    export PATH="$HOMEBREW_PREFIX/opt/gettext/bin:$PATH"
+elif [ -d "/opt/homebrew/opt/gettext/bin" ]; then
     export PATH="/opt/homebrew/opt/gettext/bin:$PATH"
 elif [ -d "/usr/local/opt/gettext/bin" ]; then
     export PATH="/usr/local/opt/gettext/bin:$PATH"

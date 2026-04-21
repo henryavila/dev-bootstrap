@@ -1,21 +1,29 @@
 # shellcheck shell=bash
-# 30-shell shell fragment (bash)
+# 30-shell shell fragment (bash) — managed by dev-bootstrap
 # Fundamentals every dev wants: bash completion, dircolors, sane defaults.
 # Loaded by ~/.bashrc from ~/.bashrc.d/ (ordered alphabetically — 30 runs
 # AFTER 10-languages and 20-terminal-ux but BEFORE user overrides in
 # ~/.bashrc.local).
 
 # ---------- Bash programmable completion ----------
+# ${BREW_PREFIX} substituted at deploy time (envsubst allowlist). Placed
+# first so custom brew prefixes (/Volumes/External/homebrew, etc) win over
+# standard paths.
 if ! shopt -oq posix 2>/dev/null; then
+    __bootstrap_brew_prefix='${BREW_PREFIX}'
     if [ -f /usr/share/bash-completion/bash_completion ]; then
         . /usr/share/bash-completion/bash_completion
     elif [ -f /etc/bash_completion ]; then
         . /etc/bash_completion
+    elif [ -n "$__bootstrap_brew_prefix" ] \
+         && [ -f "$__bootstrap_brew_prefix/etc/profile.d/bash_completion.sh" ]; then
+        . "$__bootstrap_brew_prefix/etc/profile.d/bash_completion.sh"
     elif [ -f /opt/homebrew/etc/profile.d/bash_completion.sh ]; then
         . /opt/homebrew/etc/profile.d/bash_completion.sh
     elif [ -f /usr/local/etc/profile.d/bash_completion.sh ]; then
         . /usr/local/etc/profile.d/bash_completion.sh
     fi
+    unset __bootstrap_brew_prefix
 fi
 
 # ---------- dircolors — populates $LS_COLORS even when eza isn't used ----------
