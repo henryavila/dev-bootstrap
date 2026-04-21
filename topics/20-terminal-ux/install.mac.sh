@@ -44,20 +44,48 @@ else
     "$BREW_BIN" install --cask font-caskaydia-cove-nerd-font
 fi
 
-# ─── fzf-tab (not in brew-core) ───
-# fzf-tab replaces the default TAB completion menu with an fzf fuzzy picker
-# that has a live preview pane. Only distributed via GitHub (Aloxaf/fzf-tab).
-# Clone once into ~/.local/share/fzf-tab; dotfiles/shell/zshrc.local sources
-# from that path. Idempotent: pull if already cloned.
-FZF_TAB_DIR="$HOME/.local/share/fzf-tab"
-if [ -d "$FZF_TAB_DIR/.git" ]; then
-    info "fzf-tab already cloned — pulling updates"
-    git -C "$FZF_TAB_DIR" pull --quiet --ff-only 2>/dev/null && ok "fzf-tab up to date" \
-        || warn "fzf-tab pull failed (non-fatal)"
+# ─── fzf-tab + Powerlevel10k + zinit (not in brew-core) ───
+# Clone each into ~/.local/share/ with the same layout as the Linux
+# install — dotfiles/shell/zshrc.local sources from the same paths on
+# both platforms. Idempotent: pull if already cloned.
+SHARE_DIR="$HOME/.local/share"
+mkdir -p "$SHARE_DIR"
+
+clone_or_pull_mac() {
+    local repo="$1" dest="$2" label="$3"
+    if [ -d "$dest/.git" ]; then
+        info "$label already cloned — pulling updates"
+        git -C "$dest" pull --quiet --ff-only 2>/dev/null \
+            && ok "$label up to date" \
+            || warn "$label pull failed (non-fatal)"
+        git -C "$dest" submodule update --init --recursive --quiet 2>/dev/null || true
+    else
+        info "cloning $repo → $dest"
+        git clone --quiet --depth 1 --recurse-submodules \
+            "https://github.com/$repo" "$dest"
+        ok "$label cloned"
+    fi
+}
+
+clone_or_pull_mac Aloxaf/fzf-tab          "$SHARE_DIR/fzf-tab"          fzf-tab
+clone_or_pull_mac romkatv/powerlevel10k   "$SHARE_DIR/powerlevel10k"    powerlevel10k
+
+# zinit — installer owns its directory; pipe "n" so it leaves ~/.zshrc alone
+# (dev-bootstrap's 30-shell template owns that file).
+ZINIT_DIR="$HOME/.local/share/zinit"
+if [ -f "$ZINIT_DIR/zinit.git/zinit.zsh" ]; then
+    ok "zinit already installed"
 else
-    info "cloning Aloxaf/fzf-tab → $FZF_TAB_DIR"
-    git clone --quiet --depth 1 https://github.com/Aloxaf/fzf-tab "$FZF_TAB_DIR"
-    ok "fzf-tab cloned"
+    info "installing zinit"
+    mkdir -p "$ZINIT_DIR"
+    yes n | bash -c "$(curl --fail --show-error --silent --location \
+        https://raw.githubusercontent.com/zdharma-continuum/zinit/HEAD/scripts/install.sh)" \
+        >/dev/null 2>&1 || warn "zinit install script returned non-zero (checking state)"
+    if [ -f "$ZINIT_DIR/zinit.git/zinit.zsh" ]; then
+        ok "zinit installed"
+    else
+        warn "zinit install failed — shell will degrade gracefully (non-fatal)"
+    fi
 fi
 
 # ─── Configure iTerm2 to use the Nerd Font (if iTerm2 is installed) ───

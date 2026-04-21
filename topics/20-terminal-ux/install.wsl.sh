@@ -76,6 +76,33 @@ clone_or_pull djui/alias-tips                          "$SHARE_DIR/alias-tips"  
 clone_or_pull olets/zsh-abbr                           "$SHARE_DIR/zsh-abbr"                       zsh-abbr
 clone_or_pull MichaelAquilina/zsh-you-should-use       "$SHARE_DIR/zsh-you-should-use"             zsh-you-should-use
 
+# Phase C: Powerlevel10k as a standalone clone (also turbo-loaded via
+# zinit in zshrc.local — this parallel copy is the graceful-degrade
+# fallback if zinit isn't ready on the first login).
+clone_or_pull romkatv/powerlevel10k                    "$SHARE_DIR/powerlevel10k"                  powerlevel10k
+
+# Phase C: zinit — installed to its canonical location
+# (~/.local/share/zinit/zinit.git) so the official installer path
+# matches. Idempotent: re-running zinit's installer with an existing
+# dir is a no-op. We pipe "n" to the "edit ~/.zshrc?" prompt because
+# dev-bootstrap's 30-shell template owns that file; zinit loading
+# lives in shell/zshrc.local instead.
+ZINIT_DIR="$HOME/.local/share/zinit"
+if [ -f "$ZINIT_DIR/zinit.git/zinit.zsh" ]; then
+    ok "zinit already installed"
+else
+    info "installing zinit"
+    mkdir -p "$ZINIT_DIR"
+    yes n | bash -c "$(curl --fail --show-error --silent --location \
+        https://raw.githubusercontent.com/zdharma-continuum/zinit/HEAD/scripts/install.sh)" \
+        >/dev/null 2>&1 || warn "zinit install script returned non-zero (checking state)"
+    if [ -f "$ZINIT_DIR/zinit.git/zinit.zsh" ]; then
+        ok "zinit installed"
+    else
+        warn "zinit install failed — shell will degrade gracefully (non-fatal)"
+    fi
+fi
+
 # ─── atuin (binary installer) ──────────────────────────────────────────
 # Uses atuin's official setup script: downloads the matching binary for
 # the current arch into ~/.local/bin/atuin. Idempotent (no-op if present).

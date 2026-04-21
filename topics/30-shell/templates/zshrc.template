@@ -6,6 +6,17 @@
 # to satisfy the linter (shellcheck has no native zsh mode). Other inline
 # disables below mute known false positives.
 
+# ---------- Powerlevel10k instant prompt ----------
+# MUST be the very first statement: it sources a cached version of the
+# prompt and paints the terminal *before* the rest of this file runs.
+# If ANY later line writes to stdout/stderr the prompt breaks — hence
+# the top-of-file placement. The cache is created by p10k after the
+# first full config run; missing cache = silent no-op, no error.
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+    # shellcheck source=/dev/null
+    source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
 # ---------- History ----------
 HISTFILE=~/.zsh_history
 HISTSIZE=100000
