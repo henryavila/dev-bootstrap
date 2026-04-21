@@ -2,9 +2,13 @@
 # 20-terminal-ux shell fragment (zsh) — managed by dev-bootstrap
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 
-if command -v starship >/dev/null 2>&1; then
-    eval "$(starship init zsh)"
-fi
+# Starship is deliberately NOT initialized on zsh: Powerlevel10k owns
+# the prompt (loaded by ~/.zshrc.local via zinit). Running
+# `starship init zsh` here would register a competing precmd hook that
+# wastes CPU on every prompt redraw and can invalidate p10k's instant
+# prompt cache. Starship is still initialized on bash (see bashrc.d
+# fragment) where it acts as the prompt provider AND as a fallback if
+# the user temporarily switches default shell via `chsh -s /bin/bash`.
 
 if command -v zoxide >/dev/null 2>&1; then
     eval "$(zoxide init zsh)"
