@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure brew-managed binaries are visible when verify runs from a
+# non-interactive shell (SSH, CI) where ~/.zshrc / ~/.bashrc aren't loaded.
+# brew prefix varies by host: /opt/homebrew (Apple Silicon), /usr/local (Intel),
+# or a custom location like /Volumes/External/homebrew. Probe all candidates.
+for _brew_prefix in /opt/homebrew /usr/local /Volumes/External/homebrew; do
+    [[ -d "$_brew_prefix/bin" ]] && export PATH="$_brew_prefix/bin:$PATH"
+done
+
 fail_count=0
 check() {
     if command -v "$1" >/dev/null 2>&1; then
