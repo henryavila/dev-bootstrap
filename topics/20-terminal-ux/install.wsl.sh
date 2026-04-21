@@ -55,9 +55,15 @@ clone_or_pull() {
         git -C "$dest" pull --quiet --ff-only 2>/dev/null \
             && ok "$label up to date" \
             || warn "$label pull failed (non-fatal)"
+        # Ensure submodules stay in sync even on pull-only idempotent runs
+        # (zsh-abbr pulls in zsh-job-queue as a git submodule).
+        git -C "$dest" submodule update --init --recursive --quiet 2>/dev/null || true
     else
         info "cloning $repo → $dest"
-        git clone --quiet --depth 1 "https://github.com/$repo" "$dest"
+        # --recurse-submodules: zsh-abbr needs zsh-job-queue. Harmless for
+        # repos without submodules (git just skips the recursion).
+        git clone --quiet --depth 1 --recurse-submodules \
+            "https://github.com/$repo" "$dest"
         ok "$label cloned"
     fi
 }
