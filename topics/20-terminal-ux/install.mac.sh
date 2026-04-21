@@ -8,7 +8,11 @@ source "$HERE/../../lib/log.sh"
 
 : "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
 
-pkgs=(fzf bat eza zoxide ripgrep fd starship lazygit git-delta tmux)
+# zsh-completions: extra community-maintained completions (docker, npm, etc.)
+# that aren't bundled with their respective brew formulas. The 30-shell
+# zshrc template auto-detects $HOMEBREW_PREFIX/share/zsh-completions and
+# adds it to fpath before compinit.
+pkgs=(fzf bat eza zoxide ripgrep fd starship lazygit git-delta tmux zsh-completions)
 
 for p in "${pkgs[@]}"; do
     if "$BREW_BIN" list --formula "$p" >/dev/null 2>&1; then

@@ -13,9 +13,6 @@ HISTSIZE=100000
 SAVEHIST=200000
 setopt APPEND_HISTORY SHARE_HISTORY HIST_IGNORE_DUPS HIST_IGNORE_ALL_DUPS HIST_FIND_NO_DUPS
 
-# ---------- Completion ----------
-autoload -Uz compinit && compinit -i
-
 # ---------- Base PATH ----------
 [ -d "$HOME/.local/bin" ] && export PATH="$HOME/.local/bin:$PATH"
 
@@ -56,6 +53,22 @@ elif [ -d "/opt/homebrew/opt/gettext/bin" ]; then
 elif [ -d "/usr/local/opt/gettext/bin" ]; then
     export PATH="/usr/local/opt/gettext/bin:$PATH"
 fi
+
+# ---------- Completion ----------
+# Placed AFTER brew shellenv because modern `brew shellenv` adds
+# $HOMEBREW_PREFIX/share/zsh/site-functions to fpath. compinit must see
+# the full fpath to register brew-provided completions (_brew, _docker,
+# _kubectl, etc.). Previously this ran BEFORE shellenv and cached an
+# incomplete completion set in ~/.zcompdump — requiring a one-time
+# `rm ~/.zcompdump*` after this fix to rebuild the cache.
+#
+# Also extend fpath with the `zsh-completions` brew formula (separate
+# from share/zsh/site-functions). It's installed by 20-terminal-ux on
+# macOS and provides community-maintained completions for popular tools.
+if [ -n "${HOMEBREW_PREFIX:-}" ] && [ -d "$HOMEBREW_PREFIX/share/zsh-completions" ]; then
+    fpath=("$HOMEBREW_PREFIX/share/zsh-completions" $fpath)
+fi
+autoload -Uz compinit && compinit -i
 
 # ---------- Editor ----------
 export EDITOR="${EDITOR:-vi}"
