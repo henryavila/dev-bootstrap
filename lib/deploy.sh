@@ -276,10 +276,28 @@ prune_backups() {
     base="$(basename "$dst")"
     pattern="${base}.bak-*"
 
-    # Keep the 5 newest
-    local old_files
+    # Retention: keep the 5 newest backups + the single oldest. The oldest
+    # is protected because it typically captures the pre-bootstrap state
+    # (the user's handwritten config from before dev-bootstrap managed this
+    # file) — losing it means losing the only restore point for customizations
+    # that predate the migration. Re-runs of bootstrap churn the middle of
+    # the backup stack; newest+oldest retention keeps both recent history
+    # and the archaeological root.
+    local all_files
     # shellcheck disable=SC2012
-    old_files="$(ls -1t "$dir"/$pattern 2>/dev/null | tail -n +6 || true)"
+    all_files="$(ls -1t "$dir"/$pattern 2>/dev/null || true)"
+    if [[ -z "$all_files" ]]; then
+        return 0
+    fi
+    local total
+    total="$(printf '%s\n' "$all_files" | wc -l | tr -d ' ')"
+    # Nothing to prune if total ≤ 6 (5 newest + oldest already covered)
+    if [[ "$total" -le 6 ]]; then
+        return 0
+    fi
+    # Delete indices 6 through (total-1) — preserves 1..5 (newest) and total (oldest)
+    local old_files
+    old_files="$(printf '%s\n' "$all_files" | sed -n "6,$((total-1))p")"
     if [[ -z "$old_files" ]]; then
         return 0
     fi
