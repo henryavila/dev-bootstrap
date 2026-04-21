@@ -68,6 +68,24 @@ check_no_empty_refs() {
     return "$missing"
 }
 
+refuse_local_suffix() {
+    # Invariant: .local filenames are reserved for user overrides — they
+    # are loaded last by the rc files and are **never** managed by the
+    # bootstrap. A template or DEPLOY destination named *.local (or
+    # *.local.*) would violate that separation and silently clobber
+    # user customizations on every re-run. Fail early and loudly.
+    local what="$1" value="$2"
+    case "$value" in
+        *.local|*.local.*|*/.local|*/.local/*|*.local/)
+            fail "deploy.sh: refusing $what '$value' with .local suffix/path."
+            fail "  .local files are reserved for user overrides (loaded last,"
+            fail "  never managed by dev-bootstrap). Rename the template, or if"
+            fail "  you really need a custom destination, use a non-.local name."
+            exit 1
+            ;;
+    esac
+}
+
 auto_map_name() {
     # Given a filename inside templates/ (no dir prefix, .template already stripped),
     # return absolute destination path or empty string if no auto-match.
@@ -125,6 +143,9 @@ if [[ -f "$templates_dir/DEPLOY" ]]; then
             exit 1
         fi
 
+        refuse_local_suffix "DEPLOY src" "$src"
+        refuse_local_suffix "DEPLOY dst" "$dst"
+
         expanded_dst="$(expand_dst "$dst")"
         mapping_src+=("$src")
         mapping_dst+=("$expanded_dst")
@@ -134,6 +155,7 @@ else
         rel="${src_path#"$templates_dir"/}"
         # Skip DEPLOY itself even if absent (defensive)
         [[ "$rel" == "DEPLOY" ]] && continue
+        refuse_local_suffix "template" "$rel"
         # Derive destination name (strip .template suffix if present)
         name="${rel%.template}"
         dst="$(auto_map_name "$name")"
