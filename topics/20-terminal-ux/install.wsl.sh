@@ -110,4 +110,21 @@ else
     ok "git-delta already installed"
 fi
 
+# ─── Post-install advisory: shell migration ──────────────────────────
+# This script is idempotent and safe to re-run on ANY machine — it's the
+# canonical path to migrate bash → zsh, not just a first-time installer.
+# We never run `chsh` silently (it requires the login password and would
+# block the script), so we advise the user what's left to do interactively.
+if command -v zsh >/dev/null 2>&1; then
+    current_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
+    if [ "$current_shell" != "$(command -v zsh)" ]; then
+        warn "zsh is installed but NOT the default login shell ($current_shell)."
+        info "To finish the bash → zsh migration, run:"
+        info "    chsh -s \"\$(command -v zsh)\""
+        info "then log out / log back in (or \`exec zsh\` to try it first)."
+    else
+        ok "zsh is already the default login shell"
+    fi
+fi
+
 ok "20-terminal-ux done"
