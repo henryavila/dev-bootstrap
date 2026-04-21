@@ -8,11 +8,19 @@ source "$HERE/../../lib/log.sh"
 
 : "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
 
-# zsh-completions: extra community-maintained completions (docker, npm, etc.)
-# that aren't bundled with their respective brew formulas. The 30-shell
-# zshrc template auto-detects $HOMEBREW_PREFIX/share/zsh-completions and
-# adds it to fpath before compinit.
-pkgs=(fzf bat eza zoxide ripgrep fd starship lazygit git-delta tmux zsh-completions)
+# Extra zsh UX parity with ble.sh on Linux bash:
+#   - zsh-completions        extra community-maintained completions (docker,
+#                            npm, kubectl, etc.) auto-added to fpath by the
+#                            30-shell zshrc template before compinit.
+#   - zsh-autosuggestions    Fish-like ghost-text suggestions from history
+#                            (type, see grey suggestion, → arrow to accept).
+#   - zsh-syntax-highlighting Live syntax coloring (commands green, errors
+#                            red, strings colored). MUST be sourced LAST in
+#                            ~/.zshrc.local — the dotfiles layer handles the
+#                            sourcing order, bootstrap just installs the
+#                            formulas.
+pkgs=(fzf bat eza zoxide ripgrep fd starship lazygit git-delta tmux \
+      zsh-completions zsh-autosuggestions zsh-syntax-highlighting)
 
 for p in "${pkgs[@]}"; do
     if "$BREW_BIN" list --formula "$p" >/dev/null 2>&1; then
