@@ -1,0 +1,64 @@
+#!/bin/sh
+# ~/.local/bin/claude-hook-env — managed by dev-bootstrap / 80-claude-code
+#
+# PATH-fixing wrapper for Claude Code settings.json hooks.
+#
+# Problem: Claude Code executes hook commands via /bin/sh (non-interactive,
+# non-login). That shell does not read .bashrc or .zshrc, so any PATH
+# additions those rc files inject (brew shellenv, ~/.local/bin, etc.) are
+# absent. If Claude Code itself was launched from a shell that lacked brew
+# in its PATH (e.g., a GUI launch via Dock), hooks calling `node`, `bun`,
+# `git`, etc. fail with "command not found" — even when those tools exist.
+#
+# This wrapper replays `brew shellenv` and ensures ~/.local/bin is in PATH,
+# then execs the real command. It is path-stable across machines, which is
+# essential for Phase 6 (when ~/.claude/settings.json becomes Syncthing-
+# synced across M1/M2/M4 — each machine's hooks need to work without the
+# settings.json containing machine-specific absolute paths).
+#
+# Usage in ~/.claude/settings.json:
+#   {
+#     "hooks": {
+#       "SessionStart": [{
+#         "type": "command",
+#         "command": "claude-hook-env node -e 'console.log(\"hello\")'"
+#       }]
+#     }
+#   }
+#
+# ${BREW_PREFIX} is substituted at deploy time by lib/deploy.sh (envsubst
+# allowlist) with the prefix from lib/detect-brew.sh. Safe on machines
+# without brew: the empty check below skips the first candidate.
+
+__hook_brew_prefix='${BREW_PREFIX}'
+
+# Try the bootstrap-detected prefix first (most accurate on this machine),
+# then fall through to standard candidates. First successful shellenv wins.
+for __hook_brew_bin in \
+    "$__hook_brew_prefix/bin/brew" \
+    /opt/homebrew/bin/brew \
+    /usr/local/bin/brew \
+    /home/linuxbrew/.linuxbrew/bin/brew; do
+    # Skip empty-prefix artifact (`/bin/brew` is not a standard brew location)
+    [ "$__hook_brew_bin" = "/bin/brew" ] && continue
+    if [ -x "$__hook_brew_bin" ]; then
+        eval "$("$__hook_brew_bin" shellenv)"
+        break
+    fi
+done
+
+# Keep ~/.local/bin in PATH (brew shellenv prepends but doesn't guarantee it)
+case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) PATH="$HOME/.local/bin:$PATH"; export PATH ;;
+esac
+
+unset __hook_brew_prefix __hook_brew_bin
+
+# Require at least one argument — running the wrapper with no args is a bug
+if [ "$#" -eq 0 ]; then
+    echo "claude-hook-env: usage: claude-hook-env <command> [args...]" >&2
+    exit 2
+fi
+
+exec "$@"

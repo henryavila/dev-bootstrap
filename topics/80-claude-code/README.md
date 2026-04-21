@@ -32,9 +32,32 @@ Used to sync a curated subset of `~/.claude/` and `~/.claude-mem/` across N pers
 
 **Pairing + folders flow** (what to sync, with which `.stignore`): documented in `~/dotfiles/claude/scripts/syncthing-setup.md` once the user's dotfiles are cloned (topic `95-dotfiles-personal`).
 
+## 4. `claude-hook-env` wrapper (for settings.json hooks)
+
+`templates/bin/claude-hook-env` deploys to `~/.local/bin/claude-hook-env` and is used as a prefix for hook commands in `~/.claude/settings.json` to replay `brew shellenv` and restore `~/.local/bin` on `PATH`.
+
+**Why needed:** Claude Code runs hook commands via `/bin/sh`, which reads neither `.bashrc` nor `.zshrc`. If Claude was launched from a GUI context (Dock/Spotlight on macOS) or from a shell that predates `brew shellenv` being active, hook commands like `node`, `bun`, or `git` can hit "command not found" even when those binaries exist on disk. The wrapper injects the proper environment before `exec "$@"`.
+
+**Why a wrapper instead of LaunchAgent:** a wrapper is scoped to the Claude process — LaunchAgent `launchctl setenv PATH` leaks into every GUI app, which is broad blast radius. The wrapper is also path-stable across machines, which matters for Phase 6 of the Claude convergence plan (`~/.claude/settings.json` synced via Syncthing): machine-specific absolute paths inside `settings.json` would break convergence, but `claude-hook-env node -e …` works identically everywhere.
+
+**Example `settings.json` entry:**
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "type": "command",
+      "command": "claude-hook-env node -e 'console.log(\"ready\")'"
+    }]
+  }
+}
+```
+
+The `${BREW_PREFIX}` inside the wrapper is substituted at bootstrap deploy time (`lib/deploy.sh` envsubst allowlist) with the prefix detected by `lib/detect-brew.sh` — so each machine gets its own resolved path baked in.
+
 ## Separation of concerns
 
-This topic installs **tools** (CLI + daemon). The *content* (what to sync, how to configure the daemon, which `.stignore` to use) comes from the **personal dotfiles** via `95-dotfiles-personal`.
+This topic installs **tools** (CLI + daemon + hook wrapper). The *content* (what to sync, how to configure the daemon, which `.stignore` to use, which hooks to register in `settings.json`) comes from the **personal dotfiles** via `95-dotfiles-personal`.
 
 ## Skip
 
