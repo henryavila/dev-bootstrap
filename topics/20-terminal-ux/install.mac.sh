@@ -39,4 +39,13 @@ else
     "$BREW_BIN" install --cask font-caskaydia-cove-nerd-font
 fi
 
+# ─── Configure iTerm2 to use the Nerd Font (if iTerm2 is installed) ───
+# Installing the font places the .ttf in ~/Library/Fonts but terminals don't
+# auto-pick it up — each terminal app needs its own config edit. iTerm2 is
+# the default focus; other terminals (Ghostty/Kitty/Warp) require separate
+# config files the user drops in themselves.
+if [ -x "$HERE/scripts/configure-iterm2-font.sh" ]; then
+    bash "$HERE/scripts/configure-iterm2-font.sh" || warn "iTerm2 font config failed (non-fatal)"
+fi
+
 ok "20-terminal-ux done"
