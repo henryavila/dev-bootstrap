@@ -13,7 +13,17 @@ check() {
 
 check ssh
 check mosh
-check tailscale
+
+# Tailscale: on Mac the .app binary lives inside /Applications and the
+# CLI isn't added to PATH by default. Accept either presence as installed.
+if command -v tailscale >/dev/null 2>&1; then
+    echo "  ✓ tailscale (CLI in PATH)"
+elif [[ "$(uname -s)" == "Darwin" ]] && [[ -d "/Applications/Tailscale.app" ]]; then
+    echo "  ✓ Tailscale.app (add '/Applications/Tailscale.app/Contents/MacOS' to PATH to get CLI)"
+else
+    echo "  ✗ tailscale MISSING"
+    fail_count=$((fail_count + 1))
+fi
 
 # Tailscale MTU drop-in (WSL/Linux only)
 # Presence check — we don't fail if absent (topic may have been run before this fix existed).

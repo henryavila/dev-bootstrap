@@ -25,11 +25,32 @@ else
 fi
 
 # Tailscale (cask — .app with GUI and its own daemon)
-if "$BREW_BIN" list --cask tailscale >/dev/null 2>&1; then
-    ok "tailscale already installed"
+#
+# Detection precedence: Tailscale.app can be installed 3 ways on Mac —
+#   1. Directly via .pkg download (bypasses brew; required on first-time
+#      install because the kernel extension needs user approval in
+#      System Settings → Privacy & Security, which fails silently when
+#      brew runs /usr/sbin/installer under sudo).
+#   2. Via `brew install --cask tailscale` (works ONLY if the kext was
+#      already approved via a prior .pkg install).
+#   3. From the Mac App Store (sandboxed version — less common).
+#
+# If /Applications/Tailscale.app exists by any route, treat it as installed.
+# Otherwise, attempt brew cask but expect potential failure on a fresh Mac.
+if [[ -d "/Applications/Tailscale.app" ]]; then
+    ok "Tailscale.app already installed (via brew, .pkg, or App Store)"
+elif "$BREW_BIN" list --cask tailscale >/dev/null 2>&1; then
+    ok "tailscale already installed (brew cask)"
 else
     info "brew install --cask tailscale"
-    "$BREW_BIN" install --cask tailscale
+    if ! "$BREW_BIN" install --cask tailscale; then
+        warn "brew install --cask tailscale failed — likely the kernel extension approval"
+        warn "fix: download the .pkg from https://tailscale.com/download/macos"
+        warn "     run it locally (not via SSH) to trigger the System Settings approval dialog"
+        warn "     after that, 'brew install --cask tailscale' or simply launching Tailscale.app works"
+        warn "     (this topic will pass on next bootstrap run once Tailscale.app exists in /Applications)"
+        exit 1
+    fi
 fi
 
 ok "70-remote-access (mac) done"
