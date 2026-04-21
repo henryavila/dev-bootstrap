@@ -209,6 +209,36 @@ deploy_one() {
             ok "$dst up to date"
             return 0
         fi
+
+        # Safety check: refuse to overwrite user-facing rc files that lack
+        # our 'managed by dev-bootstrap' marker. Fragments in *.d/ dirs and
+        # scripts in .local/bin/ are considered bootstrap-owned by convention
+        # and skip the check. Escape hatch: ALLOW_OVERWRITE_UNMANAGED=1.
+        # Context: prevents the 30-shell regression where a user's handcrafted
+        # .zshrc with a custom Homebrew block was overwritten by the template
+        # on first bootstrap run, silently losing the override.
+        local needs_header_check=1
+        case "$dst" in
+            */.bashrc.d/*|*/.zshrc.d/*|*/.local/bin/*)
+                needs_header_check=0 ;;
+        esac
+        if [[ "$needs_header_check" == "1" ]] \
+             && [[ "${ALLOW_OVERWRITE_UNMANAGED:-0}" != "1" ]] \
+             && ! grep -qF "managed by dev-bootstrap" "$dst" 2>/dev/null; then
+            # Persist the staged content so the user can diff it. tmp_staging/
+            # is cleared when deploy.sh exits; /tmp survives until reboot.
+            local inspect_path="/tmp/dev-bootstrap-would-overwrite-$(basename "$dst")-$$"
+            cp "$staged" "$inspect_path" 2>/dev/null || true
+            fail "refusing to overwrite $dst — no 'managed by dev-bootstrap' marker."
+            fail "This file looks hand-managed. Options:"
+            fail "  1. Move custom blocks to ${dst}.local (never overwritten), delete $dst, re-run."
+            fail "  2. Review the template that would replace it:"
+            fail "       diff -u \"$dst\" \"$inspect_path\""
+            fail "  3. Accept the overwrite (a .bak-<ts> backup is created first):"
+            fail "       ALLOW_OVERWRITE_UNMANAGED=1 bash bootstrap.sh"
+            return 1
+        fi
+
         local ts
         ts="$(date +%Y%m%d-%H%M%S)"
         local backup="${dst}.bak-${ts}"
