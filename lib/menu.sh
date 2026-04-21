@@ -66,6 +66,54 @@ _menu_cancel() {
     exit 0
 }
 
+# Detect whether an opt-in topic is already installed on this machine.
+# Returns the string "ON" or "OFF" — used as the default state of each
+# checklist item so re-runs pre-select what's already present (user just
+# hits ENTER to keep current state + update).
+#
+# Heuristic per topic: look for a characteristic binary or directory that
+# the installer produces. Kept permissive — if any signal is present, ON.
+_topic_default_state() {
+    case "$1" in
+        laravel)
+            if command -v php >/dev/null 2>&1 || command -v composer >/dev/null 2>&1; then
+                echo ON
+            else
+                echo OFF
+            fi
+            ;;
+        remote)
+            # any of: tailscale CLI, syncthing binary, running sshd
+            if command -v tailscale >/dev/null 2>&1 \
+               || command -v syncthing >/dev/null 2>&1; then
+                echo ON
+            else
+                echo OFF
+            fi
+            ;;
+        editor)
+            if [[ -x "$HOME/.local/bin/typora-wait" ]] \
+               || command -v typora >/dev/null 2>&1 \
+               || command -v glow >/dev/null 2>&1; then
+                echo ON
+            else
+                echo OFF
+            fi
+            ;;
+        dotfiles)
+            local dir="${DOTFILES_DIR:-$HOME/dotfiles}"
+            if [[ -d "$dir/.git" ]]; then
+                echo ON
+            else
+                echo OFF
+            fi
+            ;;
+        *)
+            echo OFF
+            ;;
+    esac
+}
+
 run_menu() {
     banner "interactive setup"
     info "you can skip this menu anytime with: NON_INTERACTIVE=1 bash bootstrap.sh"
@@ -73,15 +121,18 @@ run_menu() {
     echo
 
     # ---------- Screen 1: opt-in topics ----------
+    # Defaults are computed per-topic from current machine state — re-runs
+    # pre-select what's already installed so ENTER = "keep & update", which
+    # is the common case. First run on a fresh machine still asks for everything.
     local choices
     choices=$(whiptail --title "dev-bootstrap :: opt-in topics" \
         --checklist \
-        "Select optional topics to install (SPACE to toggle, ENTER to confirm):" \
+        "Select optional topics to install (SPACE to toggle, ENTER to confirm).\nDefaults reflect what's already installed on this machine." \
         20 78 5 \
-        "laravel"  "60-laravel-stack     — PHP 8.4 + nginx + MySQL 8"       ON \
-        "remote"   "70-remote-access     — SSH server + Tailscale + Syncthing" ON \
-        "editor"   "90-editor            — typora-wait: open .md in Typora GUI from CLI" ON \
-        "dotfiles" "95-dotfiles-personal — clone your personal dotfiles"    ON \
+        "laravel"  "60-laravel-stack     — PHP 8.4 + nginx + MySQL 8"       "$(_topic_default_state laravel)" \
+        "remote"   "70-remote-access     — SSH server + Tailscale + Syncthing" "$(_topic_default_state remote)" \
+        "editor"   "90-editor            — typora-wait: open .md in Typora GUI from CLI" "$(_topic_default_state editor)" \
+        "dotfiles" "95-dotfiles-personal — clone your personal dotfiles"    "$(_topic_default_state dotfiles)" \
         3>&1 1>&2 2>&3) || _menu_cancel
 
     local need_dotfiles=0
@@ -139,32 +190,50 @@ run_menu() {
     fi
 
     # ---------- Screen 3: dotfiles repo URL (only if opted-in) ----------
+    # Precedence: env var > existing clone's `git remote origin` > prompt.
+    # Same pattern as git identity above — skips the prompt on re-run when
+    # the dotfiles were already cloned.
     if [[ "$need_dotfiles" == "1" ]]; then
-        DOTFILES_REPO=$(whiptail --title "95-dotfiles-personal :: repo" \
-            --inputbox \
+        local existing_dotfiles_repo=""
+        local candidate_dir="${DOTFILES_DIR:-$HOME/dotfiles}"
+        if command -v git >/dev/null 2>&1 && [[ -d "$candidate_dir/.git" ]]; then
+            existing_dotfiles_repo=$(git -C "$candidate_dir" remote get-url origin 2>/dev/null || true)
+        fi
+
+        if [[ -n "${DOTFILES_REPO:-}" ]]; then
+            :  # provided via env — use as-is
+        elif [[ -n "$existing_dotfiles_repo" ]]; then
+            info "keeping existing dotfiles remote: $existing_dotfiles_repo"
+            DOTFILES_REPO="$existing_dotfiles_repo"
+            DOTFILES_DIR="$candidate_dir"
+            export DOTFILES_REPO DOTFILES_DIR
+        else
+            DOTFILES_REPO=$(whiptail --title "95-dotfiles-personal :: repo" \
+                --inputbox \
 "URL of your personal dotfiles repo.
 Examples:
   git@github.com:youruser/dotfiles.git
   https://github.com/youruser/dotfiles.git
   file:///home/youruser/dotfiles   (local testing)" \
-            14 78 "${DOTFILES_REPO:-}" \
-            3>&1 1>&2 2>&3) || _menu_cancel
-
-        if [[ -z "$DOTFILES_REPO" ]]; then
-            warn "empty dotfiles URL — skipping 95-dotfiles-personal"
-        else
-            export DOTFILES_REPO
-
-            # DOTFILES_DIR — where the repo will be cloned.
-            # Pre-fill with expanded path so whiptail returns a valid absolute
-            # path (tilde would NOT be expanded by the shell since it came
-            # from user input, not a literal).
-            DOTFILES_DIR=$(whiptail --title "95-dotfiles-personal :: clone path" \
-                --inputbox \
-"Where to clone the dotfiles repo:" \
-                10 70 "${DOTFILES_DIR:-$HOME/dotfiles}" \
+                14 78 "${DOTFILES_REPO:-}" \
                 3>&1 1>&2 2>&3) || _menu_cancel
-            export DOTFILES_DIR
+
+            if [[ -z "$DOTFILES_REPO" ]]; then
+                warn "empty dotfiles URL — skipping 95-dotfiles-personal"
+            else
+                export DOTFILES_REPO
+
+                # DOTFILES_DIR — where the repo will be cloned.
+                # Pre-fill with expanded path so whiptail returns a valid absolute
+                # path (tilde would NOT be expanded by the shell since it came
+                # from user input, not a literal).
+                DOTFILES_DIR=$(whiptail --title "95-dotfiles-personal :: clone path" \
+                    --inputbox \
+"Where to clone the dotfiles repo:" \
+                    10 70 "${DOTFILES_DIR:-$HOME/dotfiles}" \
+                    3>&1 1>&2 2>&3) || _menu_cancel
+                export DOTFILES_DIR
+            fi
         fi
     fi
 
