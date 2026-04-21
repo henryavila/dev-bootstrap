@@ -68,6 +68,12 @@ fi
 if [ -n "${HOMEBREW_PREFIX:-}" ] && [ -d "$HOMEBREW_PREFIX/share/zsh-completions" ]; then
     fpath=("$HOMEBREW_PREFIX/share/zsh-completions" $fpath)
 fi
+# On Linux (no brew zsh-completions formula), 20-terminal-ux clones
+# zsh-users/zsh-completions into ~/.local/share/zsh-completions. Its
+# completions live under a `src/` subdirectory, so point fpath there.
+if [ -d "$HOME/.local/share/zsh-completions/src" ]; then
+    fpath=("$HOME/.local/share/zsh-completions/src" $fpath)
+fi
 autoload -Uz compinit && compinit -i
 
 # ---------- Editor ----------
