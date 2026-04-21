@@ -59,12 +59,45 @@ else
     "$BREW_BIN" install syncthing
 fi
 
-# Start as a brew service (auto-restart on login)
-if "$BREW_BIN" services list 2>/dev/null | awk '$1=="syncthing"{print $2}' | grep -qx 'started'; then
-    ok "syncthing service already running"
+# Start as a brew service (auto-restart on login), unless syncthing is
+# already running via a different path.
+#
+# On some Mac setups (notably: brew on external volume /Volumes/External,
+# or Syncthing v2 which needs the `serve` subcommand that brew's v1 plist
+# doesn't use), `brew services start syncthing` fails with launchctl errors
+# 78 (EX_CONFIG) or 5 (EIO). Workaround: run Syncthing via a custom
+# LaunchAgent (e.g. com.<user>.syncthing.plist) — see the
+# CONVERGENCE_PLAYBOOK "Known issues" section. If such a setup is already
+# active we skip the brew `services start` to avoid a redundant failure.
+#
+# Detection ladder (any hit = "don't touch"):
+#   1. UI listening on :8384 (definitive — covers all launch paths)
+#   2. A syncthing process is running under this user
+#   3. brew services reports started
+syncthing_running=0
+if curl -sf -o /dev/null --max-time 2 http://127.0.0.1:8384 2>/dev/null; then
+    syncthing_running=1
+elif pgrep -u "$USER" -f 'syncthing' >/dev/null 2>&1; then
+    syncthing_running=1
+elif "$BREW_BIN" services list 2>/dev/null | awk '$1=="syncthing"{print $2}' | grep -qx 'started'; then
+    syncthing_running=1
+fi
+
+if [[ "$syncthing_running" == "1" ]]; then
+    ok "syncthing already running (UI on :8384, or active LaunchAgent)"
 else
     info "brew services start syncthing"
-    "$BREW_BIN" services start syncthing
+    if ! "$BREW_BIN" services start syncthing; then
+        warn "brew services start syncthing failed"
+        warn "common causes on this host:"
+        warn "  • brew installed on external volume → TCC sandbox blocks launchctl"
+        warn "  • Syncthing v2 needs 'serve' subcommand; brew's v1 plist doesn't"
+        warn "workaround: create ~/Library/LaunchAgents/com.<user>.syncthing.plist"
+        warn "            with '<string>syncthing</string><string>serve</string>' then"
+        warn "            launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/com.<user>.syncthing.plist"
+        warn "see dotfiles/claude/CONVERGENCE_PLAYBOOK.md 'Known issues' for full context"
+        exit 1
+    fi
 fi
 
 # Wait briefly for config init
