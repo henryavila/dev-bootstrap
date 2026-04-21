@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# typora — open markdown in Typora GUI, non-blocking (returns immediately).
+#
+# Companion to typora-wait:
+#   typora foo.md       quick open, shell returns immediately
+#   typora-wait foo.md  block until Typora window closes (for $EDITOR usage)
+#
+# Follows https://support.typora.io/Use-Typora-From-Shell-or-cmd/
+#
+# Platform behavior:
+#   - macOS: LaunchServices (`open -a`) for existing files (reuses running
+#     Typora instance when present); /Applications/Typora.app/Contents/MacOS/Typora
+#     directly for missing files so Typora prompts to create them (the doc
+#     explicitly states `open -a` does NOT offer to create missing files).
+#   - WSL: delegates to Windows Typora.exe via interop, paths via `wslpath -w`.
+#   - Linux: uses system `typora` binary if present (avoiding re-invoking self).
+set -euo pipefail
+
+if [ $# -eq 0 ]; then
+    case "$(uname -s)" in
+        Darwin) exec open -a Typora ;;
+        Linux)
+            if grep -qi microsoft /proc/version 2>/dev/null; then
+                echo "typora: WSL usage: typora <file.md> [...]" >&2
+                exit 2
+            fi
+            # Native Linux — just launch GUI
+            native_typora="$(command -v /usr/bin/typora 2>/dev/null || true)"
+            [ -z "$native_typora" ] && native_typora="$(command -v /usr/local/bin/typora 2>/dev/null || true)"
+            if [ -n "$native_typora" ]; then
+                "$native_typora" &
+                disown
+                exit 0
+            fi
+            echo "typora: Typora not found on PATH" >&2
+            exit 1
+            ;;
+    esac
+fi
+
+case "$(uname -s)" in
+    Darwin)
+        if ! osascript -e 'id of app "Typora"' >/dev/null 2>&1; then
+            echo "typora: Typora.app not installed / not registered with LaunchServices" >&2
+            echo "  install: brew install --cask typora  (or download from typora.io)" >&2
+            exit 1
+        fi
+        bundle_bin="/Applications/Typora.app/Contents/MacOS/Typora"
+        for arg in "$@"; do
+            if [ -e "$arg" ]; then
+                # Existing file → LaunchServices reuses the running Typora process
+                open -a Typora "$arg"
+            elif [ -x "$bundle_bin" ]; then
+                # Missing file → direct binary triggers the create-new-file dialog
+                "$bundle_bin" "$arg" &
+                disown
+            else
+                echo "typora: /Applications/Typora.app not found (can't create new file)" >&2
+                exit 1
+            fi
+        done
+        ;;
+
+    Linux)
+        if grep -qi microsoft /proc/version 2>/dev/null; then
+            # WSL → Windows Typora.exe
+            win_typora=""
+            for candidate in \
+                "/mnt/c/Program Files/Typora/Typora.exe" \
+                "/mnt/c/Program Files (x86)/Typora/Typora.exe" \
+                "/mnt/c/Users/${USER}/AppData/Local/Programs/Typora/Typora.exe"; do
+                if [ -x "$candidate" ]; then
+                    win_typora="$candidate"
+                    break
+                fi
+            done
+            if [ -z "$win_typora" ]; then
+                echo "typora: Typora.exe not found on Windows side" >&2
+                echo "  searched:" >&2
+                echo "    C:\\Program Files\\Typora\\" >&2
+                echo "    C:\\Program Files (x86)\\Typora\\" >&2
+                echo "    %LOCALAPPDATA%\\Programs\\Typora\\" >&2
+                exit 1
+            fi
+            args=()
+            for arg in "$@"; do
+                if [ -e "$arg" ]; then
+                    args+=("$(wslpath -w "$arg")")
+                else
+                    args+=("$arg")
+                fi
+            done
+            # No --wait flag: Typora opens and we return immediately
+            "$win_typora" "${args[@]}" &
+            disown
+            exit 0
+        fi
+
+        # Native Linux — locate system typora (not ourselves) to avoid exec loop
+        native_typora=""
+        for candidate in /usr/bin/typora /usr/local/bin/typora /opt/typora/Typora; do
+            if [ -x "$candidate" ]; then
+                native_typora="$candidate"
+                break
+            fi
+        done
+        if [ -z "$native_typora" ]; then
+            echo "typora: Typora not found" >&2
+            echo "  install .deb/AppImage from https://typora.io" >&2
+            exit 1
+        fi
+        "$native_typora" "$@" &
+        disown
+        ;;
+
+    *)
+        echo "typora: unsupported platform $(uname -s)" >&2
+        exit 1
+        ;;
+esac
