@@ -194,7 +194,10 @@ if bash "$DEPLOY_SH" "$fx5/templates" >"$fx5/log" 2>&1; then
 else
     rc=$?
     assert "deploy.sh exited non-zero on .local template" "1" "$rc"
-    if grep -qF "with .local suffix" "$fx5/log"; then
+    # The message used to say "with .local suffix/path" — tightened
+    # to "with .local-suffix filename" after the basename-based refactor
+    # (see tests/unit/deploy-local-suffix.test.sh). Accept either phrasing.
+    if grep -qE "with \.local[- ]suffix" "$fx5/log"; then
         echo "  ✓ refuse-.local message emitted"
         pass_count=$((pass_count + 1))
     else

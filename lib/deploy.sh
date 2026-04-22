@@ -69,18 +69,31 @@ check_no_empty_refs() {
 }
 
 refuse_local_suffix() {
-    # Invariant: .local filenames are reserved for user overrides — they
+    # Invariant: *.local FILENAMES are reserved for user overrides — they
     # are loaded last by the rc files and are **never** managed by the
-    # bootstrap. A template or DEPLOY destination named *.local (or
-    # *.local.*) would violate that separation and silently clobber
-    # user customizations on every re-run. Fail early and loudly.
+    # bootstrap. A template or DEPLOY destination whose BASENAME ends in
+    # .local would silently clobber user customizations on every re-run.
+    #
+    # Gotcha the earlier pattern hit: `*/.local/*` matched the XDG-standard
+    # directory `~/.local/bin/` and rejected legitimate CLI deploy targets
+    # (link-project, php-use, share-project). The rule is about filename
+    # suffix, NOT about the presence of a `.local` path component.
+    #
+    # Implementation: strip everything up to the last `/` and match only
+    # the basename. This cleanly separates:
+    #   REFUSE: ~/.bashrc.local       (basename .bashrc.local)
+    #   REFUSE: ~/config.local.example (basename config.local.example)
+    #   REFUSE: ~/.local               (basename .local — destination file)
+    #   ALLOW:  ~/.local/bin/foo       (basename foo)
+    #   ALLOW:  ~/.local/share/fnm/fnm (basename fnm)
     local what="$1" value="$2"
-    case "$value" in
-        *.local|*.local.*|*/.local|*/.local/*|*.local/)
-            fail "deploy.sh: refusing $what '$value' with .local suffix/path."
-            fail "  .local files are reserved for user overrides (loaded last,"
-            fail "  never managed by dev-bootstrap). Rename the template, or if"
-            fail "  you really need a custom destination, use a non-.local name."
+    local base="${value##*/}"
+    case "$base" in
+        *.local|*.local.*|.local)
+            fail "deploy.sh: refusing $what '$value' with .local-suffix filename."
+            fail "  The basename ($base) ends in .local, which is reserved for"
+            fail "  user overrides (loaded last, never managed by dev-bootstrap)."
+            fail "  Rename the template, or use a non-.local destination name."
             exit 1
             ;;
     esac
