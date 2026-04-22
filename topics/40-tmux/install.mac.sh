@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 40-tmux (mac): tmux + Catppuccin theme plugin.
+# 40-tmux (mac): tmux + TPM + Catppuccin theme plugin.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,12 +15,26 @@ else
     "$BREW_BIN" install tmux
 fi
 
-# ─── Catppuccin tmux (v1.0.3, simple @catppuccin_flavour API) ─────────
-# Same clone path as Linux so tmux.conf's run-shell line is identical
-# across platforms. Pinned to v1 — see install.wsl.sh for rationale.
-CATP_TMUX="$HOME/.local/share/catppuccin-tmux"
+# ─── TPM (tmux plugin manager) ─────────────────────────────────────────
+# Parity with install.wsl.sh: same path (~/.tmux/plugins/tpm) so
+# tmux.conf is identical across platforms. Idempotent.
+TPM_DIR="$HOME/.tmux/plugins/tpm"
+if [ -d "$TPM_DIR/.git" ]; then
+    info "TPM already cloned — pulling updates"
+    git -C "$TPM_DIR" pull --quiet --ff-only 2>/dev/null \
+        && ok "TPM up to date" \
+        || warn "TPM pull failed (non-fatal)"
+else
+    info "cloning TPM → $TPM_DIR"
+    mkdir -p "$HOME/.tmux/plugins"
+    git clone --quiet --depth 1 https://github.com/tmux-plugins/tpm "$TPM_DIR"
+    ok "TPM cloned"
+fi
+
+# ─── Catppuccin tmux (v1.0.3, pre-cloned into TPM path) ───────────────
+# Same pin as Linux — see install.wsl.sh for rationale.
+CATP_TMUX="$HOME/.tmux/plugins/tmux"
 CATP_TAG="v1.0.3"
-# The v1.0.3 commit is also tagged as the rolling 'v1' — either is fine.
 if [ -d "$CATP_TMUX/.git" ]; then
     current_ref="$(git -C "$CATP_TMUX" describe --tags --exact-match 2>/dev/null || true)"
     case "$current_ref" in
