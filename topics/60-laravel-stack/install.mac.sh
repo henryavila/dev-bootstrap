@@ -1,31 +1,39 @@
 #!/usr/bin/env bash
-# 60-laravel-stack (mac): MySQL 8, Redis, Nginx, mkcert.
+# 60-laravel-stack (mac): MySQL 8, Redis, mkcert + Valet. Optional: mailpit,
+# ngrok, SQL Server driver.
+#
+# Design: on macOS, Valet is Laravel-team-maintained and already solves nginx
+# + dnsmasq + PHP switching + *.test resolution + HTTPS — everything our
+# WSL installer reinvents by hand. We install MySQL/Redis/mkcert via brew
+# (Valet doesn't manage them) and hand off the rest to Valet.
+#
+# User-facing CLIs stay the same: `link-project foo` works identically
+# across platforms (on Mac it's a thin wrapper around `valet link +
+# valet secure`; on WSL it touches sites-available and mkcert directly).
+
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
 
-: "${BREW_BIN:?BREW_BIN not set}"
+: "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
 : "${BREW_PREFIX:?BREW_PREFIX not set}"
 
-# NGINX_CONF_DIR is consumed by DEPLOY
-export NGINX_CONF_DIR="$BREW_PREFIX/etc/nginx/servers"
+# CODE_DIR is where Valet will `park` — every subdir becomes <name>.test
+: "${CODE_DIR:=$HOME/code/web}"
+mkdir -p "$CODE_DIR"
+export CODE_DIR
 
-# ---------- MySQL 8 ----------
-# brew's `mysql` formula tracks the latest major (9.x). Laravel work typically
-# targets MySQL 8, so we pin to `mysql@8.0` explicitly. That formula is
-# keg-only; we force-link after install so `mysql`/`mysqladmin`/`mysqldump`
-# end up on $PATH via $BREW_PREFIX/bin.
-#
-# Escape hatch: Oracle's DMG installer (dev.mysql.com/downloads) installs to
-# /usr/local/mysql. If detected, skip brew entirely — no sense installing MySQL
-# twice, and brew can't manage the Oracle install anyway.
+# ─── MySQL 8 ───────────────────────────────────────────────────────
+# Oracle DMG fallback: if /usr/local/mysql/bin/mysql exists, skip brew
+# (double-install is always bad, Oracle's DMG installer is outside brew's
+# management so uninstall is a manual step).
 ORACLE_MYSQL_BIN="/usr/local/mysql/bin/mysql"
 if [[ -x "$ORACLE_MYSQL_BIN" ]]; then
     info "Oracle MySQL detected at /usr/local/mysql — skipping brew install"
-    command -v mysql >/dev/null 2>&1 || \
-        warn "/usr/local/mysql/bin not on PATH; add it to your shell rc if needed"
+    command -v mysql >/dev/null 2>&1 \
+        || warn "/usr/local/mysql/bin not on PATH; add it to your shell rc"
 else
     if "$BREW_BIN" list --formula mysql@8.0 >/dev/null 2>&1; then
         ok "mysql@8.0 already installed"
@@ -33,14 +41,15 @@ else
         info "brew install mysql@8.0"
         "$BREW_BIN" install mysql@8.0
     fi
-    "$BREW_BIN" link --force --overwrite mysql@8.0 >/dev/null 2>&1 || \
-        warn "brew link mysql@8.0 failed — mysql may not be on PATH"
+    # mysql@8.0 is keg-only; link so `mysql` / `mysqladmin` / `mysqldump` go on PATH
+    "$BREW_BIN" link --force --overwrite mysql@8.0 >/dev/null 2>&1 \
+        || warn "brew link mysql@8.0 failed — mysql may not be on PATH"
     info "starting mysql@8.0 via brew services"
     "$BREW_BIN" services start mysql@8.0 >/dev/null 2>&1 || true
 fi
 
-# ---------- Redis / Nginx / mkcert ----------
-for p in redis nginx mkcert; do
+# ─── Redis + mkcert ────────────────────────────────────────────────
+for p in redis mkcert; do
     if "$BREW_BIN" list --formula "$p" >/dev/null 2>&1; then
         ok "$p already installed"
     else
@@ -49,19 +58,58 @@ for p in redis nginx mkcert; do
     fi
 done
 
-# Trust local CA
-mkcert -install || warn "mkcert CA install may need re-run"
+mkcert -install 2>/dev/null || warn "mkcert -install may need re-run in a TTY"
 
-# Background services (mysql handled above)
-info "starting redis, nginx via brew services"
-"$BREW_BIN" services start redis  >/dev/null 2>&1 || true
-"$BREW_BIN" services start nginx  >/dev/null 2>&1 || true
+info "starting redis via brew services"
+"$BREW_BIN" services start redis >/dev/null 2>&1 || true
 
-: "${CODE_DIR:=$HOME/code/web}"
-mkdir -p "$CODE_DIR"
-mkdir -p "$NGINX_CONF_DIR"
-ok "CODE_DIR=$CODE_DIR"
+# ─── Laravel Valet (replaces manual nginx + dnsmasq) ─────────────────
+# Installed via composer global; the binary ends up at
+# ~/.composer/vendor/bin/valet. We ensure that dir is on PATH via a
+# shell fragment (handled by 30-shell + the personal dotfiles), but
+# invoke via absolute path here for robustness.
+VALET_BIN="$HOME/.composer/vendor/bin/valet"
+if [[ ! -x "$VALET_BIN" ]]; then
+    info "composer global require laravel/valet"
+    composer global require laravel/valet --no-interaction --quiet
+fi
 
-export NGINX_CONF_DIR CODE_DIR
+if [[ -x "$VALET_BIN" ]]; then
+    # `valet install` is idempotent — re-runs refresh nginx/dnsmasq config
+    # but won't duplicate services or break existing parked dirs.
+    info "valet install (nginx + dnsmasq + HTTPS setup)"
+    "$VALET_BIN" install --quiet >/dev/null 2>&1 || warn "valet install returned non-zero"
 
-ok "60-laravel-stack (mac) done"
+    # Park CODE_DIR so every subdirectory is served as <name>.test
+    # Idempotent: Valet stores parks in ~/.config/valet/config.json
+    info "valet park $CODE_DIR"
+    ( cd "$CODE_DIR" && "$VALET_BIN" park --quiet >/dev/null 2>&1 ) || true
+
+    # Enable HTTPS globally for parked sites. `valet secured` lists certs;
+    # we secure the park itself (individual projects still need
+    # `valet secure <name>` for a fixed-name cert).
+    ok "Valet ready — every dir under $CODE_DIR is https://<dir>.test"
+else
+    warn "valet binary not found after composer install — check composer config"
+fi
+
+# ─── Optional extras ────────────────────────────────────────────────
+if [[ "${INCLUDE_MAILPIT:-0}" == "1" ]] && [[ -x "$HERE/scripts/install-mailpit.sh" ]]; then
+    info "installing mailpit"
+    bash "$HERE/scripts/install-mailpit.sh" || warn "mailpit install failed (non-fatal)"
+fi
+
+if [[ "${INCLUDE_NGROK:-0}" == "1" ]] && [[ -x "$HERE/scripts/install-ngrok.sh" ]]; then
+    info "installing ngrok"
+    bash "$HERE/scripts/install-ngrok.sh" || warn "ngrok install failed (non-fatal)"
+fi
+
+if [[ "${INCLUDE_MSSQL:-0}" == "1" ]]; then
+    warn "MSSQL driver install on Mac uses brew tap microsoft/mssql-release"
+    warn "  brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-release"
+    warn "  brew install msodbcsql18 mssql-tools18"
+    warn "  Then for each PHP version: pecl install sqlsrv pdo_sqlsrv"
+    warn "  Automated install on Mac is a future enhancement."
+fi
+
+ok "60-laravel-stack (mac) done — use link-project <name> to verify a site"

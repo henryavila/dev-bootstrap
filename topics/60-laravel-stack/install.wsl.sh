@@ -1,18 +1,58 @@
 #!/usr/bin/env bash
-# 60-laravel-stack (WSL): MySQL 8, Redis, Nginx, PHP-FPM 8.4, mkcert.
+# 60-laravel-stack (WSL): MySQL 8, Redis, nginx + mkcert (wildcard) + optional
+# extras (mailpit, ngrok, SQL Server driver). HTTPS works end-to-end
+# from WSL to the Windows host's browsers via automatic rootCA import.
+#
+# nginx topology:
+#   /etc/nginx/sites-available/catchall-php.conf    → *.localhost  (PHP-FPM)
+#   /etc/nginx/sites-available/catchall-proxy.conf  → *.front.localhost (reverse proxy)
+#   /etc/nginx/snippets/dev-bootstrap-*.conf        → shared includes
+#   /etc/nginx/conf.d/dev-bootstrap-maps.conf       → http{} level maps
+#   /etc/nginx/certs/wildcard-localhost.pem         → cert for *.localhost
+#                                                     + localhost + *.front.localhost
+#
+# install.sh deploys the files and then creates sites-enabled symlinks,
+# respecting the Debian convention (user can `unlink` to disable a site
+# without losing the config).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
 
-# Expose NGINX_CONF_DIR for deploy.sh (see DEPLOY file)
-export NGINX_CONF_DIR="/etc/nginx/sites-enabled"
+# ─── nginx paths (exported for deploy.sh envsubst) ───────────────────
+export NGINX_AVAILABLE_DIR="/etc/nginx/sites-available"
+export NGINX_ENABLED_DIR="/etc/nginx/sites-enabled"
+export NGINX_SNIPPET_DIR="/etc/nginx/snippets"
+export NGINX_MAP_DIR="/etc/nginx/conf.d"
+export CERT_DIR="/etc/nginx/certs"
+# Legacy compat (still used by lib/deploy.sh ENVSUBST_ALLOWLIST defaults)
+export NGINX_CONF_DIR="$NGINX_ENABLED_DIR"
 
-# Explicit mysql-server-8.0 (not the meta `mysql-server`) to guarantee MySQL 8
-# on any Ubuntu release — the meta-package can resolve to MariaDB on some
-# Debian-derived distros.
-pkgs=(mysql-server-8.0 redis-server nginx php8.4-fpm)
+# ─── CODE_DIR + DEV_DEFAULT_PORT ─────────────────────────────────────
+: "${CODE_DIR:=$HOME/code/web}"
+: "${DEV_DEFAULT_PORT:=3000}"
+export CODE_DIR DEV_DEFAULT_PORT
+mkdir -p "$CODE_DIR"
+
+# ─── PHP_DEFAULT (from 10-languages) ─────────────────────────────────
+# PHP_DEFAULT is set by 10-languages from PHP_VERSIONS. Fall back to whatever
+# /usr/bin/php resolves to if this topic runs standalone (ONLY_TOPICS).
+if [[ -z "${PHP_DEFAULT:-}" ]]; then
+    if command -v php >/dev/null 2>&1; then
+        PHP_DEFAULT="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
+        info "PHP_DEFAULT inferred from current default: $PHP_DEFAULT"
+    else
+        fail "PHP_DEFAULT not set and no php on PATH — run 10-languages first"
+        exit 1
+    fi
+fi
+export PHP_DEFAULT
+
+# ─── Base packages ───────────────────────────────────────────────────
+# Explicit mysql-server-8.0 (not meta mysql-server → can resolve to MariaDB
+# on some Debian-derived distros).
+pkgs=(mysql-server-8.0 redis-server nginx)
 missing=()
 for p in "${pkgs[@]}"; do
     if dpkg -s "$p" >/dev/null 2>&1; then
@@ -21,14 +61,23 @@ for p in "${pkgs[@]}"; do
         missing+=("$p")
     fi
 done
-
 if [[ "${#missing[@]}" -gt 0 ]]; then
     info "installing: ${missing[*]}"
     sudo apt-get update -qq
     sudo apt-get install -y -qq "${missing[@]}"
 fi
 
-# mkcert (not in default apt)
+# PHP-FPM for every installed version (each FPM runs independently, socket
+# per version under /run/php/). Default catchall points at PHP_DEFAULT; users
+# with one project needing an older PHP can create a dedicated site config.
+for ver in ${PHP_VERSIONS:-$PHP_DEFAULT}; do
+    if ! dpkg -s "php${ver}-fpm" >/dev/null 2>&1; then
+        info "installing php${ver}-fpm"
+        sudo apt-get install -y -qq "php${ver}-fpm"
+    fi
+done
+
+# ─── mkcert + wildcard cert ──────────────────────────────────────────
 if ! command -v mkcert >/dev/null 2>&1; then
     info "installing mkcert"
     sudo apt-get install -y -qq libnss3-tools
@@ -37,17 +86,112 @@ if ! command -v mkcert >/dev/null 2>&1; then
     curl -fsSL -o "$tmp/mkcert" "https://github.com/FiloSottile/mkcert/releases/download/${mkcert_ver}/mkcert-${mkcert_ver}-linux-amd64"
     sudo install -m 0755 "$tmp/mkcert" /usr/local/bin/mkcert
     rm -rf "$tmp"
-    mkcert -install || warn "mkcert CA install may need re-run interactively"
 else
     ok "mkcert already installed"
 fi
 
-# Ensure $CODE_DIR exists (used by link-project and nginx catchall)
-: "${CODE_DIR:=$HOME/code/web}"
-mkdir -p "$CODE_DIR"
-ok "CODE_DIR=$CODE_DIR"
+# Install rootCA into WSL trust stores (NSS + system). Non-fatal if it
+# needs re-run interactively for Firefox profile.
+mkcert -install 2>/dev/null || warn "mkcert -install may need re-run in a TTY"
 
-# Expose for deploy.sh
-export NGINX_CONF_DIR CODE_DIR
+# Generate wildcard cert covering BOTH catchall subdomains in one file
+sudo mkdir -p "$CERT_DIR"
+WILDCARD_PEM="$CERT_DIR/wildcard-localhost.pem"
+WILDCARD_KEY="$CERT_DIR/wildcard-localhost-key.pem"
+if [[ ! -f "$WILDCARD_PEM" ]] || [[ ! -f "$WILDCARD_KEY" ]]; then
+    info "generating wildcard localhost cert (mkcert)"
+    tmp="$(mktemp -d)"
+    ( cd "$tmp" && mkcert \
+        -cert-file "wildcard-localhost.pem" \
+        -key-file  "wildcard-localhost-key.pem" \
+        "*.localhost" "localhost" "*.front.localhost" "127.0.0.1" "::1" )
+    sudo install -m 0644 -o root -g root "$tmp/wildcard-localhost.pem"     "$WILDCARD_PEM"
+    sudo install -m 0640 -o root -g root "$tmp/wildcard-localhost-key.pem" "$WILDCARD_KEY"
+    rm -rf "$tmp"
+    ok "wildcard cert → $WILDCARD_PEM"
+else
+    ok "wildcard cert already exists"
+fi
 
-ok "60-laravel-stack (wsl) done — reminder: 'sudo systemctl start mysql redis nginx php8.4-fpm' and 'link-project <name>' to wire new sites"
+# ─── Windows trust store import (so Chrome/Edge on Windows trust us) ──
+# WSL-only path. Runs the PowerShell script on the Windows side via
+# interop, imports rootCA into HKCU:\Root (user scope, no admin).
+if command -v powershell.exe >/dev/null 2>&1; then
+    ROOTCA="$(mkcert -CAROOT)/rootCA.pem"
+    PS_SCRIPT="$HERE/scripts/import-mkcert-windows.ps1"
+    if [[ -f "$ROOTCA" ]] && [[ -f "$PS_SCRIPT" ]]; then
+        info "importing mkcert rootCA into Windows CurrentUser\\Root"
+        ROOTCA_WIN="$(wslpath -w "$ROOTCA")"
+        PS_WIN="$(wslpath -w "$PS_SCRIPT")"
+        # shellcheck disable=SC2016  # the $env: is PowerShell-side, not bash
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+            "\$env:ROOTCA_PATH = '$ROOTCA_WIN'; & '$PS_WIN'" \
+            2>&1 | sed 's/^/    /' || warn "Windows CA import returned non-zero (non-fatal)"
+    else
+        warn "rootCA or PS script missing — skipping Windows trust import"
+    fi
+else
+    warn "powershell.exe not available — skipping Windows CA import (Chrome/Edge on Windows won't trust *.localhost until this is solved)"
+fi
+
+# ─── Optional extras: mailpit, ngrok, MSSQL driver ───────────────────
+# Each gated by its own INCLUDE_* env var. Script paths are siblings of
+# this installer so they can be invoked standalone too.
+if [[ "${INCLUDE_MAILPIT:-0}" == "1" ]] && [[ -x "$HERE/scripts/install-mailpit.sh" ]]; then
+    info "installing mailpit (SMTP :1025, UI :8025)"
+    bash "$HERE/scripts/install-mailpit.sh" || warn "mailpit install failed (non-fatal)"
+fi
+
+if [[ "${INCLUDE_NGROK:-0}" == "1" ]] && [[ -x "$HERE/scripts/install-ngrok.sh" ]]; then
+    info "installing ngrok"
+    bash "$HERE/scripts/install-ngrok.sh" || warn "ngrok install failed (non-fatal)"
+fi
+
+if [[ "${INCLUDE_MSSQL:-0}" == "1" ]] && [[ -x "$HERE/scripts/install-mssql-driver.sh" ]]; then
+    info "installing Microsoft SQL Server driver + PHP extensions"
+    bash "$HERE/scripts/install-mssql-driver.sh" || warn "MSSQL driver install failed (non-fatal)"
+fi
+
+# ─── Nginx dirs + sites-enabled symlinks ─────────────────────────────
+# deploy.sh already dropped files into NGINX_AVAILABLE_DIR. Create symlinks
+# in NGINX_ENABLED_DIR so nginx loads them (Debian convention).
+sudo mkdir -p "$NGINX_AVAILABLE_DIR" "$NGINX_ENABLED_DIR" "$NGINX_SNIPPET_DIR" "$NGINX_MAP_DIR"
+
+# Cleanup: if the OLD single-file catchall.conf from pre-v2026-04-23 is
+# still in sites-enabled as a regular file (not symlink), remove it so
+# the new sites-available/catchall-php.conf + symlink doesn't conflict.
+OLD_CATCHALL="$NGINX_ENABLED_DIR/catchall.conf"
+if [[ -f "$OLD_CATCHALL" ]] && [[ ! -L "$OLD_CATCHALL" ]]; then
+    if grep -q "managed by dev-bootstrap" "$OLD_CATCHALL" 2>/dev/null; then
+        info "removing legacy $OLD_CATCHALL (replaced by split sites)"
+        sudo rm -f "$OLD_CATCHALL"
+    fi
+fi
+
+# Create/refresh symlinks for our managed sites
+for site in catchall-php.conf catchall-proxy.conf; do
+    src="$NGINX_AVAILABLE_DIR/$site"
+    dst="$NGINX_ENABLED_DIR/$site"
+    [[ ! -f "$src" ]] && continue
+    if [[ ! -L "$dst" ]] || [[ "$(readlink -f "$dst")" != "$(readlink -f "$src")" ]]; then
+        sudo ln -sf "$src" "$dst"
+        ok "enabled site: $site"
+    else
+        ok "$site already enabled"
+    fi
+done
+
+# Validate config before suggesting reload — catches obvious breakage on first run
+if sudo nginx -t >/dev/null 2>&1; then
+    ok "nginx config is valid"
+    sudo systemctl reload nginx 2>/dev/null \
+        || sudo service nginx reload 2>/dev/null \
+        || warn "couldn't reload nginx (not running?) — start with: sudo systemctl start nginx"
+else
+    warn "nginx config FAILED validation — run 'sudo nginx -t' to see the error"
+fi
+
+ok "60-laravel-stack (wsl) done — default PHP: $PHP_DEFAULT"
+ok "  start services once:   sudo systemctl start mysql redis nginx php${PHP_DEFAULT}-fpm"
+ok "  create a Laravel site: link-project <name>          → https://<name>.localhost"
+ok "  create a proxy site:   link-project --frontend <name> [--port 3000]  → https://<name>.front.localhost"
