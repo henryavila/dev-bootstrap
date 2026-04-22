@@ -20,12 +20,16 @@ should_show_menu() {
     [[ -n "${CI:-}" ]]                   && return 1
 
     # Any pre-configured control var means "automation mode" — respect it.
-    [[ -n "${ONLY_TOPICS:-}" ]]          && return 1
-    [[ "${INCLUDE_DOCKER:-0}" == "1" ]]  && return 1
-    [[ "${INCLUDE_LARAVEL:-0}" == "1" ]] && return 1
-    [[ "${INCLUDE_REMOTE:-0}" == "1" ]]  && return 1
-    [[ "${INCLUDE_EDITOR:-0}" == "1" ]]  && return 1
-    [[ -n "${DOTFILES_REPO:-}" ]]        && return 1
+    [[ -n "${ONLY_TOPICS:-}" ]]           && return 1
+    [[ "${INCLUDE_DOCKER:-0}"  == "1" ]]  && return 1
+    [[ "${INCLUDE_LARAVEL:-0}" == "1" ]]  && return 1
+    [[ "${INCLUDE_REMOTE:-0}"  == "1" ]]  && return 1
+    [[ "${INCLUDE_EDITOR:-0}"  == "1" ]]  && return 1
+    [[ "${INCLUDE_MAILPIT:-0}" == "1" ]]  && return 1
+    [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
+    [[ "${INCLUDE_MSSQL:-0}"   == "1" ]]  && return 1
+    [[ -n "${PHP_VERSIONS:-}" ]]          && return 1
+    [[ -n "${DOTFILES_REPO:-}" ]]         && return 1
 
     # No TTY → can't show a menu (piped install, cron, etc).
     [[ -t 0 ]] && [[ -t 1 ]] || return 1
@@ -250,17 +254,103 @@ Examples:
         fi
     fi
 
-    # ---------- Screen 3b: CODE_DIR (only if laravel stack opted in) ----------
-    # Laravel topic uses CODE_DIR for the nginx catchall root. Other topics
-    # don't read it, so only ask when it matters.
+    # ---------- Screen 3b–3e: laravel stack configuration ----------
+    # Only prompts when the user opted into 60-laravel-stack. Each screen
+    # exports its selection so 10-languages + 60-laravel-stack read the
+    # same values that the menu gathered.
     if [[ "${INCLUDE_LARAVEL:-0}" == "1" ]]; then
+        # --- 3b · CODE_DIR ---
         CODE_DIR=$(whiptail --title "60-laravel-stack :: projects root" \
             --inputbox \
-"Root directory for Laravel projects. The nginx catchall serves
-*.localhost from <CODE_DIR>/<project>/public." \
-            12 70 "${CODE_DIR:-$HOME/code/web}" \
+"Root directory for your web projects. The nginx catchall serves
+*.localhost from <CODE_DIR>/<project>/public.
+On Mac, Valet parks this dir so every subdir becomes <name>.test." \
+            13 70 "${CODE_DIR:-$HOME/code/web}" \
             3>&1 1>&2 2>&3) || _menu_cancel
         export CODE_DIR
+
+        # --- 3c · PHP versions (multi-select) ---
+        # Pulls the list from the single source of truth so adding a new
+        # version to php-versions.conf auto-propagates to the menu.
+        local versions_file
+        versions_file="$(dirname "${BASH_SOURCE[0]}")/../topics/10-languages/data/php-versions.conf"
+        local -a php_checklist_items=()
+        if [[ -f "$versions_file" ]]; then
+            while IFS= read -r ver; do
+                local state="OFF"
+                # Pre-select: this machine already has the version installed,
+                # or it's the "latest" and there's no installed version yet.
+                if command -v "php${ver}" >/dev/null 2>&1 \
+                   || [[ -x "/usr/bin/php${ver}" ]] \
+                   || brew list --formula "php@${ver}" >/dev/null 2>&1 2>/dev/null; then
+                    state="ON"
+                fi
+                php_checklist_items+=("$ver" "PHP $ver" "$state")
+            done < <(grep -vE '^\s*(#|$)' "$versions_file" | sort -V)
+        fi
+        # If nothing looks installed yet, pre-select the last (latest) version
+        # so fresh machines get a sensible default.
+        if [[ "${#php_checklist_items[@]}" -ge 3 ]]; then
+            local any_on=0
+            for ((i=2; i<${#php_checklist_items[@]}; i+=3)); do
+                [[ "${php_checklist_items[$i]}" == "ON" ]] && { any_on=1; break; }
+            done
+            if [[ "$any_on" == "0" ]]; then
+                # Turn on the last one (highest version after sort -V)
+                php_checklist_items[${#php_checklist_items[@]}-1]="ON"
+            fi
+        fi
+
+        local php_choices
+        php_choices=$(whiptail --title "60-laravel-stack :: PHP versions" \
+            --checklist \
+"Which PHP versions should be installed?
+The last-selected version becomes the CLI / composer / php-fpm default.
+Switch later with: php-use <version>" \
+            16 70 6 \
+            "${php_checklist_items[@]}" \
+            3>&1 1>&2 2>&3) || _menu_cancel
+
+        # whiptail returns quoted space-separated values: "8.4" "8.5"
+        local -a php_selected=()
+        read -ra php_selected <<< "${php_choices//\"/}"
+        if [[ "${#php_selected[@]}" -gt 0 ]]; then
+            # Sort so PHP_DEFAULT = last (highest) is deterministic
+            PHP_VERSIONS="$(printf '%s\n' "${php_selected[@]}" | sort -V | tr '\n' ' ' | sed 's/ $//')"
+            PHP_DEFAULT="$(echo "$PHP_VERSIONS" | tr ' ' '\n' | tail -1)"
+            export PHP_VERSIONS PHP_DEFAULT
+        else
+            warn "no PHP version selected — topics 10-languages + 60-laravel-stack will pick defaults"
+        fi
+
+        # --- 3d · Laravel extras (multi-select) ---
+        local extras_choices
+        extras_choices=$(whiptail --title "60-laravel-stack :: optional extras" \
+            --checklist \
+"Add-ons to the Laravel stack. Each is installed only if checked.
+mailpit + ngrok are low-impact; MSSQL driver takes ~2 min and requires
+accepting Microsoft's EULA (auto-set via ACCEPT_EULA=Y)." \
+            15 78 4 \
+            "mailpit"   "local mail catcher (SMTP :1025, UI :8025)"   \
+                "$(command -v mailpit >/dev/null 2>&1 && echo ON || echo ON)" \
+            "ngrok"     "public tunnel agent (share-project wrapper)" \
+                "$(command -v ngrok >/dev/null 2>&1 && echo ON || echo OFF)" \
+            "frontend"  "register *.front.localhost proxy catchall (Nuxt/Vite/Next)" \
+                "ON" \
+            "mssql"     "Microsoft SQL Server driver (msodbcsql18 + sqlsrv PECL)" \
+                "$(php -m 2>/dev/null | grep -qi sqlsrv && echo ON || echo OFF)" \
+            3>&1 1>&2 2>&3) || _menu_cancel
+
+        local -a extras_selected=()
+        read -ra extras_selected <<< "${extras_choices//\"/}"
+        for choice in "${extras_selected[@]+"${extras_selected[@]}"}"; do
+            case "$choice" in
+                mailpit)  export INCLUDE_MAILPIT=1 ;;
+                ngrok)    export INCLUDE_NGROK=1 ;;
+                frontend) export INCLUDE_FRONTEND_PROXY=1 ;;
+                mssql)    export INCLUDE_MSSQL=1 ;;
+            esac
+        done
     fi
 
     # ---------- Screen 4: confirm ----------
