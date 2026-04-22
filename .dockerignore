@@ -1,0 +1,20 @@
+# Keep the Docker build context tight — the COPY . in ci/Dockerfile.ubuntu-24.04
+# only needs the tree the bootstrap actually reads.
+.git
+.github
+
+# Test artifacts and logs — the smoke-test itself writes ci/last-run.log;
+# re-copying stale runs into the image would invalidate the cache for no reason.
+**/*.log
+ci/last-run.log
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Deploy backups
+*.bak-*
