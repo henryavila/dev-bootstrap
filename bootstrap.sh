@@ -123,24 +123,48 @@ detect_brew_if_mac() {
 }
 
 derive_nginx_conf_dir() {
-    # 60-laravel-stack deploys a catchall nginx config. The destination differs
-    # by OS; derive it here so deploy.sh (a fresh subshell) can see it via envsubst.
+    # 60-laravel-stack deploys multiple nginx files that reference these
+    # paths via envsubst. deploy.sh runs in a fresh subshell from the
+    # bootstrap parent (NOT from install.*.sh), so exports inside the
+    # installer don't propagate here. Every path the DEPLOY file mentions
+    # must be derived + exported in the bootstrap shell itself.
     case "$OS" in
         wsl|linux)
-            NGINX_CONF_DIR="/etc/nginx/sites-enabled"
+            NGINX_AVAILABLE_DIR="/etc/nginx/sites-available"
+            NGINX_ENABLED_DIR="/etc/nginx/sites-enabled"
+            NGINX_SNIPPET_DIR="/etc/nginx/snippets"
+            NGINX_MAP_DIR="/etc/nginx/conf.d"
+            CERT_DIR="/etc/nginx/certs"
             ;;
         mac)
             if [[ -n "$BREW_PREFIX" ]]; then
-                NGINX_CONF_DIR="$BREW_PREFIX/etc/nginx/servers"
+                NGINX_AVAILABLE_DIR="$BREW_PREFIX/etc/nginx/servers-available"
+                NGINX_ENABLED_DIR="$BREW_PREFIX/etc/nginx/servers"
+                NGINX_SNIPPET_DIR="$BREW_PREFIX/etc/nginx/snippets"
+                NGINX_MAP_DIR="$BREW_PREFIX/etc/nginx/conf.d"
+                CERT_DIR="$BREW_PREFIX/etc/nginx/certs"
             else
-                NGINX_CONF_DIR=""
+                NGINX_AVAILABLE_DIR="" NGINX_ENABLED_DIR=""
+                NGINX_SNIPPET_DIR=""   NGINX_MAP_DIR=""
+                CERT_DIR=""
             fi
             ;;
         *)
-            NGINX_CONF_DIR=""
+            NGINX_AVAILABLE_DIR="" NGINX_ENABLED_DIR=""
+            NGINX_SNIPPET_DIR=""   NGINX_MAP_DIR=""
+            CERT_DIR=""
             ;;
     esac
-    export NGINX_CONF_DIR
+    # Back-compat alias (templates that still use $NGINX_CONF_DIR — same
+    # semantic as sites-enabled for historical reasons).
+    NGINX_CONF_DIR="$NGINX_ENABLED_DIR"
+    export NGINX_CONF_DIR NGINX_AVAILABLE_DIR NGINX_ENABLED_DIR \
+           NGINX_SNIPPET_DIR NGINX_MAP_DIR CERT_DIR
+
+    # DEV_DEFAULT_PORT is used by catchall-proxy.conf; default if unset
+    # so envsubst never leaves a literal ${DEV_DEFAULT_PORT} in the file.
+    : "${DEV_DEFAULT_PORT:=3000}"
+    export DEV_DEFAULT_PORT
 }
 
 detect_brew_if_mac

@@ -25,15 +25,22 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
 fi
 
 # ─── Detect powershell.exe via interop ──────────────────────────────
+# Tries $PATH first, then falls back to absolute paths — works even when
+# /etc/wsl.conf has [interop] appendWindowsPath=false (common in
+# corporate setups) where command -v returns nothing.
 PWSH=""
-for cand in powershell.exe pwsh.exe; do
+for cand in powershell.exe pwsh.exe \
+            "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe" \
+            "/mnt/c/Program Files/PowerShell/7/pwsh.exe"; do
     if command -v "$cand" >/dev/null 2>&1; then
-        PWSH="$cand"
-        break
+        PWSH="$cand"; break
+    fi
+    if [[ -x "$cand" ]]; then
+        PWSH="$cand"; break
     fi
 done
 if [[ -z "$PWSH" ]]; then
-    warn "powershell.exe not found on PATH — WSL interop may be disabled; skipping"
+    warn "no powershell.exe / pwsh.exe found (checked PATH + standard Windows paths); skipping"
     exit 0
 fi
 

@@ -116,7 +116,23 @@ fi
 # ─── Windows trust store import (so Chrome/Edge on Windows trust us) ──
 # WSL-only path. Runs the PowerShell script on the Windows side via
 # interop, imports rootCA into HKCU:\Root (user scope, no admin).
-if command -v powershell.exe >/dev/null 2>&1; then
+#
+# `command -v powershell.exe` fails when /etc/wsl.conf has
+# [interop] appendWindowsPath=false — the binary exists but isn't on
+# $PATH. Fall through to absolute paths before giving up.
+PWSH_BIN=""
+for cand in powershell.exe pwsh.exe \
+            "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe" \
+            "/mnt/c/Program Files/PowerShell/7/pwsh.exe"; do
+    if command -v "$cand" >/dev/null 2>&1; then
+        PWSH_BIN="$cand"; break
+    fi
+    if [[ -x "$cand" ]]; then
+        PWSH_BIN="$cand"; break
+    fi
+done
+
+if [[ -n "$PWSH_BIN" ]]; then
     ROOTCA="$(mkcert -CAROOT)/rootCA.pem"
     PS_SCRIPT="$HERE/scripts/import-mkcert-windows.ps1"
     if [[ -f "$ROOTCA" ]] && [[ -f "$PS_SCRIPT" ]]; then
@@ -124,7 +140,7 @@ if command -v powershell.exe >/dev/null 2>&1; then
         ROOTCA_WIN="$(wslpath -w "$ROOTCA")"
         PS_WIN="$(wslpath -w "$PS_SCRIPT")"
         # shellcheck disable=SC2016  # the $env: is PowerShell-side, not bash
-        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+        "$PWSH_BIN" -NoProfile -ExecutionPolicy Bypass -Command \
             "\$env:ROOTCA_PATH = '$ROOTCA_WIN'; & '$PS_WIN'" \
             2>&1 | sed 's/^/    /' || warn "Windows CA import returned non-zero (non-fatal)"
     else
