@@ -12,77 +12,60 @@ source "$HERE/../../../lib/log.sh"
 
 # ─── 1. Authenticate gh ─────────────────────────────────────────────
 # OAuth device flow via browser — 1 token per machine, revokable
-# independently. If NON_INTERACTIVE=1 and GITHUB_TOKEN env var is set,
-# uses token login (no browser, for CI/headless).
+# independently.
 #
-# Retry logic: gh CLI 2.x has a bug where the OAuth `slow_down` response
-# (RFC 8628 rate-limit signal) is treated as fatal instead of
-# exponential backoff. First attempt often fails if the user takes
-# >15s to open the browser + paste code. Retry with 90s pause resets
-# GitHub's per-device rate window.
+# CRITICAL: `gh auth login` MUST run against a real TTY. Our parent
+# (bootstrap.sh:276) invokes topics via `bash installer 2>&1 | tee
+# -a LOG` — the `| tee` makes stdout/stderr non-TTY. When gh detects
+# non-TTY, it SKIPS the "Press Enter to continue" pause built into
+# its interactive flow and starts polling GitHub's OAuth endpoint
+# IMMEDIATELY, before the user can copy the one-time code + approve
+# it in the browser. GitHub then rate-limits (`slow_down` response
+# per RFC 8628), which gh 2.x treats as a fatal error. The auth
+# "fails" in seconds — but the real cause is the missing TTY, not
+# the user being slow.
+#
+# Fix: bind stdin/stdout/stderr of `gh auth login` to /dev/tty —
+# the controlling terminal that exists for any shell session
+# launched from a user TTY. This bypasses the tee pipe for just
+# this command; gh sees a real terminal and behaves normally
+# (pauses for Press Enter, starts polling only after user is
+# actually ready).
+#
+# NON_INTERACTIVE=1 + GITHUB_TOKEN path skips TTY entirely (CI).
 if gh auth status >/dev/null 2>&1; then
     ok "gh already authenticated ($(gh api user -q .login 2>/dev/null || echo 'unknown'))"
 else
     if [[ "${NON_INTERACTIVE:-0}" == "1" ]] && [[ -n "${GITHUB_TOKEN:-}" ]]; then
         info "authenticating gh via GITHUB_TOKEN (non-interactive)"
         echo "$GITHUB_TOKEN" | gh auth login --with-token
-    else
-        cat <<'BANNER'
-
-  ╭──────────────────────────────────────────────────────────────╮
-  │  GitHub authentication — OAuth device flow                   │
-  ╰──────────────────────────────────────────────────────────────╯
-
-    ➜ gh will print an 8-character code (e.g. ABCD-1234)
-    ➜ Open this URL in any browser (phone works, doesn't need to
-      be on this machine):
-
-         https://github.com/login/device
-
-    ➜ Paste the code, approve "github" scopes.
-    ➜ Come back here — bootstrap resumes automatically.
-
-    Tips:
-      - Have the browser tab already open BEFORE the code appears
-        so you can paste it immediately (gh poll-then-fail bug:
-        slow humans trigger rate-limit).
-      - If the first attempt fails, we retry automatically.
-
-BANNER
-        sleep 2   # let user read the banner before gh floods output
-
-        auth_ok=0
-        for attempt in 1 2 3; do
-            info "auth attempt $attempt/3"
-            if gh auth login --web \
-                    --git-protocol ssh \
-                    --scopes "admin:public_key,repo" \
-                    --hostname github.com; then
-                auth_ok=1
-                break
-            fi
-            if [ "$attempt" -lt 3 ]; then
-                warn "gh auth login failed (likely GitHub rate-limit on OAuth poll)"
-                warn "waiting 90s for the rate window to reset before retry..."
-                sleep 90
-            fi
-        done
-
-        if [ "$auth_ok" -eq 0 ]; then
-            fail "gh auth login failed after 3 attempts"
-            cat <<'RECOVERY'
-
-  Manual recovery:
-    1. Wait ~5 minutes (GitHub rate-limit reset window).
-    2. Run:
-         gh auth login --hostname github.com --git-protocol ssh \
-             --scopes 'admin:public_key,repo' --web
-    3. Re-run bootstrap — topic 05-identity is idempotent and will
-       skip the auth step once gh is authenticated.
-
-RECOVERY
+    elif [ -r /dev/tty ] && [ -w /dev/tty ]; then
+        info "authenticating gh interactively (/dev/tty — bypasses tee pipe)"
+        info ""
+        info "gh will pause and ask you to press Enter before opening the browser."
+        info "Scopes: admin:public_key (register SSH key) + repo (clone private)."
+        info ""
+        if ! gh auth login --web \
+                --git-protocol ssh \
+                --scopes "admin:public_key,repo" \
+                --hostname github.com \
+                </dev/tty >/dev/tty 2>&1; then
+            fail "gh auth login failed"
+            info ""
+            info "This is unexpected now that we're using /dev/tty. Possible causes:"
+            info "  - Actual GitHub rate-limit (5-10 failed attempts in ~5 min)"
+            info "    → wait 5min, re-run bootstrap (idempotent — skips completed topics)"
+            info "  - Network blocking github.com"
+            info "    → test: curl -v https://api.github.com/"
+            info "  - gh version issue"
+            info "    → test: gh --version ; gh auth status"
             exit 1
         fi
+    else
+        fail "no /dev/tty available and GITHUB_TOKEN not set"
+        info "Headless setup: set GITHUB_TOKEN env var with a PAT that has"
+        info "admin:public_key,repo scopes, then re-run with NON_INTERACTIVE=1."
+        exit 1
     fi
 fi
 
