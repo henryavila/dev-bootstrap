@@ -15,7 +15,7 @@ interactive.diffFilter=delta --color-only
 delta.navigate=true
 delta.side-by-side=false
 delta.line-numbers=true
-delta.syntax-theme=Catppuccin-Mocha
+delta.syntax-theme=Catppuccin Mocha
 
 # merge / pull / push behavior
 merge.conflictstyle=zdiff3
