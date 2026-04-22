@@ -157,7 +157,9 @@ if [[ -n "$FIRST_FAIL" ]]; then
     echo
     info "ROBUST SOLUTION — always works regardless of interop state:"
     info "  Open Windows PowerShell (on Windows side) and run:"
-    info "    & '${SCRIPT_UNC}'"
+    info "    powershell -ExecutionPolicy Bypass -File '${SCRIPT_UNC}'"
+    info "  -ExecutionPolicy Bypass is scoped to THIS invocation only —"
+    info "  needed because PowerShell refuses unsigned scripts over UNC by default."
     info "  The script uses 'wsl.exe cat' which bypasses binfmt/interop"
     info "  entirely — it reaches the WSL VM through a different channel."
     echo

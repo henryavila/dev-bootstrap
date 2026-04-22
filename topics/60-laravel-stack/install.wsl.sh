@@ -167,10 +167,13 @@ Effect: HTTPS *.localhost will fail with ERR_CERT_AUTHORITY_INVALID in
 
 SOLUTION (robust, independent of WSL interop):
 
-  1. Open Windows PowerShell (on the Windows side, NOT inside WSL)
-  2. Run the companion script via its \\\\wsl.localhost\\ UNC path:
+  Open Windows PowerShell (on the Windows side, NOT inside WSL), then run:
 
-     & '$_PS_UNC_PATH'
+    powershell -ExecutionPolicy Bypass -File '$_PS_UNC_PATH'
+
+  The -ExecutionPolicy Bypass flag is needed because Windows PowerShell
+  refuses to run unsigned scripts over UNC paths by default (the policy
+  applies only to THIS single invocation, NOT your machine globally).
 
   The script reads the rootCA from WSL via 'wsl.exe cat' (VM host
   channel) and imports into HKCU:\\Root. No admin needed. Idempotent.
