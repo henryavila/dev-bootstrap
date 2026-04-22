@@ -23,6 +23,12 @@
 
 set -euo pipefail
 
+# Minimal shells (docker run, `su -`, some cron contexts, `env -i`) leave $USER
+# unset even when the effective UID is a real account. `id -un` always works.
+# Exported so every topic + envsubst in lib/deploy.sh sees a consistent value.
+export USER="${USER:-$(id -un)}"
+export HOME="${HOME:-$(getent passwd "$USER" | cut -d: -f6)}"
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
