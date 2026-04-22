@@ -40,8 +40,18 @@ export CODE_DIR
 ORACLE_MYSQL_BIN="/usr/local/mysql/bin/mysql"
 if [[ -x "$ORACLE_MYSQL_BIN" ]]; then
     info "Oracle MySQL detected at /usr/local/mysql — skipping brew install"
-    command -v mysql >/dev/null 2>&1 \
-        || warn "/usr/local/mysql/bin not on PATH; add it to your shell rc"
+    # Auto-register the Oracle DMG bin/ in /etc/paths.d/ so `mysql` /
+    # `mysqladmin` / `mysqldump` are on PATH for both interactive and
+    # non-interactive shells (sshd-exec, hooks). Same mechanism we use
+    # for non-standard BREW_PREFIX in 70-remote-access — path_helper
+    # picks it up on every shell init via /etc/zprofile.
+    paths_file="/etc/paths.d/61-oracle-mysql"
+    if ! sudo grep -q "^/usr/local/mysql/bin$" "$paths_file" 2>/dev/null; then
+        echo "/usr/local/mysql/bin" | sudo tee "$paths_file" >/dev/null
+        ok "registered /usr/local/mysql/bin in $paths_file (path_helper picks up in new shells)"
+    else
+        ok "/usr/local/mysql/bin already in $paths_file"
+    fi
 else
     if "$BREW_BIN" list --formula mysql@8.0 >/dev/null 2>&1; then
         ok "mysql@8.0 already installed"
@@ -66,13 +76,14 @@ for p in redis mkcert; do
     fi
 done
 
-# Don't silence stderr: mkcert shells out to `sudo security add-trusted-cert`
-# on macOS to install the rootCA into the Keychain, and the sudo prompt
-# MUST be visible for the user to type their password. Silencing here was
-# the root cause of "terminal hangs, press Enter, sometimes asks for
-# password" reports on older builds.
-info "installing mkcert rootCA into macOS Keychain (may prompt for sudo)"
-mkcert -install || warn "mkcert -install had issues — re-run in a TTY for Firefox profile"
+# NOTE: we deliberately do NOT call `mkcert -install` on macOS.
+# Valet's `valet install` (below) and `valet secure <site>` invoke mkcert
+# themselves with the right scope (Keychain + Firefox NSS). Calling
+# `mkcert -install` here would trigger a duplicate `security add-trusted-cert`
+# prompt that the user has to authorize twice — and on cancel, leaves a
+# misleading error in the log even though Valet handles it correctly later.
+# Linux/WSL still calls mkcert -install in its install.wsl.sh because there
+# we manage nginx + the trust store ourselves (no Valet equivalent).
 
 info "starting redis via brew services"
 "$BREW_BIN" services start redis >/dev/null 2>&1 || true
@@ -89,10 +100,22 @@ if [[ ! -x "$VALET_BIN" ]]; then
 fi
 
 if [[ -x "$VALET_BIN" ]]; then
-    # `valet install` is idempotent — re-runs refresh nginx/dnsmasq config
-    # but won't duplicate services or break existing parked dirs.
-    info "valet install (nginx + dnsmasq + HTTPS setup)"
-    "$VALET_BIN" install --quiet >/dev/null 2>&1 || warn "valet install returned non-zero"
+    # Valet install is idempotent in theory — but in practice it (a) prompts
+    # for sudo to install nginx/dnsmasq services even when they're already
+    # running, (b) re-runs `mkcert -install`, (c) takes 10-30s even when
+    # everything is already in place. Skip when we can detect a healthy
+    # pre-existing install:
+    #   - Valet's config dir exists at ~/.config/valet
+    #   - `valet --version` returns successfully
+    # Both conditions met = stack is up; no need to re-install.
+    if [[ -d "$HOME/.config/valet" ]] \
+       && "$VALET_BIN" --version >/dev/null 2>&1; then
+        ok "valet already installed and configured (skipping valet install)"
+    else
+        info "valet install (nginx + dnsmasq + HTTPS setup; first time only, ~30s)"
+        "$VALET_BIN" install --quiet >/dev/null 2>&1 \
+            || warn "valet install returned non-zero"
+    fi
 
     # Align TLD with WSL — use `.localhost` instead of Valet's default `.test`
     # so URLs like https://foo.localhost work identically on both platforms.
@@ -133,5 +156,40 @@ if [[ "${INCLUDE_MSSQL:-0}" == "1" ]]; then
     warn "  Then for each PHP version: pecl install sqlsrv pdo_sqlsrv"
     warn "  Automated install on Mac is a future enhancement."
 fi
+
+# ─── Pre-migrate legacy unmarked nginx files ────────────────────────
+# deploy.sh refuses to overwrite files in $BREW_PREFIX/etc/nginx/ that
+# don't carry the "managed by dev-bootstrap" marker — that's the safety
+# rail protecting user-authored configs from silent overwrite. But on
+# machines that ran an OLDER bootstrap (before the marker convention was
+# added to these specific templates), the files exist on disk without
+# the marker. They ARE ours, just from an earlier era.
+#
+# This block recognizes those exact paths and quarantines unmarked
+# instances by renaming to <path>.pre-bootstrap-bak-<timestamp>. deploy.sh
+# then writes the new version with the marker. Backup is preserved so
+# the user can diff if curious; it is never auto-deleted.
+#
+# Limited to the 5 nginx files we actually deploy on Mac — nothing
+# outside that allowlist is touched. The HOME/.local/bin CLIs
+# (link-project, share-project) are user-owned and not migrated here.
+LEGACY_FILES=(
+    "$NGINX_SNIPPET_DIR/dev-bootstrap-security.conf"
+    "$NGINX_SNIPPET_DIR/dev-bootstrap-proxy.conf"
+    "$NGINX_MAP_DIR/dev-bootstrap-maps.conf"
+    "$NGINX_AVAILABLE_DIR/catchall-php.conf"
+    "$NGINX_AVAILABLE_DIR/catchall-proxy.conf"
+)
+_migration_ts="$(date +%Y%m%d-%H%M%S)"
+for legacy in "${LEGACY_FILES[@]}"; do
+    [[ -z "$legacy" ]] && continue
+    if sudo test -f "$legacy" 2>/dev/null \
+       && ! sudo grep -q "managed by dev-bootstrap" "$legacy" 2>/dev/null; then
+        backup="${legacy}.pre-bootstrap-bak-${_migration_ts}"
+        info "migrating legacy unmarked file: $legacy → $backup"
+        sudo mv "$legacy" "$backup"
+    fi
+done
+unset _migration_ts
 
 ok "60-web-stack (mac) done — use link-project <name> to verify a site"
