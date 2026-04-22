@@ -9,7 +9,7 @@
 #   run_menu            — shows the full menu flow and exports selected vars
 #
 # Exports set by run_menu (only when user selects them):
-#   INCLUDE_DOCKER, INCLUDE_LARAVEL, INCLUDE_REMOTE, INCLUDE_EDITOR
+#   INCLUDE_DOCKER, INCLUDE_WEBSTACK, INCLUDE_REMOTE, INCLUDE_EDITOR
 #   DOTFILES_REPO, GIT_NAME, GIT_EMAIL
 #
 # Depends on: $OS (from bootstrap.sh), $BREW_BIN (mac only), log.sh helpers.
@@ -31,7 +31,7 @@ should_show_menu() {
         :
     } || {
         [[ "${INCLUDE_DOCKER:-0}"  == "1" ]]  && return 1
-        [[ "${INCLUDE_LARAVEL:-0}" == "1" ]]  && return 1
+        [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_REMOTE:-0}"  == "1" ]]  && return 1
         [[ "${INCLUDE_EDITOR:-0}"  == "1" ]]  && return 1
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]]  && return 1
@@ -100,8 +100,15 @@ _topic_default_state() {
                 echo OFF
             fi
             ;;
-        laravel)
-            if command -v php >/dev/null 2>&1 || command -v composer >/dev/null 2>&1; then
+        webstack)
+            # The topic bundles php + nginx + mysql + redis + mkcert. Any of
+            # the headline binaries present means the stack was likely set up
+            # on this machine before — pre-check so re-runs default to
+            # "update existing" rather than "install fresh".
+            if command -v php >/dev/null 2>&1 \
+               || command -v composer >/dev/null 2>&1 \
+               || command -v nginx >/dev/null 2>&1 \
+               || command -v mkcert >/dev/null 2>&1; then
                 echo ON
             else
                 echo OFF
@@ -142,7 +149,7 @@ _topic_default_state() {
 run_menu() {
     banner "interactive setup"
     info "you can skip this menu anytime with: NON_INTERACTIVE=1 bash bootstrap.sh"
-    info "or pre-seed via env vars (INCLUDE_LARAVEL=1, DOTFILES_REPO=..., etc)"
+    info "or pre-seed via env vars (INCLUDE_WEBSTACK=1, DOTFILES_REPO=..., etc)"
     echo
 
     # ---------- Screen 1: opt-in topics ----------
@@ -160,14 +167,14 @@ run_menu() {
         "Select optional topics to install (SPACE toggles, ENTER confirms).\nDefaults reflect what's already installed on this machine." \
         20 85 6 \
         "docker"   "45-docker: Docker Engine (WSL) / Colima (Mac)"    "$(_topic_default_state docker)" \
-        "laravel"  "60-laravel-stack: multi-PHP + nginx + MySQL + mkcert"  "$(_topic_default_state laravel)" \
+        "webstack" "60-web-stack: multi-PHP + nginx + MySQL + mkcert + reverse proxy" "$(_topic_default_state webstack)" \
         "remote"   "70-remote-access: SSH + Tailscale + Syncthing"    "$(_topic_default_state remote)" \
         "editor"   "90-editor: typora-wait (open .md from CLI)"       "$(_topic_default_state editor)" \
         "dotfiles" "95-dotfiles-personal: your private dotfiles"      "$(_topic_default_state dotfiles)" \
         3>&1 1>&2 2>&3) || _menu_cancel
 
     local need_dotfiles=0
-    # whiptail returns items quoted & space-separated: "laravel" "remote"
+    # whiptail returns items quoted & space-separated: "webstack" "remote"
     # `local -a selected=()` (not just `local -a selected`) is needed for bash 3.2:
     # without an explicit empty-array initializer, `read -ra` into a still-undeclared
     # array name and subsequent `"${selected[@]}"` trip `set -u`.
@@ -176,7 +183,7 @@ run_menu() {
     for choice in "${selected[@]+"${selected[@]}"}"; do
         case "$choice" in
             docker)   export INCLUDE_DOCKER=1 ;;
-            laravel)  export INCLUDE_LARAVEL=1 ;;
+            webstack) export INCLUDE_WEBSTACK=1 ;;
             remote)   export INCLUDE_REMOTE=1 ;;
             editor)   export INCLUDE_EDITOR=1 ;;
             dotfiles) need_dotfiles=1 ;;
@@ -270,12 +277,12 @@ Examples:
     fi
 
     # ---------- Screen 3b–3e: laravel stack configuration ----------
-    # Only prompts when the user opted into 60-laravel-stack. Each screen
-    # exports its selection so 10-languages + 60-laravel-stack read the
+    # Only prompts when the user opted into 60-web-stack. Each screen
+    # exports its selection so 10-languages + 60-web-stack read the
     # same values that the menu gathered.
-    if [[ "${INCLUDE_LARAVEL:-0}" == "1" ]]; then
+    if [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]]; then
         # --- 3b · CODE_DIR ---
-        CODE_DIR=$(whiptail --title "60-laravel-stack :: projects root" \
+        CODE_DIR=$(whiptail --title "60-web-stack :: projects root" \
             --inputbox \
 "Root directory for your web projects.
 Every subdir becomes a <name>.localhost site automatically:
@@ -323,7 +330,7 @@ Same URL on both platforms — https://<name>.localhost." \
         fi
 
         local php_choices
-        php_choices=$(whiptail --title "60-laravel-stack :: PHP versions" \
+        php_choices=$(whiptail --title "60-web-stack :: PHP versions" \
             --checklist \
 "Pick which PHP versions to have on this machine.
 The LAST one checked becomes the CLI / Composer / FPM default
@@ -346,7 +353,7 @@ The LAST one checked becomes the CLI / Composer / FPM default
             PHP_DEFAULT="$(echo "$PHP_VERSIONS" | tr ' ' '\n' | tail -1)"
             export PHP_VERSIONS PHP_DEFAULT
         else
-            warn "no PHP version selected — topics 10-languages + 60-laravel-stack will pick defaults"
+            warn "no PHP version selected — topics 10-languages + 60-web-stack will pick defaults"
         fi
 
         # --- 3d · Laravel extras (multi-select) ---
@@ -379,7 +386,7 @@ The LAST one checked becomes the CLI / Composer / FPM default
             || { ms_state=OFF; ms_tag="(not installed yet)"; }
 
         local extras_choices
-        extras_choices=$(whiptail --title "60-laravel-stack :: optional extras" \
+        extras_choices=$(whiptail --title "60-web-stack :: optional extras" \
             --checklist \
 "Add-ons to the Laravel stack.
 
@@ -414,11 +421,11 @@ MSSQL takes ~2 min (auto-accepts Microsoft's EULA via ACCEPT_EULA=Y)." \
     summary+="    ✓ 30-shell, 40-tmux, 50-git, 80-claude-code\n\n"
     summary+="  Opt-in topics:\n"
     [[ "${INCLUDE_DOCKER:-0}"  == "1" ]] && summary+="    ✓ 45-docker\n"
-    [[ "${INCLUDE_LARAVEL:-0}" == "1" ]] && summary+="    ✓ 60-laravel-stack\n"
+    [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && summary+="    ✓ 60-web-stack\n"
     [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && summary+="    ✓ 70-remote-access\n"
     [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && summary+="    ✓ 90-editor\n"
     [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    ✓ 95-dotfiles-personal\n"
-    if [[ "${INCLUDE_DOCKER:-0}"  != "1" && "${INCLUDE_LARAVEL:-0}" != "1" \
+    if [[ "${INCLUDE_DOCKER:-0}"  != "1" && "${INCLUDE_WEBSTACK:-0}" != "1" \
        && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_EDITOR:-0}"  != "1" \
        && -z "${DOTFILES_REPO:-}" ]]; then
         summary+="    (none selected)\n"
@@ -426,10 +433,10 @@ MSSQL takes ~2 min (auto-accepts Microsoft's EULA via ACCEPT_EULA=Y)." \
     summary+="\n  Git identity:\n"
     summary+="    user.name  = $GIT_NAME\n"
     summary+="    user.email = $GIT_EMAIL\n"
-    if [[ -n "${DOTFILES_REPO:-}" ]] || [[ "${INCLUDE_LARAVEL:-0}" == "1" ]]; then
+    if [[ -n "${DOTFILES_REPO:-}" ]] || [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]]; then
         summary+="\n  Paths:\n"
         [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    dotfiles   = $DOTFILES_DIR  ← $DOTFILES_REPO\n"
-        [[ "${INCLUDE_LARAVEL:-0}" == "1" ]] && summary+="    code       = $CODE_DIR\n"
+        [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && summary+="    code       = $CODE_DIR\n"
     fi
     summary+="\nProceed?"
 
@@ -471,7 +478,7 @@ _persist_menu_state() {
         # pre-selects based on installed state for most extras, so the
         # non-persisted "off" case still gets sensible defaults.
         [[ "${INCLUDE_DOCKER:-0}"  == "1" ]] && echo 'export INCLUDE_DOCKER=1'
-        [[ "${INCLUDE_LARAVEL:-0}" == "1" ]] && echo 'export INCLUDE_LARAVEL=1'
+        [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && echo 'export INCLUDE_WEBSTACK=1'
         [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && echo 'export INCLUDE_REMOTE=1'
         [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && echo 'export INCLUDE_EDITOR=1'
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]] && echo 'export INCLUDE_MAILPIT=1'

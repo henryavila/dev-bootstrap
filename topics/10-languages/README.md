@@ -11,7 +11,7 @@ PHP extensions come from three lists in `data/`:
 
 - `php-extensions-apt.txt` — baseline (bcmath, curl, gd, intl, mbstring, mysql, …) installed for every version
 - `php-extensions-pecl.txt` — PECL extras (igbinary, imagick, mongodb, redis) built per-version
-- `php-extensions-mssql.txt` — `sqlsrv` + `pdo_sqlsrv`, gated by `INCLUDE_MSSQL=1` (invoked from 60-laravel-stack)
+- `php-extensions-mssql.txt` — `sqlsrv` + `pdo_sqlsrv`, gated by `INCLUDE_MSSQL=1` (invoked from 60-web-stack)
 
 Fragments in `templates/` configure `fnm env --use-on-cd` and Composer's `PATH` for both bash and zsh.
 

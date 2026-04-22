@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 60-laravel-stack verify — checks every piece of the optional stack
+# 60-web-stack verify — checks every piece of the optional stack
 # and reports which opt-in extras landed successfully.
 set -euo pipefail
 

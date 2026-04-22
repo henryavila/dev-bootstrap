@@ -1,4 +1,4 @@
-# Managed by dev-bootstrap / 60-laravel-stack. Edits lost on next deploy.
+# Managed by dev-bootstrap / 60-web-stack. Edits lost on next deploy.
 #
 # Catchall for *.front.localhost → http://127.0.0.1:$DEV_DEFAULT_PORT
 # (default 3000 — set via menu or DEV_DEFAULT_PORT env var).

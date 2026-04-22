@@ -43,10 +43,10 @@ bash bootstrap.sh
 
 Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
 
-1. Quais topics opt-in ativar (`60-laravel-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` — todos pré-marcados; você desmarca o que não quer).
+1. Quais topics opt-in ativar (`60-web-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` — todos pré-marcados; você desmarca o que não quer).
 2. `GIT_NAME` / `GIT_EMAIL` (pula silenciosamente se `git config --global` já tiver esses valores).
 3. `DOTFILES_REPO` + `DOTFILES_DIR` (só se você marcou `95-dotfiles-personal`).
-4. `CODE_DIR` (só se você marcou `60-laravel-stack`).
+4. `CODE_DIR` (só se você marcou `60-web-stack`).
 5. Tela final com resumo e confirmação — cancelar em qualquer tela aborta limpo (sem estado parcial).
 
 Se `whiptail` não estiver instalado, o bootstrap instala antes (`apt install whiptail` no Linux/WSL; `brew install newt` no Mac — whiptail vem dentro da formula `newt`).
@@ -65,7 +65,7 @@ bash bootstrap.sh --non-interactive
 ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
 
 # ativar topics opt-in
-INCLUDE_LARAVEL=1 INCLUDE_REMOTE=1 bash bootstrap.sh
+INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash bootstrap.sh
 
 # aplicar dotfiles pessoais no fim
 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
@@ -85,7 +85,7 @@ Logo após o menu (ou imediatamente, quando pulado), o bootstrap roda `sudo -v` 
 | `30-shell` | loaders `~/.bashrc` / `~/.zshrc` + `~/.inputrc` (word-kill, completion niceties) | — |
 | `40-tmux` | tmux + `~/.tmux.conf` (prefixo `Ctrl+a`) | — |
 | `50-git` | gitconfig global opinionado (delta, zdiff3, aliases) + `~/.bashrc.d/50-git.sh` com aliases `g` / `gs` / `gco` / `whoops` / `gmm` + `__git_complete` | — |
-| `60-laravel-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, catchall `*.localhost` | `INCLUDE_LARAVEL=1` |
+| `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, catchall `*.localhost` | `INCLUDE_WEBSTACK=1` |
 | `70-remote-access` | sshd (com hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + drop-in systemd que seta MTU 1200 em `tailscale0` (prevenção do SSH KEX PQ hang) | `INCLUDE_REMOTE=1` |
 | `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — fundação do Claude Sync cross-machine via camada de dotfiles | — |
 | `90-editor` | `~/.local/bin/typora-wait` — abre `.md` no Typora GUI a partir do terminal; WSL delega pra `Typora.exe` via interop (`wslpath -w`), macOS usa `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
@@ -108,7 +108,7 @@ Primariamente para automação / CI — o menu interativo preenche essas vars pr
 | `DOTFILES_DIR` | destino do clone (default `~/dotfiles`) |
 | `GIT_NAME` / `GIT_EMAIL` | identidade — aplicada só se `user.name` / `user.email` ainda não existem (topic 50-git preserva existentes) |
 | `CODE_DIR` | raiz de projetos (default `~/code/web`) |
-| `INCLUDE_LARAVEL` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | ativa topic opt-in |
+| `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | ativa topic opt-in |
 | `NO_COLOR=1` | desabilita output colorido (auto se não for TTY) |
 
 ## Notas sobre MySQL 8

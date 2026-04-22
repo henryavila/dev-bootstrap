@@ -4,7 +4,7 @@
 #
 # THE BUG it guards against: the pattern `*/.local/*` refuses ANY path
 # containing a `.local/` directory component — which catches XDG-standard
-# `~/.local/bin/...` (where 60-laravel-stack and 10-languages legitimately
+# `~/.local/bin/...` (where 60-web-stack and 10-languages legitimately
 # deploy CLI helpers) and breaks deploy.
 #
 # The real invariant the function intends to protect: **filenames** with

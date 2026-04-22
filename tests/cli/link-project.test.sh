@@ -14,7 +14,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-LINK="$REPO_ROOT/topics/60-laravel-stack/templates/bin/link-project.template"
+LINK="$REPO_ROOT/topics/60-web-stack/templates/bin/link-project.template"
 assert_file_exists "$LINK"
 
 echo "--help / no args exit 0 + prints usage"

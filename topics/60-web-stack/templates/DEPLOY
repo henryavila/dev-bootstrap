@@ -1,4 +1,4 @@
-# 60-laravel-stack deploy mappings.
+# 60-web-stack deploy mappings.
 #
 # Paths populated by install.$OS.sh before deploy.sh runs:
 #   NGINX_AVAILABLE_DIR   where sites live (sites-available convention)

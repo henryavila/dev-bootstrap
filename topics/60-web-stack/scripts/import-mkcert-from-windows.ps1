@@ -8,7 +8,7 @@
 #
 # Run from a Windows PowerShell prompt (NOT from inside WSL):
 #
-#   powershell -ExecutionPolicy Bypass -File '\\wsl.localhost\Ubuntu-24.04\home\<user>\dev-bootstrap\topics\60-laravel-stack\scripts\import-mkcert-from-windows.ps1'
+#   powershell -ExecutionPolicy Bypass -File '\\wsl.localhost\Ubuntu-24.04\home\<user>\dev-bootstrap\topics\60-web-stack\scripts\import-mkcert-from-windows.ps1'
 #
 # Or with explicit args when auto-detection fails:
 #

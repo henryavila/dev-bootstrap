@@ -1,11 +1,11 @@
-# Managed by dev-bootstrap / 60-laravel-stack. Edits lost on next deploy.
+# Managed by dev-bootstrap / 60-web-stack. Edits lost on next deploy.
 #
 # Catchall for *.localhost → $CODE_DIR/<project>/public via PHP-FPM.
 # Serves HTTP (80) + HTTPS (443) from the same block — HTTPS lines become
 # no-ops if the wildcard cert isn't in place yet (rare — installer creates
 # it). PHP version = $PHP_DEFAULT; switch via `php-use <ver>` then
 # `sudo systemctl reload nginx` (the FPM socket path below is substituted
-# at deploy time, so re-running 60-laravel-stack after `php-use` picks up
+# at deploy time, so re-running 60-web-stack after `php-use` picks up
 # the new default).
 
 server {

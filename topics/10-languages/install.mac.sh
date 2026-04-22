@@ -21,13 +21,56 @@ source "$HERE/../../lib/log.sh"
 : "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
 : "${BREW_PREFIX:?BREW_PREFIX not set}"
 
+# Tracks formulas that brew_install_if_missing could not install. Read
+# downstream (PECL loop) to skip extensions whose build deps are missing,
+# and surfaced as a followup at run end so the user sees exactly what
+# needs manual attention.
+BREW_INSTALL_FAILED=()
+
 brew_install_if_missing() {
     local pkg="$1"
+    local strict="${2:-strict}"   # "strict" aborts on failure; "soft" continues
+
     if "$BREW_BIN" list --formula "$pkg" >/dev/null 2>&1; then
         ok "$pkg already installed"
+        return 0
+    fi
+
+    info "brew install $pkg"
+    if "$BREW_BIN" install "$pkg"; then
+        return 0
+    fi
+
+    # First attempt failed. Two failure modes are worth retrying once:
+    #
+    # 1. Checksum mismatch during source build (common with imagemagick,
+    #    which re-tags upstream releases frequently). Cause: stale
+    #    formula vs. upstream tarball. Fix: `brew update` refreshes the
+    #    formula + clears stale cache entries for this package, then
+    #    the install becomes a no-op if the checksum now matches.
+    #
+    # 2. Transient network/mirror hiccup. Same remediation.
+    #
+    # Bottle-unavailable-on-non-standard-prefix (HOMEBREW_PREFIX !=
+    # /opt/homebrew, e.g. brew living on /Volumes/External) is the root
+    # cause that forces source builds in the first place — we can't fix
+    # that here, but the retry lets the user pick up a fresh formula
+    # version when upstream has published a patched checksum.
+    warn "brew install $pkg failed — refreshing formula cache and retrying once"
+    "$BREW_BIN" update >/dev/null 2>&1 || true
+    "$BREW_BIN" cleanup "$pkg" >/dev/null 2>&1 || true
+    if "$BREW_BIN" install "$pkg"; then
+        ok "$pkg installed after retry"
+        return 0
+    fi
+
+    BREW_INSTALL_FAILED+=("$pkg")
+    if [[ "$strict" == "soft" ]]; then
+        warn "brew install $pkg failed twice — continuing (build deps only, not critical)"
+        return 1
     else
-        info "brew install $pkg"
-        "$BREW_BIN" install "$pkg"
+        fail "brew install $pkg failed twice — aborting"
+        return 1
     fi
 }
 
@@ -87,9 +130,24 @@ for line in "${PECL_LINES[@]}"; do
         mac_build_deps+=($mac_deps)
     fi
 done
+# Install build deps in "soft" mode — if one (typically imagemagick, which
+# needs source builds on non-standard HOMEBREW_PREFIX and hits upstream
+# checksum drift) fails, we don't want to abort the whole topic. Downstream
+# PECL loop will skip any extension whose build deps didn't install.
 for d in $(printf '%s\n' "${mac_build_deps[@]}" | sort -u); do
-    brew_install_if_missing "$d"
+    brew_install_if_missing "$d" soft || true
 done
+
+# Remember which build deps are missing so the PECL loop can skip their
+# dependent extensions cleanly (vs. failing per-version with confusing
+# error messages deep in the pecl output).
+_is_brew_missing() {
+    local p="$1"
+    for q in "${BREW_INSTALL_FAILED[@]+"${BREW_INSTALL_FAILED[@]}"}"; do
+        [[ "$q" == "$p" ]] && return 0
+    done
+    return 1
+}
 
 # ─── PECL extensions (per version) ────────────────────────────────────
 # Each keg-only php@X.Y has its own pecl/phpize at $BREW_PREFIX/opt/php@X.Y/bin.
@@ -123,7 +181,36 @@ pecl_install_for_mac() {
 }
 
 for line in "${PECL_LINES[@]}"; do
-    IFS=':' read -r ext _ _ <<< "$line"
+    IFS=':' read -r ext _ mac_deps_line <<< "$line"
+
+    # If any Mac build dep for this extension failed to install earlier,
+    # skip the whole extension (every PHP version would fail the same way)
+    # and surface a single followup instead of N per-version errors.
+    skip_ext=""
+    if [[ -n "${mac_deps_line:-}" ]]; then
+        # shellcheck disable=SC2206
+        _deps=($mac_deps_line)
+        for dep in "${_deps[@]}"; do
+            if _is_brew_missing "$dep"; then
+                skip_ext="$dep"
+                break
+            fi
+        done
+    fi
+    if [[ -n "$skip_ext" ]]; then
+        followup manual \
+"php extension '$ext' skipped — build dependency '$skip_ext' could
+  not be installed via brew (likely a bottle/source-build issue on a
+  non-standard HOMEBREW_PREFIX such as /Volumes/External).
+
+  To finish manually:
+    brew update
+    brew install --build-from-source $skip_ext     # or move brew to /opt/homebrew
+  Then for each PHP version (${PHP_VERSIONS}):
+    printf '\n' | \$(brew --prefix)/opt/php@<VER>/bin/pecl install -f $ext"
+        continue
+    fi
+
     for ver in $PHP_VERSIONS; do
         pecl_install_for_mac "$ver" "$ext"
     done
@@ -132,5 +219,22 @@ done
 # ─── Composer + Python ───────────────────────────────────────────────
 brew_install_if_missing composer
 brew_install_if_missing python@3.13
+
+# ─── Brew install failure summary ────────────────────────────────────
+if [[ "${#BREW_INSTALL_FAILED[@]}" -gt 0 ]]; then
+    followup manual \
+"brew failed to install these formulas (topic 10-languages):
+  ${BREW_INSTALL_FAILED[*]}
+
+  Most common cause on this machine: HOMEBREW_PREFIX is non-standard
+  (bottles can't be used so brew builds from source, and upstream
+  tarball checksums occasionally drift between formula updates).
+
+  Remediation:
+    brew update && brew install <formula>
+  Or, for a permanent fix, relocate brew to /opt/homebrew (arm64) or
+  /usr/local (x86_64) — bottle-based installs will work without
+  falling back to source builds."
+fi
 
 ok "10-languages done — PHP default: $PHP_DEFAULT"

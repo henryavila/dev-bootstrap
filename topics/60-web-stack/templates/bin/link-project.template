@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # link-project — register a project with the nginx catchall stack.
-# Managed by dev-bootstrap / 60-laravel-stack.
+# Managed by dev-bootstrap / 60-web-stack.
 #
 # Chrome / Edge / Firefox / Safari / curl all resolve *.localhost natively
 # (RFC 6761). No /etc/hosts editing and no sudo for the default flow — the

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 60-laravel-stack (mac): MySQL 8, Redis, mkcert + Valet. Optional: mailpit,
+# 60-web-stack (mac): MySQL 8, Redis, mkcert + Valet. Optional: mailpit,
 # ngrok, SQL Server driver.
 #
 # Design: on macOS, Valet is Laravel-team-maintained and already solves nginx
@@ -25,6 +25,8 @@ source "$HERE/../../lib/log.sh"
 
 : "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
 : "${BREW_PREFIX:?BREW_PREFIX not set}"
+
+info "this topic provisions the web stack (MySQL + Redis + mkcert + Valet); may take 1-3min on first run"
 
 # CODE_DIR is where Valet will `park` — every subdir becomes <name>.localhost
 : "${CODE_DIR:=$HOME/code/web}"
@@ -64,7 +66,13 @@ for p in redis mkcert; do
     fi
 done
 
-mkcert -install 2>/dev/null || warn "mkcert -install may need re-run in a TTY"
+# Don't silence stderr: mkcert shells out to `sudo security add-trusted-cert`
+# on macOS to install the rootCA into the Keychain, and the sudo prompt
+# MUST be visible for the user to type their password. Silencing here was
+# the root cause of "terminal hangs, press Enter, sometimes asks for
+# password" reports on older builds.
+info "installing mkcert rootCA into macOS Keychain (may prompt for sudo)"
+mkcert -install || warn "mkcert -install had issues — re-run in a TTY for Firefox profile"
 
 info "starting redis via brew services"
 "$BREW_BIN" services start redis >/dev/null 2>&1 || true
@@ -126,4 +134,4 @@ if [[ "${INCLUDE_MSSQL:-0}" == "1" ]]; then
     warn "  Automated install on Mac is a future enhancement."
 fi
 
-ok "60-laravel-stack (mac) done — use link-project <name> to verify a site"
+ok "60-web-stack (mac) done — use link-project <name> to verify a site"

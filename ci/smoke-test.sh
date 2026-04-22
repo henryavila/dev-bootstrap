@@ -30,7 +30,7 @@ TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
 # 95-dotfiles-personal — clones a private repo over SSH. No credentials in
 #                        the container.
 #
-# 60-laravel-stack / 70-remote-access / 90-editor are NOT in this list —
+# 60-web-stack / 70-remote-access / 90-editor are NOT in this list —
 # they auto-skip because their INCLUDE_* opt-in vars default to 0. Letting
 # bootstrap.sh's own gate handle them keeps that path exercised too.
 DEFAULT_SKIP="05-identity 95-dotfiles-personal"

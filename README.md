@@ -50,10 +50,10 @@ bash bootstrap.sh
 
 Running without any control env var opens a `whiptail` menu that asks:
 
-1. Which opt-in topics to enable (`60-laravel-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` — all pre-checked by default; deselect what you don't want).
+1. Which opt-in topics to enable (`60-web-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` — all pre-checked by default; deselect what you don't want).
 2. `GIT_NAME` / `GIT_EMAIL` (skipped silently when `git config --global` already has them).
 3. `DOTFILES_REPO` + `DOTFILES_DIR` (only when `95-dotfiles-personal` is checked).
-4. `CODE_DIR` (only when `60-laravel-stack` is checked).
+4. `CODE_DIR` (only when `60-web-stack` is checked).
 5. Final confirmation with a summary — cancelling at any screen aborts cleanly (no partial state).
 
 If `whiptail` isn't installed, the bootstrap installs it first (`apt install whiptail` on Linux/WSL; `brew install newt` on Mac — whiptail ships inside the `newt` formula).
@@ -72,7 +72,7 @@ bash bootstrap.sh --non-interactive
 ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
 
 # enable opt-in topics
-INCLUDE_LARAVEL=1 INCLUDE_REMOTE=1 bash bootstrap.sh
+INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash bootstrap.sh
 
 # pull personal dotfiles at the end
 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
@@ -105,7 +105,7 @@ If you see a `!` line in the bootstrap output, it's pointing at a next step. Rea
 | `30-shell` | `~/.bashrc` / `~/.zshrc` loaders + `~/.inputrc` (word-kill, completion niceties) | — |
 | `40-tmux` | tmux + `~/.tmux.conf` (prefix `Ctrl+a`) | — |
 | `50-git` | opinionated global gitconfig (delta, zdiff3, aliases) + `~/.bashrc.d/50-git.sh` with aliases `g` / `gs` / `gco` / `whoops` / `gmm` + `__git_complete` | — |
-| `60-laravel-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, `*.localhost` catchall | `INCLUDE_LARAVEL=1` |
+| `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, `*.localhost` catchall | `INCLUDE_WEBSTACK=1` |
 | `70-remote-access` | sshd (hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + systemd drop-in setting MTU 1200 on `tailscale0` (prevents SSH KEX PQ hang) | `INCLUDE_REMOTE=1` |
 | `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — foundation for cross-machine Claude Sync via the dotfiles layer | — |
 | `90-editor` | `~/.local/bin/typora-wait` — opens `.md` files in the Typora GUI from the terminal; WSL delegates to `Typora.exe` via interop (`wslpath -w`), macOS uses `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
@@ -128,7 +128,7 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 | `DOTFILES_DIR` | clone destination (default `~/dotfiles`) |
 | `GIT_NAME` / `GIT_EMAIL` | identity — applied only when `user.name` / `user.email` aren't set yet (topic 50-git preserves existing values) |
 | `CODE_DIR` | projects root (default `~/code/web`) |
-| `INCLUDE_LARAVEL` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | enable opt-in topics |
+| `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | enable opt-in topics |
 | `NO_COLOR=1` | disable colored output (auto when not a TTY) |
 
 ## MySQL 8 notes

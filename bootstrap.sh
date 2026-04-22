@@ -16,14 +16,14 @@
 #   GPG_KEY_ID          explicit signing key (else first secret key is picked)
 #   CODE_DIR            project root (default: ~/code/web)
 #   INCLUDE_DOCKER=1    enables 45-docker
-#   INCLUDE_LARAVEL=1   enables 60-laravel-stack
+#   INCLUDE_WEBSTACK=1  enables 60-web-stack  (legacy alias: INCLUDE_LARAVEL=1)
 #   INCLUDE_REMOTE=1    enables 70-remote-access
 #   INCLUDE_EDITOR=1    enables 90-editor
 #   PHP_VERSIONS        space-separated list (e.g. "8.4 8.5"); last = default
 #                       (if unset: all versions listed in
 #                       topics/10-languages/data/php-versions.conf)
 #   PHP_DEFAULT         override which version becomes PATH / FPM / composer default
-#   INCLUDE_MAILPIT=1   installs mailpit (SMTP :1025, UI :8025) inside 60-laravel-stack
+#   INCLUDE_MAILPIT=1   installs mailpit (SMTP :1025, UI :8025) inside 60-web-stack
 #   INCLUDE_NGROK=1     installs ngrok + share-project wrapper
 #   INCLUDE_MSSQL=1     installs Microsoft SQL Server ODBC driver + sqlsrv/pdo_sqlsrv
 #                       PECL extensions (ACCEPT_EULA=Y auto-set)
@@ -66,6 +66,17 @@ if [[ -f "$BOOTSTRAP_STATE_CONFIG" ]]; then
     export STATE_LOADED=1
 fi
 
+# ─── Legacy alias: INCLUDE_LARAVEL=1 → INCLUDE_WEBSTACK=1 ───────────────
+# The topic was renamed from 60-laravel-stack to 60-web-stack (it installs
+# a full web dev stack: nginx + reverse proxy + MySQL + Redis + mkcert +
+# PHP-FPM, of which Laravel is just one consumer). The env var + state
+# file keys are canonically INCLUDE_WEBSTACK now, but we honor the
+# previous name indefinitely so automation scripts, CI configs, and
+# persisted state files from older runs keep working unchanged.
+if [[ -n "${INCLUDE_LARAVEL:-}" ]] && [[ -z "${INCLUDE_WEBSTACK:-}" ]]; then
+    export INCLUDE_WEBSTACK="$INCLUDE_LARAVEL"
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
@@ -89,7 +100,7 @@ Automation / CI mode:
 
 Opt-in topics (menu toggles these, or set env var in automation):
   45-docker             INCLUDE_DOCKER=1
-  60-laravel-stack      INCLUDE_LARAVEL=1
+  60-web-stack          INCLUDE_WEBSTACK=1   (legacy: INCLUDE_LARAVEL=1 still accepted)
   70-remote-access      INCLUDE_REMOTE=1
   90-editor             INCLUDE_EDITOR=1
   95-dotfiles-personal  DOTFILES_REPO=<url>
@@ -97,7 +108,9 @@ Opt-in topics (menu toggles these, or set env var in automation):
 Other env vars:
   GIT_NAME, GIT_EMAIL, CODE_DIR, DOTFILES_DIR, NO_COLOR
   GPG_SIGN=1 [+ GPG_KEY_ID=<id>]  enable GPG commit signing in 50-git
-  PHP_VERSIONS="8.4 8.5" [+ PHP_DEFAULT=8.5]  multi-PHP install (60-laravel-stack)
+  PHP_VERSIONS="8.4 8.5" [+ PHP_DEFAULT=8.5]  multi-PHP install (60-web-stack)
+  INCLUDE_WEBSTACK=1              opt-in for 60-web-stack
+                                  (accepted: INCLUDE_LARAVEL=1 for backward compat)
   INCLUDE_MAILPIT=1, INCLUDE_NGROK=1 [+ NGROK_AUTHTOKEN=], INCLUDE_MSSQL=1
   DEV_DEFAULT_PORT=3000           default port for *.front.localhost proxy
 
@@ -148,7 +161,7 @@ detect_brew_if_mac() {
 }
 
 derive_nginx_conf_dir() {
-    # 60-laravel-stack deploys multiple nginx files that reference these
+    # 60-web-stack deploys multiple nginx files that reference these
     # paths via envsubst. deploy.sh runs in a fresh subshell from the
     # bootstrap parent (NOT from install.*.sh), so exports inside the
     # installer don't propagate here. Every path the DEPLOY file mentions
@@ -219,7 +232,10 @@ export GIT_NAME="${GIT_NAME:-}"
 export GIT_EMAIL="${GIT_EMAIL:-}"
 export CODE_DIR="${CODE_DIR:-$HOME/code/web}"
 export INCLUDE_DOCKER="${INCLUDE_DOCKER:-0}"
-export INCLUDE_LARAVEL="${INCLUDE_LARAVEL:-0}"
+export INCLUDE_WEBSTACK="${INCLUDE_WEBSTACK:-0}"
+# Keep legacy name exported too so any external integration / script that
+# reads INCLUDE_LARAVEL continues to observe the canonical value.
+export INCLUDE_LARAVEL="$INCLUDE_WEBSTACK"
 export INCLUDE_REMOTE="${INCLUDE_REMOTE:-0}"
 export INCLUDE_EDITOR="${INCLUDE_EDITOR:-0}"
 export NO_COLOR="${NO_COLOR:-}"
@@ -272,7 +288,7 @@ in_list() {
 optin_var_for() {
     case "$1" in
         45-docker)        echo "INCLUDE_DOCKER" ;;
-        60-laravel-stack) echo "INCLUDE_LARAVEL" ;;
+        60-web-stack) echo "INCLUDE_WEBSTACK" ;;
         70-remote-access) echo "INCLUDE_REMOTE" ;;
         90-editor)        echo "INCLUDE_EDITOR" ;;
         *)                echo "" ;;

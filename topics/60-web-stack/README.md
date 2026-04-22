@@ -1,6 +1,6 @@
-# 60-laravel-stack (opt-in)
+# 60-web-stack (opt-in)
 
-Enabled via `INCLUDE_LARAVEL=1 bash bootstrap.sh` (or by checking it in the interactive menu).
+Enabled via `INCLUDE_WEBSTACK=1 bash bootstrap.sh` (or by checking it in the interactive menu).
 
 ## What you get
 
@@ -50,7 +50,7 @@ php-use --list # show installed versions + current default
 
 ```bash
 PHP_VERSIONS="8.4 8.5" PHP_DEFAULT=8.5 \
-  INCLUDE_LARAVEL=1 bash bootstrap.sh --non-interactive
+  INCLUDE_WEBSTACK=1 bash bootstrap.sh --non-interactive
 ```
 
 ## Extensions

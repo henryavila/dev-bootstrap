@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 60-laravel-stack (WSL): MySQL 8, Redis, nginx + mkcert (wildcard) + optional
+# 60-web-stack (WSL): MySQL 8, Redis, nginx + mkcert (wildcard) + optional
 # extras (mailpit, ngrok, SQL Server driver). HTTPS works end-to-end
 # from WSL to the Windows host's browsers via automatic rootCA import.
 #
@@ -19,6 +19,30 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
+
+# ─── Sudo keepalive + non-interactive apt ────────────────────────────
+# Earlier topics (00-core brew install, 10-languages multi-PHP + PECL) can
+# run well past the sudo cache window (default 5-15min). Without a refresh
+# here, the first sudo call downstream would silently block waiting for a
+# password prompt that may be lost to `-qq` / `2>/dev/null` silencers — the
+# classic "terminal hangs, ENTER sometimes asks for password" UX.
+#
+# `sudo -v` re-prompts once UP-FRONT with stdin/stderr unobstructed, then
+# every subsequent sudo inside this script runs without prompting until the
+# cache expires again. If the user has passwordless sudo this is a no-op.
+#
+# DEBIAN_FRONTEND=noninteractive + -o Dpkg::Options are the standard pair
+# that keep apt from ever bringing up an interactive curses dialog (service
+# restart during upgrade, sshd config merge, …). They have to be exported
+# so child apt-get invocations inherit them.
+info "this topic provisions the web stack — may take 30-120s on first run"
+if ! sudo -v; then
+    warn "sudo validate failed — individual steps will re-prompt if needed"
+fi
+export DEBIAN_FRONTEND=noninteractive
+APT_NONINTERACTIVE_FLAGS=(-y -q
+    -o Dpkg::Options::="--force-confdef"
+    -o Dpkg::Options::="--force-confold")
 
 # ─── nginx paths (exported for deploy.sh envsubst) ───────────────────
 export NGINX_AVAILABLE_DIR="/etc/nginx/sites-available"
@@ -62,9 +86,9 @@ for p in "${pkgs[@]}"; do
     fi
 done
 if [[ "${#missing[@]}" -gt 0 ]]; then
-    info "installing: ${missing[*]}"
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq "${missing[@]}"
+    info "installing: ${missing[*]} (apt; mysql-server can take 30-60s on first run)"
+    sudo apt-get update -q
+    sudo apt-get install "${APT_NONINTERACTIVE_FLAGS[@]}" "${missing[@]}"
 fi
 
 # PHP-FPM for every installed version (each FPM runs independently, socket
@@ -73,14 +97,14 @@ fi
 for ver in ${PHP_VERSIONS:-$PHP_DEFAULT}; do
     if ! dpkg -s "php${ver}-fpm" >/dev/null 2>&1; then
         info "installing php${ver}-fpm"
-        sudo apt-get install -y -qq "php${ver}-fpm"
+        sudo apt-get install "${APT_NONINTERACTIVE_FLAGS[@]}" "php${ver}-fpm"
     fi
 done
 
 # ─── mkcert + wildcard cert ──────────────────────────────────────────
 if ! command -v mkcert >/dev/null 2>&1; then
     info "installing mkcert"
-    sudo apt-get install -y -qq libnss3-tools
+    sudo apt-get install "${APT_NONINTERACTIVE_FLAGS[@]}" libnss3-tools
     mkcert_ver="$(curl -fsSL https://api.github.com/repos/FiloSottile/mkcert/releases/latest | jq -r '.tag_name')"
     tmp="$(mktemp -d)"
     curl -fsSL -o "$tmp/mkcert" "https://github.com/FiloSottile/mkcert/releases/download/${mkcert_ver}/mkcert-${mkcert_ver}-linux-amd64"
@@ -90,9 +114,12 @@ else
     ok "mkcert already installed"
 fi
 
-# Install rootCA into WSL trust stores (NSS + system). Non-fatal if it
-# needs re-run interactively for Firefox profile.
-mkcert -install 2>/dev/null || warn "mkcert -install may need re-run in a TTY"
+# Install rootCA into WSL trust stores (NSS + system). `mkcert -install`
+# shells out to `sudo` when it needs to write /usr/local/share/ca-certificates.
+# We DO NOT silence stderr here — if the sudo cache expired between topics,
+# the user needs to see the password prompt, not a frozen terminal.
+info "installing mkcert rootCA into WSL trust stores (may prompt for sudo)"
+mkcert -install || warn "mkcert -install had issues — re-run inside a TTY for Firefox profile"
 
 # Generate wildcard cert covering BOTH catchall subdomains in one file
 sudo mkdir -p "$CERT_DIR"
@@ -192,17 +219,32 @@ if [[ ! -f "$ROOTCA" ]]; then
     _emit_lane_b_followup "mkcert rootCA.pem missing at $ROOTCA"
 elif [[ -n "$PWSH_BIN" ]]; then
     # Lane A — interop available. Try the direct import.
-    info "importing mkcert rootCA into Windows CurrentUser\\Root (via interop)"
+    #
+    # We wrap the powershell.exe invocation in `timeout 45` as a safety
+    # net: a broken interop layer (binfmt_misc half-registered, /mnt/c in
+    # I/O-error state, Windows side showing a hidden UAC prompt) can make
+    # the call block indefinitely with no output. 45s is well above any
+    # legitimate run-time (import is a few hundred ms) and below a
+    # threshold where the user gives up. Exit 124 from `timeout` means
+    # "killed for exceeding the deadline" — we route that into the Lane B
+    # followup just like any other failure mode.
+    info "importing mkcert rootCA into Windows CurrentUser\\Root (via interop; ≤45s)"
     if wslpath -w "$ROOTCA" >/dev/null 2>&1; then
         ROOTCA_WIN="$(wslpath -w "$ROOTCA")"
         PS_WIN="$(wslpath -w "$PS_SCRIPT_IN")"
         # shellcheck disable=SC2016  # the $env: is PowerShell-side, not bash
-        if "$PWSH_BIN" -NoProfile -ExecutionPolicy Bypass -Command \
+        if timeout --kill-after=5 45 \
+                "$PWSH_BIN" -NoProfile -ExecutionPolicy Bypass -Command \
                 "\$env:ROOTCA_PATH = '$ROOTCA_WIN'; & '$PS_WIN'" \
                 2>&1 | sed 's/^/    /'; then
             ok "Windows CA import succeeded via interop"
         else
-            _emit_lane_b_followup "interop invocation returned non-zero"
+            rc=${PIPESTATUS[0]}
+            if [[ "$rc" == "124" || "$rc" == "137" ]]; then
+                _emit_lane_b_followup "interop call exceeded 45s timeout (rc=$rc; likely binfmt_misc/9P stall)"
+            else
+                _emit_lane_b_followup "interop invocation returned non-zero (rc=$rc)"
+            fi
         fi
     else
         _emit_lane_b_followup "wslpath -w failed (drvfs mapping broken)"
@@ -269,7 +311,7 @@ else
     warn "nginx config FAILED validation — run 'sudo nginx -t' to see the error"
 fi
 
-ok "60-laravel-stack (wsl) done — default PHP: $PHP_DEFAULT"
+ok "60-web-stack (wsl) done — default PHP: $PHP_DEFAULT"
 ok "  start services once:   sudo systemctl start mysql redis nginx php${PHP_DEFAULT}-fpm"
 ok "  create a Laravel site: link-project <name>          → https://<name>.localhost"
 ok "  create a proxy site:   link-project --frontend <name> [--port 3000]  → https://<name>.front.localhost"

@@ -104,7 +104,7 @@ Every `verify.sh` MUST:
 
 ```bash
 bash bootstrap.sh                          # all topics in order
-SKIP_TOPICS="60-laravel-stack" bash bootstrap.sh
+SKIP_TOPICS="60-web-stack" bash bootstrap.sh
 ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
 DRY_RUN=1 bash bootstrap.sh                # print what would run without executing
 bash bootstrap.sh --help                   # list topics + env vars
@@ -121,7 +121,7 @@ bash bootstrap.sh --help                   # list topics + env vars
 | `DOTFILES_DIR` | clone destination (default: `~/dotfiles`) |
 | `GIT_NAME`, `GIT_EMAIL` | identity for `50-git` |
 | `CODE_DIR` | where projects live (default: `~/code/web`; on Henry's Mac: `/Volumes/External/code`) |
-| `INCLUDE_LARAVEL=1` | enable topic `60-laravel-stack` (default: skip) |
+| `INCLUDE_WEBSTACK=1` | enable topic `60-web-stack` (default: skip) |
 | `INCLUDE_REMOTE=1` | enable topic `70-remote-access` (default: skip) |
 | `INCLUDE_EDITOR=1` | enable topic `90-editor` (default: skip) |
 | `NO_COLOR=1` | disable colored output (auto when not a TTY) |
@@ -136,7 +136,7 @@ bash bootstrap.sh --help                   # list topics + env vars
 3. list topics/*/ in alphabetical order
 4. apply SKIP_TOPICS / ONLY_TOPICS filters
 5. for opt-in topics, check the corresponding env var:
-     60-laravel-stack    requires INCLUDE_LARAVEL=1    (skip with message otherwise)
+     60-web-stack    requires INCLUDE_WEBSTACK=1    (skip with message otherwise)
      70-remote-access    requires INCLUDE_REMOTE=1
      90-editor           requires INCLUDE_EDITOR=1
      95-dotfiles-personal requires DOTFILES_REPO set
@@ -151,7 +151,7 @@ bash bootstrap.sh --help                   # list topics + env vars
 ```
 
 **Variables exported by the runner** (inherited by all installers and deploy.sh):
-`OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `DOTFILES_REPO`, `DOTFILES_DIR`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_LARAVEL`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
+`OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `DOTFILES_REPO`, `DOTFILES_DIR`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_WEBSTACK`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
 
 ### Log
 
@@ -260,7 +260,7 @@ When the resolved destination starts with `/etc/`, `/usr/local/etc/`, or any pat
 3. Uses `sudo cp`, `sudo mv`, `sudo chmod` to write the destination.
 4. Fails with a clear message if sudo is denied.
 
-Topics that write under `/etc/` (e.g. `70-remote-access` sshd snippet, `60-laravel-stack` nginx config) depend on this logic. Never call deploy.sh in a non-interactive context without having validated `sudo -n` beforehand.
+Topics that write under `/etc/` (e.g. `70-remote-access` sshd snippet, `60-web-stack` nginx config) depend on this logic. Never call deploy.sh in a non-interactive context without having validated `sudo -n` beforehand.
 
 ### `lib/log.sh`
 
@@ -345,7 +345,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 **Env vars:** none.
 
-**Not required by any other topic** — `80-claude-code` doesn't use Docker, `60-laravel-stack` runs MySQL/nginx natively. The smoke test in `ci/smoke-test.sh` needs Docker, but that's developer-side CI tooling, not a runtime dependency.
+**Not required by any other topic** — `80-claude-code` doesn't use Docker, `60-web-stack` runs MySQL/nginx natively. The smoke test in `ci/smoke-test.sh` needs Docker, but that's developer-side CI tooling, not a runtime dependency.
 
 ### `50-git`
 
@@ -358,11 +358,11 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 **Templates:**
 - `gitconfig.keys` — 20–30 lines with `core.pager=delta`, `delta.side-by-side=false`, aliases (`alias.co=checkout`, `alias.br=branch`, etc.)
 
-### `60-laravel-stack` (opt-in)
+### `60-web-stack` (opt-in)
 
 **Purpose:** local stack for Laravel dev — MySQL, Redis, Nginx with a `*.localhost` catch-all, PHP-FPM, mkcert.
 
-**Activation:** `INCLUDE_LARAVEL=1 bash bootstrap.sh`
+**Activation:** `INCLUDE_WEBSTACK=1 bash bootstrap.sh`
 
 **Contents:**
 - WSL: `apt install mysql-server redis-server nginx php8.4-fpm`, `curl | bash` mkcert
@@ -442,7 +442,7 @@ for f in ~/.bashrc.d/*.sh; do [ -r "$f" ] && source "$f"; done
 Fragments under `~/.bashrc.d/` follow the same numeric prefix as the topics:
 - `10-languages.sh` (fnm env, composer PATH)
 - `20-terminal-ux.sh` (starship init, fzf keybindings, zoxide init, aliases)
-- `60-laravel-stack.sh` (laravel aliases, if opt-in)
+- `60-web-stack.sh` (laravel aliases, if opt-in)
 
 Load order = alphabetical (enforces dependencies).
 
@@ -557,7 +557,7 @@ jobs:
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
 ```
 
-**Tier 3 (daily E2E):** disabled initially. Turn on once stable — schedule `cron: '0 6 * * *'` with coverage for `60-laravel-stack` and `70-remote-access`.
+**Tier 3 (daily E2E):** disabled initially. Turn on once stable — schedule `cron: '0 6 * * *'` with coverage for `60-web-stack` and `70-remote-access`.
 
 ### Estimated costs
 
@@ -639,7 +639,7 @@ MVP accepted when:
 ## 14. Post-MVP roadmap
 
 **v1.1 (backlog, no commitment):**
-- CI Tier 3 (daily E2E with `60-laravel-stack` + `70-remote-access`)
+- CI Tier 3 (daily E2E with `60-web-stack` + `70-remote-access`)
 - `dev-bootstrap update` command — pull + re-run bootstrap
 - Detector for changes in the local `~/.zshrc` vs template (warn before overwriting)
 

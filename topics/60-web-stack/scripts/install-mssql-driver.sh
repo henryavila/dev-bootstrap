@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install-mssql-driver.sh — Microsoft SQL Server ODBC driver + PHP
-# extensions (sqlsrv, pdo_sqlsrv). Opt-in piece of 60-laravel-stack,
+# extensions (sqlsrv, pdo_sqlsrv). Opt-in piece of 60-web-stack,
 # gated by INCLUDE_MSSQL=1.
 #
 # What this script does (idempotent top to bottom):
@@ -14,7 +14,7 @@
 #      pdo_sqlsrv bound to that version's phpize (ABI-specific .so).
 #   4. Enables the extensions via phpenmod for both CLI and FPM.
 #
-# Connection string note (document once in the 60-laravel-stack README):
+# Connection string note (document once in the 60-web-stack README):
 #   msodbcsql18 requires TLS 1.2+. Self-signed certs (common in corporate
 #   SQL Servers) need the connection string to include:
 #       Encrypt=yes;TrustServerCertificate=yes

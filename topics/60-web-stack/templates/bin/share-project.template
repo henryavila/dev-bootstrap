@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # share-project — expose a local site through ngrok for live sharing.
-# Managed by dev-bootstrap / 60-laravel-stack.
+# Managed by dev-bootstrap / 60-web-stack.
 #
 # Prerequisites:
-#   - ngrok installed (60-laravel-stack extras: INCLUDE_NGROK=1)
+#   - ngrok installed (60-web-stack extras: INCLUDE_NGROK=1)
 #   - ngrok authtoken configured: ngrok config add-authtoken <token>
 #     (free tier is fine — get one at https://dashboard.ngrok.com/get-started/your-authtoken)
 #

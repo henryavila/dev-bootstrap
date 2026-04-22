@@ -12,7 +12,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-SHARE="$REPO_ROOT/topics/60-laravel-stack/templates/bin/share-project.template"
+SHARE="$REPO_ROOT/topics/60-web-stack/templates/bin/share-project.template"
 assert_file_exists "$SHARE"
 
 echo "--help / -h prints usage with zero exit"

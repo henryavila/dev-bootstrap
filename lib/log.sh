@@ -32,7 +32,7 @@ banner() { printf '\n%s== %s ==%s\n' "$_C_BLD" "$*" "$_C_RST"; }
 # Usage:
 #   followup critical "Windows CA import skipped — HTTPS localhost
 #                      won't work in Chrome/Edge. Diagnose with:
-#                      bash ~/dev-bootstrap/topics/60-laravel-stack/scripts/diagnose-wsl-interop.sh"
+#                      bash ~/dev-bootstrap/topics/60-web-stack/scripts/diagnose-wsl-interop.sh"
 #
 # The message can be multi-line (actual newlines); the summary will
 # indent continuation lines for readability.

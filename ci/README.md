@@ -56,7 +56,7 @@ Explicit `SKIP_TOPICS` in `smoke-test.sh`:
 Auto-skipped by the bootstrap's own opt-in gates (we deliberately leave
 these OFF the explicit list so the gate logic itself is exercised):
 
-- **`60-laravel-stack`** — gated by `INCLUDE_LARAVEL=1`
+- **`60-web-stack`** — gated by `INCLUDE_WEBSTACK=1`
 - **`70-remote-access`** — gated by `INCLUDE_REMOTE=1`
 - **`90-editor`** — gated by `INCLUDE_EDITOR=1`
 

@@ -3,7 +3,7 @@
 # isn't reachable from WSL, which blocks the Windows CA import step
 # (Chrome/Edge on Windows won't trust *.localhost HTTPS without it).
 #
-# Run this manually when 60-laravel-stack prints the "Windows CA import
+# Run this manually when 60-web-stack prints the "Windows CA import
 # skipped" critical follow-up. It checks 6 points in order and prints
 # a one-line diagnosis with the most probable fix at the end.
 
@@ -170,7 +170,7 @@ case "$FIRST_FAIL" in
     "")
         ok "All checks passed — interop looks healthy. If the bootstrap still"
         ok "refuses to do the Windows CA import, re-run:"
-        ok "  ONLY_TOPICS=60-laravel-stack bash ~/dev-bootstrap/bootstrap.sh"
+        ok "  ONLY_TOPICS=60-web-stack bash ~/dev-bootstrap/bootstrap.sh"
         ;;
     "mnt-c-9p-broken"|"mnt-c-unavailable")
         fail "  /mnt/c 9P mount is broken in this WSL session."
