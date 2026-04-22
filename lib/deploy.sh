@@ -244,7 +244,39 @@ deploy_one() {
             */.bashrc.d/*|*/.zshrc.d/*|*/.local/bin/*)
                 needs_header_check=0 ;;
         esac
+
+        # "Safe to replace" bypass — two heuristics for detecting that $dst has
+        # no user-authored content to preserve, so the missing marker is not a
+        # red flag. Both live here so the user never needs to know about
+        # ALLOW_OVERWRITE_UNMANAGED for the fresh-machine install path.
+        #
+        #   (a) /etc/skel identity (Linux/WSL): useradd seeds $HOME from
+        #       /etc/skel. Those copies carry no marker — they never will,
+        #       they're distro defaults. Byte-identical to the skel original
+        #       ⇒ nothing of the user's is at risk.
+        #
+        #   (b) Empty file (Mac + fallback for any OS): macOS has no /etc/skel
+        #       and useradd writes nothing into $HOME, but Terminal.app
+        #       sometimes auto-creates an empty ~/.zshrc on first launch. A
+        #       zero-byte file has trivially nothing to preserve regardless
+        #       of which process touched it.
+        local looks_unowned=0
+        if [[ "$needs_header_check" == "1" ]]; then
+            if [[ -d /etc/skel ]] && [[ "$dst" == "$HOME"/* ]]; then
+                local skel_equiv="/etc/skel/${dst#"$HOME"/}"
+                if [[ -f "$skel_equiv" ]] && cmp -s "$dst" "$skel_equiv"; then
+                    looks_unowned=1
+                    info "$dst matches /etc/skel default — safe to replace"
+                fi
+            fi
+            if [[ "$looks_unowned" != "1" ]] && [[ ! -s "$dst" ]]; then
+                looks_unowned=1
+                info "$dst is empty — safe to replace"
+            fi
+        fi
+
         if [[ "$needs_header_check" == "1" ]] \
+             && [[ "$looks_unowned" != "1" ]] \
              && [[ "${ALLOW_OVERWRITE_UNMANAGED:-0}" != "1" ]] \
              && ! grep -qF "managed by dev-bootstrap" "$dst" 2>/dev/null; then
             # Persist the staged content so the user can diff it. tmp_staging/
