@@ -100,7 +100,7 @@ If you see a `!` line in the bootstrap output, it's pointing at a next step. Rea
 | Topic | Installs / applies | Opt-in |
 |-------|--------------------|--------|
 | `00-core` | git, curl, build-essential, jq, unzip, envsubst (gettext) | — |
-| `10-languages` | Node via fnm + LTS, PHP 8.4 (ondrej ppa / brew), Python 3 | — |
+| `10-languages` | Node via fnm + LTS, PHP (multi-version via ondrej ppa / brew; picked in the menu), Python 3 | — |
 | `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove | — |
 | `30-shell` | `~/.bashrc` / `~/.zshrc` loaders + `~/.inputrc` (word-kill, completion niceties) | — |
 | `40-tmux` | tmux + `~/.tmux.conf` (prefix `Ctrl+a`) | — |

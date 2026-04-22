@@ -80,7 +80,7 @@ Logo após o menu (ou imediatamente, quando pulado), o bootstrap roda `sudo -v` 
 | Topic | Instala / aplica | Opt-in |
 |-------|------------------|--------|
 | `00-core` | git, curl, build-essential, jq, unzip, envsubst (gettext) | — |
-| `10-languages` | Node via fnm + LTS, PHP 8.4 (ondrej ppa / brew), Python 3 | — |
+| `10-languages` | Node via fnm + LTS, PHP (multi-version via ondrej ppa / brew; escolhido no menu), Python 3 | — |
 | `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove | — |
 | `30-shell` | loaders `~/.bashrc` / `~/.zshrc` + `~/.inputrc` (word-kill, completion niceties) | — |
 | `40-tmux` | tmux + `~/.tmux.conf` (prefixo `Ctrl+a`) | — |

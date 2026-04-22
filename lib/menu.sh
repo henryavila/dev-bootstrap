@@ -140,15 +140,20 @@ run_menu() {
     # pre-select what's already installed so ENTER = "keep & update", which
     # is the common case. First run on a fresh machine still asks for everything.
     local choices
+    # Descriptions kept short enough to fit a single line at 85-col width.
+    # The `NN-topic` prefix stays (users learn the topic numbering through
+    # the menu and refer to it later in READMEs + commits). Widths tuned
+    # so the longest ("95-dotfiles-personal: your private dotfiles") fits
+    # without wrap on 85-col terminals.
     choices=$(whiptail --title "dev-bootstrap :: opt-in topics" \
         --checklist \
-        "Select optional topics to install (SPACE to toggle, ENTER to confirm).\nDefaults reflect what's already installed on this machine." \
-        20 78 6 \
-        "docker"   "45-docker            — Docker Engine (WSL) / Colima (Mac)"    "$(_topic_default_state docker)" \
-        "laravel"  "60-laravel-stack     — PHP 8.4 + nginx + MySQL 8"             "$(_topic_default_state laravel)" \
-        "remote"   "70-remote-access     — SSH server + Tailscale + Syncthing"    "$(_topic_default_state remote)" \
-        "editor"   "90-editor            — typora-wait: open .md in Typora GUI from CLI" "$(_topic_default_state editor)" \
-        "dotfiles" "95-dotfiles-personal — clone your personal dotfiles"          "$(_topic_default_state dotfiles)" \
+        "Select optional topics to install (SPACE toggles, ENTER confirms).\nDefaults reflect what's already installed on this machine." \
+        20 85 6 \
+        "docker"   "45-docker: Docker Engine (WSL) / Colima (Mac)"    "$(_topic_default_state docker)" \
+        "laravel"  "60-laravel-stack: multi-PHP + nginx + MySQL + mkcert"  "$(_topic_default_state laravel)" \
+        "remote"   "70-remote-access: SSH + Tailscale + Syncthing"    "$(_topic_default_state remote)" \
+        "editor"   "90-editor: typora-wait (open .md from CLI)"       "$(_topic_default_state editor)" \
+        "dotfiles" "95-dotfiles-personal: your private dotfiles"      "$(_topic_default_state dotfiles)" \
         3>&1 1>&2 2>&3) || _menu_cancel
 
     local need_dotfiles=0
