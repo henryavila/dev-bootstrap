@@ -120,37 +120,59 @@ else
     ok "SSH key created — comment: ${USER}@$(hostname -s)"
 fi
 
-# ─── 4. Register SSH pubkey on GitHub ──────────────────────────────
-# Idempotent: compare by fingerprint (stable across uploads).
-fingerprint="$(ssh-keygen -lf "$HOME/.ssh/id_ed25519.pub" | awk '{print $2}')"
+# ─── 4. Register SSH pubkey on GitHub (only if needed) ─────────────
+# SSH handshake is the ground truth: if `ssh -T git@github.com` succeeds,
+# the key IS registered — no need to consult the GitHub API at all.
+# This avoids the false-negative trap where `gh ssh-key list` returns
+# empty because the token lacks `admin:public_key` scope, making the
+# script think the key isn't registered and trying to re-add it
+# (which also fails, for the same scope reason) while the key has
+# been registered and working all along.
+#
+# Flow:
+#   (a) smoke test SSH — if green, done
+#   (b) if red, try `gh ssh-key add` (best effort)
+#   (c) re-smoke — if still red, print manual steps
+
 title="$(hostname -s)"
 
-if gh ssh-key list 2>/dev/null | grep -q "$fingerprint"; then
-    ok "SSH key already registered on GitHub (title: matching fingerprint)"
-else
-    info "registering SSH key on GitHub as \"$title\""
-    if gh ssh-key add "$HOME/.ssh/id_ed25519.pub" --title "$title"; then
-        ok "SSH key registered"
-    else
-        warn "gh ssh-key add failed — the token may lack admin:public_key scope"
-        warn "register manually: https://github.com/settings/ssh/new"
-        warn "then run 'gh auth refresh -s admin:public_key' and re-run this topic"
-    fi
-fi
+run_ssh_smoke_test() {
+    # BatchMode=yes fails fast if credentials are missing instead of prompting.
+    # StrictHostKeyChecking=accept-new auto-accepts GitHub's host key on first
+    # contact (safer than 'no' which also accepts changed keys = MITM risk).
+    local out
+    out="$(ssh -T -o BatchMode=yes \
+                   -o StrictHostKeyChecking=accept-new \
+                   git@github.com 2>&1 || true)"
+    echo "$out" | grep -q "successfully authenticated"
+}
 
-# ─── 5. Smoke test: SSH to GitHub ──────────────────────────────────
-# BatchMode=yes fails fast if credentials are missing instead of prompting.
-# StrictHostKeyChecking=accept-new auto-accepts GitHub's host key on first
-# contact (safer than 'no' which also accepts changed keys = MITM risk).
 info "verifying SSH authentication to github.com"
-ssh_output=$(ssh -T -o BatchMode=yes \
-                  -o StrictHostKeyChecking=accept-new \
-                  git@github.com 2>&1 || true)
-if echo "$ssh_output" | grep -q "successfully authenticated"; then
-    ok "SSH auth to GitHub: working"
+if run_ssh_smoke_test; then
+    ok "SSH auth to GitHub: working (key already registered)"
 else
-    warn "SSH auth not yet working — GitHub may need a few seconds to index the key"
-    warn "Retry manually: ssh -T git@github.com"
+    # Key exists locally but GitHub doesn't accept it yet. Try the API
+    # call — it's fine if it fails, we'll fall back to manual instructions.
+    info "SSH not yet authorised — attempting to register via gh API"
+    if gh ssh-key add "$HOME/.ssh/id_ed25519.pub" --title "$title" 2>/dev/null; then
+        ok "SSH key registered via gh"
+        # Re-test — GitHub needs a moment to index the new key.
+        sleep 2
+        if run_ssh_smoke_test; then
+            ok "SSH auth to GitHub: working"
+        else
+            warn "SSH auth still failing — GitHub may need a few more seconds"
+            warn "Retry manually: ssh -T git@github.com"
+        fi
+    else
+        warn "gh ssh-key add failed (token likely lacks admin:public_key scope)"
+        warn "Register the key manually:"
+        warn "    cat ~/.ssh/id_ed25519.pub    # copy this"
+        warn "    open https://github.com/settings/ssh/new  and paste the key"
+        warn "Or grant the scope + re-run this topic:"
+        warn "    gh auth refresh -s admin:public_key"
+        warn "    bash ~/dev-bootstrap/bootstrap.sh"
+    fi
 fi
 
 ok "identity setup complete"
