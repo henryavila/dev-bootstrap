@@ -53,7 +53,14 @@ else
         # (handled by `gh auth setup-git`) while we stay in full control
         # of the SSH key (generation, title, registration via `gh ssh-key
         # add` with our own fingerprint-idempotent logic).
-        if ! gh auth login --web \
+        #
+        # --clipboard: gh auto-copies the OAuth device code to the OS
+        # clipboard (via pbcopy on Mac, xclip on Linux/WSLg, or xsel).
+        # If the clipboard tool is missing OR fails, gh gracefully
+        # falls back to just printing the code — no regression vs
+        # the plain flow. On installed systems it saves a mouse select
+        # + copy per machine provisioning.
+        if ! gh auth login --web --clipboard \
                 --git-protocol https \
                 --scopes "admin:public_key,repo" \
                 --hostname github.com \

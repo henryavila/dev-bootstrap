@@ -16,7 +16,12 @@ source "$HERE/../../lib/log.sh"
 # and fails — breaking gh auth login's "Press Enter to open browser"
 # flow. Harmless no-op on native Linux (the package just isn't used).
 
-packages=(gh)
+packages=(gh xclip)
+# xclip: enables `gh auth login --clipboard` — auto-copies the OAuth
+# device code to the OS clipboard so user can paste directly in
+# browser (no mouse-select + copy). WSLg forwards xclip writes to the
+# Windows clipboard transparently via RDP. Native Linux uses xclip
+# with X11/Wayland (WSL-style integration via xdg).
 if grep -qi microsoft /proc/version 2>/dev/null; then
     packages+=(wslu)
 fi
