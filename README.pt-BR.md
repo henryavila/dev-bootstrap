@@ -1,5 +1,8 @@
 # dev-bootstrap
 
+[![smoke-test](https://github.com/henryavila/dev-bootstrap/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/henryavila/dev-bootstrap/actions/workflows/smoke-test.yml)
+[![lint](https://github.com/henryavila/dev-bootstrap/actions/workflows/lint.yml/badge.svg)](https://github.com/henryavila/dev-bootstrap/actions/workflows/lint.yml)
+
 Configuração reproduzível de máquinas de desenvolvimento em WSL2/Ubuntu, macOS e Windows (via WSL).
 
 > **Idiomas:** [English](README.md) · Português (este arquivo)

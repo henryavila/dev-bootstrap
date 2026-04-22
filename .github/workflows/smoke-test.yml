@@ -1,0 +1,57 @@
+name: smoke-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-ubuntu-24-04:
+    name: smoke-test (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify CI harness exists
+        id: harness
+        run: |
+          set -e
+          missing=0
+          for f in ci/smoke-test.sh ci/Dockerfile.ubuntu-24.04; do
+            if [[ ! -f "$f" ]]; then
+              echo "::warning::Expected CI artefact missing: $f"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -eq 1 ]]; then
+            echo "CI harness not yet present — smoke test will be a no-op until ci/* is populated."
+            echo "harness_present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "harness_present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run smoke test
+        if: steps.harness.outputs.harness_present == 'true'
+        id: smoke
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -o pipefail
+          mkdir -p ci/logs
+          bash ci/smoke-test.sh 2>&1 | tee "ci/logs/smoke-${RUN_ID}.log"
+
+      - name: Upload smoke-test log on failure
+        if: always() && steps.smoke.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-log-${{ github.run_id }}
+          path: ci/logs/
+          retention-days: 14
+          if-no-files-found: warn
