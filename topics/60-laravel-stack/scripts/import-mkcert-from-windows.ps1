@@ -83,15 +83,23 @@ Then re-run this script with -Distro:
 }
 
 # ─── Resolve WSL user ────────────────────────────────────────────────
+# Same UTF-16 LE issue as distro detection: strip null bytes before trim.
 if (-not $WslUser) {
     try {
-        $WslUser = (wsl.exe -d $Distro whoami 2>$null | Out-String).Trim()
+        $WslUser = ((& wsl.exe -d $Distro whoami 2>$null | Out-String) -replace "`0", "").Trim()
     } catch {
-        Write-Error "[fail] Could not determine WSL user for distro '$Distro'. Pass -WslUser explicitly."
-        exit 1
+        # fall through to explicit error below
     }
     if (-not $WslUser) {
-        Write-Error "[fail] wsl.exe -d $Distro whoami returned empty. Pass -WslUser explicitly."
+        Write-Error @"
+[fail] Could not determine WSL user for distro '$Distro'.
+
+Verify the distro responds:
+    wsl.exe -d '$Distro' whoami
+
+Then re-run with -WslUser:
+    powershell -ExecutionPolicy Bypass -File '<unc-path>' -Distro '$Distro' -WslUser '<username>'
+"@
         exit 1
     }
     Write-Host "[info] Using WSL user: $WslUser"
@@ -102,16 +110,33 @@ if (-not $WslUser) {
 # is distinct from the binfmt_misc interop channel and survives the
 # "/mnt/c is I/O error" state — wsl.exe talks to the WSL VM service,
 # not to /init inside it.
+#
+# IMPORTANT: PowerShell's `> file` redirect encodes the child process's
+# stdout as UTF-16 LE with BOM by default. That corrupts the PEM (text
+# ASCII) — bat/openssl/Import-Certificate would all reject the result.
+# Start-Process -RedirectStandardOutput writes raw bytes, preserving
+# the PEM exactly.
 $caPathInWsl = "/home/$WslUser/.local/share/mkcert/rootCA.pem"
 Write-Host "[info] Reading $caPathInWsl from $Distro via wsl.exe…"
 
-$tmpCa = Join-Path $env:TEMP "mkcert-rootCA-$([guid]::NewGuid()).pem"
+$tmpCa  = Join-Path $env:TEMP "mkcert-rootCA-$([guid]::NewGuid()).pem"
+$errLog = Join-Path $env:TEMP "mkcert-rootCA-$([guid]::NewGuid()).err"
 try {
-    & wsl.exe -d $Distro --exec cat $caPathInWsl > $tmpCa 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tmpCa) -or ((Get-Item $tmpCa).Length -lt 100)) {
+    $proc = Start-Process -FilePath 'wsl.exe' `
+        -ArgumentList @('-d', $Distro, '--exec', 'cat', $caPathInWsl) `
+        -NoNewWindow -Wait `
+        -RedirectStandardOutput $tmpCa `
+        -RedirectStandardError  $errLog `
+        -PassThru
+
+    if ($proc.ExitCode -ne 0 -or -not (Test-Path $tmpCa) -or ((Get-Item $tmpCa).Length -lt 100)) {
         Write-Error "[fail] Could not read mkcert rootCA.pem from WSL."
-        Write-Error "       Expected at: $caPathInWsl"
-        Write-Error "       Re-check with: wsl.exe -d $Distro ls -la /home/$WslUser/.local/share/mkcert/"
+        Write-Error "       Expected at: $caPathInWsl (inside $Distro)"
+        if (Test-Path $errLog) {
+            $err = (Get-Content $errLog -Raw) -replace "`0", ""
+            if ($err.Trim()) { Write-Error "       stderr: $($err.Trim())" }
+        }
+        Write-Error "       Verify with:  wsl.exe -d '$Distro' ls -la /home/$WslUser/.local/share/mkcert/"
         exit 1
     }
 
@@ -135,5 +160,6 @@ try {
     Write-Host "[info] Chrome / Edge / curl-wincrypt will trust *.localhost on next launch"
     Write-Host "[info] Firefox: set security.enterprise_roots.enabled = true in about:config"
 } finally {
-    Remove-Item -LiteralPath $tmpCa -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmpCa  -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $errLog -ErrorAction SilentlyContinue
 }
