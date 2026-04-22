@@ -63,4 +63,43 @@ elif [[ -n "$current_email" ]]; then
     ok "user.email preserved: $current_email"
 fi
 
+# ─── GPG commit signing (opt-in) ──────────────────────────────────────
+# Activated by exporting GPG_SIGN=1 before bootstrap. GPG_KEY_ID is
+# optional — if absent, the first secret key from `gpg --list-secret-keys`
+# is picked automatically. Falls through with a clear message if no key
+# is available, so the user knows exactly what to do (`gpg --gen-key`).
+if [[ "${GPG_SIGN:-0}" == "1" ]]; then
+    if ! command -v gpg >/dev/null 2>&1; then
+        warn "GPG_SIGN=1 but gpg not installed — skipping signing config"
+    else
+        signing_key="${GPG_KEY_ID:-}"
+        if [[ -z "$signing_key" ]]; then
+            # Pick the first usable secret key (long format, keyid only).
+            signing_key="$(gpg --list-secret-keys --keyid-format=long 2>/dev/null \
+                | awk '/^sec/ {split($2, a, "/"); print a[2]; exit}')"
+        fi
+
+        if [[ -z "$signing_key" ]]; then
+            warn "GPG_SIGN=1 but no secret key found — generate one with:"
+            warn "    gpg --full-generate-key        # RSA 4096, your git email"
+            warn "    gpg --list-secret-keys --keyid-format=long"
+            warn "  then re-run with GPG_KEY_ID=<id> bash bootstrap.sh"
+        else
+            info "enabling commit + tag signing with key $signing_key"
+            git config --global user.signingkey "$signing_key"
+            git config --global commit.gpgsign true
+            git config --global tag.gpgsign true
+            # gpg.program: default works on most systems, but on macOS with
+            # pinentry-mac the full brew path is safer. Only set if non-default.
+            if [[ -n "${BREW_PREFIX:-}" ]] && [[ -x "$BREW_PREFIX/bin/gpg" ]]; then
+                git config --global gpg.program "$BREW_PREFIX/bin/gpg"
+            fi
+            ok "GPG signing enabled (key $signing_key)"
+        fi
+    fi
+else
+    # No-op — don't mention unless explicitly activated.
+    :
+fi
+
 ok "50-git done"

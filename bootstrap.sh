@@ -12,6 +12,8 @@
 #   DOTFILES_REPO       personal dotfiles repo URL (enables 95-dotfiles-personal)
 #   DOTFILES_DIR        where to clone dotfiles (default: ~/dotfiles)
 #   GIT_NAME, GIT_EMAIL identity for 50-git
+#   GPG_SIGN=1          enable commit/tag signing in 50-git (opt-in)
+#   GPG_KEY_ID          explicit signing key (else first secret key is picked)
 #   CODE_DIR            project root (default: ~/code/web)
 #   INCLUDE_DOCKER=1    enables 45-docker
 #   INCLUDE_LARAVEL=1   enables 60-laravel-stack
@@ -59,6 +61,7 @@ Opt-in topics (menu toggles these, or set env var in automation):
 
 Other env vars:
   GIT_NAME, GIT_EMAIL, CODE_DIR, DOTFILES_DIR, NO_COLOR
+  GPG_SIGN=1 [+ GPG_KEY_ID=<id>]  enable GPG commit signing in 50-git
 
 See topics/*/README.md for topic-specific documentation.
 EOF

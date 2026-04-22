@@ -30,6 +30,27 @@ Bash additionally gets `__git_complete g|gco|gb|gp|gd` so those aliases autocomp
 
 If `user.name` / `user.email` aren't set and `GIT_NAME` / `GIT_EMAIL` were exported, they are applied. Otherwise, whatever is already in the config is preserved. In the normal flow, identity comes from the personal dotfiles via `~/.gitconfig.local`.
 
+## GPG commit signing (opt-in)
+
+Export `GPG_SIGN=1` (optionally with `GPG_KEY_ID=<long-id>`) before running bootstrap. The installer then:
+
+1. Checks that `gpg` is installed.
+2. If `GPG_KEY_ID` is unset, auto-picks the **first** secret key from `gpg --list-secret-keys --keyid-format=long`.
+3. Sets `user.signingkey`, `commit.gpgsign=true`, `tag.gpgsign=true`. On macOS with brew, also sets `gpg.program` to the brew-installed binary (for pinentry-mac compatibility).
+
+If no secret key exists, the installer prints the commands to generate one and leaves signing disabled — nothing silently fails.
+
+```bash
+# Generate a key once (RSA 4096, interactive):
+gpg --full-generate-key
+
+# Then enable signing on this machine:
+GPG_SIGN=1 bash bootstrap.sh                           # auto-picks first key
+GPG_SIGN=1 GPG_KEY_ID=ABCD1234EFGH5678 bash bootstrap.sh
+```
+
+Disable later: `git config --global --unset commit.gpgsign` + `--unset tag.gpgsign`.
+
 ## Adding/removing configs
 
 - **Global git config:** edit `data/gitconfig.keys` and run `ONLY_TOPICS=50-git bash bootstrap.sh`.
