@@ -11,9 +11,15 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../../../lib/log.sh"
 
 # ─── 1. Authenticate gh ─────────────────────────────────────────────
-# Uses OAuth device flow via browser — 1 token per machine, revokable
+# OAuth device flow via browser — 1 token per machine, revokable
 # independently. If NON_INTERACTIVE=1 and GITHUB_TOKEN env var is set,
-# use token login instead (for CI / headless).
+# uses token login (no browser, for CI/headless).
+#
+# Retry logic: gh CLI 2.x has a bug where the OAuth `slow_down` response
+# (RFC 8628 rate-limit signal) is treated as fatal instead of
+# exponential backoff. First attempt often fails if the user takes
+# >15s to open the browser + paste code. Retry with 90s pause resets
+# GitHub's per-device rate window.
 if gh auth status >/dev/null 2>&1; then
     ok "gh already authenticated ($(gh api user -q .login 2>/dev/null || echo 'unknown'))"
 else
@@ -21,17 +27,60 @@ else
         info "authenticating gh via GITHUB_TOKEN (non-interactive)"
         echo "$GITHUB_TOKEN" | gh auth login --with-token
     else
-        info "gh needs authentication — device flow (browser):"
-        info "  1. You'll see an 8-char code (e.g. ABCD-1234)"
-        info "  2. Browser opens to github.com/login/device"
-        info "  3. Paste the code and click 'Authorize github'"
-        info ""
-        # --web: opens browser automatically
-        # --git-protocol ssh: git remote URLs will use SSH (matches our ssh key)
-        # --scopes: admin:public_key (register SSH key) + repo (clone private)
-        if ! gh auth login --web --git-protocol ssh \
-                --scopes "admin:public_key,repo" --hostname github.com; then
-            fail "gh auth login failed — cannot continue"
+        cat <<'BANNER'
+
+  ╭──────────────────────────────────────────────────────────────╮
+  │  GitHub authentication — OAuth device flow                   │
+  ╰──────────────────────────────────────────────────────────────╯
+
+    ➜ gh will print an 8-character code (e.g. ABCD-1234)
+    ➜ Open this URL in any browser (phone works, doesn't need to
+      be on this machine):
+
+         https://github.com/login/device
+
+    ➜ Paste the code, approve "github" scopes.
+    ➜ Come back here — bootstrap resumes automatically.
+
+    Tips:
+      - Have the browser tab already open BEFORE the code appears
+        so you can paste it immediately (gh poll-then-fail bug:
+        slow humans trigger rate-limit).
+      - If the first attempt fails, we retry automatically.
+
+BANNER
+        sleep 2   # let user read the banner before gh floods output
+
+        auth_ok=0
+        for attempt in 1 2 3; do
+            info "auth attempt $attempt/3"
+            if gh auth login --web \
+                    --git-protocol ssh \
+                    --scopes "admin:public_key,repo" \
+                    --hostname github.com; then
+                auth_ok=1
+                break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+                warn "gh auth login failed (likely GitHub rate-limit on OAuth poll)"
+                warn "waiting 90s for the rate window to reset before retry..."
+                sleep 90
+            fi
+        done
+
+        if [ "$auth_ok" -eq 0 ]; then
+            fail "gh auth login failed after 3 attempts"
+            cat <<'RECOVERY'
+
+  Manual recovery:
+    1. Wait ~5 minutes (GitHub rate-limit reset window).
+    2. Run:
+         gh auth login --hostname github.com --git-protocol ssh \
+             --scopes 'admin:public_key,repo' --web
+    3. Re-run bootstrap — topic 05-identity is idempotent and will
+       skip the auth step once gh is authenticated.
+
+RECOVERY
             exit 1
         fi
     fi
