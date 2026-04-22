@@ -277,20 +277,23 @@ On Mac, Valet parks this dir so every subdir becomes <name>.test." \
         # --- 3c · PHP versions (multi-select) ---
         # Pulls the list from the single source of truth so adding a new
         # version to php-versions.conf auto-propagates to the menu.
+        # Label carries the install state so users can tell at a glance
+        # what's on disk vs. what they're about to add.
         local versions_file
         versions_file="$(dirname "${BASH_SOURCE[0]}")/../topics/10-languages/data/php-versions.conf"
         local -a php_checklist_items=()
         if [[ -f "$versions_file" ]]; then
             while IFS= read -r ver; do
-                local state="OFF"
-                # Pre-select: this machine already has the version installed,
-                # or it's the "latest" and there's no installed version yet.
+                local state="OFF" label_tag=""
                 if command -v "php${ver}" >/dev/null 2>&1 \
                    || [[ -x "/usr/bin/php${ver}" ]] \
                    || brew list --formula "php@${ver}" >/dev/null 2>&1 2>/dev/null; then
                     state="ON"
+                    label_tag="(installed)"
+                else
+                    label_tag="(not installed yet)"
                 fi
-                php_checklist_items+=("$ver" "PHP $ver" "$state")
+                php_checklist_items+=("$ver" "PHP $ver  $label_tag" "$state")
             done < <(grep -vE '^\s*(#|$)' "$versions_file" | sort -V)
         fi
         # If nothing looks installed yet, pre-select the last (latest) version
@@ -309,10 +312,15 @@ On Mac, Valet parks this dir so every subdir becomes <name>.test." \
         local php_choices
         php_choices=$(whiptail --title "60-laravel-stack :: PHP versions" \
             --checklist \
-"Which PHP versions should be installed?
-The last-selected version becomes the CLI / composer / php-fpm default.
-Switch later with: php-use <version>" \
-            16 70 6 \
+"Pick which PHP versions to have on this machine.
+The LAST one checked becomes the CLI / Composer / FPM default
+(switch later with: php-use <version>).
+
+  Check    = install if missing, keep if already installed (idempotent)
+  Uncheck  = skip during this run. DOES NOT UNINSTALL anything already
+             present — to remove, use 'sudo apt-get remove php8.X*' on
+             Linux or 'brew uninstall php@X.Y' on Mac." \
+            20 78 6 \
             "${php_checklist_items[@]}" \
             3>&1 1>&2 2>&3) || _menu_cancel
 
@@ -329,21 +337,49 @@ Switch later with: php-use <version>" \
         fi
 
         # --- 3d · Laravel extras (multi-select) ---
+        # State detection for extras follows the same pattern as PHP
+        # versions: label carries "(installed)" / "(not installed yet)"
+        # so the user isn't guessing. Detection is best-effort (cheap
+        # binary + extension checks) — false positives/negatives are OK
+        # because the installers themselves are idempotent.
+        local mp_state ng_state fe_state ms_state
+        local mp_tag ng_tag fe_tag ms_tag
+
+        command -v mailpit >/dev/null 2>&1 \
+            && { mp_state=ON;  mp_tag="(installed)"; } \
+            || { mp_state=ON;  mp_tag="(not installed yet)"; }
+
+        command -v ngrok >/dev/null 2>&1 \
+            && { ng_state=ON;  ng_tag="(installed)"; } \
+            || { ng_state=OFF; ng_tag="(not installed yet)"; }
+
+        # Frontend catchall = the nginx site config (checked by file presence)
+        if [[ -e /etc/nginx/sites-enabled/catchall-proxy.conf ]] \
+           || [[ -e "${BREW_PREFIX:-/opt/homebrew}/etc/nginx/servers/catchall-proxy.conf" ]]; then
+            fe_state=ON;  fe_tag="(already set up)"
+        else
+            fe_state=ON;  fe_tag="(not set up yet)"
+        fi
+
+        php -m 2>/dev/null | grep -qi sqlsrv \
+            && { ms_state=ON;  ms_tag="(installed)"; } \
+            || { ms_state=OFF; ms_tag="(not installed yet)"; }
+
         local extras_choices
         extras_choices=$(whiptail --title "60-laravel-stack :: optional extras" \
             --checklist \
-"Add-ons to the Laravel stack. Each is installed only if checked.
-mailpit + ngrok are low-impact; MSSQL driver takes ~2 min and requires
-accepting Microsoft's EULA (auto-set via ACCEPT_EULA=Y)." \
-            15 78 4 \
-            "mailpit"   "local mail catcher (SMTP :1025, UI :8025)"   \
-                "$(command -v mailpit >/dev/null 2>&1 && echo ON || echo ON)" \
-            "ngrok"     "public tunnel agent (share-project wrapper)" \
-                "$(command -v ngrok >/dev/null 2>&1 && echo ON || echo OFF)" \
-            "frontend"  "register *.front.localhost proxy catchall (Nuxt/Vite/Next)" \
-                "ON" \
-            "mssql"     "Microsoft SQL Server driver (msodbcsql18 + sqlsrv PECL)" \
-                "$(php -m 2>/dev/null | grep -qi sqlsrv && echo ON || echo OFF)" \
+"Add-ons to the Laravel stack.
+
+  Check    = install / configure if missing, keep if already there
+  Uncheck  = skip this run. Nothing is uninstalled — remove manually
+             with apt/brew if you really want it gone.
+
+MSSQL takes ~2 min (auto-accepts Microsoft's EULA via ACCEPT_EULA=Y)." \
+            20 82 4 \
+            "mailpit"  "local mail catcher, SMTP :1025 + UI :8025    $mp_tag"  "$mp_state" \
+            "ngrok"    "public tunnel (share-project wrapper)        $ng_tag"  "$ng_state" \
+            "frontend" "*.front.localhost proxy catchall             $fe_tag"  "$fe_state" \
+            "mssql"    "SQL Server ODBC + sqlsrv/pdo_sqlsrv PECL     $ms_tag"  "$ms_state" \
             3>&1 1>&2 2>&3) || _menu_cancel
 
         local -a extras_selected=()
