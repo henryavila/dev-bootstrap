@@ -49,6 +49,23 @@ export HOME="${HOME:-$(getent passwd "$USER" | cut -d: -f6)}"
 export BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t dev-bootstrap-followup.XXXXXX 2>/dev/null || mktemp)"
 trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
 
+# Persistent state across bootstrap runs — stores last-used values so
+# the interactive menu can pre-fill fields (CODE_DIR, PHP_VERSIONS,
+# opt-in flags, etc.) on re-runs instead of always showing the defaults.
+# Format: shell-sourceable `export KEY=value` lines — readable, diff-able,
+# editable by hand. Delete the file to reset to defaults.
+export BOOTSTRAP_STATE_DIR="$HOME/.local/state/dev-bootstrap"
+export BOOTSTRAP_STATE_CONFIG="$BOOTSTRAP_STATE_DIR/config.env"
+mkdir -p "$BOOTSTRAP_STATE_DIR"
+if [[ -f "$BOOTSTRAP_STATE_CONFIG" ]]; then
+    # shellcheck source=/dev/null
+    source "$BOOTSTRAP_STATE_CONFIG"
+    # Signal to should_show_menu that the control vars came from state,
+    # not from a user-set env — state-loaded values must not suppress
+    # the interactive menu (we want it to re-show with them as defaults).
+    export STATE_LOADED=1
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 

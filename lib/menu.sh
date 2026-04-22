@@ -20,16 +20,26 @@ should_show_menu() {
     [[ -n "${CI:-}" ]]                   && return 1
 
     # Any pre-configured control var means "automation mode" — respect it.
+    # BUT: persisted state ($BOOTSTRAP_STATE_CONFIG) pre-fills these from
+    # the last successful run — we DON'T want that to auto-suppress the
+    # menu. Detect values coming from the state file and allow the menu
+    # to re-prompt with them as defaults.
     [[ -n "${ONLY_TOPICS:-}" ]]           && return 1
-    [[ "${INCLUDE_DOCKER:-0}"  == "1" ]]  && return 1
-    [[ "${INCLUDE_LARAVEL:-0}" == "1" ]]  && return 1
-    [[ "${INCLUDE_REMOTE:-0}"  == "1" ]]  && return 1
-    [[ "${INCLUDE_EDITOR:-0}"  == "1" ]]  && return 1
-    [[ "${INCLUDE_MAILPIT:-0}" == "1" ]]  && return 1
-    [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
-    [[ "${INCLUDE_MSSQL:-0}"   == "1" ]]  && return 1
-    [[ -n "${PHP_VERSIONS:-}" ]]          && return 1
-    [[ -n "${DOTFILES_REPO:-}" ]]         && return 1
+    [[ "${STATE_LOADED:-0}" == "1" ]] && {
+        # Values were loaded from state file — ignore them for the
+        # "skip the menu" check. Menu will re-show with them as defaults.
+        :
+    } || {
+        [[ "${INCLUDE_DOCKER:-0}"  == "1" ]]  && return 1
+        [[ "${INCLUDE_LARAVEL:-0}" == "1" ]]  && return 1
+        [[ "${INCLUDE_REMOTE:-0}"  == "1" ]]  && return 1
+        [[ "${INCLUDE_EDITOR:-0}"  == "1" ]]  && return 1
+        [[ "${INCLUDE_MAILPIT:-0}" == "1" ]]  && return 1
+        [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
+        [[ "${INCLUDE_MSSQL:-0}"   == "1" ]]  && return 1
+        [[ -n "${PHP_VERSIONS:-}" ]]          && return 1
+        [[ -n "${DOTFILES_REPO:-}" ]]         && return 1
+    }
 
     # No TTY → can't show a menu (piped install, cron, etc).
     [[ -t 0 ]] && [[ -t 1 ]] || return 1
@@ -427,4 +437,47 @@ MSSQL takes ~2 min (auto-accepts Microsoft's EULA via ACCEPT_EULA=Y)." \
         || _menu_cancel
 
     ok "configuration captured — starting bootstrap"
+
+    # Persist the answers so next run pre-fills the same values instead
+    # of falling back to first-run defaults. Written to
+    # $BOOTSTRAP_STATE_CONFIG (default: ~/.local/state/dev-bootstrap/config.env).
+    # Plain shell-sourceable file — readable, diff-able, editable by hand.
+    # Delete to reset.
+    _persist_menu_state
+}
+
+_persist_menu_state() {
+    # Only if bootstrap.sh set up the path. When menu is sourced in a
+    # different context (tests, manual invocation), this is a no-op.
+    [[ -z "${BOOTSTRAP_STATE_CONFIG:-}" ]] && return 0
+    mkdir -p "$(dirname "$BOOTSTRAP_STATE_CONFIG")"
+    # Write atomically: tmp file + rename so a half-written state file
+    # can't break the next bootstrap's `source`.
+    local tmp="${BOOTSTRAP_STATE_CONFIG}.tmp"
+    {
+        echo "# dev-bootstrap — last menu selections. Auto-generated."
+        echo "# Edit by hand or delete this file to reset defaults."
+        echo "# Env vars set at runtime still win over whatever is here."
+        echo
+        [[ -n "${CODE_DIR:-}" ]]             && printf 'export CODE_DIR=%q\n' "$CODE_DIR"
+        [[ -n "${DOTFILES_REPO:-}" ]]        && printf 'export DOTFILES_REPO=%q\n' "$DOTFILES_REPO"
+        [[ -n "${DOTFILES_DIR:-}" ]]         && printf 'export DOTFILES_DIR=%q\n' "$DOTFILES_DIR"
+        [[ -n "${PHP_VERSIONS:-}" ]]         && printf 'export PHP_VERSIONS=%q\n' "$PHP_VERSIONS"
+        [[ -n "${PHP_DEFAULT:-}" ]]          && printf 'export PHP_DEFAULT=%q\n' "$PHP_DEFAULT"
+        [[ -n "${DEV_DEFAULT_PORT:-}" ]]     && printf 'export DEV_DEFAULT_PORT=%q\n' "$DEV_DEFAULT_PORT"
+        # INCLUDE_* — only persist when on; absence = re-asked next run.
+        # Rationale: user unchecking an opt-in should not re-offer it
+        # as "on by default" next time (they said no). Our menu already
+        # pre-selects based on installed state for most extras, so the
+        # non-persisted "off" case still gets sensible defaults.
+        [[ "${INCLUDE_DOCKER:-0}"  == "1" ]] && echo 'export INCLUDE_DOCKER=1'
+        [[ "${INCLUDE_LARAVEL:-0}" == "1" ]] && echo 'export INCLUDE_LARAVEL=1'
+        [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && echo 'export INCLUDE_REMOTE=1'
+        [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && echo 'export INCLUDE_EDITOR=1'
+        [[ "${INCLUDE_MAILPIT:-0}" == "1" ]] && echo 'export INCLUDE_MAILPIT=1'
+        [[ "${INCLUDE_NGROK:-0}"   == "1" ]] && echo 'export INCLUDE_NGROK=1'
+        [[ "${INCLUDE_MSSQL:-0}"   == "1" ]] && echo 'export INCLUDE_MSSQL=1'
+        [[ "${INCLUDE_FRONTEND_PROXY:-0}" == "1" ]] && echo 'export INCLUDE_FRONTEND_PROXY=1'
+    } > "$tmp"
+    mv -f "$tmp" "$BOOTSTRAP_STATE_CONFIG"
 }
