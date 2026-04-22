@@ -5,18 +5,44 @@ can be cloned without manual SSH key management.
 
 ## What it does
 
-1. **Installs `gh` CLI** (apt on Ubuntu 24.04+, brew on Mac; falls back to
-   GitHub's APT repo for older distros).
-2. **Authenticates gh** via OAuth device flow — **opens browser** once per
-   machine. User approves with an 8-char code on
+1. **Installs `gh` CLI** (apt on Ubuntu 24.04+, brew on Mac; falls back
+   to GitHub's APT repo for older distros).
+2. **Installs `wslu` on WSL** — provides `wslview`, which `xdg-open`
+   delegates to for opening URLs in the Windows browser. Mac has `open`
+   built-in and needs no equivalent.
+3. **Authenticates gh** via OAuth device flow — **opens browser** once
+   per machine. User approves with an 8-char code on
    [github.com/login/device](https://github.com/login/device).
-3. **Configures git credential helper** (`gh auth setup-git`) so HTTPS
-   clones Just Work for private repos too.
-4. **Generates `~/.ssh/id_ed25519`** if missing. No passphrase —
+4. **Configures git credential helper** (`gh auth setup-git`) so HTTPS
+   clones Just Work for private repos.
+5. **Generates `~/.ssh/id_ed25519`** if missing. No passphrase —
    machine-local identity protected by disk encryption + OS login.
-5. **Registers the public key** with GitHub via `gh ssh-key add`.
+6. **Registers the public key** with GitHub via `gh ssh-key add`.
    Idempotent: compares by fingerprint, skips if already registered.
-6. **Smoke-tests** `ssh -T git@github.com`.
+7. **Smoke-tests** `ssh -T git@github.com`.
+
+## Cross-platform notes
+
+| Concern | Mac | Linux/WSL |
+|---|---|---|
+| `gh` install | `brew install gh` | `apt install gh` (24.04+) or GitHub APT repo |
+| Browser opener | `open` built-in | needs `wslu` on WSL; `xdg-open` on native Linux |
+| `/dev/tty` | POSIX — works | POSIX — works |
+| Token storage | macOS Keychain (transparent) | `~/.config/gh/hosts.yml` (0600) |
+| `gh ssh-key add` | identical API | identical API |
+
+### Critical fixes (from testing)
+
+- **`--git-protocol https`** (not `ssh`): prevents `gh auth login` from
+  offering to auto-generate a second SSH key. Our script manages the
+  key explicitly.
+- **`</dev/tty >/dev/tty 2>&1`** redirect: bootstrap.sh invokes topics
+  via `tee` pipe, which kills TTY detection in `gh`. The redirect
+  bypasses the pipe for the auth command specifically, so `gh` sees a
+  real terminal and behaves interactively (with "Press Enter to open
+  browser" pause instead of immediate polling).
+
+Both fixes live in `scripts/setup-identity.sh`; cross-platform by design.
 
 ## Why per-machine tokens (not one shared PAT)
 
