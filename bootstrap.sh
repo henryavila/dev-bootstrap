@@ -41,6 +41,14 @@ set -euo pipefail
 export USER="${USER:-$(id -un)}"
 export HOME="${HOME:-$(getent passwd "$USER" | cut -d: -f6)}"
 
+# Collect follow-up actions from every topic into a single file so we
+# can render one consolidated summary at the end (vs. scattering `!`
+# warnings across hundreds of lines of topic output). Topics invoke
+# `followup <severity> <msg>` from lib/log.sh — the severity bucket
+# (critical / manual / info) drives how the summary renders.
+export BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t dev-bootstrap-followup.XXXXXX 2>/dev/null || mktemp)"
+trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
@@ -375,6 +383,12 @@ banner "summary"
 printf '  passed : %d  (%s)\n' "${#passed[@]}"  "${passed[*]:-}"
 printf '  failed : %d  (%s)\n' "${#failed[@]}"  "${failed[*]:-}"
 printf '  skipped: %d  (%s)\n' "${#skipped[@]}" "${skipped[*]:-}"
+
+# Consolidated follow-up summary — one place to see every manual step
+# + every critical gap that survived the run. Topics write these via
+# `followup <severity> <msg>` from lib/log.sh; render_followup_summary
+# reads the collected file and renders grouped by severity.
+render_followup_summary
 
 if [[ "${#failed[@]}" -gt 0 ]]; then
     fail "some topics failed — see $LOG"

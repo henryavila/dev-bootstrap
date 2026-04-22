@@ -118,8 +118,9 @@ if command -v zsh >/dev/null 2>&1; then
     current_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
     zsh_bin="$(command -v zsh)"
     if [ -n "$current_shell" ] && [ "$current_shell" != "$zsh_bin" ]; then
-        warn "zsh installed but NOT the default login shell ($current_shell)."
-        info "To switch:  chsh -s \"$zsh_bin\"   (prompts for your login password)"
+        followup manual \
+"zsh installed but NOT the default login shell (currently: $current_shell).
+Run:  chsh -s \"$zsh_bin\"   (prompts for your login password)"
     else
         ok "zsh is the default login shell"
     fi
@@ -128,9 +129,10 @@ fi
 # ─── Post-install advisory: atuin login (browser OAuth) ─────────────
 if command -v atuin >/dev/null 2>&1; then
     if [ ! -f "$HOME/.local/share/atuin/session" ]; then
-        warn "atuin installed but not logged in (no cross-machine history yet)."
-        info "Finish the login with:    atuin login"
-        info "  (opens a browser → atuin.sh OAuth; no password or key needed.)"
+        followup manual \
+"atuin installed but not logged in (no cross-machine history yet).
+Run:  atuin login
+  (opens a browser → atuin.sh OAuth; no password or key needed)"
     else
         ok "atuin session present (cross-machine history active)"
     fi

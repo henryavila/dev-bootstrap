@@ -51,11 +51,12 @@ if [[ -n "${NGROK_AUTHTOKEN:-}" ]]; then
     ngrok config add-authtoken "$NGROK_AUTHTOKEN" >/dev/null
     ok "ngrok authtoken set"
 elif ! ngrok config check >/dev/null 2>&1; then
-    warn "ngrok installed but no authtoken configured."
-    warn "  1. sign up at https://ngrok.com (free tier works)"
-    warn "  2. copy your token from https://dashboard.ngrok.com/get-started/your-authtoken"
-    warn "  3. run: ngrok config add-authtoken <token>"
-    warn "  OR re-run bootstrap with NGROK_AUTHTOKEN=<token> to auto-configure."
+    followup manual \
+"ngrok installed but no authtoken configured.
+  1. sign up at https://ngrok.com (free tier works)
+  2. copy your token from https://dashboard.ngrok.com/get-started/your-authtoken
+  3. run: ngrok config add-authtoken <token>
+  OR re-run bootstrap with NGROK_AUTHTOKEN=<token> to auto-configure."
 else
     ok "ngrok authtoken already configured"
 fi

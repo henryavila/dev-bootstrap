@@ -140,14 +140,38 @@ if [[ -n "$PWSH_BIN" ]]; then
         ROOTCA_WIN="$(wslpath -w "$ROOTCA")"
         PS_WIN="$(wslpath -w "$PS_SCRIPT")"
         # shellcheck disable=SC2016  # the $env: is PowerShell-side, not bash
-        "$PWSH_BIN" -NoProfile -ExecutionPolicy Bypass -Command \
-            "\$env:ROOTCA_PATH = '$ROOTCA_WIN'; & '$PS_WIN'" \
-            2>&1 | sed 's/^/    /' || warn "Windows CA import returned non-zero (non-fatal)"
+        if ! "$PWSH_BIN" -NoProfile -ExecutionPolicy Bypass -Command \
+                "\$env:ROOTCA_PATH = '$ROOTCA_WIN'; & '$PS_WIN'" \
+                2>&1 | sed 's/^/    /'; then
+            followup critical \
+"Windows CA import returned non-zero — HTTPS *.localhost probably WON'T work
+in Chrome/Edge on Windows. Investigate with:
+    bash $HERE/scripts/diagnose-wsl-interop.sh
+Common fix after 'wsl --shutdown' from Windows + reopen WSL:
+    ONLY_TOPICS=60-laravel-stack bash ~/dev-bootstrap/bootstrap.sh"
+        fi
     else
-        warn "rootCA or PS script missing — skipping Windows trust import"
+        followup critical \
+"Windows CA import skipped — rootCA.pem or PowerShell helper missing.
+Expected at: $ROOTCA_WIN and $PS_SCRIPT
+HTTPS *.localhost won't work in Chrome/Edge on Windows until this is fixed."
     fi
 else
-    warn "powershell.exe not available — skipping Windows CA import (Chrome/Edge on Windows won't trust *.localhost until this is solved)"
+    # WSL interop isn't reaching powershell.exe. This is CRITICAL — without
+    # the Windows CA import, Chrome/Edge on the Windows host will refuse
+    # *.localhost HTTPS certificates. Emit a critical follow-up + point at
+    # the diagnostic script so the user knows exactly what to run next.
+    followup critical \
+"Windows CA import SKIPPED — powershell.exe / pwsh.exe not reachable from WSL.
+Effect: HTTPS *.localhost will FAIL with ERR_CERT_AUTHORITY_INVALID in
+        Chrome/Edge on the Windows host. Firefox + WSL-side curl still work
+        (the WSL trust store is fine).
+Diagnose:
+    bash $HERE/scripts/diagnose-wsl-interop.sh
+Most common fix (when binfmt_misc WSLInterop isn't registered):
+    (from a Windows PowerShell)  wsl --shutdown
+    (reopen your WSL terminal)
+    (re-run)  ONLY_TOPICS=60-laravel-stack bash ~/dev-bootstrap/bootstrap.sh"
 fi
 
 # ─── Optional extras: mailpit, ngrok, MSSQL driver ───────────────────

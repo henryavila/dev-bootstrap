@@ -273,10 +273,10 @@ fi
 if command -v zsh >/dev/null 2>&1; then
     current_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
     if [ "$current_shell" != "$(command -v zsh)" ]; then
-        warn "zsh is installed but NOT the default login shell ($current_shell)."
-        info "To finish the bash → zsh migration, run:"
-        info "    chsh -s \"\$(command -v zsh)\""
-        info "then log out / log back in (or \`exec zsh\` to try it first)."
+        followup manual \
+"zsh installed but NOT the default login shell (currently: $current_shell).
+Run:     chsh -s \"\$(command -v zsh)\"
+Then:    log out / log back in (or 'exec zsh' to try it first)"
     else
         ok "zsh is already the default login shell"
     fi
@@ -289,9 +289,10 @@ fi
 # created on successful login.
 if command -v atuin >/dev/null 2>&1; then
     if [ ! -f "$HOME/.local/share/atuin/session" ]; then
-        warn "atuin installed but not logged in (no cross-machine history yet)."
-        info "Finish the login with:    atuin login"
-        info "  (opens a browser → atuin.sh OAuth; no password or key needed.)"
+        followup manual \
+"atuin installed but not logged in (no cross-machine history yet).
+Run:  atuin login
+  (opens a browser → atuin.sh OAuth; no password or key needed)"
     else
         ok "atuin session present (cross-machine history active)"
     fi

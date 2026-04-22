@@ -87,4 +87,12 @@ fi
 # since v2026-04-22 hotfix — see there for context.
 
 ok "70-remote-access (wsl) done"
-warn "tailscale up requires interactive auth: 'sudo tailscale up'"
+
+# Tailscale needs interactive OAuth/auth-key input. Always a manual
+# step — bootstrap can't complete it.
+if ! tailscale status >/dev/null 2>&1; then
+    followup manual \
+"Tailscale installed but not authenticated on this machine.
+Run:  sudo tailscale up
+  (opens browser → pick the tailnet to join; authkey also accepted)"
+fi
