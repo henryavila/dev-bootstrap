@@ -9,7 +9,7 @@
 #   run_menu            — shows the full menu flow and exports selected vars
 #
 # Exports set by run_menu (only when user selects them):
-#   INCLUDE_LARAVEL, INCLUDE_REMOTE, INCLUDE_EDITOR
+#   INCLUDE_DOCKER, INCLUDE_LARAVEL, INCLUDE_REMOTE, INCLUDE_EDITOR
 #   DOTFILES_REPO, GIT_NAME, GIT_EMAIL
 #
 # Depends on: $OS (from bootstrap.sh), $BREW_BIN (mac only), log.sh helpers.
@@ -21,6 +21,7 @@ should_show_menu() {
 
     # Any pre-configured control var means "automation mode" — respect it.
     [[ -n "${ONLY_TOPICS:-}" ]]          && return 1
+    [[ "${INCLUDE_DOCKER:-0}" == "1" ]]  && return 1
     [[ "${INCLUDE_LARAVEL:-0}" == "1" ]] && return 1
     [[ "${INCLUDE_REMOTE:-0}" == "1" ]]  && return 1
     [[ "${INCLUDE_EDITOR:-0}" == "1" ]]  && return 1
@@ -75,6 +76,16 @@ _menu_cancel() {
 # the installer produces. Kept permissive — if any signal is present, ON.
 _topic_default_state() {
     case "$1" in
+        docker)
+            # Both the CLI and either Colima (Mac) or the docker group
+            # (Linux) are reasonable install signals. CLI alone covers
+            # the 99% case.
+            if command -v docker >/dev/null 2>&1; then
+                echo ON
+            else
+                echo OFF
+            fi
+            ;;
         laravel)
             if command -v php >/dev/null 2>&1 || command -v composer >/dev/null 2>&1; then
                 echo ON
@@ -128,11 +139,12 @@ run_menu() {
     choices=$(whiptail --title "dev-bootstrap :: opt-in topics" \
         --checklist \
         "Select optional topics to install (SPACE to toggle, ENTER to confirm).\nDefaults reflect what's already installed on this machine." \
-        20 78 5 \
-        "laravel"  "60-laravel-stack     — PHP 8.4 + nginx + MySQL 8"       "$(_topic_default_state laravel)" \
-        "remote"   "70-remote-access     — SSH server + Tailscale + Syncthing" "$(_topic_default_state remote)" \
+        20 78 6 \
+        "docker"   "45-docker            — Docker Engine (WSL) / Colima (Mac)"    "$(_topic_default_state docker)" \
+        "laravel"  "60-laravel-stack     — PHP 8.4 + nginx + MySQL 8"             "$(_topic_default_state laravel)" \
+        "remote"   "70-remote-access     — SSH server + Tailscale + Syncthing"    "$(_topic_default_state remote)" \
         "editor"   "90-editor            — typora-wait: open .md in Typora GUI from CLI" "$(_topic_default_state editor)" \
-        "dotfiles" "95-dotfiles-personal — clone your personal dotfiles"    "$(_topic_default_state dotfiles)" \
+        "dotfiles" "95-dotfiles-personal — clone your personal dotfiles"          "$(_topic_default_state dotfiles)" \
         3>&1 1>&2 2>&3) || _menu_cancel
 
     local need_dotfiles=0
@@ -144,6 +156,7 @@ run_menu() {
     read -ra selected <<< "${choices//\"/}"
     for choice in "${selected[@]+"${selected[@]}"}"; do
         case "$choice" in
+            docker)   export INCLUDE_DOCKER=1 ;;
             laravel)  export INCLUDE_LARAVEL=1 ;;
             remote)   export INCLUDE_REMOTE=1 ;;
             editor)   export INCLUDE_EDITOR=1 ;;
@@ -256,12 +269,14 @@ Examples:
     summary+="    ✓ 00-core, 10-languages, 20-terminal-ux\n"
     summary+="    ✓ 30-shell, 40-tmux, 50-git, 80-claude-code\n\n"
     summary+="  Opt-in topics:\n"
+    [[ "${INCLUDE_DOCKER:-0}"  == "1" ]] && summary+="    ✓ 45-docker\n"
     [[ "${INCLUDE_LARAVEL:-0}" == "1" ]] && summary+="    ✓ 60-laravel-stack\n"
     [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && summary+="    ✓ 70-remote-access\n"
     [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && summary+="    ✓ 90-editor\n"
     [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    ✓ 95-dotfiles-personal\n"
-    if [[ "${INCLUDE_LARAVEL:-0}" != "1" && "${INCLUDE_REMOTE:-0}" != "1" \
-       && "${INCLUDE_EDITOR:-0}"  != "1" && -z "${DOTFILES_REPO:-}" ]]; then
+    if [[ "${INCLUDE_DOCKER:-0}"  != "1" && "${INCLUDE_LARAVEL:-0}" != "1" \
+       && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_EDITOR:-0}"  != "1" \
+       && -z "${DOTFILES_REPO:-}" ]]; then
         summary+="    (none selected)\n"
     fi
     summary+="\n  Git identity:\n"

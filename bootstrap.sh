@@ -13,6 +13,7 @@
 #   DOTFILES_DIR        where to clone dotfiles (default: ~/dotfiles)
 #   GIT_NAME, GIT_EMAIL identity for 50-git
 #   CODE_DIR            project root (default: ~/code/web)
+#   INCLUDE_DOCKER=1    enables 45-docker
 #   INCLUDE_LARAVEL=1   enables 60-laravel-stack
 #   INCLUDE_REMOTE=1    enables 70-remote-access
 #   INCLUDE_EDITOR=1    enables 90-editor
@@ -44,6 +45,7 @@ Automation / CI mode:
   ONLY_TOPICS="NN-x NN-y" ...               run only these topics
 
 Opt-in topics (menu toggles these, or set env var in automation):
+  45-docker             INCLUDE_DOCKER=1
   60-laravel-stack      INCLUDE_LARAVEL=1
   70-remote-access      INCLUDE_REMOTE=1
   90-editor             INCLUDE_EDITOR=1
@@ -145,6 +147,7 @@ export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
 export GIT_NAME="${GIT_NAME:-}"
 export GIT_EMAIL="${GIT_EMAIL:-}"
 export CODE_DIR="${CODE_DIR:-$HOME/code/web}"
+export INCLUDE_DOCKER="${INCLUDE_DOCKER:-0}"
 export INCLUDE_LARAVEL="${INCLUDE_LARAVEL:-0}"
 export INCLUDE_REMOTE="${INCLUDE_REMOTE:-0}"
 export INCLUDE_EDITOR="${INCLUDE_EDITOR:-0}"
@@ -197,6 +200,7 @@ in_list() {
 # Opt-in gating map: topic_name → env var that must equal 1
 optin_var_for() {
     case "$1" in
+        45-docker)        echo "INCLUDE_DOCKER" ;;
         60-laravel-stack) echo "INCLUDE_LARAVEL" ;;
         70-remote-access) echo "INCLUDE_REMOTE" ;;
         90-editor)        echo "INCLUDE_EDITOR" ;;

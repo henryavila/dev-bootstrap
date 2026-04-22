@@ -266,7 +266,7 @@ Topics that write under `/etc/` (e.g. `70-remote-access` sshd snippet, `60-larav
 
 Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `source` by scripts.
 
-## 6. The 11 topics
+## 6. The 12 topics
 
 ### `00-core`
 
@@ -330,6 +330,22 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 **Templates:**
 - `tmux.conf` with: prefix C-a, mouse on, `|` and `-` splits, clean status bar, reload config
+
+### `45-docker` (opt-in)
+
+**Purpose:** Docker Engine for containerised dev workflows — dev containers, local smoke tests, experiment isolation.
+
+**Activation:** `INCLUDE_DOCKER=1 bash bootstrap.sh` (or tick "docker" in the interactive menu).
+
+**Contents:**
+- WSL: `apt install docker.io docker-compose-v2`, add `$USER` to the `docker` group, enable `docker.service` via systemd (when available — falls through on non-systemd WSL).
+- Mac: `brew install colima docker docker-compose`. Colima chosen over Docker Desktop — no licence, no GUI, no forced login, headless VM. Installed but **not started** automatically (VM idles at ~2 GB RAM); user runs `colima start` on demand.
+
+**Templates:** none.
+
+**Env vars:** none.
+
+**Not required by any other topic** — `80-claude-code` doesn't use Docker, `60-laravel-stack` runs MySQL/nginx natively. The smoke test in `ci/smoke-test.sh` needs Docker, but that's developer-side CI tooling, not a runtime dependency.
 
 ### `50-git`
 
@@ -600,7 +616,7 @@ fi
 
 MVP accepted when:
 
-- [ ] `dev-bootstrap` contains 11 topics + `bootstrap.sh` + `lib/` + README
+- [ ] `dev-bootstrap` contains 12 topics + `bootstrap.sh` + `lib/` + README
 - [ ] `dotfiles-template` contains a working skeleton + self-contained `install.sh` + marked as template on GitHub
 - [ ] `henryavila/dotfiles` private repo created from the template, containing the current `ssh/config` migrated
 - [ ] Running `bash bootstrap.sh` on the current (already configured) WSL returns "all topics skipped" or an equivalent (idempotency)
@@ -624,7 +640,6 @@ MVP accepted when:
 
 **v1.1 (backlog, no commitment):**
 - CI Tier 3 (daily E2E with `60-laravel-stack` + `70-remote-access`)
-- Topic `45-docker` (Docker Desktop or Docker Engine inside WSL)
 - `dev-bootstrap update` command — pull + re-run bootstrap
 - Detector for changes in the local `~/.zshrc` vs template (warn before overwriting)
 

@@ -49,7 +49,9 @@ done
 
 if ! command -v docker >/dev/null 2>&1; then
     echo >&2 "error: docker CLI not found on PATH."
-    echo >&2 "       install Docker Desktop or apt-install docker.io, then retry."
+    echo >&2 "       install via the bootstrap's opt-in topic:"
+    echo >&2 "         INCLUDE_DOCKER=1 bash ~/dev-bootstrap/bootstrap.sh"
+    echo >&2 "       (or tick 'docker' in the interactive menu)"
     exit 127
 fi
 
