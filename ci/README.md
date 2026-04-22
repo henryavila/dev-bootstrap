@@ -71,6 +71,18 @@ these OFF the explicit list so the gate logic itself is exercised):
   `ubuntu:24.04`'s minimal base. Pre-installing them here means the
   smoke test focuses on bootstrap regressions, not base-image drift.
 
+### `ALLOW_OVERWRITE_UNMANAGED=1`
+
+The bootstrap refuses to overwrite existing config files (`~/.bashrc`,
+`~/.zshrc`, etc.) that don't carry the `managed by dev-bootstrap` marker —
+protection against clobbering hand-maintained configs on a real user's
+machine. Inside the smoke container the home directory is seeded from
+`/etc/skel` when `useradd` runs, so those files exist without the marker
+and 30-shell would fail on first deploy. Setting
+`ALLOW_OVERWRITE_UNMANAGED=1` in `smoke-test.sh`'s invocation bypasses the
+check for CI only. A `.bak-<ts>` is still written by the bootstrap before
+the overwrite; you can inspect it in the container's stdout.
+
 ### The `detect-os.sh` coercion
 
 `lib/detect-os.sh` decides `wsl` vs `linux` by grepping `/proc/version`

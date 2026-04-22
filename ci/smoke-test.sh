@@ -109,7 +109,14 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 # bash ~/dev-bootstrap/bootstrap.sh"`. We pass env vars inline (not via -e)
 # so the shell inside the container sees them as a single-command prefix —
 # same contract as a developer running the bootstrap by hand from a shell.
-RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' NON_INTERACTIVE=1 bash ~/dev-bootstrap/bootstrap.sh"
+#
+# ALLOW_OVERWRITE_UNMANAGED=1 is CI-only: the container's $HOME is populated
+# from /etc/skel when useradd runs, so ~/.bashrc, ~/.profile, etc. exist
+# without the "managed by dev-bootstrap" marker. On a real user's machine
+# that protection prevents clobbering hand-maintained configs; inside an
+# ephemeral container there's nothing to protect, and refusing to overwrite
+# would turn every smoke run red on the first file 30-shell deploys.
+RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' NON_INTERACTIVE=1 ALLOW_OVERWRITE_UNMANAGED=1 bash ~/dev-bootstrap/bootstrap.sh"
 
 start=$(date +%s)
 # We write both stdout and stderr to the logfile AND to the terminal via tee.
