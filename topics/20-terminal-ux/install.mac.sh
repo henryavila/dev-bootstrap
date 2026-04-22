@@ -25,7 +25,8 @@ source "$HERE/../../lib/log.sh"
 pkgs=(fzf bat eza zoxide ripgrep fd starship lazygit git-delta tmux \
       zsh-completions zsh-autosuggestions zsh-syntax-highlighting \
       zsh-history-substring-search atuin forgit zsh-you-should-use \
-      btop dust duf gping xh sd tealdeer procs)
+      btop dust duf gping xh sd tealdeer procs \
+      neovim)
 
 for p in "${pkgs[@]}"; do
     if "$BREW_BIN" list --formula "$p" >/dev/null 2>&1; then
@@ -69,6 +70,20 @@ clone_or_pull_mac() {
 
 clone_or_pull_mac Aloxaf/fzf-tab          "$SHARE_DIR/fzf-tab"          fzf-tab
 clone_or_pull_mac romkatv/powerlevel10k   "$SHARE_DIR/powerlevel10k"    powerlevel10k
+
+# ─── bat Catppuccin Mocha theme (parity with install.wsl.sh) ──────────
+BAT_THEMES_DIR="$HOME/.config/bat/themes"
+BAT_THEME_FILE="$BAT_THEMES_DIR/Catppuccin Mocha.tmTheme"
+if command -v bat >/dev/null 2>&1; then
+    if [ ! -f "$BAT_THEME_FILE" ]; then
+        info "downloading Catppuccin Mocha theme for bat"
+        mkdir -p "$BAT_THEMES_DIR"
+        curl -fsSL -o "$BAT_THEME_FILE" \
+            "https://github.com/catppuccin/bat/raw/main/themes/Catppuccin%20Mocha.tmTheme"
+    fi
+    bat cache --build >/dev/null 2>&1 || warn "bat cache --build failed (non-fatal)"
+    ok "bat theme: Catppuccin Mocha ready"
+fi
 
 # zinit — installer owns its directory; pipe "n" so it leaves ~/.zshrc alone
 # (dev-bootstrap's 30-shell template owns that file).

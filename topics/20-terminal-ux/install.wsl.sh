@@ -25,7 +25,8 @@ source "$HERE/../../lib/log.sh"
 # via cargo later if needed.
 apt_pkgs=(fzf bat eza zoxide ripgrep fd-find
           zsh zsh-autosuggestions zsh-syntax-highlighting
-          btop duf gping sd tealdeer)
+          btop duf gping sd tealdeer
+          neovim)
 
 missing=()
 for p in "${apt_pkgs[@]}"; do
@@ -153,6 +154,32 @@ elif [[ -f "$HOME/.zshrc" ]]; then
     rm -f "$HOME/.zshrc"
 fi
 
+# ─── bat Catppuccin Mocha theme ───────────────────────────────────────
+# bat's built-in themes are fine but don't match the rest of the stack.
+# The Catppuccin project ships a .tmTheme file; drop it into bat's user
+# themes dir and rebuild the cache so `bat --list-themes` + BAT_THEME env
+# var pick it up. Idempotent: skips download if the file is already there.
+BAT_THEMES_DIR="$HOME/.config/bat/themes"
+BAT_THEME_FILE="$BAT_THEMES_DIR/Catppuccin Mocha.tmTheme"
+# Pick the right binary name up front (Debian/Ubuntu ship it as `batcat`).
+BAT_BIN=""
+if command -v bat >/dev/null 2>&1; then
+    BAT_BIN="bat"
+elif command -v batcat >/dev/null 2>&1; then
+    BAT_BIN="batcat"
+fi
+if [ -n "$BAT_BIN" ]; then
+    if [ ! -f "$BAT_THEME_FILE" ]; then
+        info "downloading Catppuccin Mocha theme for bat"
+        mkdir -p "$BAT_THEMES_DIR"
+        curl -fsSL -o "$BAT_THEME_FILE" \
+            "https://github.com/catppuccin/bat/raw/main/themes/Catppuccin%20Mocha.tmTheme"
+    fi
+    # Rebuild cache so the new theme is discoverable. Cheap (~100ms).
+    "$BAT_BIN" cache --build >/dev/null 2>&1 || warn "$BAT_BIN cache --build failed (non-fatal)"
+    ok "bat theme: Catppuccin Mocha ready"
+fi
+
 # ─── starship ─────────────────────────────────────────────────────────
 if ! command -v starship >/dev/null 2>&1; then
     info "installing starship"
@@ -253,6 +280,14 @@ if command -v zsh >/dev/null 2>&1; then
     else
         ok "zsh is already the default login shell"
     fi
+fi
+
+# ─── Windows Terminal auto-config (Catppuccin + CaskaydiaCove NF) ─────
+# WSL-only. Installs font Windows-side (user-level, no admin), surgical
+# jq merge into settings.json. Mirrors install.mac.sh's iTerm2 step —
+# every supported terminal emulator should ship pre-themed after bootstrap.
+if [ -x "$HERE/scripts/configure-windows-terminal.sh" ]; then
+    bash "$HERE/scripts/configure-windows-terminal.sh" || warn "Windows Terminal config failed (non-fatal)"
 fi
 
 ok "20-terminal-ux done"
