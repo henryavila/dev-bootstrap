@@ -1,0 +1,15 @@
+# PHP extensions installed via PECL (not in apt/brew as separate packages).
+# Each entry is an extension name. Installer handles:
+#   - pecl install per PHP version in PHP_VERSIONS
+#   - enables the .ini in mods-available + phpenmod
+#   - idempotent: skips if `php -m | grep -qi <name>` already
+#
+# Build dependencies are declared inline after `:` (apt packages on Linux,
+# brew formulas on Mac). Empty/missing means no extra deps needed.
+#
+# Format: <extension>[:<linux-deps>[:<mac-deps>]]
+
+igbinary
+imagick:libmagickwand-dev pkg-config:imagemagick pkg-config
+mongodb:libssl-dev:openssl
+redis
