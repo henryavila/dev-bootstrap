@@ -108,16 +108,22 @@ if [[ -x "$VALET_BIN" ]]; then
     #   - Valet's config dir exists at ~/.config/valet
     #   - `valet --version` returns successfully
     # Both conditions met = stack is up; no need to re-install.
-    if [[ -d "$HOME/.config/valet" ]] \
-       && "$VALET_BIN" --version >/dev/null 2>&1; then
-        ok "valet already installed and configured (skipping valet install)"
-    else
-        info "valet install (nginx + dnsmasq + HTTPS setup; first time only, ~30s)"
+    # TEMPORARY (2026-04-22): skip-detection commented out to FORCE
+    # valet install on every run. Goal: validate the unsilenced-stderr
+    # fix (no more hang on sudo prompt). Revert this block (uncomment
+    # the if/else) once user confirms valet install runs cleanly.
+    # See PROJECT_STATUS §4 for the in-flight validation task.
+    #
+    # if [[ -d "$HOME/.config/valet" ]] \
+    #    && "$VALET_BIN" --version >/dev/null 2>&1; then
+    #     ok "valet already installed and configured (skipping valet install)"
+    # else
+        info "valet install (FORCED — temporary validation; nginx + dnsmasq + HTTPS setup; ~30s)"
         # Don't suppress stderr: valet install needs sudo for nginx + dnsmasq
         # daemons. Sudo prompt MUST be visible (lesson from mkcert hang).
         "$VALET_BIN" install \
             || warn "valet install returned non-zero"
-    fi
+    # fi
 
     # All `valet` subcommands below shell out to sudo for daemon
     # restarts (dnsmasq, nginx). Refresh the sudo cache once here so the
