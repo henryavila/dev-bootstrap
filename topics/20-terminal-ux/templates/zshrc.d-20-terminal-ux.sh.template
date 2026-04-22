@@ -53,6 +53,10 @@ if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
     alias fd='fdfind'
 fi
 
+# bat theme — match terminal emulator (Catppuccin Mocha). Installed by
+# 20-terminal-ux/install.*.sh into ~/.config/bat/themes.
+export BAT_THEME="Catppuccin Mocha"
+
 # atuin (SQLite-backed shell history). zsh has preexec built-in, no
 # bash-preexec.sh needed. --disable-up-arrow preserves zsh-history-
 # substring-search's up-arrow binding; Ctrl+R still opens atuin.

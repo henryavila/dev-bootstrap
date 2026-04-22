@@ -56,6 +56,12 @@ if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
     alias fd='fdfind'
 fi
 
+# bat theme — match terminal emulator (Catppuccin Mocha). The theme file
+# is installed by 20-terminal-ux/install.*.sh into ~/.config/bat/themes;
+# bat reads BAT_THEME at invocation time, so exporting it here is safe
+# even if the theme file is missing (bat silently falls back).
+export BAT_THEME="Catppuccin Mocha"
+
 # atuin (SQLite-backed shell history). Bootstrap installs the binary into
 # ~/.atuin/bin and bash-preexec.sh into ~/.bash-preexec.sh. We source the
 # path exporter, then wire the preexec helper (bash has no native preexec
