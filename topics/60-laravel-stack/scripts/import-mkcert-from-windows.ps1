@@ -1,20 +1,20 @@
 # import-mkcert-from-windows.ps1
 #
 # Windows-side companion to import-mkcert-windows.ps1. Use this one when
-# WSL interop is broken (binfmt_misc/WSLInterop not registered, 9P mount
-# zombie, etc.) — it reads the mkcert rootCA from WSL via `wsl.exe cat`,
-# which uses the Windows-side VM host channel and DOES NOT depend on the
-# WSL→Windows interop layer that fails with os-error-5 in those states.
+# WSL interop (binfmt_misc/WSLInterop + /mnt/c 9P) is broken — this
+# script uses `wsl.exe` calls from the Windows side (VM host channel,
+# independent of interop) to read the mkcert rootCA and import it into
+# Windows's trust store.
 #
 # Run from a Windows PowerShell prompt (NOT from inside WSL):
 #
-#   & '\\wsl.localhost\Ubuntu-24.04\home\<user>\dev-bootstrap\topics\60-laravel-stack\scripts\import-mkcert-from-windows.ps1'
+#   powershell -ExecutionPolicy Bypass -File '\\wsl.localhost\Ubuntu-24.04\home\<user>\dev-bootstrap\topics\60-laravel-stack\scripts\import-mkcert-from-windows.ps1'
 #
-# Or with an explicit distro when you have more than one:
+# Or with explicit args when auto-detection fails:
 #
-#   & '...\import-mkcert-from-windows.ps1' -Distro Ubuntu-24.04 -WslUser henry
+#   powershell -ExecutionPolicy Bypass -File '...' -Distro Ubuntu-24.04 -WslUser henry
 #
-# Idempotent via thumbprint: running twice is a no-op the second time.
+# Idempotent — re-running when the cert is already imported is a no-op.
 
 [CmdletBinding()]
 param(
@@ -24,46 +24,100 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ─── Locate `wsl.exe` ────────────────────────────────────────────────
-# Available in default Windows PATH since WSL2 GA. If missing, the user
-# has a bigger issue than this script can address.
+# ─── Core problem: wsl.exe emits UTF-16 LE output ────────────────────
+# Every `wsl.exe` call in a PowerShell script hits the same trap: the
+# child process writes UTF-16 LE bytes (sometimes with a BOM, sometimes
+# not), and PowerShell's default pipe handling interprets them as 8-bit
+# chars with null bytes between each visible character. `-replace "`0"`
+# + `.Trim()` only fix the easy case.
+#
+# Invoke-WslExe uses Start-Process with -RedirectStandardOutput to a
+# temp file, reads the RAW bytes, and decodes them the right way based
+# on BOM sniffing + heuristic null-pattern detection. Returns both raw
+# bytes (for binary content like certs) and decoded text (for whoami /
+# list output).
+
+function Invoke-WslExe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$WslArgs
+    )
+
+    $tmpOut = [System.IO.Path]::GetTempFileName()
+    $tmpErr = [System.IO.Path]::GetTempFileName()
+    try {
+        $proc = Start-Process -FilePath 'wsl.exe' `
+            -ArgumentList $WslArgs `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $tmpOut `
+            -RedirectStandardError  $tmpErr
+
+        $bytes = [System.IO.File]::ReadAllBytes($tmpOut)
+        $errBytes = [System.IO.File]::ReadAllBytes($tmpErr)
+
+        [PSCustomObject]@{
+            ExitCode = $proc.ExitCode
+            Stdout   = _DecodeWslBytes $bytes
+            Stderr   = _DecodeWslBytes $errBytes
+            RawBytes = $bytes
+        }
+    } finally {
+        Remove-Item -LiteralPath $tmpOut -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $tmpErr -ErrorAction SilentlyContinue
+    }
+}
+
+function _DecodeWslBytes {
+    param([byte[]]$Bytes)
+    if ($null -eq $Bytes -or $Bytes.Length -eq 0) { return '' }
+
+    # BOM sniffing covers the two common flavours.
+    if ($Bytes.Length -ge 2 -and $Bytes[0] -eq 0xFF -and $Bytes[1] -eq 0xFE) {
+        # UTF-16 LE with BOM (what `wsl.exe -l -v` emits by default)
+        return [System.Text.Encoding]::Unicode.GetString($Bytes, 2, $Bytes.Length - 2).Trim()
+    }
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) {
+        return [System.Text.Encoding]::UTF8.GetString($Bytes, 3, $Bytes.Length - 3).Trim()
+    }
+
+    # No BOM. Heuristic: if the first ~20 bytes have a lot of 0x00 at
+    # the odd positions, it's UTF-16 LE without a BOM (some wsl.exe
+    # subcommands emit this). Otherwise treat as UTF-8.
+    $sampleLen = [Math]::Min($Bytes.Length, 40)
+    $nullsAtOdd = 0
+    for ($i = 1; $i -lt $sampleLen; $i += 2) {
+        if ($Bytes[$i] -eq 0) { $nullsAtOdd++ }
+    }
+    # More than half the odd bytes being zero → UTF-16 LE pattern.
+    if ($nullsAtOdd -gt ($sampleLen / 4)) {
+        return ([System.Text.Encoding]::Unicode.GetString($Bytes) -replace "`0", "").Trim()
+    }
+    return ([System.Text.Encoding]::UTF8.GetString($Bytes) -replace "`0", "").Trim()
+}
+
+# ─── Sanity: wsl.exe on PATH ─────────────────────────────────────────
 $wslExe = Get-Command wsl.exe -ErrorAction SilentlyContinue
 if (-not $wslExe) {
-    Write-Error '[fail] wsl.exe not found in PATH — install/reinstall WSL: `wsl --install`.'
+    Write-Error '[fail] wsl.exe not found on PATH. Install/reinstall WSL: `wsl --install`.'
     exit 1
 }
 
-# ─── Resolve distro (use default if not specified) ───────────────────
-# wsl.exe on Windows emits output as UTF-16 LE, which PowerShell reads
-# as wide chars. When we treat them as regular strings they contain null
-# bytes between the visible characters — any `-match '^\s*\*'` on the
-# raw output silently fails. Strip null bytes before matching, and try
-# two parse strategies (quiet list first, verbose as fallback).
+# ─── Resolve default distro ──────────────────────────────────────────
 if (-not $Distro) {
-    # Strategy A: `wsl -l --quiet` — one distro name per line. The first
-    # line is the default. Simpler to parse, no column alignment.
-    try {
-        $quietRaw = (& wsl.exe -l --quiet 2>$null | Out-String) -replace "`0", ""
-        $quietList = $quietRaw -split "[\r\n]+" | Where-Object { $_.Trim() -ne "" }
-        if ($quietList.Count -gt 0) {
-            $Distro = $quietList[0].Trim()
-        }
-    } catch {
-        # Ignored — fall through to Strategy B
+    # `wsl -l --quiet` lists distros one per line, default first.
+    $r = Invoke-WslExe '-l' '--quiet'
+    if ($r.ExitCode -eq 0 -and $r.Stdout) {
+        $Distro = ($r.Stdout -split "[\r\n]+" | Where-Object { $_.Trim() })[0].Trim()
     }
 
-    # Strategy B: parse `wsl -l -v` output, finding the line marked with '*'.
+    # Fallback: parse `wsl -l -v`, find the line with '*'.
     if (-not $Distro) {
-        try {
-            $verboseRaw = (& wsl.exe -l -v 2>$null | Out-String) -replace "`0", ""
-            $defaultLine = $verboseRaw -split "[\r\n]+" |
-                Where-Object { $_ -match '^\s*\*' } |
-                Select-Object -First 1
-            if ($defaultLine) {
-                $Distro = (($defaultLine -replace '^\s*\*\s*', '') -split '\s+')[0].Trim()
+        $r = Invoke-WslExe '-l' '-v'
+        if ($r.ExitCode -eq 0 -and $r.Stdout) {
+            $line = ($r.Stdout -split "[\r\n]+" | Where-Object { $_ -match '^\s*\*' })[0]
+            if ($line) {
+                $Distro = (($line -replace '^\s*\*\s*', '') -split '\s+')[0].Trim()
             }
-        } catch {
-            # Give up — user must pass -Distro
         }
     }
 
@@ -71,10 +125,10 @@ if (-not $Distro) {
         Write-Error @'
 [fail] Could not detect default WSL distro.
 
-List what you have installed:
+List installed distros:
     wsl -l -v
 
-Then re-run this script with -Distro:
+Then re-run with -Distro:
     powershell -ExecutionPolicy Bypass -File '<unc-path>' -Distro 'Ubuntu-24.04'
 '@
         exit 1
@@ -83,21 +137,23 @@ Then re-run this script with -Distro:
 }
 
 # ─── Resolve WSL user ────────────────────────────────────────────────
-# Same UTF-16 LE issue as distro detection: strip null bytes before trim.
 if (-not $WslUser) {
-    try {
-        $WslUser = ((& wsl.exe -d $Distro whoami 2>$null | Out-String) -replace "`0", "").Trim()
-    } catch {
-        # fall through to explicit error below
+    $r = Invoke-WslExe '-d' $Distro '--exec' 'whoami'
+    if ($r.ExitCode -eq 0 -and $r.Stdout) {
+        $WslUser = $r.Stdout
     }
     if (-not $WslUser) {
+        $sample = if ($r.Stderr) { $r.Stderr } elseif ($r.RawBytes.Length -gt 0) {
+            "raw bytes (hex): $(($r.RawBytes[0..[Math]::Min($r.RawBytes.Length - 1, 20)] | ForEach-Object { '{0:X2}' -f $_ }) -join ' ')"
+        } else { '(no output)' }
         Write-Error @"
-[fail] Could not determine WSL user for distro '$Distro'.
+[fail] Could not determine WSL user for '$Distro'.
+       wsl.exe -d '$Distro' whoami returned exit=$($r.ExitCode), sample=$sample
 
-Verify the distro responds:
+Verify manually in an interactive PowerShell:
     wsl.exe -d '$Distro' whoami
 
-Then re-run with -WslUser:
+If that works but this script doesn't, pass -WslUser explicitly:
     powershell -ExecutionPolicy Bypass -File '<unc-path>' -Distro '$Distro' -WslUser '<username>'
 "@
         exit 1
@@ -105,40 +161,24 @@ Then re-run with -WslUser:
     Write-Host "[info] Using WSL user: $WslUser"
 }
 
-# ─── Read the rootCA from inside WSL via `wsl.exe cat` ───────────────
-# `wsl.exe cat` streams the file through the VM host channel. This path
-# is distinct from the binfmt_misc interop channel and survives the
-# "/mnt/c is I/O error" state — wsl.exe talks to the WSL VM service,
-# not to /init inside it.
-#
-# IMPORTANT: PowerShell's `> file` redirect encodes the child process's
-# stdout as UTF-16 LE with BOM by default. That corrupts the PEM (text
-# ASCII) — bat/openssl/Import-Certificate would all reject the result.
-# Start-Process -RedirectStandardOutput writes raw bytes, preserving
-# the PEM exactly.
+# ─── Read the rootCA via `wsl.exe --exec cat` ────────────────────────
 $caPathInWsl = "/home/$WslUser/.local/share/mkcert/rootCA.pem"
 Write-Host "[info] Reading $caPathInWsl from $Distro via wsl.exe…"
 
-$tmpCa  = Join-Path $env:TEMP "mkcert-rootCA-$([guid]::NewGuid()).pem"
-$errLog = Join-Path $env:TEMP "mkcert-rootCA-$([guid]::NewGuid()).err"
-try {
-    $proc = Start-Process -FilePath 'wsl.exe' `
-        -ArgumentList @('-d', $Distro, '--exec', 'cat', $caPathInWsl) `
-        -NoNewWindow -Wait `
-        -RedirectStandardOutput $tmpCa `
-        -RedirectStandardError  $errLog `
-        -PassThru
+$r = Invoke-WslExe '-d' $Distro '--exec' 'cat' $caPathInWsl
+if ($r.ExitCode -ne 0 -or -not $r.RawBytes -or $r.RawBytes.Length -lt 100) {
+    Write-Error "[fail] Could not read $caPathInWsl from $Distro"
+    if ($r.Stderr) { Write-Error "       stderr: $($r.Stderr)" }
+    Write-Error "       Verify:  wsl.exe -d '$Distro' ls -la /home/$WslUser/.local/share/mkcert/"
+    exit 1
+}
 
-    if ($proc.ExitCode -ne 0 -or -not (Test-Path $tmpCa) -or ((Get-Item $tmpCa).Length -lt 100)) {
-        Write-Error "[fail] Could not read mkcert rootCA.pem from WSL."
-        Write-Error "       Expected at: $caPathInWsl (inside $Distro)"
-        if (Test-Path $errLog) {
-            $err = (Get-Content $errLog -Raw) -replace "`0", ""
-            if ($err.Trim()) { Write-Error "       stderr: $($err.Trim())" }
-        }
-        Write-Error "       Verify with:  wsl.exe -d '$Distro' ls -la /home/$WslUser/.local/share/mkcert/"
-        exit 1
-    }
+# Write the raw cert bytes to a temp file for Import-Certificate.
+# DO NOT use `> file` or `Out-File` — both corrupt the PEM with BOM/
+# UTF-16 encoding. `WriteAllBytes` preserves the bytes exactly.
+$tmpCa = Join-Path $env:TEMP "mkcert-rootCA-$([guid]::NewGuid()).pem"
+try {
+    [System.IO.File]::WriteAllBytes($tmpCa, $r.RawBytes)
 
     # ─── Thumbprint check (idempotent) ───────────────────────────────
     $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $tmpCa
@@ -153,13 +193,11 @@ try {
         return
     }
 
-    # ─── Import ──────────────────────────────────────────────────────
     Import-Certificate -FilePath $tmpCa -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
     Write-Host "[ok] mkcert rootCA imported into CurrentUser\Root"
     Write-Host "     thumbprint: $thumbprint"
     Write-Host "[info] Chrome / Edge / curl-wincrypt will trust *.localhost on next launch"
     Write-Host "[info] Firefox: set security.enterprise_roots.enabled = true in about:config"
 } finally {
-    Remove-Item -LiteralPath $tmpCa  -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $errLog -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmpCa -ErrorAction SilentlyContinue
 }
