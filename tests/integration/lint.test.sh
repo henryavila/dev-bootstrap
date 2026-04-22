@@ -68,4 +68,45 @@ for data_file in "$REPO_ROOT/topics/10-languages/data/"*.{conf,txt}; do
     assert_true "grep -qvE '^\s*(#|$)' '$data_file'"
 done
 
+echo
+echo "bash 3.2 compat — no bash-4-only builtins in scripts that run on Mac"
+# macOS default bash is 3.2 (frozen for GPL-3 reasons). Any script that
+# runs on Mac (install.mac.sh, install.sh, anything called from them)
+# must avoid bash-4+ builtins. Flagged builtins:
+#   - mapfile / readarray → use `while IFS= read -r` loop
+#   - associative arrays (declare -A) → use indexed arrays or two parallel arrays
+#
+# We explicitly check Mac-reachable scripts. install.wsl.sh is Linux-only
+# and could use bash 4 features, but we enforce portability there too
+# (costs nothing, gives us a useful invariant).
+
+bash4_patterns=(
+    'mapfile'
+    'readarray'
+    'declare -A'
+)
+# Scripts that can run on Mac: install.mac.sh + install.sh (OS-agnostic)
+# + any helper they source. Keep the scope conservative; widen if needed.
+mac_reachable=(
+    "$REPO_ROOT/topics"/*/install.mac.sh
+    "$REPO_ROOT/topics"/*/install.sh
+    "$REPO_ROOT/topics"/*/scripts/*.sh
+    "$REPO_ROOT/lib"/*.sh
+    "$REPO_ROOT/bootstrap.sh"
+)
+for script in "${mac_reachable[@]}"; do
+    [[ ! -f "$script" ]] && continue
+    for pattern in "${bash4_patterns[@]}"; do
+        # Allow the pattern inside comments (documentation is fine).
+        if grep -vE '^\s*#' "$script" | grep -qE "(^|[^a-zA-Z_])${pattern}([^a-zA-Z_]|$)"; then
+            ASSERT_MSG="no '$pattern' in $(realpath --relative-to="$REPO_ROOT" "$script") (bash 3.2 compat)"
+            fail "$ASSERT_MSG"
+        fi
+    done
+done
+# Emit a pass when nothing flagged
+if [[ "$FAIL" -eq 0 ]]; then
+    pass "no bash-4-only builtins in Mac-reachable scripts"
+fi
+
 summary

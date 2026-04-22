@@ -65,8 +65,12 @@ if ! grep -Rq 'ondrej/php' /etc/apt/sources.list.d/ 2>/dev/null; then
     sudo apt-get update -qq
 fi
 
-# Read extension lists once
-mapfile -t APT_EXTS < <(grep -vE '^\s*(#|$)' "$HERE/data/php-extensions-apt.txt")
+# Read extension lists once (while-read for bash 3.2 compat — see Mac notes)
+APT_EXTS=()
+while IFS= read -r _line; do
+    APT_EXTS+=("$_line")
+done < <(grep -vE '^\s*(#|$)' "$HERE/data/php-extensions-apt.txt")
+unset _line
 
 install_php_version() {
     local ver="$1"
@@ -113,8 +117,11 @@ ok "PHP CLI default: $(php -r 'echo PHP_VERSION;' 2>/dev/null || echo '?')"
 # of data/php-extensions-pecl.txt apply to all versions (installed once).
 info "installing PECL extensions for each PHP version"
 
-declare -a PECL_LINES
-mapfile -t PECL_LINES < <(grep -vE '^\s*(#|$)' "$HERE/data/php-extensions-pecl.txt")
+PECL_LINES=()
+while IFS= read -r _line; do
+    PECL_LINES+=("$_line")
+done < <(grep -vE '^\s*(#|$)' "$HERE/data/php-extensions-pecl.txt")
+unset _line
 
 # Collect the union of linux build deps across all pecl lines
 pecl_build_deps=()

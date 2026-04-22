@@ -70,8 +70,13 @@ done
 ok "PHP CLI default: $(php -r 'echo PHP_VERSION;' 2>/dev/null || echo '?')"
 
 # ─── PECL build deps (Mac: brew formulas from the 3rd colon field) ────
-declare -a PECL_LINES
-mapfile -t PECL_LINES < <(grep -vE '^\s*(#|$)' "$HERE/data/php-extensions-pecl.txt")
+# bash 3.2 (macOS default) has no `mapfile`. while-read populates
+# the array one line at a time — portable across bash 3.2 + 4/5.
+PECL_LINES=()
+while IFS= read -r _line; do
+    PECL_LINES+=("$_line")
+done < <(grep -vE '^\s*(#|$)' "$HERE/data/php-extensions-pecl.txt")
+unset _line
 
 mac_build_deps=(pkg-config autoconf)
 for line in "${PECL_LINES[@]}"; do
