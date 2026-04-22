@@ -34,20 +34,52 @@ if (-not $wslExe) {
 }
 
 # ─── Resolve distro (use default if not specified) ───────────────────
+# wsl.exe on Windows emits output as UTF-16 LE, which PowerShell reads
+# as wide chars. When we treat them as regular strings they contain null
+# bytes between the visible characters — any `-match '^\s*\*'` on the
+# raw output silently fails. Strip null bytes before matching, and try
+# two parse strategies (quiet list first, verbose as fallback).
 if (-not $Distro) {
-    # `wsl -l -q --default` would be ideal; but there's no direct "get
-    # default" flag. Parse `wsl -l -v`: line starting with '*' is default.
-    $default = (wsl.exe -l -v 2>$null) -split "`n" |
-        Where-Object { $_ -match '^\s*\*' } |
-        ForEach-Object { ($_ -replace '\*', '').Trim() -split '\s+' | Select-Object -First 1 } |
-        Select-Object -First 1
-    if ($default) {
-        $Distro = $default
-        Write-Host "[info] Using default WSL distro: $Distro"
-    } else {
-        Write-Error '[fail] Could not detect default WSL distro. Pass -Distro explicitly.'
+    # Strategy A: `wsl -l --quiet` — one distro name per line. The first
+    # line is the default. Simpler to parse, no column alignment.
+    try {
+        $quietRaw = (& wsl.exe -l --quiet 2>$null | Out-String) -replace "`0", ""
+        $quietList = $quietRaw -split "[\r\n]+" | Where-Object { $_.Trim() -ne "" }
+        if ($quietList.Count -gt 0) {
+            $Distro = $quietList[0].Trim()
+        }
+    } catch {
+        # Ignored — fall through to Strategy B
+    }
+
+    # Strategy B: parse `wsl -l -v` output, finding the line marked with '*'.
+    if (-not $Distro) {
+        try {
+            $verboseRaw = (& wsl.exe -l -v 2>$null | Out-String) -replace "`0", ""
+            $defaultLine = $verboseRaw -split "[\r\n]+" |
+                Where-Object { $_ -match '^\s*\*' } |
+                Select-Object -First 1
+            if ($defaultLine) {
+                $Distro = (($defaultLine -replace '^\s*\*\s*', '') -split '\s+')[0].Trim()
+            }
+        } catch {
+            # Give up — user must pass -Distro
+        }
+    }
+
+    if (-not $Distro) {
+        Write-Error @'
+[fail] Could not detect default WSL distro.
+
+List what you have installed:
+    wsl -l -v
+
+Then re-run this script with -Distro:
+    powershell -ExecutionPolicy Bypass -File '<unc-path>' -Distro 'Ubuntu-24.04'
+'@
         exit 1
     }
+    Write-Host "[info] Using default WSL distro: $Distro"
 }
 
 # ─── Resolve WSL user ────────────────────────────────────────────────
