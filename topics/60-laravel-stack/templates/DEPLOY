@@ -1,8 +1,33 @@
-# 60-laravel-stack deploy mappings
-# NGINX_CONF_DIR is set by install.$OS.sh:
-#   wsl: /etc/nginx/sites-enabled
-#   mac: $BREW_PREFIX/etc/nginx/servers
-# CODE_DIR defaults to ~/code/web and is exported by bootstrap.sh.
+# 60-laravel-stack deploy mappings.
+#
+# Paths populated by install.$OS.sh before deploy.sh runs:
+#   NGINX_AVAILABLE_DIR   where sites live (sites-available convention)
+#   NGINX_ENABLED_DIR     where symlinks live (sites-enabled, nginx reads this)
+#   NGINX_SNIPPET_DIR     /etc/nginx/snippets (shared includes)
+#   NGINX_MAP_DIR         /etc/nginx/conf.d  (auto-loaded inside http{})
+#   CERT_DIR              /etc/nginx/certs   (mkcert wildcard cert)
+#   CODE_DIR              where user projects live (catchall root)
+#   DEV_DEFAULT_PORT      default port for *.front.localhost proxy (3000)
+#   PHP_DEFAULT           CLI/FPM default version (8.5, 8.4, ...)
+#
+# Snippets + maps are plain files (no envsubst templating — hence no .template).
+# Site configs ARE templates because they reference $CERT_DIR, $CODE_DIR, etc.
+#
+# Enabling pattern: install.sh creates symlinks NGINX_ENABLED_DIR/foo.conf
+# → NGINX_AVAILABLE_DIR/foo.conf AFTER deploy, so we follow the Debian
+# convention and the user can `unlink` to disable without losing the config.
 
-nginx-catchall.conf.template=${NGINX_CONF_DIR}/catchall.conf
+# Snippets (included by site configs)
+nginx-snippets/security-baseline.conf=${NGINX_SNIPPET_DIR}/dev-bootstrap-security.conf
+nginx-snippets/proxy-params.conf=${NGINX_SNIPPET_DIR}/dev-bootstrap-proxy.conf
+
+# Maps (auto-loaded inside http{} via conf.d)
+nginx-maps/dev-bootstrap-maps.conf=${NGINX_MAP_DIR}/dev-bootstrap-maps.conf
+
+# Site configs (sites-available; install.sh creates the sites-enabled symlinks)
+nginx-sites/catchall-php.conf.template=${NGINX_AVAILABLE_DIR}/catchall-php.conf
+nginx-sites/catchall-proxy.conf.template=${NGINX_AVAILABLE_DIR}/catchall-proxy.conf
+
+# User-facing CLI helpers
 bin/link-project.template=${HOME}/.local/bin/link-project
+bin/share-project.template=${HOME}/.local/bin/share-project

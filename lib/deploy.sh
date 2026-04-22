@@ -41,7 +41,7 @@ mapping_dst=()
 # Variables allowed in template substitution. Restricting the set keeps
 # envsubst from mangling unrelated $tokens (e.g. nginx's $project capture,
 # shell positional $1, php's $_SERVER). Add here if a new topic needs more.
-ENVSUBST_ALLOWLIST='${USER} ${HOME} ${BREW_PREFIX} ${CODE_DIR} ${NGINX_CONF_DIR} ${DOTFILES_DIR}'
+ENVSUBST_ALLOWLIST='${USER} ${HOME} ${BREW_PREFIX} ${CODE_DIR} ${DOTFILES_DIR} ${NGINX_CONF_DIR} ${NGINX_AVAILABLE_DIR} ${NGINX_ENABLED_DIR} ${NGINX_SNIPPET_DIR} ${NGINX_MAP_DIR} ${CERT_DIR} ${PHP_DEFAULT} ${DEV_DEFAULT_PORT}'
 
 # ---------- Build mapping list ----------
 
