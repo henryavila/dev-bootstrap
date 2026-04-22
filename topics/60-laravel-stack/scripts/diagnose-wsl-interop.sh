@@ -145,6 +145,25 @@ fi
 # ─── Diagnosis ────────────────────────────────────────────────────────
 banner "Diagnosis"
 
+# Windows-side fallback ALWAYS works, independent of anything we check
+# above — `wsl.exe` calls from Windows go through the VM host channel,
+# not through binfmt_misc. We print it first so the user always has a
+# working path, regardless of which check failed.
+DISTRO_NAME="${WSL_DISTRO_NAME:-$(lsb_release -si 2>/dev/null || echo Ubuntu)}"
+SCRIPT_UNC="\\\\wsl.localhost\\${DISTRO_NAME}$(dirname "$0" | sed 's|/|\\|g')\\import-mkcert-from-windows.ps1"
+
+if [[ -n "$FIRST_FAIL" ]]; then
+    fail "Interop check '${FIRST_FAIL}' failed."
+    echo
+    info "ROBUST SOLUTION — always works regardless of interop state:"
+    info "  Open Windows PowerShell (on Windows side) and run:"
+    info "    & '${SCRIPT_UNC}'"
+    info "  The script uses 'wsl.exe cat' which bypasses binfmt/interop"
+    info "  entirely — it reaches the WSL VM through a different channel."
+    echo
+    info "Optional first-aid (fixes the interop itself, but recurrence is possible):"
+fi
+
 case "$FIRST_FAIL" in
     "")
         ok "All checks passed — interop looks healthy. If the bootstrap still"
@@ -152,43 +171,35 @@ case "$FIRST_FAIL" in
         ok "  ONLY_TOPICS=60-laravel-stack bash ~/dev-bootstrap/bootstrap.sh"
         ;;
     "mnt-c-9p-broken"|"mnt-c-unavailable")
-        fail "The /mnt/c 9P mount is broken in this WSL session."
-        fail "Most likely fix (resets the plan9 server WSL uses to reach Windows):"
-        fail "  From a Windows PowerShell or cmd (NOT from inside WSL):"
-        fail "    wsl --shutdown"
-        fail "  Reopen your WSL terminal. /mnt/c should work again."
+        fail "  /mnt/c 9P mount is broken in this WSL session."
+        fail "  First-aid:  wsl --shutdown (from Windows), reopen WSL."
+        fail "  Persistent? Could be: Hyper-V dyn-mem ballooning, AppArmor"
+        fail "  profile conflict on 24.04, Windows 9P server crash — all reset"
+        fail "  on wsl --shutdown but also recur. Use the robust solution above."
         ;;
     "binfmt-missing"|"binfmt-disabled")
-        fail "binfmt_misc WSLInterop is not registered — Windows .exe calls"
-        fail "from Linux side will always fall through."
-        fail "Fixes in order of preference:"
-        fail "  1. wsl --shutdown (from Windows), reopen WSL — usually re-registers."
-        fail "  2. Ensure /etc/wsl.conf doesn't disable interop:"
-        fail "       [interop]"
-        fail "       enabled = true"
-        fail "       appendWindowsPath = true"
-        fail "  3. If systemd is enabled: check the binfmt-support unit:"
-        fail "       systemctl status systemd-binfmt.service"
+        fail "  binfmt_misc WSLInterop not registered — .exe calls from WSL fail."
+        fail "  First-aid:  wsl --shutdown (from Windows), reopen WSL."
+        fail "  If systemd enabled, verify systemd-binfmt.service is active:"
+        fail "    systemctl --no-pager status systemd-binfmt.service"
+        fail "  Ensure /etc/wsl.conf [interop] enabled = true (default)."
         ;;
     "interop-socket-missing")
-        fail "WSL_INTEROP socket missing — init didn't create /run/WSL/<pid>_interop."
-        fail "Fix: wsl --shutdown from Windows, reopen WSL."
+        fail "  WSL_INTEROP socket missing — /init didn't create /run/WSL/<pid>_interop."
+        fail "  First-aid:  wsl --shutdown, reopen WSL."
         ;;
     "wsl-conf-interop-false")
-        fail "/etc/wsl.conf explicitly disables interop."
-        fail "Edit the file, set [interop] enabled = true, then wsl --shutdown."
+        fail "  /etc/wsl.conf explicitly disables interop."
+        fail "  Remove the 'enabled = false' line under [interop], then wsl --shutdown."
         ;;
     "pwsh-found-but-cannot-run")
-        fail "powershell.exe is on disk but cannot execute via interop."
-        fail "This usually means binfmt_misc or the interop socket is broken."
-        fail "Fix: wsl --shutdown from Windows PowerShell, then reopen WSL."
+        fail "  powershell.exe is on disk but fails to execute — binfmt/interop broken."
+        fail "  First-aid:  wsl --shutdown, reopen WSL."
         ;;
     "pwsh-not-found")
-        fail "PATH doesn't include Windows System32 AND /mnt/c abs paths don't work."
-        fail "Two possible causes:"
-        fail "  - /etc/wsl.conf has 'appendWindowsPath = false' — either remove that,"
-        fail "    or set the paths manually before running the bootstrap."
-        fail "  - /mnt/c is broken — see 'mnt-c-9p-broken' fix above."
+        fail "  PATH doesn't include Windows System32 AND /mnt/c abs paths don't work."
+        fail "  Check:  cat /etc/wsl.conf   (appendWindowsPath = false?)"
+        fail "  First-aid:  wsl --shutdown, reopen WSL."
         ;;
 esac
 

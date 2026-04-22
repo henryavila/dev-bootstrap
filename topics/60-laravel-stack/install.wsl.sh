@@ -132,46 +132,78 @@ for cand in powershell.exe pwsh.exe \
     fi
 done
 
-if [[ -n "$PWSH_BIN" ]]; then
-    ROOTCA="$(mkcert -CAROOT)/rootCA.pem"
-    PS_SCRIPT="$HERE/scripts/import-mkcert-windows.ps1"
-    if [[ -f "$ROOTCA" ]] && [[ -f "$PS_SCRIPT" ]]; then
-        info "importing mkcert rootCA into Windows CurrentUser\\Root"
+# ─── Two-lane import: interop-first, Windows-side fallback ───────────
+# Lane A (fast path): invoke import-mkcert-windows.ps1 via powershell.exe
+#   called FROM inside WSL. Depends on binfmt_misc/WSLInterop being
+#   registered — see scripts/diagnose-wsl-interop.sh for when it's not.
+#
+# Lane B (fallback, robust): when Lane A doesn't work, emit instructions
+#   to run import-mkcert-from-windows.ps1 FROM Windows PowerShell. That
+#   second script uses `wsl.exe cat` which goes through the VM host
+#   channel — a DIFFERENT communication path that survives the
+#   "/mnt/c is I/O error + binfmt_misc unregistered" state of the
+#   interop layer.
+#
+# We always emit Lane B instructions as a `followup critical` when
+# Lane A fails, so the user has a working path regardless of the root
+# cause of the interop breakage.
+
+ROOTCA="$(mkcert -CAROOT)/rootCA.pem"
+PS_SCRIPT_IN="$HERE/scripts/import-mkcert-windows.ps1"
+PS_SCRIPT_OUT="$HERE/scripts/import-mkcert-from-windows.ps1"
+
+# Build the Windows-side UNC path pointing at the from-windows script.
+# Uses \\wsl.localhost\<distro>\<linux-path> which Windows resolves via
+# its own 9P server (SMB/WSL bridge) — independent of WSL interop.
+_PS_UNC_PATH="\\\\wsl.localhost\\${WSL_DISTRO_NAME:-$(lsb_release -si 2>/dev/null || echo Ubuntu)}${PS_SCRIPT_OUT//\//\\}"
+
+_emit_lane_b_followup() {
+    local reason="$1"
+    followup critical \
+"Windows CA import via WSL interop FAILED: $reason
+Effect: HTTPS *.localhost will fail with ERR_CERT_AUTHORITY_INVALID in
+        Chrome/Edge on the Windows host. (Firefox + curl inside WSL
+        still work — the WSL trust store is fine.)
+
+SOLUTION (robust, independent of WSL interop):
+
+  1. Open Windows PowerShell (on the Windows side, NOT inside WSL)
+  2. Run the companion script via its \\\\wsl.localhost\\ UNC path:
+
+     & '$_PS_UNC_PATH'
+
+  The script reads the rootCA from WSL via 'wsl.exe cat' (VM host
+  channel) and imports into HKCU:\\Root. No admin needed. Idempotent.
+
+Also valid (optional — only if you prefer to fix the interop instead):
+  - Diagnose:  bash $HERE/scripts/diagnose-wsl-interop.sh
+  - First-aid: 'wsl --shutdown' from Windows, reopen WSL, re-run
+               bootstrap.  This doesn't prevent recurrence — the
+               PowerShell fallback above is the path that always works."
+}
+
+if [[ ! -f "$ROOTCA" ]]; then
+    _emit_lane_b_followup "mkcert rootCA.pem missing at $ROOTCA"
+elif [[ -n "$PWSH_BIN" ]]; then
+    # Lane A — interop available. Try the direct import.
+    info "importing mkcert rootCA into Windows CurrentUser\\Root (via interop)"
+    if wslpath -w "$ROOTCA" >/dev/null 2>&1; then
         ROOTCA_WIN="$(wslpath -w "$ROOTCA")"
-        PS_WIN="$(wslpath -w "$PS_SCRIPT")"
+        PS_WIN="$(wslpath -w "$PS_SCRIPT_IN")"
         # shellcheck disable=SC2016  # the $env: is PowerShell-side, not bash
-        if ! "$PWSH_BIN" -NoProfile -ExecutionPolicy Bypass -Command \
+        if "$PWSH_BIN" -NoProfile -ExecutionPolicy Bypass -Command \
                 "\$env:ROOTCA_PATH = '$ROOTCA_WIN'; & '$PS_WIN'" \
                 2>&1 | sed 's/^/    /'; then
-            followup critical \
-"Windows CA import returned non-zero — HTTPS *.localhost probably WON'T work
-in Chrome/Edge on Windows. Investigate with:
-    bash $HERE/scripts/diagnose-wsl-interop.sh
-Common fix after 'wsl --shutdown' from Windows + reopen WSL:
-    ONLY_TOPICS=60-laravel-stack bash ~/dev-bootstrap/bootstrap.sh"
+            ok "Windows CA import succeeded via interop"
+        else
+            _emit_lane_b_followup "interop invocation returned non-zero"
         fi
     else
-        followup critical \
-"Windows CA import skipped — rootCA.pem or PowerShell helper missing.
-Expected at: $ROOTCA_WIN and $PS_SCRIPT
-HTTPS *.localhost won't work in Chrome/Edge on Windows until this is fixed."
+        _emit_lane_b_followup "wslpath -w failed (drvfs mapping broken)"
     fi
 else
-    # WSL interop isn't reaching powershell.exe. This is CRITICAL — without
-    # the Windows CA import, Chrome/Edge on the Windows host will refuse
-    # *.localhost HTTPS certificates. Emit a critical follow-up + point at
-    # the diagnostic script so the user knows exactly what to run next.
-    followup critical \
-"Windows CA import SKIPPED — powershell.exe / pwsh.exe not reachable from WSL.
-Effect: HTTPS *.localhost will FAIL with ERR_CERT_AUTHORITY_INVALID in
-        Chrome/Edge on the Windows host. Firefox + WSL-side curl still work
-        (the WSL trust store is fine).
-Diagnose:
-    bash $HERE/scripts/diagnose-wsl-interop.sh
-Most common fix (when binfmt_misc WSLInterop isn't registered):
-    (from a Windows PowerShell)  wsl --shutdown
-    (reopen your WSL terminal)
-    (re-run)  ONLY_TOPICS=60-laravel-stack bash ~/dev-bootstrap/bootstrap.sh"
+    # Lane A unavailable — go straight to Lane B instructions.
+    _emit_lane_b_followup "powershell.exe not reachable from WSL (binfmt_misc/interop broken)"
 fi
 
 # ─── Optional extras: mailpit, ngrok, MSSQL driver ───────────────────
