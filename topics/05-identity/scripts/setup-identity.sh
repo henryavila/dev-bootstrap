@@ -48,19 +48,30 @@ else
         # --git-protocol https (NOT ssh): with --git-protocol ssh, gh's
         # interactive flow offers to generate a new SSH key automatically
         # and register it as "GitHub CLI" — creating a SECOND key
-        # alongside the one this script generates below. Using https for
-        # git-protocol means gh uses HTTPS credential helper for clones
-        # (handled by `gh auth setup-git`) while we stay in full control
-        # of the SSH key (generation, title, registration via `gh ssh-key
-        # add` with our own fingerprint-idempotent logic).
+        # alongside the one this script generates below. Using https
+        # means gh uses HTTPS credential helper for clones (handled by
+        # `gh auth setup-git`) while we stay in full control of the SSH
+        # key (generation, title, fingerprint-idempotent registration).
         #
         # --clipboard: gh auto-copies the OAuth device code to the OS
-        # clipboard (via pbcopy on Mac, xclip on Linux/WSLg, or xsel).
-        # If the clipboard tool is missing OR fails, gh gracefully
-        # falls back to just printing the code — no regression vs
-        # the plain flow. On installed systems it saves a mouse select
-        # + copy per machine provisioning.
-        if ! gh auth login --web --clipboard \
+        # clipboard. Enabled on Mac (pbcopy built-in) and native Linux
+        # (xclip/xsel with X11/Wayland). DISABLED on WSL: empirical
+        # testing showed that xclip writes to the X11 buffer inside
+        # WSLg but does NOT propagate to the Windows clipboard, while
+        # wl-copy fails with "This seat has no keyboard" and clip.exe
+        # may be unreachable (I/O error on /mnt/c) on some WSL setups.
+        # In WSL the code is printed to stdout only — user selects +
+        # copies with mouse, same as pre-clipboard behavior.
+        clipboard_flag=""
+        if [[ "$(uname)" == "Darwin" ]]; then
+            clipboard_flag="--clipboard"
+        elif grep -qi microsoft /proc/version 2>/dev/null; then
+            : # WSL — clipboard bridge unreliable, skip
+        elif command -v xclip >/dev/null 2>&1 || command -v xsel >/dev/null 2>&1; then
+            clipboard_flag="--clipboard"
+        fi
+
+        if ! gh auth login --web ${clipboard_flag:+$clipboard_flag} \
                 --git-protocol https \
                 --scopes "admin:public_key,repo" \
                 --hostname github.com \

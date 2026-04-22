@@ -16,12 +16,15 @@ source "$HERE/../../lib/log.sh"
 # and fails — breaking gh auth login's "Press Enter to open browser"
 # flow. Harmless no-op on native Linux (the package just isn't used).
 
-packages=(gh xclip)
-# xclip: enables `gh auth login --clipboard` — auto-copies the OAuth
-# device code to the OS clipboard so user can paste directly in
-# browser (no mouse-select + copy). WSLg forwards xclip writes to the
-# Windows clipboard transparently via RDP. Native Linux uses xclip
-# with X11/Wayland (WSL-style integration via xdg).
+packages=(gh)
+# NB: xclip NOT installed. We considered enabling `gh auth login
+# --clipboard` (auto-copies the OAuth device code), but empirical
+# testing on WSL showed xclip writes reach the X11 buffer but do
+# NOT propagate to the Windows clipboard in WSLg. wl-copy fails with
+# "This seat has no keyboard" and clip.exe may be unreachable on
+# /mnt/c. So --clipboard is conditionally disabled in WSL at the
+# setup-identity.sh level. Mac uses pbcopy built-in (nothing to
+# install); native Linux uses xclip if already present.
 if grep -qi microsoft /proc/version 2>/dev/null; then
     packages+=(wslu)
 fi
