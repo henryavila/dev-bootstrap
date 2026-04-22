@@ -19,6 +19,16 @@
 #   INCLUDE_LARAVEL=1   enables 60-laravel-stack
 #   INCLUDE_REMOTE=1    enables 70-remote-access
 #   INCLUDE_EDITOR=1    enables 90-editor
+#   PHP_VERSIONS        space-separated list (e.g. "8.4 8.5"); last = default
+#                       (if unset: all versions listed in
+#                       topics/10-languages/data/php-versions.conf)
+#   PHP_DEFAULT         override which version becomes PATH / FPM / composer default
+#   INCLUDE_MAILPIT=1   installs mailpit (SMTP :1025, UI :8025) inside 60-laravel-stack
+#   INCLUDE_NGROK=1     installs ngrok + share-project wrapper
+#   INCLUDE_MSSQL=1     installs Microsoft SQL Server ODBC driver + sqlsrv/pdo_sqlsrv
+#                       PECL extensions (ACCEPT_EULA=Y auto-set)
+#   NGROK_AUTHTOKEN     ngrok token to auto-configure during install
+#   DEV_DEFAULT_PORT    default port for *.front.localhost proxy (default 3000)
 #   NO_COLOR=1          disable colored output (auto if not a TTY)
 #
 # Usage: bash bootstrap.sh [--help] [--non-interactive]
@@ -62,6 +72,9 @@ Opt-in topics (menu toggles these, or set env var in automation):
 Other env vars:
   GIT_NAME, GIT_EMAIL, CODE_DIR, DOTFILES_DIR, NO_COLOR
   GPG_SIGN=1 [+ GPG_KEY_ID=<id>]  enable GPG commit signing in 50-git
+  PHP_VERSIONS="8.4 8.5" [+ PHP_DEFAULT=8.5]  multi-PHP install (60-laravel-stack)
+  INCLUDE_MAILPIT=1, INCLUDE_NGROK=1 [+ NGROK_AUTHTOKEN=], INCLUDE_MSSQL=1
+  DEV_DEFAULT_PORT=3000           default port for *.front.localhost proxy
 
 See topics/*/README.md for topic-specific documentation.
 EOF
