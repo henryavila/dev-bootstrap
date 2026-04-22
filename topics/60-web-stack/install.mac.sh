@@ -113,25 +113,38 @@ if [[ -x "$VALET_BIN" ]]; then
         ok "valet already installed and configured (skipping valet install)"
     else
         info "valet install (nginx + dnsmasq + HTTPS setup; first time only, ~30s)"
-        "$VALET_BIN" install --quiet >/dev/null 2>&1 \
+        # Don't suppress stderr: valet install needs sudo for nginx + dnsmasq
+        # daemons. Sudo prompt MUST be visible (lesson from mkcert hang).
+        "$VALET_BIN" install \
             || warn "valet install returned non-zero"
     fi
+
+    # All `valet` subcommands below shell out to sudo for daemon
+    # restarts (dnsmasq, nginx). Refresh the sudo cache once here so the
+    # next 1-3 valet commands don't re-prompt mid-flow if the bootstrap's
+    # initial `sudo -v` warm-up has already expired (default 5-15min).
+    sudo -v 2>/dev/null || true
 
     # Align TLD with WSL — use `.localhost` instead of Valet's default `.test`
     # so URLs like https://foo.localhost work identically on both platforms.
     # Idempotent: `valet tld` is a no-op when the TLD already matches.
     current_tld="$("$VALET_BIN" tld 2>/dev/null | tr -d '\r' || true)"
     if [[ "$current_tld" != "localhost" ]]; then
-        info "valet tld localhost (was: ${current_tld:-unknown})"
-        "$VALET_BIN" tld localhost >/dev/null 2>&1 || warn "valet tld localhost failed — sites may still resolve on .test"
+        info "valet tld localhost (was: ${current_tld:-unknown}); may prompt for sudo"
+        # stderr visible (NOT >/dev/null 2>&1) so the sudo password prompt
+        # surfaces. The previous silenced-redirect masked the prompt and
+        # made the bootstrap appear to hang forever waiting on input.
+        "$VALET_BIN" tld localhost \
+            || warn "valet tld localhost failed — sites may still resolve on .test"
     else
         ok "valet tld already = localhost"
     fi
 
     # Park CODE_DIR so every subdirectory is served as <name>.localhost
     # Idempotent: Valet stores parks in ~/.config/valet/config.json
+    # stderr also visible here for the same reason as above.
     info "valet park $CODE_DIR"
-    ( cd "$CODE_DIR" && "$VALET_BIN" park --quiet >/dev/null 2>&1 ) || true
+    ( cd "$CODE_DIR" && "$VALET_BIN" park ) || true
 
     ok "Valet ready — every dir under $CODE_DIR is https://<dir>.localhost"
 else

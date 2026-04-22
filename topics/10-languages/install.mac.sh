@@ -41,35 +41,69 @@ brew_install_if_missing() {
         return 0
     fi
 
-    # First attempt failed. Two failure modes are worth retrying once:
+    # First attempt failed. Three retry tiers, in order of how much
+    # they bypass safety:
     #
-    # 1. Checksum mismatch during source build (common with imagemagick,
-    #    which re-tags upstream releases frequently). Cause: stale
-    #    formula vs. upstream tarball. Fix: `brew update` refreshes the
-    #    formula + clears stale cache entries for this package, then
-    #    the install becomes a no-op if the checksum now matches.
+    # Tier 1 — refresh + clean download cache + retry as-is.
+    #   Fixes: stale formula (brew update), corrupt cached tarball
+    #   (rm -f $cache_path), transient mirror hiccup (re-fetch).
     #
-    # 2. Transient network/mirror hiccup. Same remediation.
+    # Tier 2 — same as 1 but explicit --build-from-source.
+    #   On non-standard HOMEBREW_PREFIX, brew should fall through to
+    #   source automatically. Belt-and-suspenders ensures we don't
+    #   spend the retry re-trying a bottle that can't relocate.
+    #
+    # Tier 3 — --HEAD: clones the upstream git repo and bypasses the
+    #   tarball download entirely. Fixes the case where upstream
+    #   re-tagged a release: formula's expected SHA256 no longer
+    #   matches the served tarball, regardless of how many `brew
+    #   update` we run, because the mirror's tarball is what changed.
+    #   ImageMagick is the canonical example — it re-tags 7.1.x
+    #   patches every few weeks. Trade-off: we build whatever's on
+    #   upstream main RIGHT NOW, which may be ahead of the tagged
+    #   release. For ImageMagick (stable API since 2016), low risk.
     #
     # Bottle-unavailable-on-non-standard-prefix (HOMEBREW_PREFIX !=
-    # /opt/homebrew, e.g. brew living on /Volumes/External) is the root
-    # cause that forces source builds in the first place — we can't fix
-    # that here, but the retry lets the user pick up a fresh formula
-    # version when upstream has published a patched checksum.
-    warn "brew install $pkg failed — refreshing formula cache and retrying once"
+    # /opt/homebrew, e.g. brew on /Volumes/External) is the root cause
+    # forcing source builds. None of these tiers fix that — but they
+    # together cover every realistic checksum/source-build failure.
+
+    warn "brew install $pkg failed — Tier 1: refresh formula cache + clear download cache + retry"
     "$BREW_BIN" update >/dev/null 2>&1 || true
     "$BREW_BIN" cleanup "$pkg" >/dev/null 2>&1 || true
+    cache_path="$("$BREW_BIN" --cache "$pkg" 2>/dev/null || true)"
+    [[ -n "$cache_path" && -e "$cache_path" ]] && rm -f "$cache_path"
     if "$BREW_BIN" install "$pkg"; then
-        ok "$pkg installed after retry"
+        ok "$pkg installed after Tier 1 retry"
         return 0
+    fi
+
+    warn "$pkg Tier 1 failed — Tier 2: explicit --build-from-source"
+    if "$BREW_BIN" install --build-from-source "$pkg"; then
+        ok "$pkg installed after Tier 2 (--build-from-source)"
+        return 0
+    fi
+
+    # Check formula has a HEAD spec before trying — not all do.
+    # `brew info --json=v2` reports `urls.head.url` if defined.
+    has_head="$("$BREW_BIN" info --json=v2 "$pkg" 2>/dev/null \
+        | grep -o '"head"' | head -1)"
+    if [[ -n "$has_head" ]]; then
+        warn "$pkg Tier 2 failed — Tier 3: --HEAD (bypasses tarball checksum, builds from upstream git)"
+        if "$BREW_BIN" install --HEAD "$pkg"; then
+            ok "$pkg installed via --HEAD after standard install failed (built from upstream git)"
+            return 0
+        fi
+    else
+        warn "$pkg has no HEAD spec in formula — skipping Tier 3"
     fi
 
     BREW_INSTALL_FAILED+=("$pkg")
     if [[ "$strict" == "soft" ]]; then
-        warn "brew install $pkg failed twice — continuing (build deps only, not critical)"
+        warn "brew install $pkg exhausted all retry tiers — continuing (build deps only, not critical)"
         return 1
     else
-        fail "brew install $pkg failed twice — aborting"
+        fail "brew install $pkg exhausted all retry tiers — aborting"
         return 1
     fi
 }
