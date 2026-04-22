@@ -170,14 +170,13 @@ SOLUTION (robust, independent of WSL interop):
 
   Open Windows PowerShell (on the Windows side, NOT inside WSL), then run:
 
-    powershell -ExecutionPolicy Bypass -File '$_PS_UNC_PATH' -Distro '${_DETECTED_DISTRO}'
+    powershell -ExecutionPolicy Bypass -File '$_PS_UNC_PATH'
 
-  The -Distro flag passes the distro name explicitly so the script
-  doesn't depend on wsl.exe's auto-detection (which can fail on older
-  WSL versions due to UTF-16 LE output quirks). The -ExecutionPolicy
-  Bypass flag is needed because Windows PowerShell refuses to run
-  unsigned scripts over UNC paths by default — it applies only to
-  this single invocation, NOT to your machine globally.
+  -ExecutionPolicy Bypass is scoped to THIS invocation only — needed
+  because PowerShell refuses unsigned scripts over UNC paths by
+  default. The script auto-detects the WSL distro + user; if that
+  fails, the error message prints the exact retry command with
+  -Distro '${_DETECTED_DISTRO}' pre-filled.
 
   The script reads the rootCA from WSL via 'wsl.exe cat' (VM host
   channel) and imports into HKCU:\\Root. No admin needed. Idempotent.
