@@ -155,7 +155,8 @@ PS_SCRIPT_OUT="$HERE/scripts/import-mkcert-from-windows.ps1"
 # Build the Windows-side UNC path pointing at the from-windows script.
 # Uses \\wsl.localhost\<distro>\<linux-path> which Windows resolves via
 # its own 9P server (SMB/WSL bridge) — independent of WSL interop.
-_PS_UNC_PATH="\\\\wsl.localhost\\${WSL_DISTRO_NAME:-$(lsb_release -si 2>/dev/null || echo Ubuntu)}${PS_SCRIPT_OUT//\//\\}"
+_DETECTED_DISTRO="${WSL_DISTRO_NAME:-$(lsb_release -si 2>/dev/null || echo Ubuntu)}"
+_PS_UNC_PATH="\\\\wsl.localhost\\${_DETECTED_DISTRO}${PS_SCRIPT_OUT//\//\\}"
 
 _emit_lane_b_followup() {
     local reason="$1"
@@ -169,11 +170,14 @@ SOLUTION (robust, independent of WSL interop):
 
   Open Windows PowerShell (on the Windows side, NOT inside WSL), then run:
 
-    powershell -ExecutionPolicy Bypass -File '$_PS_UNC_PATH'
+    powershell -ExecutionPolicy Bypass -File '$_PS_UNC_PATH' -Distro '${_DETECTED_DISTRO}'
 
-  The -ExecutionPolicy Bypass flag is needed because Windows PowerShell
-  refuses to run unsigned scripts over UNC paths by default (the policy
-  applies only to THIS single invocation, NOT your machine globally).
+  The -Distro flag passes the distro name explicitly so the script
+  doesn't depend on wsl.exe's auto-detection (which can fail on older
+  WSL versions due to UTF-16 LE output quirks). The -ExecutionPolicy
+  Bypass flag is needed because Windows PowerShell refuses to run
+  unsigned scripts over UNC paths by default — it applies only to
+  this single invocation, NOT to your machine globally.
 
   The script reads the rootCA from WSL via 'wsl.exe cat' (VM host
   channel) and imports into HKCU:\\Root. No admin needed. Idempotent.
