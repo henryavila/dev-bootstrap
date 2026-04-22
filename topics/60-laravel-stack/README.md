@@ -173,10 +173,11 @@ The Mac installer delegates nginx + HTTPS + DNS to **Laravel Valet**:
 ```bash
 composer global require laravel/valet
 valet install                          # sets up nginx + dnsmasq + mkcert
-valet park $CODE_DIR                   # every subdir becomes <name>.test
+valet tld localhost                    # align TLD with WSL (default is .test)
+valet park $CODE_DIR                   # every subdir becomes <name>.localhost
 ```
 
-`link-project` on Mac is a thin wrapper around `valet link` + `valet secure`. Same command name, different backend — your muscle memory transfers.
+The `valet tld localhost` step is important: URLs work identically on WSL and Mac (`https://foo.localhost`) — your muscle memory doesn't switch based on the platform. `link-project` on Mac is a thin wrapper around `valet secure` + `valet proxy`. Same command name, different backend.
 
 Oracle MySQL DMG: if `/usr/local/mysql/bin/mysql` exists, the installer **skips** `brew install mysql@8.0` entirely. No double-install conflict.
 

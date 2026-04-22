@@ -68,13 +68,14 @@ cmd_default() {
     fi
 
     if [[ "$IS_MAC" == "1" ]]; then
-        # Mac uses Valet — if CODE_DIR is parked, <name>.test resolves
-        # automatically and this is a no-op. Secure by default.
+        # Mac uses Valet with TLD set to `.localhost` (see install.mac.sh) —
+        # if CODE_DIR is parked, <name>.localhost resolves automatically
+        # and this is a no-op. Secure by default for HTTPS.
         if [[ -x "$VALET_BIN" ]]; then
             ( cd "$proj_dir" && "$VALET_BIN" secure "$name" >/dev/null 2>&1 ) || true
         fi
         echo "✓ $name served by Valet"
-        echo "  HTTPS: https://$name.test"
+        echo "  HTTPS: https://$name.localhost"
     else
         echo "✓ $name is served by the catchall"
         echo "  HTTP:  http://$name.localhost"
@@ -94,7 +95,7 @@ cmd_frontend() {
         fi
         echo "→ valet proxy $name http://127.0.0.1:$port --secure"
         "$VALET_BIN" proxy "$name" "http://127.0.0.1:$port" --secure
-        echo "✓ https://$name.test → 127.0.0.1:$port"
+        echo "✓ https://$name.localhost → 127.0.0.1:$port"
         return 0
     fi
 

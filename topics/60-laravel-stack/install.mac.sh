@@ -3,9 +3,15 @@
 # ngrok, SQL Server driver.
 #
 # Design: on macOS, Valet is Laravel-team-maintained and already solves nginx
-# + dnsmasq + PHP switching + *.test resolution + HTTPS — everything our
+# + dnsmasq + PHP switching + *.localhost resolution + HTTPS — everything our
 # WSL installer reinvents by hand. We install MySQL/Redis/mkcert via brew
 # (Valet doesn't manage them) and hand off the rest to Valet.
+#
+# TLD alignment: Valet defaults to `.test`, but we set it to `.localhost`
+# via `valet tld localhost` so URLs match WSL exactly (foo.localhost works
+# on both platforms; user muscle memory doesn't switch based on OS).
+# `.localhost` is an RFC 6761 loopback TLD, natively handled by every
+# browser + curl, no extra DNS resolution needed.
 #
 # User-facing CLIs stay the same: `link-project foo` works identically
 # across platforms (on Mac it's a thin wrapper around `valet link +
@@ -20,7 +26,7 @@ source "$HERE/../../lib/log.sh"
 : "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
 : "${BREW_PREFIX:?BREW_PREFIX not set}"
 
-# CODE_DIR is where Valet will `park` — every subdir becomes <name>.test
+# CODE_DIR is where Valet will `park` — every subdir becomes <name>.localhost
 : "${CODE_DIR:=$HOME/code/web}"
 mkdir -p "$CODE_DIR"
 export CODE_DIR
@@ -80,15 +86,23 @@ if [[ -x "$VALET_BIN" ]]; then
     info "valet install (nginx + dnsmasq + HTTPS setup)"
     "$VALET_BIN" install --quiet >/dev/null 2>&1 || warn "valet install returned non-zero"
 
-    # Park CODE_DIR so every subdirectory is served as <name>.test
+    # Align TLD with WSL — use `.localhost` instead of Valet's default `.test`
+    # so URLs like https://foo.localhost work identically on both platforms.
+    # Idempotent: `valet tld` is a no-op when the TLD already matches.
+    current_tld="$("$VALET_BIN" tld 2>/dev/null | tr -d '\r' || true)"
+    if [[ "$current_tld" != "localhost" ]]; then
+        info "valet tld localhost (was: ${current_tld:-unknown})"
+        "$VALET_BIN" tld localhost >/dev/null 2>&1 || warn "valet tld localhost failed — sites may still resolve on .test"
+    else
+        ok "valet tld already = localhost"
+    fi
+
+    # Park CODE_DIR so every subdirectory is served as <name>.localhost
     # Idempotent: Valet stores parks in ~/.config/valet/config.json
     info "valet park $CODE_DIR"
     ( cd "$CODE_DIR" && "$VALET_BIN" park --quiet >/dev/null 2>&1 ) || true
 
-    # Enable HTTPS globally for parked sites. `valet secured` lists certs;
-    # we secure the park itself (individual projects still need
-    # `valet secure <name>` for a fixed-name cert).
-    ok "Valet ready — every dir under $CODE_DIR is https://<dir>.test"
+    ok "Valet ready — every dir under $CODE_DIR is https://<dir>.localhost"
 else
     warn "valet binary not found after composer install — check composer config"
 fi

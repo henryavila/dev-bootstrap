@@ -267,10 +267,13 @@ Examples:
         # --- 3b · CODE_DIR ---
         CODE_DIR=$(whiptail --title "60-laravel-stack :: projects root" \
             --inputbox \
-"Root directory for your web projects. The nginx catchall serves
-*.localhost from <CODE_DIR>/<project>/public.
-On Mac, Valet parks this dir so every subdir becomes <name>.test." \
-            13 70 "${CODE_DIR:-$HOME/code/web}" \
+"Root directory for your web projects.
+Every subdir becomes a <name>.localhost site automatically:
+  - WSL/Linux: nginx catchall serves <CODE_DIR>/<project>/public
+  - Mac:       Valet parks this dir (TLD aligned to .localhost)
+
+Same URL on both platforms — https://<name>.localhost." \
+            14 72 "${CODE_DIR:-$HOME/code/web}" \
             3>&1 1>&2 2>&3) || _menu_cancel
         export CODE_DIR
 
