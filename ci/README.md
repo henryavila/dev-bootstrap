@@ -103,6 +103,31 @@ patched script now outputs `wsl`.
 None of these is obviously worth doing until a 05-identity regression
 actually bites.
 
+## Known flaky surfaces
+
+A clean Docker run has full internet access, so these generally work.
+Behind a restrictive proxy / air-gapped runner / flaky DNS they can fail
+non-deterministically — if you see one of these topics fail, check
+`ci/last-run.log` for the curl/wget error before assuming it's a
+bootstrap regression.
+
+| Topic            | Risky network hop                                         |
+| ---------------- | --------------------------------------------------------- |
+| `10-languages`   | `fnm.vercel.app/install` (bash pipe), `ppa.launchpadcontent.net` (ondrej/php), `getcomposer.org`, `composer.github.io` |
+| `20-terminal-ux` | GitHub releases for dust/xh/procs (native-Linux branch)   |
+| `40-tmux`        | `github.com/catppuccin/tmux` (shallow clone)              |
+| `80-claude-code` | `bun.sh/install` (bash pipe), `claude.ai/install.sh` (bash pipe) |
+
+If a topic fails on a repeat run for transient network reasons, add it
+to `EXTRA_SKIP` temporarily:
+
+```bash
+EXTRA_SKIP="80-claude-code" bash ci/smoke-test.sh
+```
+
+Permanent additions belong in the default `SKIP_TOPICS` list in
+`smoke-test.sh` with a comment explaining why.
+
 ## Known divergences from a real WSL install
 
 These intentional simplifications mean the smoke test is necessary but

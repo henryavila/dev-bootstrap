@@ -18,7 +18,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 cd "$ROOT"
 
-IMAGE="dev-bootstrap-smoke:ubuntu-24.04"
+IMAGE="dev-bootstrap-smoke"
 LOGFILE="$HERE/last-run.log"
 TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
 
@@ -78,24 +78,22 @@ docker build "${BUILD_ARGS[@]}" \
 printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
     "$SKIP_TOPICS" "$TIMEOUT_SECS"
 
+# Invocation mirrors the spec exactly: `bash -c "SKIP_TOPICS='…' NON_INTERACTIVE=1
+# bash ~/dev-bootstrap/bootstrap.sh"`. We pass env vars inline (not via -e)
+# so the shell inside the container sees them as a single-command prefix —
+# same contract as a developer running the bootstrap by hand from a shell.
+RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' NON_INTERACTIVE=1 bash ~/dev-bootstrap/bootstrap.sh"
+
 start=$(date +%s)
 # We write both stdout and stderr to the logfile AND to the terminal via tee.
 # PIPESTATUS[0] recovers the docker-run exit code — tee itself always returns 0.
 set +e
 if [[ -n "$TIMEOUT_BIN" ]]; then
     "$TIMEOUT_BIN" "$TIMEOUT_SECS" \
-        docker run --rm \
-            -e SKIP_TOPICS="$SKIP_TOPICS" \
-            -e NON_INTERACTIVE=1 \
-            "$IMAGE" \
-            bash /home/henry/dev-bootstrap/bootstrap.sh --non-interactive \
+        docker run --rm "$IMAGE" bash -c "$RUN_CMD" \
         2>&1 | tee "$LOGFILE"
 else
-    docker run --rm \
-        -e SKIP_TOPICS="$SKIP_TOPICS" \
-        -e NON_INTERACTIVE=1 \
-        "$IMAGE" \
-        bash /home/henry/dev-bootstrap/bootstrap.sh --non-interactive \
+    docker run --rm "$IMAGE" bash -c "$RUN_CMD" \
         2>&1 | tee "$LOGFILE"
 fi
 rc=${PIPESTATUS[0]}
