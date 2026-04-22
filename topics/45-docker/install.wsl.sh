@@ -10,13 +10,21 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
 
-# ---------- docker.io + compose plugin ----------
-if dpkg -s docker.io >/dev/null 2>&1; then
-    ok "docker.io already installed"
+# ---------- docker.io + compose plugin + buildx ----------
+# docker-buildx-plugin ships the modern BuildKit builder. Without it, every
+# `docker build` prints a DEPRECATED banner and uses the legacy builder.
+# Ubuntu 24.04 packages it as `docker-buildx`.
+pkgs=(docker.io docker-compose-v2 docker-buildx)
+missing=()
+for p in "${pkgs[@]}"; do
+    dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
+done
+if [[ "${#missing[@]}" -eq 0 ]]; then
+    ok "docker.io + docker-compose-v2 + docker-buildx already installed"
 else
-    info "apt install docker.io + docker-compose-v2"
+    info "apt install ${missing[*]}"
     sudo apt-get update -qq
-    sudo apt-get install -y -qq docker.io docker-compose-v2
+    sudo apt-get install -y -qq "${missing[@]}"
 fi
 
 # ---------- current user → docker group ----------

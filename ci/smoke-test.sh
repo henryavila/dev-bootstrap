@@ -55,6 +55,31 @@ if ! command -v docker >/dev/null 2>&1; then
     exit 127
 fi
 
+# Daemon reachability probe. `docker info` fails fast with a distinctive
+# message when the caller can't read /var/run/docker.sock; the usual cause
+# on WSL/Linux is "user was added to docker group but the current shell
+# session still has the old group set" (group membership is inherited at
+# login time). Fix by re-executing ourselves via `sg docker -c ...` which
+# spawns a child with the new group applied — no relogin, no reboot.
+if ! docker info >/dev/null 2>&1; then
+    if id -nG "$USER" | tr ' ' '\n' | grep -qx docker; then
+        # Member per /etc/group but not yet in the session's effective
+        # groups. Re-exec via sg, guarded by an env flag so we don't loop.
+        if [[ "${SMOKE_SG_RELAUNCHED:-}" != "1" ]]; then
+            echo ">>> docker socket not accessible in this shell — re-executing via 'sg docker'"
+            echo ">>> (group 'docker' is yours per /etc/group but this shell predates that change)"
+            exec sg docker -c "SMOKE_SG_RELAUNCHED=1 bash '$0' $*"
+        fi
+        echo >&2 "error: docker daemon still unreachable after sg docker relaunch."
+        echo >&2 "       check: sudo systemctl status docker  (or: sudo service docker status)"
+        exit 126
+    fi
+    echo >&2 "error: docker daemon unreachable and $USER is not in the docker group."
+    echo >&2 "       fix via the bootstrap's opt-in topic:"
+    echo >&2 "         INCLUDE_DOCKER=1 bash ~/dev-bootstrap/bootstrap.sh"
+    exit 126
+fi
+
 # `timeout` is in coreutils — Mac might have it via `gtimeout` under coreutils
 # brew. Fall back gracefully.
 TIMEOUT_BIN="timeout"
