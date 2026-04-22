@@ -10,10 +10,10 @@ cd ~/dev-bootstrap
 bash ci/smoke-test.sh
 ```
 
-Builds `dev-bootstrap-smoke:ubuntu-24.04` from `Dockerfile.ubuntu-24.04`,
-runs `bootstrap.sh --non-interactive` inside it with a curated
-`SKIP_TOPICS` list, writes the full run log to `ci/last-run.log`, and
-prints `SMOKE TEST PASSED` or `SMOKE TEST FAILED`.
+Builds `dev-bootstrap-smoke` from `Dockerfile.ubuntu-24.04`, runs
+`bash ~/dev-bootstrap/bootstrap.sh` inside it with `NON_INTERACTIVE=1`
+and a curated `SKIP_TOPICS` list, writes the full run log to
+`ci/last-run.log`, and prints `SMOKE TEST PASSED` or `SMOKE TEST FAILED`.
 
 Exit codes:
 
