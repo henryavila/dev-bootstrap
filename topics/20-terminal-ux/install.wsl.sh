@@ -282,6 +282,21 @@ if command -v zsh >/dev/null 2>&1; then
     fi
 fi
 
+# ─── Post-install advisory: atuin login ──────────────────────────────
+# Binary + shell init are in place, but we don't log in automatically:
+# login opens a browser for atuin.sh OAuth, which only the user can
+# complete. Detecting logged-out state: ~/.local/share/atuin/session is
+# created on successful login.
+if command -v atuin >/dev/null 2>&1; then
+    if [ ! -f "$HOME/.local/share/atuin/session" ]; then
+        warn "atuin installed but not logged in (no cross-machine history yet)."
+        info "Finish the login with:    atuin login"
+        info "  (opens a browser → atuin.sh OAuth; no password or key needed.)"
+    else
+        ok "atuin session present (cross-machine history active)"
+    fi
+fi
+
 # ─── Windows Terminal auto-config (Catppuccin + CaskaydiaCove NF) ─────
 # WSL-only. Installs font Windows-side (user-level, no admin), surgical
 # jq merge into settings.json. Mirrors install.mac.sh's iTerm2 step —

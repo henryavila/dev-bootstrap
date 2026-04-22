@@ -7,7 +7,7 @@ Modern terminal, **fully themed out of the box** — font, color scheme, and she
 **CLI stack (both platforms):** `fzf bat eza zoxide ripgrep fd starship lazygit git-delta tmux neovim`
 **Modern-CLI replacements:** `btop duf gping sd tealdeer dust xh procs`
 **zsh plugins:** completions, autosuggestions, syntax-highlighting, history-substring-search, fzf-tab, forgit, alias-tips, zsh-abbr, you-should-use, **Powerlevel10k** (+ zinit for turbo loading)
-**History engine:** atuin (manual first-run: `atuin account link`)
+**History engine:** atuin (manual first-run: `atuin login` — opens browser for OAuth against atuin.sh; no password or 24-word key on the CLI)
 
 ## Terminal emulator auto-config
 

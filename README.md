@@ -33,6 +33,13 @@ Restart, open the freshly-installed Ubuntu, and follow the WSL instructions belo
 
 ### WSL2/Ubuntu or macOS
 
+**Before running the bootstrap** (what isn't automated because we need it to *be able to* clone this repo):
+
+| Platform | One-time prereq |
+|---|---|
+| WSL2 / native Linux (fresh install) | `sudo apt-get update && sudo apt-get install -y git curl ca-certificates` |
+| macOS (fresh install) | Nothing — Xcode Command Line Tools install on demand the first time `bootstrap.sh` invokes `git` |
+
 **Interactive mode (default):**
 
 ```bash
@@ -74,6 +81,19 @@ DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
 The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `DOTFILES_REPO`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
 
 Right after the menu (or immediately, when skipped), the bootstrap runs `sudo -v` to warm up the sudo cache — one password prompt, then subsequent `sudo` calls within the cache window (~5–15min) are silent.
+
+### After the bootstrap finishes
+
+The bootstrap **prints at the end everything that still needs a human touch** — you don't need to remember a list. The post-run advisories cover:
+
+- `chsh` to set zsh as the login shell (prints the exact command when zsh isn't already default).
+- `atuin login` to join cross-machine history (prints the command when the session file is missing; opens a browser for atuin.sh OAuth, no password or key on the CLI).
+- `newgrp docker` / log out+in, when 45-docker just added you to the `docker` group.
+- `ngrok config add-authtoken <token>`, when `INCLUDE_NGROK=1` ran without `NGROK_AUTHTOKEN` exported.
+- Manual `mailpit &` / `docker` service start, when systemd isn't available (rare).
+- `gpg --full-generate-key`, when `GPG_SIGN=1` ran without an existing key.
+
+If you see a `!` line in the bootstrap output, it's pointing at a next step. Read the advisory instead of re-running the topic.
 
 ## Topics
 
