@@ -45,8 +45,16 @@ else
         info "gh will pause and ask you to press Enter before opening the browser."
         info "Scopes: admin:public_key (register SSH key) + repo (clone private)."
         info ""
+        # --git-protocol https (NOT ssh): with --git-protocol ssh, gh's
+        # interactive flow offers to generate a new SSH key automatically
+        # and register it as "GitHub CLI" — creating a SECOND key
+        # alongside the one this script generates below. Using https for
+        # git-protocol means gh uses HTTPS credential helper for clones
+        # (handled by `gh auth setup-git`) while we stay in full control
+        # of the SSH key (generation, title, registration via `gh ssh-key
+        # add` with our own fingerprint-idempotent logic).
         if ! gh auth login --web \
-                --git-protocol ssh \
+                --git-protocol https \
                 --scopes "admin:public_key,repo" \
                 --hostname github.com \
                 </dev/tty >/dev/tty 2>&1; then
