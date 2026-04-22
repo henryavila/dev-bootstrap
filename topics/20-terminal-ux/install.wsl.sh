@@ -81,6 +81,26 @@ clone_or_pull MichaelAquilina/zsh-you-should-use       "$SHARE_DIR/zsh-you-shoul
 # fallback if zinit isn't ready on the first login).
 clone_or_pull romkatv/powerlevel10k                    "$SHARE_DIR/powerlevel10k"                  powerlevel10k
 
+# ─── Snapshot rc files (protect .bashrc/.zshrc from shell-based installers) ─
+# The zinit installer and setup.atuin.sh below both append content directly
+# to ~/.bashrc / ~/.zshrc. That breaks the managed-by-marker invariant and
+# makes 30-shell's deploy refuse to overwrite the no-longer-pristine rc on
+# first run. Snapshot → let them run → restore (or delete if the installer
+# created the file from scratch). Shell init for both tools lives in the
+# .bashrc.d/.zshrc.d fragments instead — those stay managed and testable.
+rc_bashrc_existed=0 rc_zshrc_existed=0
+rc_bashrc_snapshot="" rc_zshrc_snapshot=""
+if [[ -f "$HOME/.bashrc" ]]; then
+    rc_bashrc_existed=1
+    rc_bashrc_snapshot="$(mktemp)"
+    cp -p "$HOME/.bashrc" "$rc_bashrc_snapshot"
+fi
+if [[ -f "$HOME/.zshrc" ]]; then
+    rc_zshrc_existed=1
+    rc_zshrc_snapshot="$(mktemp)"
+    cp -p "$HOME/.zshrc" "$rc_zshrc_snapshot"
+fi
+
 # Phase C: zinit — installed to its canonical location
 # (~/.local/share/zinit/zinit.git) so the official installer path
 # matches. Idempotent: re-running zinit's installer with an existing
@@ -105,13 +125,32 @@ fi
 
 # ─── atuin (binary installer) ──────────────────────────────────────────
 # Uses atuin's official setup script: downloads the matching binary for
-# the current arch into ~/.local/bin/atuin. Idempotent (no-op if present).
+# the current arch into ~/.atuin/bin. Idempotent (no-op if present).
 # First run (per machine) still requires: atuin register|login + atuin import bash|zsh.
+# Shell init wiring lives in the .bashrc.d/.zshrc.d fragments (see templates);
+# the surrounding rc-snapshot block restores anything setup.atuin.sh touches.
 if ! command -v atuin >/dev/null 2>&1; then
     info "installing atuin via setup.atuin.sh"
     curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh
 else
     ok "atuin already installed"
+fi
+
+# ─── Restore rc files (pairs with the snapshot block before zinit) ─────
+# zinit and atuin are the two risk points; both are now installed. Put
+# .bashrc/.zshrc back to their pre-topic state, or remove them entirely
+# if they didn't exist before — 30-shell will deploy managed templates.
+if [[ "$rc_bashrc_existed" == "1" ]]; then
+    cp -p "$rc_bashrc_snapshot" "$HOME/.bashrc"
+    rm -f "$rc_bashrc_snapshot"
+elif [[ -f "$HOME/.bashrc" ]]; then
+    rm -f "$HOME/.bashrc"
+fi
+if [[ "$rc_zshrc_existed" == "1" ]]; then
+    cp -p "$rc_zshrc_snapshot" "$HOME/.zshrc"
+    rm -f "$rc_zshrc_snapshot"
+elif [[ -f "$HOME/.zshrc" ]]; then
+    rm -f "$HOME/.zshrc"
 fi
 
 # ─── starship ─────────────────────────────────────────────────────────

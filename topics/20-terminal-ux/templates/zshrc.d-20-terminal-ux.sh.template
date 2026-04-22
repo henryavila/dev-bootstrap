@@ -52,3 +52,14 @@ fi
 if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
     alias fd='fdfind'
 fi
+
+# atuin (SQLite-backed shell history). zsh has preexec built-in, no
+# bash-preexec.sh needed. --disable-up-arrow preserves zsh-history-
+# substring-search's up-arrow binding; Ctrl+R still opens atuin.
+if [ -f "$HOME/.atuin/bin/env" ]; then
+    # shellcheck source=/dev/null
+    . "$HOME/.atuin/bin/env"
+fi
+if command -v atuin >/dev/null 2>&1; then
+    eval "$(atuin init zsh --disable-up-arrow)"
+fi

@@ -284,12 +284,10 @@ deploy_one() {
             local inspect_path="/tmp/dev-bootstrap-would-overwrite-$(basename "$dst")-$$"
             cp "$staged" "$inspect_path" 2>/dev/null || true
             fail "refusing to overwrite $dst — no 'managed by dev-bootstrap' marker."
-            fail "This file looks hand-managed. Options:"
+            fail "This file has user-authored content. Options:"
             fail "  1. Move custom blocks to ${dst}.local (never overwritten), delete $dst, re-run."
             fail "  2. Review the template that would replace it:"
             fail "       diff -u \"$dst\" \"$inspect_path\""
-            fail "  3. Accept the overwrite (a .bak-<ts> backup is created first):"
-            fail "       ALLOW_OVERWRITE_UNMANAGED=1 bash bootstrap.sh"
             return 1
         fi
 
