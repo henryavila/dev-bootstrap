@@ -20,6 +20,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/../../lib/pecl-install.sh"
 
 # ─── fnm + Node ────────────────────────────────────────────────────────
 if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then
@@ -155,170 +157,15 @@ for ver in $PHP_VERSIONS; do
     fi
 done
 
-pecl_install_for_version() {
-    local ver="$1" ext="$2"
 
-    # ondrej does NOT ship per-version pecl binaries on Ubuntu — only
-    # phpize${ver} and php-config${ver}. There's a single /usr/bin/pecl
-    # shell script that launches under whichever PHP `update-alternatives`
-    # currently points to (normally the highest installed version, i.e.
-    # PHP_DEFAULT). Without intervention, every per-version install call
-    # silently targets the DEFAULT version — the builds either fail or
-    # land in the wrong ABI dir, and `php${ver} -m` keeps returning
-    # "not loaded" for non-default versions on every subsequent run.
-    #
-    # Fix: take FOUR complementary steps, each targeting a different
-    # stage of the pecl → pear → build → registry pipeline:
-    #
-    #   1. PHP_PEAR_PHP_BIN  — pins /usr/bin/pecl's `exec` line to the
-    #                          target PHP binary. (Shell-level.)
-    #   2. PHP_PEAR_BIN_DIR  — PEAR's Builder.php prepends this dir to
-    #                          PATH before running `phpize` / `php-config`
-    #                          via PATH lookup. We point it at a scratch
-    #                          dir containing symlinks named `phpize` and
-    #                          `php-config` that resolve to the target
-    #                          version's binaries. (PEAR-level.)
-    #   3. PHP_PEAR_EXTENSION_DIR — overrides PEAR's ext_dir config so
-    #                          the .so is INSTALLED into the correct ABI
-    #                          directory (/usr/lib/php/<api>/) instead of
-    #                          the default-PHP's dir. (Installer-level.)
-    #   4. PHP_PEAR_METADATA_DIR — isolates the PEAR registry per call.
-    #                          Without this, the global registry at
-    #                          /usr/share/php/.registry/ tracks a single
-    #                          install per package; the NEXT per-version
-    #                          `pecl install -f` first uninstalls the
-    #                          previously-registered one — deleting the
-    #                          .so from a DIFFERENT PHP's ABI dir.
-    #                          Observed concretely in ultron run 15:48:
-    #                          8.3 installs landed correctly, then 8.5
-    #                          reinstalls deleted 8.3's .so files before
-    #                          building their own. (Registry-level.)
-    #
-    # Step 2 is what actually controls the ABI the build targets. PEAR
-    # uses:
-    #     $php_prefix + "phpize" + $php_suffix
-    # to locate phpize; both config keys default to empty, so it just
-    # runs "phpize" via PATH. Our shim dir — prepended by PHP_PEAR_BIN_DIR
-    # — shadows the alternatives-managed phpize symlink.
-    #
-    # Why not just set $php_suffix via PEAR config? `pecl config-set`
-    # writes to a shared .pearrc file; changing it per-version is racy
-    # and leaves the system in a weird state if bootstrap is interrupted.
-    # The scratch-dir-with-symlinks approach is per-invocation and
-    # self-cleaning.
-    #
-    # `sudo env KEY=VAL cmd` (not `sudo -E`) is bulletproof under the
-    # default sudoers `env_reset` policy.
-    local pecl_bin="/usr/bin/pecl"
-    local php_bin="/usr/bin/php${ver}"
-    local phpize_bin="/usr/bin/phpize${ver}"
-    local php_config_bin="/usr/bin/php-config${ver}"
-
-    for _b in "$pecl_bin" "$php_bin" "$phpize_bin" "$php_config_bin"; do
-        if [[ ! -x "$_b" ]]; then
-            warn "PHP $ver: required binary $_b missing — skipping $ext"
-            return 0
-        fi
-    done
-
-    # Resolve the ABI API number so we can (a) point PHP_PEAR_EXTENSION_DIR
-    # at the right install target, and (b) verify post-install that the
-    # .so actually landed there. Filesystem > `php -m` — the latter also
-    # depends on phpenmod state, the former is authoritative.
-    local api
-    api="$("$php_config_bin" --phpapi 2>/dev/null)"
-    if [[ -z "$api" ]]; then
-        warn "PHP $ver: could not resolve PHP API from $php_config_bin — skipping $ext"
-        return 0
-    fi
-    local target_ext_dir="/usr/lib/php/${api}"
-    local so_path="${target_ext_dir}/${ext}.so"
-
-    # Already loaded? Fast path — nothing to do.
-    if php${ver} -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
-        ok "PHP $ver: $ext already loaded"
-        return 0
-    fi
-
-    # Per-invocation scratch state. TWO directories, both under mktemp:
-    #
-    #   $tmpbin   — PATH shim dir with phpize/php-config/php symlinks
-    #               pointing at the per-version binaries. PEAR prepends
-    #               this to PATH (via PHP_PEAR_BIN_DIR override) so
-    #               bare `phpize` + `php-config` resolve here.
-    #   $tmpmeta  — isolated PEAR registry dir. CRITICAL: without this,
-    #               pecl's global registry at /usr/share/php/.registry/
-    #               tracks "igbinary is installed at <last-target-dir>"
-    #               — and the next per-version `pecl install -f` would
-    #               first UNINSTALL the previously registered one,
-    #               DELETING the .so from a different PHP's ABI dir.
-    #               Isolated metadata per call means each invocation
-    #               sees an empty registry and only ever touches its
-    #               own target_ext_dir.
-    #
-    # Both dirs cleaned via `trap RETURN` even if pecl is killed.
-    # Cleanup MUST use sudo + absorb errors: pecl runs as root via
-    # `sudo env` below and writes root-owned files inside $tmpmeta
-    # (.registry/*, .channels/*). A plain `rm -rf` as the bootstrap
-    # user then fails with "Permission denied", and under `set -e`
-    # that aborts the entire PECL loop — first discovered on ultron
-    # run 162613 which processed igbinary for 8.3 then died on
-    # cleanup, skipping every other ext × ver combination.
-    local tmpbin tmpmeta
-    tmpbin="$(mktemp -d -t dev-bootstrap-pecl-bin.XXXXXX)"
-    tmpmeta="$(mktemp -d -t dev-bootstrap-pecl-meta.XXXXXX)"
-    ln -s "$phpize_bin"      "$tmpbin/phpize"
-    ln -s "$php_config_bin"  "$tmpbin/php-config"
-    ln -s "$php_bin"         "$tmpbin/php"
-    trap 'sudo rm -rf "$tmpbin" "$tmpmeta" 2>/dev/null || true' RETURN
-
-    info "PHP $ver: pecl install $ext (target: $so_path)"
-    # `-f` forces rebuild when pecl's internal cache thinks the ext is
-    # already installed. With isolated $tmpmeta the registry starts
-    # empty each call, so `-f` is defensive here (handles the case
-    # where /tmp/pear/cache already has a built tarball from a prior
-    # run) without the cross-version uninstall side-effect.
-    # `printf '\n'` accepts default prompts (imagick asks about
-    # ImageMagick autodetect).
-    local pecl_out="" pecl_rc=0
-    pecl_out=$(printf '\n' | sudo env \
-        PHP_PEAR_PHP_BIN="$php_bin" \
-        PHP_PEAR_BIN_DIR="$tmpbin" \
-        PHP_PEAR_METADATA_DIR="$tmpmeta" \
-        PHP_PEAR_EXTENSION_DIR="$target_ext_dir" \
-        "$pecl_bin" install -f "$ext" 2>&1) || pecl_rc=$?
-
-    # Two-signal failure check: non-zero exit OR expected .so did not
-    # appear. The file check catches the "pecl silently installed into
-    # the wrong ABI dir" class of failure — which is exactly the bug we
-    # are fixing. If the env vars are set but something else goes wrong
-    # (missing build dep, network, etc.), the file won't exist either.
-    if [[ "$pecl_rc" -ne 0 ]] || [[ ! -f "$so_path" ]]; then
-        warn "PHP $ver: pecl install $ext failed (exit=$pecl_rc, .so not at $so_path)"
-        # Show tail of the real output so the user can act on the real
-        # error (missing dep, compile failure, network, etc.) instead of
-        # a dead-end advisory on the next run.
-        if [[ -n "$pecl_out" ]]; then
-            printf '%s\n' "$pecl_out" | tail -6 | sed 's/^/      /' >&2
-        fi
-        return 0
-    fi
-
-    # Enable the .so. Priority 20 matches Debian convention (after core).
-    local ini_dir="/etc/php/${ver}/mods-available"
-    local ini_file="${ini_dir}/${ext}.ini"
-    if [[ ! -f "$ini_file" ]]; then
-        sudo mkdir -p "$ini_dir"
-        echo "extension=${ext}.so" | sudo tee "$ini_file" >/dev/null
-    fi
-    sudo phpenmod -v "$ver" "$ext" >/dev/null 2>&1 || true
-    ok "PHP $ver: $ext enabled"
-}
+# pecl_install_for_version_linux is provided by lib/pecl-install.sh —
+# single source of truth for the 4-env-var PECL fix. See its header
+# for the 5-commit bug saga and each env var's role.
 
 for line in "${PECL_LINES[@]}"; do
     IFS=':' read -r ext _ _ <<< "$line"
     for ver in $PHP_VERSIONS; do
-        pecl_install_for_version "$ver" "$ext"
+        pecl_install_for_version_linux "$ver" "$ext"
     done
 done
 

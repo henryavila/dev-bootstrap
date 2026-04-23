@@ -637,21 +637,41 @@ echo
 echo "═══ 2026-04-23 : WSL PECL per-version build via PHP_PEAR_PHP_BIN ═══"
 
 # Ondrej's /usr/bin/pecl is a single shell script bound to the current
-# update-alternatives PHP default. Without PHP_PEAR_PHP_BIN +
-# PHP_PEAR_PHPIZE_BIN, every per-version `pecl install` silently built
-# for PHP_DEFAULT, and non-default versions got permanent "not loaded"
-# re-tries on every run. User observed PHP 8.3 (0/4) + PHP 8.4 mongodb
-# failing on repeated bootstraps on ultron.
+# update-alternatives PHP default. Without PHP_PEAR_PHP_BIN + friends,
+# every per-version `pecl install` silently built for PHP_DEFAULT.
+# The fix lives in lib/pecl-install.sh (single source of truth) so
+# install.wsl.sh + install-mssql-driver.sh share the same hardened
+# implementation. These asserts inspect the lib directly.
 LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
+PECL_LIB="$ROOT/lib/pecl-install.sh"
+MSSQL="$ROOT/topics/60-web-stack/scripts/install-mssql-driver.sh"
 
-assert_pattern_present "$LANG_WSL" 'PHP_PEAR_PHP_BIN="\$php_bin"' \
-    "10-languages/install.wsl.sh — pecl pinned to target PHP via PHP_PEAR_PHP_BIN"
+assert_file_exists "$PECL_LIB" \
+    "lib/pecl-install.sh — shared helper exists (single source of truth)"
+
+# Both callers must source the lib. Duplicating the implementation is
+# the exact class of bug that made ultron/crc regress differently.
+assert_pattern_present "$LANG_WSL" 'source.*lib/pecl-install.sh' \
+    "10-languages/install.wsl.sh — sources lib/pecl-install.sh"
+
+assert_pattern_present "$MSSQL" 'source.*lib/pecl-install.sh' \
+    "60-web-stack/install-mssql-driver.sh — sources lib/pecl-install.sh"
+
+assert_pattern_present "$LANG_WSL" 'pecl_install_for_version_linux' \
+    "10-languages/install.wsl.sh — calls pecl_install_for_version_linux from lib"
+
+assert_pattern_present "$MSSQL" 'pecl_install_for_version_linux' \
+    "60-web-stack/install-mssql-driver.sh — calls pecl_install_for_version_linux from lib"
+
+# The 4 env vars — lib must set them all
+assert_pattern_present "$PECL_LIB" 'PHP_PEAR_PHP_BIN="\$php_bin"' \
+    "lib/pecl-install.sh — pecl pinned to target PHP via PHP_PEAR_PHP_BIN"
 
 # PEAR does NOT honor PHP_PEAR_PHPIZE_BIN (grep /usr/share/php/PEAR/Config.php).
 # Real mechanism: PEAR prepends bin_dir to PATH, then looks up `phpize`
 # via PATH. Overriding bin_dir via PHP_PEAR_BIN_DIR to a scratch dir full
 # of per-version symlinks is the canonical way to pin the toolchain.
-assert_pattern_present "$LANG_WSL" 'PHP_PEAR_BIN_DIR="\$tmpbin"' \
+assert_pattern_present "$PECL_LIB" 'PHP_PEAR_BIN_DIR="\$tmpbin"' \
     "10-languages/install.wsl.sh — PHP_PEAR_BIN_DIR points to scratch shim dir"
 
 # CRITICAL: without isolated metadata_dir, each per-version `pecl install -f`
@@ -659,59 +679,59 @@ assert_pattern_present "$LANG_WSL" 'PHP_PEAR_BIN_DIR="\$tmpbin"' \
 # from a different PHP's ABI dir. Observed in ultron 15:48 run: 8.3
 # installs landed, then 8.5's install -f deleted them. Isolated registry
 # per call makes each install see an empty registry.
-assert_pattern_present "$LANG_WSL" 'PHP_PEAR_METADATA_DIR="\$tmpmeta"' \
+assert_pattern_present "$PECL_LIB" 'PHP_PEAR_METADATA_DIR="\$tmpmeta"' \
     "10-languages/install.wsl.sh — PHP_PEAR_METADATA_DIR isolates PEAR registry per call"
 
-assert_pattern_present "$LANG_WSL" 'tmpmeta="\$\(mktemp -d' \
+assert_pattern_present "$PECL_LIB" 'tmpmeta="\$\(mktemp -d' \
     "10-languages/install.wsl.sh — allocates tmpmeta scratch dir"
 
-assert_pattern_present "$LANG_WSL" "trap 'sudo rm -rf \"\\\$tmpbin\" \"\\\$tmpmeta\"" \
+assert_pattern_present "$PECL_LIB" "trap 'sudo rm -rf \"\\\$tmpbin\" \"\\\$tmpmeta\"" \
     "10-languages/install.wsl.sh — trap cleans both tmpbin AND tmpmeta with sudo"
 
-assert_pattern_present "$LANG_WSL" "'sudo rm.*2>/dev/null \|\| true' RETURN" \
+assert_pattern_present "$PECL_LIB" "'sudo rm.*2>/dev/null \|\| true' RETURN" \
     "10-languages/install.wsl.sh — trap absorbs rm errors (else set -e aborts the loop)"
 
-assert_pattern_present "$LANG_WSL" 'ln -s "\$phpize_bin"' \
+assert_pattern_present "$PECL_LIB" 'ln -s "\$phpize_bin"' \
     "10-languages/install.wsl.sh — scratch dir has phpize symlink → phpize\${ver}"
 
-assert_pattern_present "$LANG_WSL" 'ln -s "\$php_config_bin"' \
+assert_pattern_present "$PECL_LIB" 'ln -s "\$php_config_bin"' \
     "10-languages/install.wsl.sh — scratch dir has php-config symlink → php-config\${ver}"
 
 # PHP_PEAR_EXTENSION_DIR overrides the .so install target — otherwise
 # pecl installs into ext_dir from config (= default PHP's ABI dir).
-assert_pattern_present "$LANG_WSL" 'PHP_PEAR_EXTENSION_DIR="\$target_ext_dir"' \
+assert_pattern_present "$PECL_LIB" 'PHP_PEAR_EXTENSION_DIR="\$target_ext_dir"' \
     "10-languages/install.wsl.sh — .so target dir pinned via PHP_PEAR_EXTENSION_DIR"
 
 # (superseded by trap-cleans-both assertion above — removing the
 # single-dir trap check because current code cleans both scratch dirs)
 
 # `sudo env KEY=VAL cmd` survives sudoers env_reset; `sudo -E` does not.
-assert_pattern_present "$LANG_WSL" 'sudo env \\' \
+assert_pattern_present "$PECL_LIB" 'sudo env \\' \
     "10-languages/install.wsl.sh — uses 'sudo env' (bulletproof vs env_reset)"
 
 # PHP_PEAR_PHPIZE_BIN is a dead env var — PEAR does not read it anywhere
 # (verified in pecl-version-pinning.test.sh by grepping Config.php).
 # The earliest version of this fix used it and failed silently on the
 # actual Ondrej install. Lock that out.
-assert_pattern_absent "$LANG_WSL" 'PHP_PEAR_PHPIZE_BIN' \
+assert_pattern_absent "$PECL_LIB" 'PHP_PEAR_PHPIZE_BIN' \
     "10-languages/install.wsl.sh — does NOT use PHP_PEAR_PHPIZE_BIN (dead env var; PEAR ignores)"
 
 # The .so-existence post-check is the source of truth — file-based
 # idempotency, not the ambiguous pecl exit code.
-assert_pattern_present "$LANG_WSL" 'php_config_bin.*phpapi' \
+assert_pattern_present "$PECL_LIB" 'php_config_bin.*phpapi' \
     "10-languages/install.wsl.sh — resolves PHP ABI via php-config --phpapi"
 
-assert_pattern_present "$LANG_WSL" '\[\[ ! -f "\$so_path" \]\]' \
+assert_pattern_present "$PECL_LIB" '\[\[ ! -f "\$so_path" \]\]' \
     "10-languages/install.wsl.sh — verifies .so file actually landed at expected path"
 
 # The previous "silent failure" anti-pattern: redirecting stderr to
 # /dev/null and emitting only "(check logs manually)" meant the user
 # had no way to diagnose why. The new code prints the last lines of
 # pecl output on failure.
-assert_pattern_present "$LANG_WSL" 'tail -6' \
+assert_pattern_present "$PECL_LIB" 'tail -6' \
     "10-languages/install.wsl.sh — surfaces last 6 lines of pecl output on failure"
 
-assert_pattern_absent "$LANG_WSL" 'check logs manually' \
+assert_pattern_absent "$PECL_LIB" 'check logs manually' \
     "10-languages/install.wsl.sh — no longer points users at non-existent 'logs'"
 
 echo

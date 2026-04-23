@@ -24,6 +24,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../../lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/../../../lib/pecl-install.sh"
 
 # ─── OS check ─────────────────────────────────────────────────────────
 if ! grep -qiE 'ubuntu|debian' /etc/os-release 2>/dev/null; then
@@ -87,32 +89,11 @@ if [[ -z "$PHP_VERSIONS_TO_PATCH" ]]; then
     exit 0
 fi
 
-install_mssql_ext() {
-    local ver="$1" ext="$2"
-    local pecl_bin="/usr/bin/pecl${ver}"
-    [[ ! -x "$pecl_bin" ]] && pecl_bin="$(command -v pecl || true)"
-    [[ -z "$pecl_bin" ]] && { warn "no pecl binary for PHP $ver"; return; }
-
-    if "php${ver}" -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
-        ok "PHP $ver: $ext already loaded"
-        return 0
-    fi
-
-    info "PHP $ver: pecl install $ext"
-    # -f forces rebuild if a previous broken build is cached
-    printf '\n' | sudo "$pecl_bin" install -f "$ext" >/dev/null 2>&1 || {
-        warn "PHP $ver: pecl install $ext failed — SQL Server support won't work on this PHP"
-        return 0
-    }
-
-    local ini_file="/etc/php/${ver}/mods-available/${ext}.ini"
-    if [[ ! -f "$ini_file" ]]; then
-        echo "extension=${ext}.so" | sudo tee "$ini_file" > /dev/null
-    fi
-    sudo phpenmod -v "$ver" "$ext" >/dev/null 2>&1 || true
-    ok "PHP $ver: $ext enabled"
-}
-
+# pecl_install_for_version_linux is provided by lib/pecl-install.sh.
+# It handles the 4-env-var fix (PHP_PEAR_PHP_BIN + BIN_DIR + METADATA_DIR
+# + EXTENSION_DIR) + scratch shim dir + sudo-aware cleanup trap + the
+# filesystem post-check. See the lib's header for the 2026-04-23 bug
+# saga that converged on this implementation.
 for ver in $PHP_VERSIONS_TO_PATCH; do
     # php${ver}-dev already installed by 10-languages for PECL builds;
     # verify defensively so a standalone run of this script still works.
@@ -121,8 +102,8 @@ for ver in $PHP_VERSIONS_TO_PATCH; do
         sudo apt-get install -y -qq "php${ver}-dev"
     fi
 
-    install_mssql_ext "$ver" sqlsrv
-    install_mssql_ext "$ver" pdo_sqlsrv
+    pecl_install_for_version_linux "$ver" sqlsrv     "SQL Server support won't work on this PHP"
+    pecl_install_for_version_linux "$ver" pdo_sqlsrv "SQL Server support won't work on this PHP"
 done
 
 # Restart FPMs so the extensions are picked up without manual kick
