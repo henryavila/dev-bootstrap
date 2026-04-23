@@ -647,12 +647,40 @@ LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
 assert_pattern_present "$LANG_WSL" 'PHP_PEAR_PHP_BIN="\$php_bin"' \
     "10-languages/install.wsl.sh — pecl pinned to target PHP via PHP_PEAR_PHP_BIN"
 
-assert_pattern_present "$LANG_WSL" 'PHP_PEAR_PHPIZE_BIN="\$phpize_bin"' \
-    "10-languages/install.wsl.sh — pecl uses target phpize via PHP_PEAR_PHPIZE_BIN"
+# PEAR does NOT honor PHP_PEAR_PHPIZE_BIN (grep /usr/share/php/PEAR/Config.php).
+# Real mechanism: PEAR prepends bin_dir to PATH, then looks up `phpize`
+# via PATH. Overriding bin_dir via PHP_PEAR_BIN_DIR to a scratch dir full
+# of per-version symlinks is the canonical way to pin the toolchain.
+assert_pattern_present "$LANG_WSL" 'PHP_PEAR_BIN_DIR="\$tmpbin"' \
+    "10-languages/install.wsl.sh — PHP_PEAR_BIN_DIR points to scratch shim dir"
+
+assert_pattern_present "$LANG_WSL" 'ln -s "\$phpize_bin"' \
+    "10-languages/install.wsl.sh — scratch dir has phpize symlink → phpize\${ver}"
+
+assert_pattern_present "$LANG_WSL" 'ln -s "\$php_config_bin"' \
+    "10-languages/install.wsl.sh — scratch dir has php-config symlink → php-config\${ver}"
+
+# PHP_PEAR_EXTENSION_DIR overrides the .so install target — otherwise
+# pecl installs into ext_dir from config (= default PHP's ABI dir).
+assert_pattern_present "$LANG_WSL" 'PHP_PEAR_EXTENSION_DIR="\$target_ext_dir"' \
+    "10-languages/install.wsl.sh — .so target dir pinned via PHP_PEAR_EXTENSION_DIR"
+
+# Cleanup discipline — temp dir must be removed even if the install
+# is killed mid-pipeline. `trap RETURN` fires when the function exits
+# for any reason.
+assert_pattern_present "$LANG_WSL" "trap 'rm -rf \"\\\$tmpbin\"' RETURN" \
+    "10-languages/install.wsl.sh — scratch dir cleaned via trap RETURN"
 
 # `sudo env KEY=VAL cmd` survives sudoers env_reset; `sudo -E` does not.
 assert_pattern_present "$LANG_WSL" 'sudo env \\' \
     "10-languages/install.wsl.sh — uses 'sudo env' (bulletproof vs env_reset)"
+
+# PHP_PEAR_PHPIZE_BIN is a dead env var — PEAR does not read it anywhere
+# (verified in pecl-version-pinning.test.sh by grepping Config.php).
+# The earliest version of this fix used it and failed silently on the
+# actual Ondrej install. Lock that out.
+assert_pattern_absent "$LANG_WSL" 'PHP_PEAR_PHPIZE_BIN' \
+    "10-languages/install.wsl.sh — does NOT use PHP_PEAR_PHPIZE_BIN (dead env var; PEAR ignores)"
 
 # The .so-existence post-check is the source of truth — file-based
 # idempotency, not the ambiguous pecl exit code.

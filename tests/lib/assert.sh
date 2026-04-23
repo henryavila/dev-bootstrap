@@ -141,6 +141,38 @@ assert_file_contains() {
     fi
 }
 
+# Grep-ERE variants — take (file, pattern, msg). Preferred over
+# assert_file_contains for new tests because ERE is more expressive
+# and the argument order matches the other assert_pattern_* helpers.
+assert_pattern_present() {
+    local file="$1" pattern="$2" msg="${3:-$file contains pattern}"
+    if [[ ! -f "$file" ]]; then
+        fail "$msg (file missing: $file)"
+        return
+    fi
+    if grep -qE "$pattern" "$file" 2>/dev/null; then
+        pass "$msg"
+    else
+        fail "$msg (pattern '$pattern' not found in $file)"
+    fi
+}
+
+assert_pattern_absent() {
+    local file="$1" pattern="$2" msg="${3:-$file does not contain pattern}"
+    if [[ ! -f "$file" ]]; then
+        fail "$msg (file missing: $file)"
+        return
+    fi
+    if ! grep -qE "$pattern" "$file" 2>/dev/null; then
+        pass "$msg"
+    else
+        local first_match
+        first_match="$(grep -nE "$pattern" "$file" 2>/dev/null | head -1)"
+        fail "$msg (anti-pattern '$pattern' found in $file)"
+        printf "              first matches:\n        %s\n" "$first_match" >&2
+    fi
+}
+
 summary() {
     local total=$((PASS + FAIL))
     printf "\n"

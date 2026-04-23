@@ -167,12 +167,37 @@ pecl_install_for_version() {
     # land in the wrong ABI dir, and `php${ver} -m` keeps returning
     # "not loaded" for non-default versions on every subsequent run.
     #
-    # Fix: set PHP_PEAR_PHP_BIN + PHP_PEAR_PHPIZE_BIN to pin pecl to the
-    # target version's toolchain. `/usr/bin/pecl` reads PHP_PEAR_PHP_BIN
-    # as its first action (see `cat /usr/bin/pecl`). PEAR's internal
-    # Build module reads PHP_PEAR_PHPIZE_BIN similarly. Using `sudo env`
-    # instead of `sudo -E` makes this bulletproof under the default
-    # sudoers `env_reset` policy.
+    # Fix: take THREE complementary steps, each targeting a different
+    # stage of the pecl → pear → build pipeline:
+    #
+    #   1. PHP_PEAR_PHP_BIN  — pins /usr/bin/pecl's `exec` line to the
+    #                          target PHP binary. (Shell-level.)
+    #   2. PHP_PEAR_BIN_DIR  — PEAR's Builder.php prepends this dir to
+    #                          PATH before running `phpize` / `php-config`
+    #                          via PATH lookup. We point it at a scratch
+    #                          dir containing symlinks named `phpize` and
+    #                          `php-config` that resolve to the target
+    #                          version's binaries. (PEAR-level.)
+    #   3. PHP_PEAR_EXTENSION_DIR — overrides PEAR's ext_dir config so
+    #                          the .so is INSTALLED into the correct ABI
+    #                          directory (/usr/lib/php/<api>/) instead of
+    #                          the default-PHP's dir. (Installer-level.)
+    #
+    # Step 2 is what actually controls the ABI the build targets. PEAR
+    # uses:
+    #     $php_prefix + "phpize" + $php_suffix
+    # to locate phpize; both config keys default to empty, so it just
+    # runs "phpize" via PATH. Our shim dir — prepended by PHP_PEAR_BIN_DIR
+    # — shadows the alternatives-managed phpize symlink.
+    #
+    # Why not just set $php_suffix via PEAR config? `pecl config-set`
+    # writes to a shared .pearrc file; changing it per-version is racy
+    # and leaves the system in a weird state if bootstrap is interrupted.
+    # The scratch-dir-with-symlinks approach is per-invocation and
+    # self-cleaning.
+    #
+    # `sudo env KEY=VAL cmd` (not `sudo -E`) is bulletproof under the
+    # default sudoers `env_reset` policy.
     local pecl_bin="/usr/bin/pecl"
     local php_bin="/usr/bin/php${ver}"
     local phpize_bin="/usr/bin/phpize${ver}"
@@ -185,23 +210,35 @@ pecl_install_for_version() {
         fi
     done
 
-    # Resolve the ABI API number so we can verify post-install that the
-    # .so actually landed in the right /usr/lib/php/<api>/ dir. This is
-    # the authoritative "did it work" check — filesystem > `php -m`,
-    # which depends on phpenmod state.
+    # Resolve the ABI API number so we can (a) point PHP_PEAR_EXTENSION_DIR
+    # at the right install target, and (b) verify post-install that the
+    # .so actually landed there. Filesystem > `php -m` — the latter also
+    # depends on phpenmod state, the former is authoritative.
     local api
     api="$("$php_config_bin" --phpapi 2>/dev/null)"
     if [[ -z "$api" ]]; then
         warn "PHP $ver: could not resolve PHP API from $php_config_bin — skipping $ext"
         return 0
     fi
-    local so_path="/usr/lib/php/${api}/${ext}.so"
+    local target_ext_dir="/usr/lib/php/${api}"
+    local so_path="${target_ext_dir}/${ext}.so"
 
     # Already loaded? Fast path — nothing to do.
     if php${ver} -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
         ok "PHP $ver: $ext already loaded"
         return 0
     fi
+
+    # Scratch bin dir with per-version shims. PEAR will prepend this to
+    # PATH (via PHP_PEAR_BIN_DIR override) and any subsequent `phpize` /
+    # `php-config` lookup resolves here. Cleaned up after the install.
+    local tmpbin
+    tmpbin="$(mktemp -d -t dev-bootstrap-pecl.XXXXXX)"
+    ln -s "$phpize_bin"      "$tmpbin/phpize"
+    ln -s "$php_config_bin"  "$tmpbin/php-config"
+    ln -s "$php_bin"         "$tmpbin/php"
+    # trap ensures cleanup even if printf/pecl is killed mid-pipeline
+    trap 'rm -rf "$tmpbin"' RETURN
 
     info "PHP $ver: pecl install $ext (target: $so_path)"
     # `-f` forces rebuild when pecl's internal cache thinks the ext is
@@ -211,7 +248,8 @@ pecl_install_for_version() {
     local pecl_out="" pecl_rc=0
     pecl_out=$(printf '\n' | sudo env \
         PHP_PEAR_PHP_BIN="$php_bin" \
-        PHP_PEAR_PHPIZE_BIN="$phpize_bin" \
+        PHP_PEAR_BIN_DIR="$tmpbin" \
+        PHP_PEAR_EXTENSION_DIR="$target_ext_dir" \
         "$pecl_bin" install -f "$ext" 2>&1) || pecl_rc=$?
 
     # Two-signal failure check: non-zero exit OR expected .so did not
