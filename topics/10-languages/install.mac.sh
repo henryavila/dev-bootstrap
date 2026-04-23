@@ -458,16 +458,24 @@ for ver in $PHP_VERSIONS; do
         warn "composer${ver}: php@${ver} not installed at $_php_bin — skipping wrapper"
         continue
     fi
-    # Resolve composer path at wrapper RUN time, not generation time.
-    # Two reasons:
-    #  (a) User may have a standalone composer in ~/.local/bin/composer
-    #      that works when brew's /opt/homebrew/bin/composer is broken
-    #      (e.g. PharException signature failures seen on Mac M2 with
-    #      brew formula 2.9.7). Runtime resolution picks whichever
-    #      composer is first on PATH — which is the one the user's
-    #      shell uses anyway.
-    #  (b) If brew upgrades composer between bootstrap runs, the
-    #      wrapper picks up the new path automatically.
+    # Resolve composer path at wrapper RUN time with an EXPLICIT priority
+    # list, not \`command -v composer\`. Two independent reasons to avoid
+    # PATH-order resolution:
+    #
+    # 1. On Macs where brew's \$BREW_PREFIX/bin comes before ~/.local/bin
+    #    in PATH, \`command -v composer\` picks the brew formula. Brew-
+    #    composer 2.9.7 currently ships a PHAR with broken SHA512
+    #    signature (reproduced on M2 — PharException regardless of the
+    #    invoking PHP version). The user's standalone composer at
+    #    ~/.local/bin/composer works, so we must prefer it explicitly.
+    # 2. \`command -v\` is also sensitive to whether shell functions or
+    #    aliases exist with the same name. The wrapper already strips
+    #    aliases via \`env\` shebang, but explicit file checks are
+    #    deterministic regardless of shell state.
+    #
+    # Priority: user-local > /usr/local > brew. If none exists at runtime,
+    # fall back to PATH-based 'command -v' (last resort, may still fail
+    # with brew's PHAR bug — surfaces the bug instead of hiding it).
     cat > "$_wrapper" <<EOF
 #!/usr/bin/env bash
 # composer${ver} — Managed by dev-bootstrap / 10-languages.
@@ -475,12 +483,17 @@ for ver in $PHP_VERSIONS; do
 # Generated once per non-default version in PHP_VERSIONS; safe to delete
 # (bootstrap re-creates) but not safe to edit (overwritten on next run).
 set -e
-# Drop \$0 (self) from PATH lookup so 'command -v composer' cannot
-# accidentally resolve to a future same-named wrapper in the same dir.
-_self_dir="\$(cd "\$(dirname "\$0")" && pwd)"
-_composer_bin="\$(PATH="\${PATH//\$_self_dir:/}\${PATH//:\$_self_dir/}" command -v composer 2>/dev/null || true)"
+_composer_bin=""
+for c in "\$HOME/.local/bin/composer" "/usr/local/bin/composer" "${BREW_PREFIX}/bin/composer"; do
+    if [[ -x "\$c" ]]; then _composer_bin="\$c"; break; fi
+done
 if [[ -z "\$_composer_bin" ]]; then
-    echo "composer${ver}: no 'composer' found on PATH" >&2
+    # Last-resort PATH lookup, stripping self-dir to avoid recursion.
+    _self_dir="\$(cd "\$(dirname "\$0")" && pwd)"
+    _composer_bin="\$(PATH="\${PATH//\$_self_dir:/}\${PATH//:\$_self_dir/}" command -v composer 2>/dev/null || true)"
+fi
+if [[ -z "\$_composer_bin" ]]; then
+    echo "composer${ver}: no composer binary found (checked ~/.local/bin, /usr/local/bin, ${BREW_PREFIX}/bin, PATH)" >&2
     exit 127
 fi
 exec "${_php_bin}" "\$_composer_bin" "\$@"

@@ -390,13 +390,19 @@ assert_pattern_present "$LANG_MAC" 'BREW_PREFIX/opt/php@\$\{ver\}/bin/php' \
 assert_pattern_present "$LANG_MAC" 'chmod \+x "\$_wrapper"' \
     "10-languages/install.mac.sh — wrapper is made executable"
 
-# Wrapper resolves composer at RUN time (via `command -v composer`),
-# NOT at generation time — so it picks up whichever composer is first
-# on the user's PATH at invocation. Works around brew-composer
-# PharException bugs and survives `brew upgrade composer` without
-# re-running bootstrap.
+# Wrapper resolves composer at RUN time via EXPLICIT priority list:
+# ~/.local/bin/composer > /usr/local/bin/composer > $BREW_PREFIX/bin/composer.
+# Avoids `command -v composer` as primary lookup because PATH order on
+# Mac puts $BREW_PREFIX/bin ahead of ~/.local/bin — resolving brew's
+# composer which has a broken PHAR signature on this machine class.
+assert_pattern_present "$LANG_MAC" '\$HOME/\.local/bin/composer' \
+    "10-languages/install.mac.sh — wrapper prefers ~/.local/bin/composer (highest priority)"
+
+assert_pattern_present "$LANG_MAC" '/usr/local/bin/composer' \
+    "10-languages/install.mac.sh — wrapper falls back to /usr/local/bin/composer"
+
 assert_pattern_present "$LANG_MAC" 'command -v composer' \
-    "10-languages/install.mac.sh — wrapper resolves composer at runtime (not hardcoded)"
+    "10-languages/install.mac.sh — wrapper has PATH-lookup last-resort fallback"
 
 assert_pattern_absent "$LANG_MAC" 'exec "\$\{_php_bin\}" "\$\{_composer_bin\}"' \
     "10-languages/install.mac.sh — does NOT bake \$BREW_PREFIX/bin/composer into wrapper"
@@ -416,8 +422,11 @@ assert_pattern_present "$LANG_WSL" '/usr/bin/php\$\{ver\}' \
 assert_pattern_present "$LANG_WSL" 'chmod \+x "\$_wrapper"' \
     "10-languages/install.wsl.sh — wrapper is made executable"
 
+assert_pattern_present "$LANG_WSL" '\$HOME/\.local/bin/composer' \
+    "10-languages/install.wsl.sh — wrapper prefers ~/.local/bin/composer (highest priority)"
+
 assert_pattern_present "$LANG_WSL" 'command -v composer' \
-    "10-languages/install.wsl.sh — wrapper resolves composer at runtime (not hardcoded)"
+    "10-languages/install.wsl.sh — wrapper has PATH-lookup last-resort fallback"
 
 echo
 echo "═══ Topic rename complete: no '60-laravel-stack' references in code ═══"

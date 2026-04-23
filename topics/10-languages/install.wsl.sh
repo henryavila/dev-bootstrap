@@ -233,9 +233,12 @@ for ver in $PHP_VERSIONS; do
         warn "composer${ver}: php${ver} not installed at $_php_bin — skipping wrapper"
         continue
     fi
-    # Resolve composer at wrapper RUN time (not generation time) so a
-    # future composer upgrade or user-installed ~/.local/bin/composer
-    # takes effect without re-running bootstrap.
+    # Resolve composer at wrapper RUN time via an explicit priority list.
+    # Same reasoning as the Mac side (see install.mac.sh for full rationale):
+    # user-local > /usr/local > PATH-fallback. On WSL the common install
+    # path is /usr/local/bin/composer (written by the installer above), but
+    # a user may have overriden with ~/.local/bin/composer for specific
+    # version control — honor that.
     cat > "$_wrapper" <<EOF
 #!/usr/bin/env bash
 # composer${ver} — Managed by dev-bootstrap / 10-languages.
@@ -243,12 +246,16 @@ for ver in $PHP_VERSIONS; do
 # Generated once per non-default version in PHP_VERSIONS; safe to delete
 # (bootstrap re-creates) but not safe to edit (overwritten on next run).
 set -e
-# Drop \$0 (self) from PATH lookup so 'command -v composer' cannot
-# accidentally resolve to a future same-named wrapper in the same dir.
-_self_dir="\$(cd "\$(dirname "\$0")" && pwd)"
-_composer_bin="\$(PATH="\${PATH//\$_self_dir:/}\${PATH//:\$_self_dir/}" command -v composer 2>/dev/null || true)"
+_composer_bin=""
+for c in "\$HOME/.local/bin/composer" "/usr/local/bin/composer"; do
+    if [[ -x "\$c" ]]; then _composer_bin="\$c"; break; fi
+done
 if [[ -z "\$_composer_bin" ]]; then
-    echo "composer${ver}: no 'composer' found on PATH" >&2
+    _self_dir="\$(cd "\$(dirname "\$0")" && pwd)"
+    _composer_bin="\$(PATH="\${PATH//\$_self_dir:/}\${PATH//:\$_self_dir/}" command -v composer 2>/dev/null || true)"
+fi
+if [[ -z "\$_composer_bin" ]]; then
+    echo "composer${ver}: no composer binary found (checked ~/.local/bin, /usr/local/bin, PATH)" >&2
     exit 127
 fi
 exec "${_php_bin}" "\$_composer_bin" "\$@"
