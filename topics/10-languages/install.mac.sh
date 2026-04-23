@@ -191,20 +191,21 @@ pecl_install_for_mac() {
     local prefix="$BREW_PREFIX/opt/php@${ver}"
     local pecl_bin="$prefix/bin/pecl"
     local php_bin="$prefix/bin/php"
-
-    # Brew separates `etc` from the cellar — config files live OUTSIDE
-    # the per-version opt symlink. PHP scans this dir for additional
-    # .ini files (verifiable via `php --ini`):
-    #   $BREW_PREFIX/etc/php/<VER>/conf.d/  ← correct
-    #   $prefix/etc/php/<VER>/conf.d/       ← WRONG (under opt/, never scanned)
-    # An older version of this function used the wrong path; the orphan
-    # cleanup loop above sweeps any leftovers from that era.
     local ini_dir="$BREW_PREFIX/etc/php/${ver}/conf.d"
     local ini_file="${ini_dir}/ext-${ext}.ini"
 
     [[ ! -x "$pecl_bin" ]] && { warn "$pecl_bin not found — skipping ext=$ext for php@${ver}"; return; }
 
-    # Inline helper: write conf.d ini only if absent. Idempotent.
+    # Resolve the canonical extension_dir for THIS PHP binary (depends
+    # on the Zend module API, e.g. 20250925 for PHP 8.5.x). This is the
+    # only authoritative source of where the .so file MUST be — pecl's
+    # registry can lie (claims "installed" even when the .so does not
+    # exist on disk, leftover from previous runs that failed silently
+    # while writing optimistic metadata). Filesystem is truth.
+    local ext_dir so_file
+    ext_dir="$("$php_bin" -r 'echo ini_get("extension_dir");' 2>/dev/null)"
+    so_file="${ext_dir}/${ext}.so"
+
     _ensure_ini() {
         mkdir -p "$ini_dir"
         if [[ ! -f "$ini_file" ]]; then
@@ -212,52 +213,72 @@ pecl_install_for_mac() {
         fi
     }
 
-    # ── Detection paths (in order; first match returns) ──────────────
+    # ── PRE-FLIGHT CLEANUP ───────────────────────────────────────────
+    # If a conf.d ini exists pointing to an .so that is missing on
+    # disk, PHP startup emits "Unable to load dynamic library" warnings
+    # on every invocation. Sweep that dangling reference NOW so even if
+    # this function bails downstream, the user no longer sees the
+    # warning on `php -v` / `php -m` / etc.
+    if [[ -f "$ini_file" && -n "$ext_dir" && ! -f "$so_file" ]]; then
+        warn "php@${ver}: removing stale ini → $ini_file (.so missing at $so_file)"
+        rm -f "$ini_file"
+    fi
 
-    # Path 1: extension already LOADED in PHP — fully done, skip silently.
+    # ── DETECTION PATHS (in order; first match returns) ──────────────
+
+    # Path 1: extension already LOADED in PHP — fully done.
     if "$php_bin" -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
-        _ensure_ini   # belt-and-suspenders: ini in right path even if PHP
-                      # is loading it via some other mechanism
+        _ensure_ini   # belt-and-suspenders
         ok "php@${ver}: $ext already loaded"
         return 0
     fi
 
-    # Path 2: pecl already BUILT the .so but PHP is not loading it.
-    # Almost always the ini-path migration scenario — pecl install ran
-    # under the old wrong-path code, the .so is on disk and registered
-    # with pecl, but our conf.d ini was orphaned. Just write the ini
-    # in the right place; PHP picks it up next launch.
-    if "$pecl_bin" list 2>/dev/null | grep -qE "^${ext}[[:space:]]"; then
-        info "php@${ver}: $ext already built via pecl — writing ini at correct path"
+    # Path 2: .so file exists on disk but not loaded — just write the ini.
+    # Trust the FILESYSTEM here, not pecl's registry. The .so being
+    # present is the only reliable signal that the build actually
+    # succeeded at some point.
+    if [[ -n "$ext_dir" && -f "$so_file" ]]; then
+        info "php@${ver}: $ext .so present → writing ini"
         _ensure_ini
-        ok "php@${ver}: $ext enabled (existing build + correct ini)"
+        ok "php@${ver}: $ext enabled (existing .so + correct ini)"
         return 0
     fi
 
-    # Path 3: genuine first install. Capture output for diagnostics —
-    # the previous `>/dev/null 2>&1` made every failure indistinguishable
-    # ("failed — continuing" with no clue why). Now we keep the output,
-    # only show it on failure, and special-case "already installed"
-    # which pecl emits as exit-1 even though it is a no-op (handled
-    # already by Path 2 above; this is just defense in depth).
-    info "php@${ver}: pecl install $ext"
+    # Path 3: genuine install. Capture output for diagnostics.
+    info "php@${ver}: pecl install $ext (target: $so_file)"
     local pecl_out pecl_rc
     pecl_out=$(printf '\n' | "$pecl_bin" install "$ext" 2>&1) ; pecl_rc=$?
 
-    if [[ "$pecl_rc" -ne 0 ]]; then
-        if printf '%s' "$pecl_out" | grep -qiE "already installed|is already enabled"; then
-            info "php@${ver}: pecl reports $ext already installed — writing ini"
-            _ensure_ini
-            ok "php@${ver}: $ext enabled"
-            return 0
-        fi
-        warn "php@${ver}: pecl install $ext failed (exit $pecl_rc) — continuing"
-        printf '%s\n' "$pecl_out" | tail -8 | sed 's/^/    /' >&2
+    # Verify by FILESYSTEM, not by exit code alone. pecl can return 0
+    # but leave no .so (defective build), or return 1 with "already
+    # installed" while the .so is missing (registry corruption).
+    if [[ -f "$so_file" ]]; then
+        _ensure_ini
+        ok "php@${ver}: $ext enabled"
         return 0
     fi
 
-    _ensure_ini
-    ok "php@${ver}: $ext enabled"
+    # No .so file produced. Two sub-cases:
+    #
+    # (a) "already installed" + missing .so = pecl registry corruption.
+    #     Recovery: pecl uninstall to clear the phantom registry entry,
+    #     then retry install. Common after silent build failures from
+    #     older versions of this script.
+    if printf '%s' "$pecl_out" | grep -qiE "already installed|is already enabled"; then
+        warn "php@${ver}: pecl registry has $ext but .so missing — cleaning + retrying"
+        "$pecl_bin" uninstall "$ext" >/dev/null 2>&1 || true
+        pecl_out=$(printf '\n' | "$pecl_bin" install "$ext" 2>&1) ; pecl_rc=$?
+        if [[ -f "$so_file" ]]; then
+            _ensure_ini
+            ok "php@${ver}: $ext enabled (after registry cleanup + reinstall)"
+            return 0
+        fi
+    fi
+
+    # (b) Real failure. Log diagnostic and continue.
+    warn "php@${ver}: pecl install $ext failed (exit $pecl_rc, .so not at $so_file) — continuing"
+    printf '%s\n' "$pecl_out" | tail -10 | sed 's/^/    /' >&2
+    return 0
 }
 
 # ─── Migration: clean up orphan inis from old wrong-path bug ────────

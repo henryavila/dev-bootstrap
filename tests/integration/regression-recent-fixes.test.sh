@@ -180,11 +180,12 @@ assert_code_absent "$LANG_MAC" 'ini_dir="\$prefix/etc/php' \
 assert_code_absent "$LANG_MAC" 'pecl_bin" install -f' \
     "10-languages/install.mac.sh — pecl install does NOT use -f (no forced rebuild)"
 
-# Multi-signal detection: php -m + pecl list + ini file presence.
-# At least 2 of the 3 must be checked so a transient failure of any
-# single signal does not cascade into reinstall.
-assert_pattern_present "$LANG_MAC" 'pecl_bin" list' \
-    "10-languages/install.mac.sh — detection includes pecl list as fallback signal"
+# Multi-signal detection: php -m as primary, .so filesystem check as
+# fallback. We deliberately do NOT use `pecl list` — pecl's registry
+# can lie (claims "installed" when .so is missing on disk). Filesystem
+# is the authoritative source.
+assert_pattern_present "$LANG_MAC" '\-f "\$so_file"' \
+    "10-languages/install.mac.sh — detection uses .so filesystem check (not pecl registry)"
 
 # pecl "already installed" must be treated as success (it returns
 # non-zero exit code but the .so is on disk — Path 2 in the function
@@ -204,6 +205,30 @@ assert_pattern_present "$LANG_MAC" 'pecl_out=' \
 # so re-runs do not leave dead bytes in $BREW_PREFIX/opt/php@X.Y/etc/.
 assert_pattern_present "$LANG_MAC" 'orphan ini from old wrong path' \
     "10-languages/install.mac.sh — sweeps orphan inis from previous wrong-path bug"
+
+# Truth = filesystem, not pecl registry. A previous version of this
+# function trusted `pecl list` and wrote inis pointing to non-existent
+# .so files (because pecl writes registry entries optimistically before
+# the build completes). PHP then emitted "Unable to load dynamic library"
+# warnings on every invocation. Authoritative source is the .so file
+# existence at $php_bin -r 'echo ini_get("extension_dir")' / ${ext}.so.
+assert_pattern_present "$LANG_MAC" 'extension_dir' \
+    "10-languages/install.mac.sh — resolves extension_dir from PHP itself"
+
+assert_pattern_present "$LANG_MAC" 'so_file=' \
+    "10-languages/install.mac.sh — checks .so file existence as detection signal"
+
+# Pre-flight cleanup of stale inis (ini exists but .so missing →
+# triggers PHP startup warnings on every invocation). Must run BEFORE
+# detection paths so even a bailout downstream leaves PHP clean.
+assert_pattern_present "$LANG_MAC" 'removing stale ini' \
+    "10-languages/install.mac.sh — pre-flight removes inis pointing to missing .so"
+
+# Recovery from pecl registry corruption: when "already installed" but
+# .so missing, pecl uninstall clears the phantom registry entry, then
+# install retries.
+assert_pattern_present "$LANG_MAC" 'pecl_bin" uninstall' \
+    "10-languages/install.mac.sh — recovers from pecl registry corruption via uninstall + retry"
 
 echo
 echo "═══ brew_install_if_missing 3-tier retry (Tier 3 --HEAD bypasses checksum) ═══"
