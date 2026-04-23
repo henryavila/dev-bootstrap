@@ -17,6 +17,18 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
 
+# _has_ctty — 0 iff the running process has a usable controlling TTY.
+# Why not use stdout-is-tty tests: bootstrap.sh wraps each installer
+# in `bash <installer> 2>&1 | tee -a $LOG`. The pipe makes stdout a
+# pipe (not a TTY) while the human is still at the terminal, so any
+# interactive fallback gated on stdout-fd checks would be silently
+# skipped every single run. /dev/tty is the canonical ctty test —
+# opens iff the process has a controlling terminal, regardless of
+# how stdin/stdout are redirected.
+_has_ctty() {
+    : </dev/tty >/dev/null 2>&1
+}
+
 # ─── apt packages ───────────────────────────────────────────────────────
 # zsh-autosuggestions + zsh-syntax-highlighting install to /usr/share/ with
 # stable paths — zshrc.local's apt-fallback branch points there.
@@ -313,7 +325,7 @@ if command -v zsh >/dev/null 2>&1; then
             chsh_ok=1
         elif sudo -n usermod -s "$zsh_bin" "$USER" 2>/dev/null; then
             chsh_ok=1
-        elif [ -t 0 ] && [ -t 1 ] && [ "${NON_INTERACTIVE:-0}" != "1" ]; then
+        elif _has_ctty && [ "${NON_INTERACTIVE:-0}" != "1" ]; then
             info "sudo ticket expired during this run — one prompt to finish chsh"
             if sudo chsh -s "$zsh_bin" "$USER" </dev/tty 2>/dev/null; then
                 chsh_ok=1
@@ -380,7 +392,7 @@ if command -v atuin >/dev/null 2>&1; then
     if atuin status >/dev/null 2>&1; then
         ok "atuin logged in (cross-machine history active)"
     elif [ "${ATUIN_LOGIN_AUTO:-1}" = "1" ] \
-         && [ -t 0 ] && [ -t 1 ] \
+         && _has_ctty \
          && [ "${NON_INTERACTIVE:-0}" != "1" ]; then
         info "atuin not logged in — running 'atuin login' (opens a browser for atuin.sh OAuth)"
         info "  if the browser does not open, copy the URL atuin prints and finish OAuth there"

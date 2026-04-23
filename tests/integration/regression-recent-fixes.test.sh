@@ -564,6 +564,30 @@ assert_pattern_present "$TUX_MAC" 'ATUIN_LOGIN_AUTO:-1' \
 assert_pattern_present "$TUX_MAC" 'atuin login </dev/tty' \
     "20-terminal-ux/install.mac.sh — runs 'atuin login' inline via /dev/tty"
 
+# TTY gate must test for controlling terminal via /dev/tty, NOT via
+# `-t 1`. bootstrap.sh pipes each installer's stdout to `tee -a LOG`,
+# which makes `-t 1` always false even when the human is still at the
+# terminal. This silently disabled every interactive fallback (chsh
+# prompt + atuin login) in actual runs. /dev/tty is the canonical ctty
+# check — opens iff the process has a controlling terminal.
+assert_pattern_present "$TUX_WSL" '_has_ctty\(\) \{' \
+    "20-terminal-ux/install.wsl.sh — defines _has_ctty helper"
+
+assert_pattern_present "$TUX_WSL" ': </dev/tty >/dev/null 2>&1' \
+    "20-terminal-ux/install.wsl.sh — _has_ctty uses /dev/tty open test"
+
+assert_pattern_absent "$TUX_WSL" '\[ -t 0 \] && \[ -t 1 \]' \
+    "20-terminal-ux/install.wsl.sh — no longer gates on '-t 1' (broken under 'tee' pipe)"
+
+assert_pattern_present "$TUX_MAC" '_has_ctty\(\) \{' \
+    "20-terminal-ux/install.mac.sh — defines _has_ctty helper"
+
+assert_pattern_present "$TUX_MAC" ': </dev/tty >/dev/null 2>&1' \
+    "20-terminal-ux/install.mac.sh — _has_ctty uses /dev/tty open test"
+
+assert_pattern_absent "$TUX_MAC" '\[ -t 0 \] && \[ -t 1 \]' \
+    "20-terminal-ux/install.mac.sh — no longer gates on '-t 1' (broken under 'tee' pipe)"
+
 # Issue 2 — secrets scaffold. bootstrap.sh must source lib/secrets.sh
 # and call secrets_load AFTER log.sh, BEFORE the menu runs.
 SECRETS_LIB="$ROOT/lib/secrets.sh"
