@@ -634,4 +634,43 @@ assert_pattern_present "$SECRETS_LIB" 'ATUIN_KEY.*atuin login' \
     "lib/secrets.sh — documents ATUIN_KEY belongs to atuin login, not here"
 
 echo
+echo "═══ 2026-04-23 : WSL PECL per-version build via PHP_PEAR_PHP_BIN ═══"
+
+# Ondrej's /usr/bin/pecl is a single shell script bound to the current
+# update-alternatives PHP default. Without PHP_PEAR_PHP_BIN +
+# PHP_PEAR_PHPIZE_BIN, every per-version `pecl install` silently built
+# for PHP_DEFAULT, and non-default versions got permanent "not loaded"
+# re-tries on every run. User observed PHP 8.3 (0/4) + PHP 8.4 mongodb
+# failing on repeated bootstraps on ultron.
+LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
+
+assert_pattern_present "$LANG_WSL" 'PHP_PEAR_PHP_BIN="\$php_bin"' \
+    "10-languages/install.wsl.sh — pecl pinned to target PHP via PHP_PEAR_PHP_BIN"
+
+assert_pattern_present "$LANG_WSL" 'PHP_PEAR_PHPIZE_BIN="\$phpize_bin"' \
+    "10-languages/install.wsl.sh — pecl uses target phpize via PHP_PEAR_PHPIZE_BIN"
+
+# `sudo env KEY=VAL cmd` survives sudoers env_reset; `sudo -E` does not.
+assert_pattern_present "$LANG_WSL" 'sudo env \\' \
+    "10-languages/install.wsl.sh — uses 'sudo env' (bulletproof vs env_reset)"
+
+# The .so-existence post-check is the source of truth — file-based
+# idempotency, not the ambiguous pecl exit code.
+assert_pattern_present "$LANG_WSL" 'php_config_bin.*phpapi' \
+    "10-languages/install.wsl.sh — resolves PHP ABI via php-config --phpapi"
+
+assert_pattern_present "$LANG_WSL" '\[\[ ! -f "\$so_path" \]\]' \
+    "10-languages/install.wsl.sh — verifies .so file actually landed at expected path"
+
+# The previous "silent failure" anti-pattern: redirecting stderr to
+# /dev/null and emitting only "(check logs manually)" meant the user
+# had no way to diagnose why. The new code prints the last lines of
+# pecl output on failure.
+assert_pattern_present "$LANG_WSL" 'tail -6' \
+    "10-languages/install.wsl.sh — surfaces last 6 lines of pecl output on failure"
+
+assert_pattern_absent "$LANG_WSL" 'check logs manually' \
+    "10-languages/install.wsl.sh — no longer points users at non-existent 'logs'"
+
+echo
 summary

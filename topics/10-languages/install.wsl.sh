@@ -157,27 +157,78 @@ done
 
 pecl_install_for_version() {
     local ver="$1" ext="$2"
-    local pecl_bin="/usr/bin/pecl${ver}"
-    # ondrej ships pecl8.X symlinks; fall back to generic `pecl` which picks
-    # up whichever phpize is currently the default (we set it above).
-    if [[ ! -x "$pecl_bin" ]]; then
-        pecl_bin="$(command -v pecl || true)"
-        [[ -z "$pecl_bin" ]] && { warn "pecl binary not found for $ver — skipping"; return; }
-    fi
 
-    # Already loaded?
+    # ondrej does NOT ship per-version pecl binaries on Ubuntu — only
+    # phpize${ver} and php-config${ver}. There's a single /usr/bin/pecl
+    # shell script that launches under whichever PHP `update-alternatives`
+    # currently points to (normally the highest installed version, i.e.
+    # PHP_DEFAULT). Without intervention, every per-version install call
+    # silently targets the DEFAULT version — the builds either fail or
+    # land in the wrong ABI dir, and `php${ver} -m` keeps returning
+    # "not loaded" for non-default versions on every subsequent run.
+    #
+    # Fix: set PHP_PEAR_PHP_BIN + PHP_PEAR_PHPIZE_BIN to pin pecl to the
+    # target version's toolchain. `/usr/bin/pecl` reads PHP_PEAR_PHP_BIN
+    # as its first action (see `cat /usr/bin/pecl`). PEAR's internal
+    # Build module reads PHP_PEAR_PHPIZE_BIN similarly. Using `sudo env`
+    # instead of `sudo -E` makes this bulletproof under the default
+    # sudoers `env_reset` policy.
+    local pecl_bin="/usr/bin/pecl"
+    local php_bin="/usr/bin/php${ver}"
+    local phpize_bin="/usr/bin/phpize${ver}"
+    local php_config_bin="/usr/bin/php-config${ver}"
+
+    for _b in "$pecl_bin" "$php_bin" "$phpize_bin" "$php_config_bin"; do
+        if [[ ! -x "$_b" ]]; then
+            warn "PHP $ver: required binary $_b missing — skipping $ext"
+            return 0
+        fi
+    done
+
+    # Resolve the ABI API number so we can verify post-install that the
+    # .so actually landed in the right /usr/lib/php/<api>/ dir. This is
+    # the authoritative "did it work" check — filesystem > `php -m`,
+    # which depends on phpenmod state.
+    local api
+    api="$("$php_config_bin" --phpapi 2>/dev/null)"
+    if [[ -z "$api" ]]; then
+        warn "PHP $ver: could not resolve PHP API from $php_config_bin — skipping $ext"
+        return 0
+    fi
+    local so_path="/usr/lib/php/${api}/${ext}.so"
+
+    # Already loaded? Fast path — nothing to do.
     if php${ver} -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
         ok "PHP $ver: $ext already loaded"
         return 0
     fi
 
-    info "PHP $ver: pecl install $ext"
-    # `-f` forces rebuild when the same version is already cached. Piping `\n`
-    # accepts all default prompts (imagick asks about ImageMagick autodetect).
-    printf '\n' | sudo "$pecl_bin" install -f "$ext" >/dev/null 2>&1 || {
-        warn "PHP $ver: pecl install $ext failed — continuing (check logs manually)"
+    info "PHP $ver: pecl install $ext (target: $so_path)"
+    # `-f` forces rebuild when pecl's internal cache thinks the ext is
+    # already installed (common after previous mis-targeted builds left
+    # a .so behind in the wrong ABI dir). `printf '\n'` accepts default
+    # prompts (imagick asks about ImageMagick autodetect).
+    local pecl_out="" pecl_rc=0
+    pecl_out=$(printf '\n' | sudo env \
+        PHP_PEAR_PHP_BIN="$php_bin" \
+        PHP_PEAR_PHPIZE_BIN="$phpize_bin" \
+        "$pecl_bin" install -f "$ext" 2>&1) || pecl_rc=$?
+
+    # Two-signal failure check: non-zero exit OR expected .so did not
+    # appear. The file check catches the "pecl silently installed into
+    # the wrong ABI dir" class of failure — which is exactly the bug we
+    # are fixing. If the env vars are set but something else goes wrong
+    # (missing build dep, network, etc.), the file won't exist either.
+    if [[ "$pecl_rc" -ne 0 ]] || [[ ! -f "$so_path" ]]; then
+        warn "PHP $ver: pecl install $ext failed (exit=$pecl_rc, .so not at $so_path)"
+        # Show tail of the real output so the user can act on the real
+        # error (missing dep, compile failure, network, etc.) instead of
+        # a dead-end advisory on the next run.
+        if [[ -n "$pecl_out" ]]; then
+            printf '%s\n' "$pecl_out" | tail -6 | sed 's/^/      /' >&2
+        fi
         return 0
-    }
+    fi
 
     # Enable the .so. Priority 20 matches Debian convention (after core).
     local ini_dir="/etc/php/${ver}/mods-available"
