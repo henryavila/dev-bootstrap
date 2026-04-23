@@ -192,27 +192,77 @@ pecl_install_for_mac() {
     local pecl_bin="$prefix/bin/pecl"
     local php_bin="$prefix/bin/php"
 
+    # Brew separates `etc` from the cellar — config files live OUTSIDE
+    # the per-version opt symlink. PHP scans this dir for additional
+    # .ini files (verifiable via `php --ini`):
+    #   $BREW_PREFIX/etc/php/<VER>/conf.d/  ← correct
+    #   $prefix/etc/php/<VER>/conf.d/       ← WRONG (under opt/, never scanned)
+    # An older version of this function used the wrong path, so .so
+    # files compiled fine but never loaded → `php -m` never showed
+    # them → detection check below failed every run → pecl reinstalled
+    # forever in a perfect retry loop.
+    local ini_dir="$BREW_PREFIX/etc/php/${ver}/conf.d"
+    local ini_file="${ini_dir}/ext-${ext}.ini"
+
     [[ ! -x "$pecl_bin" ]] && { warn "$pecl_bin not found — skipping ext=$ext for php@${ver}"; return; }
 
+    # Detection (skip-when-installed). Three signals, any positive = skip:
+    #   1. `php -m` shows the extension (canonical: it actually loaded)
+    #   2. pecl's own registry knows about it (`pecl list -i`)
+    #   3. The conf.d ini file we would write already exists
+    # 1 is the most authoritative; 2+3 are safety nets for cases where
+    # `php -m` momentarily fails (broken symlink during brew upgrade,
+    # transient permission issue) but the extension IS in fact installed.
     if "$php_bin" -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
         ok "php@${ver}: $ext already loaded"
         return 0
     fi
+    if "$pecl_bin" list 2>/dev/null | grep -qE "^${ext}\s" \
+       && [[ -f "$ini_file" ]]; then
+        ok "php@${ver}: $ext installed via pecl + ini present (no reinstall)"
+        return 0
+    fi
 
+    # Drop the `-f` flag — was forcing reinstall even when already
+    # built. With proper detection above, we only reach this branch on
+    # genuine first install; pecl's own "already installed" short-
+    # circuits any remaining waste.
     info "php@${ver}: pecl install $ext"
-    printf '\n' | "$pecl_bin" install -f "$ext" >/dev/null 2>&1 || {
+    printf '\n' | "$pecl_bin" install "$ext" >/dev/null 2>&1 || {
         warn "php@${ver}: pecl install $ext failed — continuing"
         return 0
     }
 
-    local ini_dir="$prefix/etc/php/${ver}/conf.d"
     mkdir -p "$ini_dir"
-    local ini_file="${ini_dir}/ext-${ext}.ini"
     if [[ ! -f "$ini_file" ]]; then
         echo "extension=${ext}.so" > "$ini_file"
     fi
     ok "php@${ver}: $ext enabled"
 }
+
+# ─── Migration: clean up orphan inis from old wrong-path bug ────────
+# Previous versions of pecl_install_for_mac wrote conf.d ini files
+# under $BREW_PREFIX/opt/php@X.Y/etc/php/X.Y/conf.d/ — a path PHP
+# never scans (etc/ is outside the cellar/opt symlink in brew). The
+# files are harmless (ignored by PHP) but leave dead bytes on disk
+# and confuse anyone inspecting the install. Sweep them on first run
+# with the corrected path.
+for ver in $PHP_VERSIONS; do
+    orphan_dir="$BREW_PREFIX/opt/php@${ver}/etc/php/${ver}/conf.d"
+    if [[ -d "$orphan_dir" ]]; then
+        for orphan in "$orphan_dir"/ext-*.ini; do
+            [[ -f "$orphan" ]] || continue
+            info "removing orphan ini from old wrong path: $orphan"
+            rm -f "$orphan"
+        done
+        # Try removing the now-empty dir tree (rmdir bails if non-empty,
+        # which is correct — leaves anything we did not author intact).
+        rmdir "$orphan_dir" 2>/dev/null || true
+        rmdir "$BREW_PREFIX/opt/php@${ver}/etc/php/${ver}" 2>/dev/null || true
+        rmdir "$BREW_PREFIX/opt/php@${ver}/etc/php" 2>/dev/null || true
+        rmdir "$BREW_PREFIX/opt/php@${ver}/etc" 2>/dev/null || true
+    fi
+done
 
 for line in "${PECL_LINES[@]}"; do
     IFS=':' read -r ext _ mac_deps_line <<< "$line"

@@ -155,6 +155,43 @@ assert_pattern_present "$MAC" '/etc/paths.d/61-oracle-mysql' \
     "60-web-stack/install.mac.sh — writes /etc/paths.d/61-oracle-mysql for Oracle DMG"
 
 echo
+echo "═══ pecl ini path + idempotency (no infinite reinstall loop) ═══"
+
+# Bug class: previous code wrote conf.d ini files to
+# $BREW_PREFIX/opt/php@X.Y/etc/...  (under the cellar/opt symlink).
+# Brew separates etc/ from the cellar; PHP scans
+# $BREW_PREFIX/etc/php/X.Y/conf.d/  and ignores anything under opt/.
+# Result: extension .so installed but ini in wrong path → never loaded
+# → `php -m` detection always failed → pecl reinstalled every run with
+# `-f` flag forcing rebuild.
+
+# Path correctness: ini_dir must reference $BREW_PREFIX/etc, NOT
+# $prefix/etc (where prefix = $BREW_PREFIX/opt/php@X.Y).
+assert_pattern_present "$LANG_MAC" 'ini_dir="\$BREW_PREFIX/etc/php' \
+    "10-languages/install.mac.sh — pecl ini_dir uses \$BREW_PREFIX/etc/php (PHP-scanned)"
+
+assert_code_absent "$LANG_MAC" 'ini_dir="\$prefix/etc/php' \
+    "10-languages/install.mac.sh — pecl ini_dir does NOT use \$prefix/etc/php (orphan path)"
+
+# pecl install must NOT have -f (force) flag — that bypasses pecl's own
+# "already installed" short-circuit and forces a full rebuild even when
+# nothing has changed. Combined with the wrong-path bug, this caused
+# ImageMagick + igbinary + mongodb + redis to rebuild every bootstrap.
+assert_code_absent "$LANG_MAC" 'pecl_bin" install -f' \
+    "10-languages/install.mac.sh — pecl install does NOT use -f (no forced rebuild)"
+
+# Multi-signal detection: php -m + pecl list + ini file presence.
+# At least 2 of the 3 must be checked so a transient failure of any
+# single signal does not cascade into reinstall.
+assert_pattern_present "$LANG_MAC" 'pecl_bin" list' \
+    "10-languages/install.mac.sh — detection includes pecl list as fallback signal"
+
+# Orphan cleanup: scan and remove ini files from the old wrong path
+# so re-runs do not leave dead bytes in $BREW_PREFIX/opt/php@X.Y/etc/.
+assert_pattern_present "$LANG_MAC" 'orphan ini from old wrong path' \
+    "10-languages/install.mac.sh — sweeps orphan inis from previous wrong-path bug"
+
+echo
 echo "═══ brew_install_if_missing 3-tier retry (Tier 3 --HEAD bypasses checksum) ═══"
 
 assert_pattern_present "$LANG_MAC" 'BREW_INSTALL_FAILED' \
