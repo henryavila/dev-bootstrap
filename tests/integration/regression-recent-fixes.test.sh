@@ -369,6 +369,43 @@ assert_pattern_present "$TUX_ZSH" 'shell/key-bindings\.zsh' \
     "20-terminal-ux zsh template — DOES source fzf key-bindings.zsh (Ctrl-R / Ctrl-T / Alt-C)"
 
 echo
+echo "═══ Per-version composer wrappers (composer8.4, composer8.3, …) ═══"
+
+# Feature: `composer` (no suffix) always binds to \$PHP_DEFAULT. For every
+# OTHER version in \$PHP_VERSIONS, generate ~/.local/bin/composer<maj.min>
+# that runs Composer via that specific PHP binary. Lets users do
+# `composer8.4 install` in a shell where the default PHP is 8.5, without
+# flipping the global alternative via php-use.
+
+# Mac: wrapper uses \$BREW_PREFIX/opt/php@<ver>/bin/php + \$BREW_PREFIX/bin/composer
+assert_pattern_present "$LANG_MAC" 'composer\$\{ver\}' \
+    "10-languages/install.mac.sh — declares composer\${ver} wrapper path"
+
+assert_pattern_present "$LANG_MAC" '\[\[ "\$ver" == "\$PHP_DEFAULT" \]\] && continue' \
+    "10-languages/install.mac.sh — skips wrapper for PHP_DEFAULT (redundant with plain composer)"
+
+assert_pattern_present "$LANG_MAC" 'BREW_PREFIX/opt/php@\$\{ver\}/bin/php' \
+    "10-languages/install.mac.sh — wrapper points to correct php binary path for Mac"
+
+assert_pattern_present "$LANG_MAC" 'chmod \+x "\$_wrapper"' \
+    "10-languages/install.mac.sh — wrapper is made executable"
+
+# WSL: wrapper uses /usr/bin/php<ver> + /usr/local/bin/composer
+LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
+
+assert_pattern_present "$LANG_WSL" 'composer\$\{ver\}' \
+    "10-languages/install.wsl.sh — declares composer\${ver} wrapper path"
+
+assert_pattern_present "$LANG_WSL" '\[\[ "\$ver" == "\$PHP_DEFAULT" \]\] && continue' \
+    "10-languages/install.wsl.sh — skips wrapper for PHP_DEFAULT"
+
+assert_pattern_present "$LANG_WSL" '/usr/bin/php\$\{ver\}' \
+    "10-languages/install.wsl.sh — wrapper points to /usr/bin/php<ver> (WSL layout)"
+
+assert_pattern_present "$LANG_WSL" 'chmod \+x "\$_wrapper"' \
+    "10-languages/install.wsl.sh — wrapper is made executable"
+
+echo
 echo "═══ Topic rename complete: no '60-laravel-stack' references in code ═══"
 
 # Allow:

@@ -214,6 +214,43 @@ else
     ok "Composer already installed ($(composer --version --no-ansi 2>/dev/null | head -1 || true))"
 fi
 
+# ─── Per-version composer wrappers ──────────────────────────────────
+# `composer` (no suffix) always uses $PHP_DEFAULT (via update-alternatives
+# → `php`). Generate `composer<maj.min>` for each NON-default version so
+# `composer8.4 install` works from an 8.5-default environment without
+# calling `php-use 8.4` globally.
+#
+# WSL installs php binaries at /usr/bin/php<maj.min>; composer lives at
+# /usr/local/bin/composer. Wrappers land in ~/.local/bin (user-writable,
+# in PATH by dotfiles/dev-bootstrap convention).
+_compose_wrapper_dir="$HOME/.local/bin"
+mkdir -p "$_compose_wrapper_dir"
+_composer_bin="/usr/local/bin/composer"
+for ver in $PHP_VERSIONS; do
+    [[ "$ver" == "$PHP_DEFAULT" ]] && continue
+    _php_bin="/usr/bin/php${ver}"
+    _wrapper="$_compose_wrapper_dir/composer${ver}"
+    if [[ ! -x "$_php_bin" ]]; then
+        warn "composer${ver}: php${ver} not installed at $_php_bin — skipping wrapper"
+        continue
+    fi
+    if [[ ! -x "$_composer_bin" ]]; then
+        warn "composer${ver}: $_composer_bin not executable — skipping wrapper"
+        continue
+    fi
+    cat > "$_wrapper" <<EOF
+#!/usr/bin/env bash
+# composer${ver} — Managed by dev-bootstrap / 10-languages.
+# Runs Composer with PHP ${ver} instead of the machine's default PHP.
+# Generated once per non-default version in PHP_VERSIONS; safe to delete
+# (bootstrap re-creates) but not safe to edit (overwritten on next run).
+exec "${_php_bin}" "${_composer_bin}" "\$@"
+EOF
+    chmod +x "$_wrapper"
+    ok "composer${ver} → php${ver}"
+done
+unset _compose_wrapper_dir _composer_bin _php_bin _wrapper
+
 # ─── Python ────────────────────────────────────────────────────────────
 if ! command -v python3 >/dev/null 2>&1; then
     info "installing python3"

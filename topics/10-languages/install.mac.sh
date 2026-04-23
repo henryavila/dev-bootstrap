@@ -437,6 +437,45 @@ done
 brew_install_if_missing composer
 brew_install_if_missing python@3.13
 
+# ─── Per-version composer wrappers ──────────────────────────────────
+# `composer` (no suffix) always uses $PHP_DEFAULT (via `php` on PATH).
+# Generate `composer<maj.min>` wrappers for every NON-default version so
+# users can run `composer8.4 install` in a 8.5-default environment
+# without calling `php-use 8.4` globally. Idempotent: overwrites on each
+# bootstrap run, which is intentional (path of php_bin/composer_bin may
+# change after brew upgrade or BREW_PREFIX move).
+#
+# Scope: only versions declared in $PHP_VERSIONS — never touches
+# `composer<PHP_DEFAULT>` (would be redundant with plain `composer`) and
+# never touches versions the user removed from the config.
+_compose_wrapper_dir="$HOME/.local/bin"
+mkdir -p "$_compose_wrapper_dir"
+_composer_bin="$BREW_PREFIX/bin/composer"
+for ver in $PHP_VERSIONS; do
+    [[ "$ver" == "$PHP_DEFAULT" ]] && continue
+    _php_bin="$BREW_PREFIX/opt/php@${ver}/bin/php"
+    _wrapper="$_compose_wrapper_dir/composer${ver}"
+    if [[ ! -x "$_php_bin" ]]; then
+        warn "composer${ver}: php@${ver} not installed at $_php_bin — skipping wrapper"
+        continue
+    fi
+    if [[ ! -x "$_composer_bin" ]]; then
+        warn "composer${ver}: $_composer_bin not executable — skipping wrapper"
+        continue
+    fi
+    cat > "$_wrapper" <<EOF
+#!/usr/bin/env bash
+# composer${ver} — Managed by dev-bootstrap / 10-languages.
+# Runs Composer with PHP ${ver} instead of the machine's default PHP.
+# Generated once per non-default version in PHP_VERSIONS; safe to delete
+# (bootstrap re-creates) but not safe to edit (overwritten on next run).
+exec "${_php_bin}" "${_composer_bin}" "\$@"
+EOF
+    chmod +x "$_wrapper"
+    ok "composer${ver} → php@${ver}"
+done
+unset _compose_wrapper_dir _composer_bin _php_bin _wrapper
+
 # ─── Brew install failure summary ────────────────────────────────────
 if [[ "${#BREW_INSTALL_FAILED[@]}" -gt 0 ]]; then
     followup manual \
