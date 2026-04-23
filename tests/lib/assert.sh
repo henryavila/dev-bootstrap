@@ -128,7 +128,8 @@ assert_file_exists() {
 }
 
 assert_file_contains() {
-    local path="$1" pattern="$2" msg="${3:-$path contains pattern}"
+    local path="$1" pattern="$2"
+    local msg="${3:-$path contains pattern}"
     if [[ ! -f "$path" ]]; then
         fail "$msg (file missing: $path)"
         return
@@ -145,7 +146,8 @@ assert_file_contains() {
 # assert_file_contains for new tests because ERE is more expressive
 # and the argument order matches the other assert_pattern_* helpers.
 assert_pattern_present() {
-    local file="$1" pattern="$2" msg="${3:-$file contains pattern}"
+    local file="$1" pattern="$2"
+    local msg="${3:-$file contains pattern}"
     if [[ ! -f "$file" ]]; then
         fail "$msg (file missing: $file)"
         return
@@ -158,7 +160,8 @@ assert_pattern_present() {
 }
 
 assert_pattern_absent() {
-    local file="$1" pattern="$2" msg="${3:-$file does not contain pattern}"
+    local file="$1" pattern="$2"
+    local msg="${3:-$file does not contain pattern}"
     if [[ ! -f "$file" ]]; then
         fail "$msg (file missing: $file)"
         return

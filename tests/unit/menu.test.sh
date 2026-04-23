@@ -21,6 +21,7 @@ assert_file_exists "$MENU" "lib/menu.sh present"
 # Source menu.sh in isolation. Needs OS + log.sh helpers first.
 # shellcheck source=/dev/null
 source "$REPO_ROOT/lib/log.sh"
+# shellcheck disable=SC2034 # consumed by lib/menu.sh after source
 OS="wsl"
 # shellcheck source=/dev/null
 source "$MENU"

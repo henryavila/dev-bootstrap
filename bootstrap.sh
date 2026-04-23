@@ -60,7 +60,8 @@ export HOME="${HOME:-$(getent passwd "$USER" | cut -d: -f6)}"
 # warnings across hundreds of lines of topic output). Topics invoke
 # `followup <severity> <msg>` from lib/log.sh — the severity bucket
 # (critical / manual / info) drives how the summary renders.
-export BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t dev-bootstrap-followup.XXXXXX 2>/dev/null || mktemp)"
+BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t dev-bootstrap-followup.XXXXXX 2>/dev/null || mktemp)"
+export BOOTSTRAP_FOLLOWUP_FILE
 trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
 
 # Persistent state across bootstrap runs — stores last-used values so

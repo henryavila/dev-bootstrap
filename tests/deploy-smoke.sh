@@ -300,7 +300,8 @@ bash "$DEPLOY_SH" "$fx8/templates" >"$fx8/log" 2>&1 || {
     fail_count=$((fail_count + 1))
 }
 
-# Source the deployed .bashrc in a fresh bash and check the sentinel
+# Source the deployed .bashrc in a fresh bash and check the sentinel.
+# shellcheck disable=SC2034 # read via $probe_bashrc later in this file
 probe_bashrc=$(bash --norc -c "
     unset HOMEBREW_PREFIX HOMEBREW_PREFIX_LOADED_BY_TEST
     HOME='$HOME'

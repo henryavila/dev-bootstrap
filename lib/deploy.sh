@@ -89,7 +89,9 @@ refuse_local_suffix() {
     local what="$1" value="$2"
     local base="${value##*/}"
     case "$base" in
-        *.local|*.local.*|.local)
+        *.local|*.local.*)
+            # `*.local` covers `.local` too (glob `*` matches empty), so
+            # no separate `.local` arm is needed (shellcheck SC2221/2222).
             fail "deploy.sh: refusing $what '$value' with .local-suffix filename."
             fail "  The basename ($base) ends in .local, which is reserved for"
             fail "  user overrides (loaded last, never managed by dev-bootstrap)."
@@ -294,7 +296,8 @@ deploy_one() {
              && ! grep -qiF "managed by dev-bootstrap" "$dst" 2>/dev/null; then
             # Persist the staged content so the user can diff it. tmp_staging/
             # is cleared when deploy.sh exits; /tmp survives until reboot.
-            local inspect_path="/tmp/dev-bootstrap-would-overwrite-$(basename "$dst")-$$"
+            local inspect_path
+            inspect_path="/tmp/dev-bootstrap-would-overwrite-$(basename "$dst")-$$"
             cp "$staged" "$inspect_path" 2>/dev/null || true
             fail "refusing to overwrite $dst — no 'managed by dev-bootstrap' marker."
             fail "This file has user-authored content. Options:"

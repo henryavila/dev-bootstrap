@@ -109,7 +109,16 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 # bash ~/dev-bootstrap/bootstrap.sh"`. We pass env vars inline (not via -e)
 # so the shell inside the container sees them as a single-command prefix —
 # same contract as a developer running the bootstrap by hand from a shell.
-RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' NON_INTERACTIVE=1 bash ~/dev-bootstrap/bootstrap.sh"
+#
+# PHP_VERSIONS is pinned to a two-version subset in CI. The default (all
+# versions from data/php-versions.conf) would spin up 4 versions × 4 PECL
+# extensions = 16 builds. mongodb alone takes ~90s per build, pushing the
+# run over the 600s GHA timeout. Two versions still exercise the
+# per-version ABI isolation fix (lib/pecl-install.sh) — if that breaks,
+# the second version fails and CI catches it. Full 4-version matrix
+# belongs to a deferred Tier 3 E2E (SPEC §14).
+: "${CI_PHP_VERSIONS:=8.4 8.5}"
+RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' NON_INTERACTIVE=1 bash ~/dev-bootstrap/bootstrap.sh"
 
 start=$(date +%s)
 # We write both stdout and stderr to the logfile AND to the terminal via tee.
