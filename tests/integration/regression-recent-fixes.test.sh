@@ -735,4 +735,53 @@ assert_pattern_absent "$PECL_LIB" 'check logs manually' \
     "10-languages/install.wsl.sh — no longer points users at non-existent 'logs'"
 
 echo
+echo "═══ 2026-04-23 : stale \$SHELL + tmux SHELL detection (crc regression) ═══"
+
+# Observed on crc: chsh succeeded (getent passwd = /usr/bin/zsh) but the
+# running ssh/mosh session still had $SHELL=/bin/bash cached from before
+# chsh. tmux server, started under that stale env, then propagated
+# SHELL=/bin/bash to every new pane → status-position wrong, Moshi
+# misdetected sessions, subprocesses opened the wrong shell.
+#
+# Static tests that the 2 detection blocks exist in both installers.
+# The actual runtime behavior is hard to unit-test (requires a session
+# with a real $SHELL mismatch + a running tmux server) — the static
+# asserts ensure the code is present and anyone refactoring gets told
+# before they silently drop the detection.
+
+# --- $SHELL vs /etc/passwd mismatch detection (WSL) ---
+assert_pattern_present "$TUX_WSL" '\$SHELL.*!=.*passwd_shell|passwd_shell.*!=.*\$SHELL' \
+    "20-terminal-ux/install.wsl.sh — detects \$SHELL ≠ /etc/passwd mismatch"
+
+assert_pattern_present "$TUX_WSL" 'exit this ssh/mosh session' \
+    "20-terminal-ux/install.wsl.sh — advisory instructs session reconnect (not just 'exec zsh')"
+
+assert_pattern_present "$TUX_WSL" 'tmux kill-server' \
+    "20-terminal-ux/install.wsl.sh — advisory mentions tmux kill-server for stale server"
+
+# --- tmux server stale SHELL detection (WSL) ---
+assert_pattern_present "$TUX_WSL" 'tmux show-environment -g SHELL' \
+    "20-terminal-ux/install.wsl.sh — probes tmux server's cached SHELL"
+
+# --- same for Mac via dscl ---
+assert_pattern_present "$TUX_MAC" 'UserShell.*!=.*\$SHELL|\$SHELL.*!=.*UserShell|passwd_shell.*!=.*\$SHELL|\$SHELL.*!=.*passwd_shell' \
+    "20-terminal-ux/install.mac.sh — detects \$SHELL ≠ dscl UserShell mismatch"
+
+assert_pattern_present "$TUX_MAC" 'exit this ssh/mosh session' \
+    "20-terminal-ux/install.mac.sh — advisory instructs session reconnect"
+
+assert_pattern_present "$TUX_MAC" 'tmux kill-server' \
+    "20-terminal-ux/install.mac.sh — advisory mentions tmux kill-server"
+
+assert_pattern_present "$TUX_MAC" 'tmux show-environment -g SHELL' \
+    "20-terminal-ux/install.mac.sh — probes tmux server's cached SHELL"
+
+# Advisory text must NOT claim `exec zsh` is a sufficient fix — that
+# only changes the running process, not \$SHELL, so tmux/mosh etc still
+# inherit the stale value. The original "exec zsh" hint is still fine
+# as a LOCAL prompt fix as long as the advisory ALSO explains the full
+# fix via reconnect. We assert the reconnect text is present; we don't
+# forbid 'exec zsh' because it's still a useful convenience.
+
+echo
 summary

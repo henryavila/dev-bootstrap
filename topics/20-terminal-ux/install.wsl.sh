@@ -365,6 +365,58 @@ CHSH_AUTO=0 — auto-attempt skipped.
 Run:     chsh -s \"\$(command -v zsh)\"
 Then:    log out / log back in (or 'exec zsh' to try it first)"
     fi
+
+    # ─── Post-chsh: stale $SHELL + stale tmux server detection ──────
+    # chsh + usermod update /etc/passwd, but the CURRENT shell session's
+    # $SHELL env var stays cached from login time. Subprocesses (tmux,
+    # mosh, scripts) inherit the stale value. Worse: tmux SERVER caches
+    # $SHELL at its own start — all sessions spawned after that inherit
+    # the server's cached value regardless of the shell that attached.
+    #
+    # Observed on crc 2026-04-23: chsh succeeded to /usr/bin/zsh,
+    # but the long-lived ssh session still had SHELL=/bin/bash,
+    # tmux server (started under that session) showed
+    # `tmux show-environment -g SHELL` → `SHELL=/bin/bash`,
+    # every new pane opened bash, Moshi failed to detect tmux sessions,
+    # and `status-position top` never kicked in because the pre-update
+    # config was loaded into a different server context.
+    #
+    # We can't force the user's session to reconnect, so we DETECT the
+    # mismatch + emit an actionable advisory. Re-running the bootstrap
+    # after reconnect sees a clean state and this block is silent.
+    passwd_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
+    if [ -n "$passwd_shell" ] && [ -n "${SHELL:-}" ] && [ "$SHELL" != "$passwd_shell" ]; then
+        followup manual \
+"your current session has \$SHELL=\"$SHELL\" cached from before chsh.
+/etc/passwd now says \"$passwd_shell\". Subprocesses (tmux, mosh,
+scripts) inherit the stale value — tmux panes open the wrong shell,
+Moshi misdetects sessions, prompts may behave unexpectedly.
+
+Fix (idempotent; picks up changes everywhere):
+ 1. exit this ssh/mosh session completely
+ 2. if a tmux server is running:  tmux kill-server  (loses sessions)
+ 3. reconnect — \$SHELL reads fresh from /etc/passwd
+ 4. re-attach / create new tmux sessions"
+    fi
+
+    # Separate: tmux server env may be stale even after user reconnects
+    # if they didn't kill the old server. Detect by comparing
+    # `tmux show-environment -g SHELL` to /etc/passwd.
+    if command -v tmux >/dev/null 2>&1 \
+       && [ -n "$passwd_shell" ] \
+       && tmux list-sessions >/dev/null 2>&1; then
+        tmux_env_shell="$(tmux show-environment -g SHELL 2>/dev/null | cut -d= -f2-)"
+        if [ -n "$tmux_env_shell" ] && [ "$tmux_env_shell" != "$passwd_shell" ]; then
+            followup manual \
+"running tmux server has SHELL=\"$tmux_env_shell\" cached from its
+startup env — all new panes will use this shell regardless of chsh.
+/etc/passwd now says \"$passwd_shell\".
+
+Fix: after reconnecting with a fresh \$SHELL, restart tmux once:
+    tmux kill-server
+New tmux sessions will then open panes with \"$passwd_shell\"."
+        fi
+    fi
 fi
 
 # ─── Post-install: atuin login ───────────────────────────────────────

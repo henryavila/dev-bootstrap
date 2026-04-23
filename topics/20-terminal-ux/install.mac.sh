@@ -198,6 +198,43 @@ Skip the auto-attempt next time:  CHSH_AUTO=0 bash bootstrap.sh"
 CHSH_AUTO=0 — auto-attempt skipped.
 Run:  chsh -s \"$zsh_bin\"   (prompts for your login password)"
     fi
+
+    # ─── Post-chsh: stale $SHELL + stale tmux server detection ──────
+    # Mirror of install.wsl.sh's logic — see that file for the full
+    # explanation and the crc bug that motivated the check. Short form:
+    # chsh updates DirectoryService, but the current session's $SHELL
+    # env var is frozen from login time. Subprocesses and the tmux
+    # server inherit the stale value.
+    passwd_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
+    if [ -n "$passwd_shell" ] && [ -n "${SHELL:-}" ] && [ "$SHELL" != "$passwd_shell" ]; then
+        followup manual \
+"your current session has \$SHELL=\"$SHELL\" cached from before chsh.
+DirectoryService now says \"$passwd_shell\". Subprocesses (tmux,
+mosh, scripts) inherit the stale value — tmux panes open the wrong
+shell, Moshi misdetects sessions, prompts may behave unexpectedly.
+
+Fix (idempotent; picks up changes everywhere):
+ 1. exit this ssh/mosh session completely (or close the Terminal tab)
+ 2. if a tmux server is running:  tmux kill-server  (loses sessions)
+ 3. reconnect / open a new Terminal — \$SHELL reads fresh from DS
+ 4. re-attach / create new tmux sessions"
+    fi
+
+    if command -v tmux >/dev/null 2>&1 \
+       && [ -n "$passwd_shell" ] \
+       && tmux list-sessions >/dev/null 2>&1; then
+        tmux_env_shell="$(tmux show-environment -g SHELL 2>/dev/null | cut -d= -f2-)"
+        if [ -n "$tmux_env_shell" ] && [ "$tmux_env_shell" != "$passwd_shell" ]; then
+            followup manual \
+"running tmux server has SHELL=\"$tmux_env_shell\" cached from its
+startup env — all new panes will use this shell regardless of chsh.
+DirectoryService now says \"$passwd_shell\".
+
+Fix: after reconnecting with a fresh \$SHELL, restart tmux once:
+    tmux kill-server
+New tmux sessions will then open panes with \"$passwd_shell\"."
+        fi
+    fi
 fi
 
 # ─── Post-install: atuin login ───────────────────────────────────────
