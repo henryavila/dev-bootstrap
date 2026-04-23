@@ -141,9 +141,20 @@ if command -v zsh >/dev/null 2>&1; then
             echo "$zsh_bin" | sudo tee -a /etc/shells >/dev/null 2>&1 || true
         fi
 
+        # Sudo strategy (mirror of install.wsl.sh):
+        #   1. `-n` fast-path when the upfront ticket is still warm.
+        #   2. Interactive fallback on a TTY, because 20-terminal-ux
+        #      runs after many minutes of brew installs which easily
+        #      exceed the default timestamp_timeout. Skipped in
+        #      NON_INTERACTIVE so automation never stalls for input.
         chsh_ok=0
         if sudo -n chsh -s "$zsh_bin" "$USER" 2>/dev/null; then
             chsh_ok=1
+        elif [ -t 0 ] && [ -t 1 ] && [ "${NON_INTERACTIVE:-0}" != "1" ]; then
+            info "sudo ticket expired during this run — one prompt to finish chsh"
+            if sudo chsh -s "$zsh_bin" "$USER" </dev/tty 2>/dev/null; then
+                chsh_ok=1
+            fi
         fi
 
         if [ "$chsh_ok" = "1" ]; then
@@ -178,14 +189,18 @@ Run:  chsh -s \"$zsh_bin\"   (prompts for your login password)"
 fi
 
 # ─── Post-install advisory: atuin login (browser OAuth) ─────────────
+# `atuin status` is the reliable login indicator — v18 stopped creating
+# ~/.local/share/atuin/session (credential moved to the daemon/SQLite
+# layer), so filesystem-based detection gave a permanent false-negative
+# advisory on already-logged-in machines.
 if command -v atuin >/dev/null 2>&1; then
-    if [ ! -f "$HOME/.local/share/atuin/session" ]; then
+    if ! atuin status >/dev/null 2>&1; then
         followup manual \
 "atuin installed but not logged in (no cross-machine history yet).
 Run:  atuin login
   (opens a browser → atuin.sh OAuth; no password or key needed)"
     else
-        ok "atuin session present (cross-machine history active)"
+        ok "atuin logged in (cross-machine history active)"
     fi
 fi
 

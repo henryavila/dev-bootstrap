@@ -517,6 +517,38 @@ assert_pattern_present "$TUX_MAC" 'sudo -n chsh -s' \
 assert_pattern_present "$TUX_MAC" 'MDM/directory-managed' \
     "20-terminal-ux/install.mac.sh — advisory when directory is authoritative"
 
+# chsh interactive fallback — sudo -n is a fast-path only; on a TTY we
+# must also try plain `sudo chsh` so the user gets a single password
+# prompt instead of an advisory when the upfront ticket has expired.
+# This was the root cause of the failed chsh on crc (corporate WSL).
+assert_pattern_present "$TUX_WSL" 'sudo chsh -s.*</dev/tty' \
+    "20-terminal-ux/install.wsl.sh — interactive sudo chsh fallback via /dev/tty"
+
+assert_pattern_present "$TUX_WSL" 'NON_INTERACTIVE:-0.*!=.*1' \
+    "20-terminal-ux/install.wsl.sh — interactive fallback skipped in NON_INTERACTIVE"
+
+assert_pattern_present "$TUX_MAC" 'sudo chsh -s.*</dev/tty' \
+    "20-terminal-ux/install.mac.sh — interactive sudo chsh fallback via /dev/tty"
+
+assert_pattern_present "$TUX_MAC" 'NON_INTERACTIVE:-0.*!=.*1' \
+    "20-terminal-ux/install.mac.sh — interactive fallback skipped in NON_INTERACTIVE"
+
+# atuin detection — must use `atuin status` exit code, NOT the stale
+# ~/.local/share/atuin/session filesystem check. v18 stopped creating
+# that file; filesystem-based detection gave a permanent false-negative
+# advisory on logged-in machines (observed on ultron + crc + mac).
+assert_pattern_present "$TUX_WSL" 'atuin status >/dev/null 2>&1' \
+    "20-terminal-ux/install.wsl.sh — atuin detection uses 'atuin status' exit code"
+
+assert_pattern_absent "$TUX_WSL" '\[ ! -f "\$HOME/\.local/share/atuin/session" \]' \
+    "20-terminal-ux/install.wsl.sh — no longer checks ~/.local/share/atuin/session (v18 dropped it)"
+
+assert_pattern_present "$TUX_MAC" 'atuin status >/dev/null 2>&1' \
+    "20-terminal-ux/install.mac.sh — atuin detection uses 'atuin status' exit code"
+
+assert_pattern_absent "$TUX_MAC" '\[ ! -f "\$HOME/\.local/share/atuin/session" \]' \
+    "20-terminal-ux/install.mac.sh — no longer checks ~/.local/share/atuin/session (v18 dropped it)"
+
 # Issue 2 — secrets scaffold. bootstrap.sh must source lib/secrets.sh
 # and call secrets_load AFTER log.sh, BEFORE the menu runs.
 SECRETS_LIB="$ROOT/lib/secrets.sh"

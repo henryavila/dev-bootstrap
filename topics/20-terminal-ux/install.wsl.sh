@@ -298,12 +298,28 @@ if command -v zsh >/dev/null 2>&1; then
         # Try chsh first (friendlier error messages). Fall back to
         # usermod -s — some PAM policies refuse chsh but accept
         # usermod since it only writes /etc/passwd directly. Both
-        # need sudo, and sudo uses the already-warm ticket.
+        # need sudo.
+        #
+        # Sudo strategy:
+        #   1. `-n` (silent) — fast-path when bootstrap.sh's upfront
+        #      `sudo -v` ticket is still valid. Covers most non-corp
+        #      runs that finish under timestamp_timeout (~15min).
+        #   2. Interactive fallback — 20-terminal-ux runs after many
+        #      minutes of apt/brew installs; the cache often expires.
+        #      On a TTY, prompt for password once. Skipped in
+        #      NON_INTERACTIVE mode so CI/automation never stalls.
         chsh_ok=0
         if sudo -n chsh -s "$zsh_bin" "$USER" 2>/dev/null; then
             chsh_ok=1
         elif sudo -n usermod -s "$zsh_bin" "$USER" 2>/dev/null; then
             chsh_ok=1
+        elif [ -t 0 ] && [ -t 1 ] && [ "${NON_INTERACTIVE:-0}" != "1" ]; then
+            info "sudo ticket expired during this run — one prompt to finish chsh"
+            if sudo chsh -s "$zsh_bin" "$USER" </dev/tty 2>/dev/null; then
+                chsh_ok=1
+            elif sudo usermod -s "$zsh_bin" "$USER" </dev/tty 2>/dev/null; then
+                chsh_ok=1
+            fi
         fi
 
         if [ "$chsh_ok" = "1" ]; then
@@ -342,16 +358,22 @@ fi
 # ─── Post-install advisory: atuin login ──────────────────────────────
 # Binary + shell init are in place, but we don't log in automatically:
 # login opens a browser for atuin.sh OAuth, which only the user can
-# complete. Detecting logged-out state: ~/.local/share/atuin/session is
-# created on successful login.
+# complete.
+#
+# Detection: `atuin status` exits 0 when logged in (prints Username),
+# exits non-zero with "not logged in" when not. We used to check for
+# ~/.local/share/atuin/session, but atuin v18 stopped creating that
+# file — the credential migrated into the daemon/SQLite layer.
+# Filesystem-based detection gave a permanent false-negative advisory
+# even on machines where sync was active.
 if command -v atuin >/dev/null 2>&1; then
-    if [ ! -f "$HOME/.local/share/atuin/session" ]; then
+    if ! atuin status >/dev/null 2>&1; then
         followup manual \
 "atuin installed but not logged in (no cross-machine history yet).
 Run:  atuin login
   (opens a browser → atuin.sh OAuth; no password or key needed)"
     else
-        ok "atuin session present (cross-machine history active)"
+        ok "atuin logged in (cross-machine history active)"
     fi
 fi
 
