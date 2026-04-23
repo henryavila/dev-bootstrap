@@ -900,4 +900,32 @@ for f in "$REM_ZSH" "$REM_BASH"; do
 done
 
 echo
+echo "═══ 80-claude-code fragment puts Bun in PATH (fixes crc bun-not-in-PATH bug) ═══"
+
+# Observed on crc: ~/.bun/bin/bun existed (103 MB) but `which bun`
+# returned "bun not found". Cause: 80-claude-code's installer does
+# `export PATH=...` inside the install script (doesn't persist) and
+# `curl bun.sh/install | bash` writes to .bashrc/.zshrc — but our
+# managed .bashrc/.zshrc templates overwrite those writes. Fix:
+# ship a .bashrc.d/.zshrc.d fragment that puts Bun in PATH, gated
+# on file existence (same pattern as 10-languages + fnm).
+CLAUDE_BASH="$ROOT/topics/80-claude-code/templates/bashrc.d-80-claude-code.sh"
+CLAUDE_ZSH="$ROOT/topics/80-claude-code/templates/zshrc.d-80-claude-code.sh"
+
+assert_file_exists "$CLAUDE_BASH" \
+    "80-claude-code — bashrc fragment exists"
+assert_file_exists "$CLAUDE_ZSH" \
+    "80-claude-code — zshrc fragment exists"
+
+for f in "$CLAUDE_BASH" "$CLAUDE_ZSH"; do
+    base="$(basename "$f")"
+    assert_pattern_present "$f" '\$HOME/\.bun/bin/bun' \
+        "$base — gates on ~/.bun/bin/bun presence"
+    assert_pattern_present "$f" 'export PATH=.*(\.bun/bin|BUN_INSTALL/bin)' \
+        "$base — prepends ~/.bun/bin to PATH"
+    assert_pattern_present "$f" 'BUN_INSTALL' \
+        "$base — exports BUN_INSTALL so bun's internal tooling resolves its root"
+done
+
+echo
 summary
