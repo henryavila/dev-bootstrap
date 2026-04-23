@@ -100,16 +100,18 @@ If you see a `!` line in the bootstrap output, it's pointing at a next step. Rea
 | Topic | Installs / applies | Opt-in |
 |-------|--------------------|--------|
 | `00-core` | git, curl, build-essential, jq, unzip, envsubst (gettext) | — |
-| `10-languages` | Node via fnm + LTS, PHP (multi-version via ondrej ppa / brew; picked in the menu), Python 3 | — |
-| `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove | — |
-| `30-shell` | `~/.bashrc` / `~/.zshrc` loaders + `~/.inputrc` (word-kill, completion niceties) | — |
-| `40-tmux` | tmux + `~/.tmux.conf` (prefix `Ctrl+a`) | — |
+| `10-languages` | Node via fnm + LTS, PHP (multi-version via ondrej ppa / brew; picked in the menu), Python 3, per-version `composer<ver>` wrappers | — |
+| `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove; ships shell fragment with listing + Phase E aliases (top→btop, df→duf, du→dust, ping→gping, http→xh, ps→procs) | — |
+| `30-shell` | `~/.bashrc` / `~/.zshrc` loaders + `~/.inputrc` (word-kill, completion niceties); shell fragment with navigation (`..`, `home`), shortcuts (`h`/`c`/`cla`), `alert` (Linux), utility funcs (`mkd`/`md`/`fs`/`tre`) | — |
+| `40-tmux` | tmux + `~/.tmux.conf` (prefix `Ctrl+a`; `default-shell` resolved from `/etc/passwd`) + shell fragment with `tl`/`ta`/`tn`/`tm` (attach-or-create 'main') | — |
 | `50-git` | opinionated global gitconfig (delta, zdiff3, aliases) + `~/.bashrc.d/50-git.sh` with aliases `g` / `gs` / `gco` / `whoops` / `gmm` + `__git_complete` | — |
-| `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, `*.localhost` catchall | `INCLUDE_WEBSTACK=1` |
-| `70-remote-access` | sshd (hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + systemd drop-in setting MTU 1200 on `tailscale0` (prevents SSH KEX PQ hang) | `INCLUDE_REMOTE=1` |
+| `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, `*.localhost` catchall; shell fragment with Laravel (`art`, `artisan`, `cinst`, `migrate`…) + service restart (`srn`, `srp`, `srr`…) | `INCLUDE_WEBSTACK=1` |
+| `70-remote-access` | sshd (hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + systemd drop-in setting MTU 1200 on `tailscale0` (prevents SSH KEX PQ hang); shell fragment with Tailscale aliases (`ts`, `tip`, `tup`, `tping`, `tssh`…) + `tip-of()` helper | `INCLUDE_REMOTE=1` |
 | `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — foundation for cross-machine Claude Sync via the dotfiles layer | — |
 | `90-editor` | `~/.local/bin/typora-wait` — opens `.md` files in the Typora GUI from the terminal; WSL delegates to `Typora.exe` via interop (`wslpath -w`), macOS uses `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
 | `95-dotfiles-personal` | clones `$DOTFILES_REPO` into `$DOTFILES_DIR` (default `~/dotfiles`) + runs its `install.sh` | `DOTFILES_REPO=<url>` |
+
+Full alias inventory: [`docs/ALIASES.md`](docs/ALIASES.md).
 
 Every topic has its own `README.md`. Internal flow: `install.$OS.sh` (if present) or `install.sh` (OS-agnostic fallback), then `lib/deploy.sh` processes `templates/` when applicable. Templates named `bashrc.d-<topic>.sh` / `zshrc.d-<topic>.sh` map automatically to `~/.bashrc.d/<topic>.sh` / `~/.zshrc.d/<topic>.sh`.
 
@@ -128,7 +130,14 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 | `DOTFILES_DIR` | clone destination (default `~/dotfiles`) |
 | `GIT_NAME` / `GIT_EMAIL` | identity — applied only when `user.name` / `user.email` aren't set yet (topic 50-git preserves existing values) |
 | `CODE_DIR` | projects root (default `~/code/web`) |
-| `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | enable opt-in topics |
+| `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` / `INCLUDE_DOCKER` | enable opt-in topics |
+| `INCLUDE_MAILPIT=1` / `INCLUDE_NGROK=1` / `INCLUDE_MSSQL=1` | 60-web-stack extras (when `INCLUDE_WEBSTACK=1`) |
+| `NGROK_AUTHTOKEN` | ngrok token auto-configured during install; if unset, the menu prompts (passwordbox) and persists to `~/.local/state/dev-bootstrap/secrets.env` (mode 0600) |
+| `CHSH_AUTO=0` | skip the auto-`sudo chsh` attempt in 20-terminal-ux (defaults to 1 — tries to set zsh as default login shell using the cached sudo ticket, falls back to an advisory if refused) |
+| `ATUIN_LOGIN_AUTO=0` | skip the inline `atuin login` in 20-terminal-ux (defaults to 1 on TTY; opens browser for atuin.sh OAuth) |
+| `GPG_SIGN=1` (+ `GPG_KEY_ID=<id>`) | enable GPG commit signing in 50-git |
+| `PHP_VERSIONS="8.4 8.5"` (+ `PHP_DEFAULT=8.5`) | pin PHP versions installed by 10-languages (defaults to all in `data/php-versions.conf`) |
+| `DEV_DEFAULT_PORT=3000` | default port for `*.front.localhost` proxy in 60-web-stack |
 | `NO_COLOR=1` | disable colored output (auto when not a TTY) |
 
 ## MySQL 8 notes
@@ -165,6 +174,7 @@ dev-bootstrap/
 | `v2026-04-20` | Topic `80-claude-code` split into `install.wsl.sh` / `install.mac.sh`; **installs Syncthing daemon** for cross-machine Claude Sync (the `claude/` folder in dotfiles-template uses `.stignore` to control what replicates). |
 | `v2026-04-21` | Topic `70-remote-access` automates the Tailscale MTU fix via drop-in `/etc/systemd/system/tailscaled.service.d/mtu.conf` (Linux). Mac ships an on-demand `scripts/mac-tailscale-mtu-fix.sh`. Hotfixes: starship TOML scope bug fix, `sudo -v` warmup on bootstrap start, removal of legacy `/etc/sudoers.d/10-${USER}-nopasswd`. |
 | `v2026-04-22` | **Interactive whiptail menu is the new default** (opt-in topic selection + git identity + paths); `--non-interactive` and `--dry-run` CLI flags. MySQL 8 pinned explicitly (`mysql-server-8.0` WSL / `mysql@8.0` Mac) with Oracle DMG escape hatch. Topic `90-editor` repositioned: `typora-wait` handles WSL→Windows Typora via `wslpath -w` interop and uses `open -W -a Typora` on macOS (LaunchServices-based discovery). |
+| (untagged, 2026-04-23) | Massive UX day — **auto-chsh** + **inline `atuin login`** + **`lib/secrets.sh` scaffold** (NGROK_AUTHTOKEN prompted via menu passwordbox, persisted to `~/.local/state/dev-bootstrap/secrets.env`). `_has_ctty()` via `/dev/tty` fixes TTY detection under `\| tee` pipe (all interactive fallbacks were dead code before). **PECL per-version install** cascade fixed across 6 commits + extracted to `lib/pecl-install.sh` (shared by 10-languages base + 60-web-stack MSSQL). `tmux.conf` resolves `default-shell` via `getent passwd`/`dscl` instead of stale `$SHELL`. **CI green** — `PHP_VERSIONS="8.4 8.5"` in smoke-test, all shellcheck warnings cleared. Major **alias migration** from private dotfiles to public topic fragments (30-shell/20-terminal-ux/40-tmux/60-web-stack/70-remote-access each got its shell fragment). |
 
 ### Release discipline
 
@@ -178,8 +188,9 @@ Hotfixes with no structural change (template bug, README typo) use regular commi
 
 ## CI
 
-- `.github/workflows/lint.yml` (Tier 1) — shellcheck + `bash -n` on every push/PR.
-- `.github/workflows/integration.yml` (Tier 2, planned for v1.1) — runs `bootstrap.sh` against a matrix of `ubuntu-22.04`, `ubuntu-24.04`, `macos-latest`, validates idempotency (2nd run = noop), and executes each topic's `verify.sh`.
+- `.github/workflows/lint.yml` (Tier 1) — shellcheck `-S warning` + `bash -n` on every push/PR. Fast (<20s).
+- `.github/workflows/smoke-test.yml` (Tier 2) — green on `ubuntu-24.04` as of 2026-04-23. Builds a Docker image that mimics a fresh WSL Ubuntu, runs `bootstrap.sh` non-interactively with `PHP_VERSIONS="8.4 8.5"` (two-version matrix to exercise the per-version ABI isolation without overshooting the 600s timeout — the full 4-version matrix stays for Tier 3). Uploads the run log as artifact on failure.
+- Tier 3 E2E (planned, v1.1) — daily matrix across `ubuntu-22.04` / `ubuntu-24.04` / `macos-latest` with full PHP version set + idempotency check (2nd run = noop) + each topic's `verify.sh`.
 
 ## Personal dotfiles
 
