@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # ~/.zshrc.d/40-tmux.sh — generic tmux shortcuts shipped with
 # dev-bootstrap. Personal project-specific session aliases (e.g. `th`
 # for a session named 'arch') belong in your private dotfiles, NOT

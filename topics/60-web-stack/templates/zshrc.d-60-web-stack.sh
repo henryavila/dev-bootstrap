@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # ~/.zshrc.d/60-web-stack.sh — Laravel + PHP + service shortcuts.
 # Deployed only when the user opted into INCLUDE_WEBSTACK=1, so aliases
 # for tools that aren't installed never pollute other profiles.

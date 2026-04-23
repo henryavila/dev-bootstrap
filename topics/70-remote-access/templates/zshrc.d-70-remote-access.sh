@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # ~/.zshrc.d/70-remote-access.sh — Tailscale shortcuts.
 # Deployed only when INCLUDE_REMOTE=1.
 
