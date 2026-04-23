@@ -108,22 +108,38 @@ if [[ -x "$VALET_BIN" ]]; then
     #   - Valet's config dir exists at ~/.config/valet
     #   - `valet --version` returns successfully
     # Both conditions met = stack is up; no need to re-install.
-    # TEMPORARY (2026-04-22): skip-detection commented out to FORCE
-    # valet install on every run. Goal: validate the unsilenced-stderr
-    # fix (no more hang on sudo prompt). Revert this block (uncomment
-    # the if/else) once user confirms valet install runs cleanly.
-    # See PROJECT_STATUS §4 for the in-flight validation task.
+    # Three branches:
     #
-    # if [[ -d "$HOME/.config/valet" ]] \
-    #    && "$VALET_BIN" --version >/dev/null 2>&1; then
-    #     ok "valet already installed and configured (skipping valet install)"
-    # else
-        info "valet install (FORCED — temporary validation; nginx + dnsmasq + HTTPS setup; ~30s)"
-        # Don't suppress stderr: valet install needs sudo for nginx + dnsmasq
-        # daemons. Sudo prompt MUST be visible (lesson from mkcert hang).
+    #   1. FORCE_VALET_INSTALL=1 — explicit user request to re-run
+    #      `valet install` even when it looks already-set-up. Useful
+    #      after macOS upgrades that rotated dnsmasq config, or when
+    #      debugging a borked Valet state. Skip-detection bypassed.
+    #
+    #   2. Already installed (default skip) — valet config dir exists
+    #      AND `valet --version` returns successfully. Stack is up;
+    #      avoid the 10-30s redundant nginx/dnsmasq/mkcert dance.
+    #      The hint in the success message tells future-you the
+    #      escape hatch.
+    #
+    #   3. Not installed (first run) — actually run `valet install`.
+    #
+    # In branches 1 and 3 we DO NOT suppress stderr: `valet install`
+    # shells to sudo for nginx + dnsmasq daemons, and the sudo prompt
+    # MUST be visible. Hiding it (via >/dev/null 2>&1) was the root
+    # cause of the bootstrap-hangs-forever report — same class as the
+    # mkcert hang we already fixed.
+    if [[ "${FORCE_VALET_INSTALL:-0}" == "1" ]]; then
+        info "valet install (FORCE_VALET_INSTALL=1; nginx + dnsmasq + HTTPS setup; ~30s)"
         "$VALET_BIN" install \
             || warn "valet install returned non-zero"
-    # fi
+    elif [[ -d "$HOME/.config/valet" ]] \
+         && "$VALET_BIN" --version >/dev/null 2>&1; then
+        ok "valet already installed and configured (skipping valet install — set FORCE_VALET_INSTALL=1 to re-run)"
+    else
+        info "valet install (first time; nginx + dnsmasq + HTTPS setup; ~30s)"
+        "$VALET_BIN" install \
+            || warn "valet install returned non-zero"
+    fi
 
     # All `valet` subcommands below shell out to sudo for daemon
     # restarts (dnsmasq, nginx). Refresh the sudo cache once here so the

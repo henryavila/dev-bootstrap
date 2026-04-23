@@ -29,6 +29,10 @@
 #                       PECL extensions (ACCEPT_EULA=Y auto-set)
 #   NGROK_AUTHTOKEN     ngrok token to auto-configure during install
 #   DEV_DEFAULT_PORT    default port for *.front.localhost proxy (default 3000)
+#   FORCE_VALET_INSTALL=1  (Mac only) force re-run `valet install` even when
+#                       it appears already configured. Useful after macOS
+#                       upgrades that rotate dnsmasq config or when
+#                       recovering from a corrupted Valet state.
 #   NO_COLOR=1          disable colored output (auto if not a TTY)
 #
 # Usage: bash bootstrap.sh [--help] [--non-interactive]

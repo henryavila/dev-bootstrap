@@ -179,7 +179,19 @@ valet park $CODE_DIR                   # every subdir becomes <name>.localhost
 
 The `valet tld localhost` step is important: URLs work identically on WSL and Mac (`https://foo.localhost`) — your muscle memory doesn't switch based on the platform. `link-project` on Mac is a thin wrapper around `valet secure` + `valet proxy`. Same command name, different backend.
 
-Oracle MySQL DMG: if `/usr/local/mysql/bin/mysql` exists, the installer **skips** `brew install mysql@8.0` entirely. No double-install conflict.
+Oracle MySQL DMG: if `/usr/local/mysql/bin/mysql` exists, the installer **skips** `brew install mysql@8.0` entirely. No double-install conflict. The DMG bin path is auto-registered in `/etc/paths.d/61-oracle-mysql` so `mysql` / `mysqladmin` / `mysqldump` are reachable in interactive shells AND in non-interactive sshd-exec contexts (where `~/.zshrc` is not sourced).
+
+### Forcing a Valet re-install
+
+By default, the topic detects an existing healthy Valet (config dir at `~/.config/valet` plus successful `valet --version`) and skips `valet install` to save 10-30s of redundant nginx/dnsmasq/mkcert work. To bypass that detection — useful after a macOS upgrade that rotated dnsmasq config, or when recovering from a corrupted Valet state:
+
+```bash
+FORCE_VALET_INSTALL=1 bash bootstrap.sh --non-interactive
+# or scoped to just this topic:
+FORCE_VALET_INSTALL=1 ONLY_TOPICS="60-web-stack" bash bootstrap.sh --non-interactive
+```
+
+The flag is one-shot — it does not persist in the bootstrap state file. Subsequent runs without the var go back to the skip-when-healthy default.
 
 ## Quick reference
 
