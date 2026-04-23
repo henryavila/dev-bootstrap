@@ -186,6 +186,20 @@ assert_code_absent "$LANG_MAC" 'pecl_bin" install -f' \
 assert_pattern_present "$LANG_MAC" 'pecl_bin" list' \
     "10-languages/install.mac.sh — detection includes pecl list as fallback signal"
 
+# pecl "already installed" must be treated as success (it returns
+# non-zero exit code but the .so is on disk — Path 2 in the function
+# above ALSO handles this preemptively).
+assert_pattern_present "$LANG_MAC" 'already installed' \
+    "10-languages/install.mac.sh — pecl 'already installed' detected as success"
+
+# Failure output must be CAPTURED + surfaced on real failures, not
+# silenced. Old behavior: `>/dev/null 2>&1` masked every failure cause.
+assert_code_absent "$LANG_MAC" 'pecl_bin" install [^|]*>/dev/null 2>&1' \
+    "10-languages/install.mac.sh — pecl install output NOT silenced"
+
+assert_pattern_present "$LANG_MAC" 'pecl_out=' \
+    "10-languages/install.mac.sh — captures pecl output for diagnostic on failure"
+
 # Orphan cleanup: scan and remove ini files from the old wrong path
 # so re-runs do not leave dead bytes in $BREW_PREFIX/opt/php@X.Y/etc/.
 assert_pattern_present "$LANG_MAC" 'orphan ini from old wrong path' \

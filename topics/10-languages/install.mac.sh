@@ -197,46 +197,66 @@ pecl_install_for_mac() {
     # .ini files (verifiable via `php --ini`):
     #   $BREW_PREFIX/etc/php/<VER>/conf.d/  ← correct
     #   $prefix/etc/php/<VER>/conf.d/       ← WRONG (under opt/, never scanned)
-    # An older version of this function used the wrong path, so .so
-    # files compiled fine but never loaded → `php -m` never showed
-    # them → detection check below failed every run → pecl reinstalled
-    # forever in a perfect retry loop.
+    # An older version of this function used the wrong path; the orphan
+    # cleanup loop above sweeps any leftovers from that era.
     local ini_dir="$BREW_PREFIX/etc/php/${ver}/conf.d"
     local ini_file="${ini_dir}/ext-${ext}.ini"
 
     [[ ! -x "$pecl_bin" ]] && { warn "$pecl_bin not found — skipping ext=$ext for php@${ver}"; return; }
 
-    # Detection (skip-when-installed). Three signals, any positive = skip:
-    #   1. `php -m` shows the extension (canonical: it actually loaded)
-    #   2. pecl's own registry knows about it (`pecl list -i`)
-    #   3. The conf.d ini file we would write already exists
-    # 1 is the most authoritative; 2+3 are safety nets for cases where
-    # `php -m` momentarily fails (broken symlink during brew upgrade,
-    # transient permission issue) but the extension IS in fact installed.
+    # Inline helper: write conf.d ini only if absent. Idempotent.
+    _ensure_ini() {
+        mkdir -p "$ini_dir"
+        if [[ ! -f "$ini_file" ]]; then
+            echo "extension=${ext}.so" > "$ini_file"
+        fi
+    }
+
+    # ── Detection paths (in order; first match returns) ──────────────
+
+    # Path 1: extension already LOADED in PHP — fully done, skip silently.
     if "$php_bin" -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
+        _ensure_ini   # belt-and-suspenders: ini in right path even if PHP
+                      # is loading it via some other mechanism
         ok "php@${ver}: $ext already loaded"
         return 0
     fi
-    if "$pecl_bin" list 2>/dev/null | grep -qE "^${ext}\s" \
-       && [[ -f "$ini_file" ]]; then
-        ok "php@${ver}: $ext installed via pecl + ini present (no reinstall)"
+
+    # Path 2: pecl already BUILT the .so but PHP is not loading it.
+    # Almost always the ini-path migration scenario — pecl install ran
+    # under the old wrong-path code, the .so is on disk and registered
+    # with pecl, but our conf.d ini was orphaned. Just write the ini
+    # in the right place; PHP picks it up next launch.
+    if "$pecl_bin" list 2>/dev/null | grep -qE "^${ext}[[:space:]]"; then
+        info "php@${ver}: $ext already built via pecl — writing ini at correct path"
+        _ensure_ini
+        ok "php@${ver}: $ext enabled (existing build + correct ini)"
         return 0
     fi
 
-    # Drop the `-f` flag — was forcing reinstall even when already
-    # built. With proper detection above, we only reach this branch on
-    # genuine first install; pecl's own "already installed" short-
-    # circuits any remaining waste.
+    # Path 3: genuine first install. Capture output for diagnostics —
+    # the previous `>/dev/null 2>&1` made every failure indistinguishable
+    # ("failed — continuing" with no clue why). Now we keep the output,
+    # only show it on failure, and special-case "already installed"
+    # which pecl emits as exit-1 even though it is a no-op (handled
+    # already by Path 2 above; this is just defense in depth).
     info "php@${ver}: pecl install $ext"
-    printf '\n' | "$pecl_bin" install "$ext" >/dev/null 2>&1 || {
-        warn "php@${ver}: pecl install $ext failed — continuing"
-        return 0
-    }
+    local pecl_out pecl_rc
+    pecl_out=$(printf '\n' | "$pecl_bin" install "$ext" 2>&1) ; pecl_rc=$?
 
-    mkdir -p "$ini_dir"
-    if [[ ! -f "$ini_file" ]]; then
-        echo "extension=${ext}.so" > "$ini_file"
+    if [[ "$pecl_rc" -ne 0 ]]; then
+        if printf '%s' "$pecl_out" | grep -qiE "already installed|is already enabled"; then
+            info "php@${ver}: pecl reports $ext already installed — writing ini"
+            _ensure_ini
+            ok "php@${ver}: $ext enabled"
+            return 0
+        fi
+        warn "php@${ver}: pecl install $ext failed (exit $pecl_rc) — continuing"
+        printf '%s\n' "$pecl_out" | tail -8 | sed 's/^/    /' >&2
+        return 0
     fi
+
+    _ensure_ini
     ok "php@${ver}: $ext enabled"
 }
 
