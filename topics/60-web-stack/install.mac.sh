@@ -156,7 +156,18 @@ if [[ -x "$VALET_BIN" ]]; then
         # stderr visible (NOT >/dev/null 2>&1) so the sudo password prompt
         # surfaces. The previous silenced-redirect masked the prompt and
         # made the bootstrap appear to hang forever waiting on input.
-        "$VALET_BIN" tld localhost \
+        #
+        # Valet 4.x added an interactive confirmation: "Using a custom TLD
+        # is no longer officially supported and may lead to unexpected
+        # behavior. Do you wish to proceed? [y/N]". Default is N, which
+        # would leave us stuck on .test. Pipe 'y' to auto-confirm.
+        # Rationale: D22 in PROJECT_STATUS — .localhost is RFC 6761
+        # browser-native (Chrome/Edge/Firefox/Safari/curl resolve to
+        # 127.0.0.1 without DNS), which is technically SUPERIOR to .test
+        # for our use case despite being "officially unsupported" by Valet.
+        # If Valet ever drops .localhost support entirely, the command
+        # will fail outright and we will revisit.
+        printf 'y\n' | "$VALET_BIN" tld localhost \
             || warn "valet tld localhost failed — sites may still resolve on .test"
     else
         ok "valet tld already = localhost"

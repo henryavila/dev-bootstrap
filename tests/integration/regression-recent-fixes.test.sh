@@ -133,6 +133,12 @@ assert_pattern_absent "$MAC" 'valet install --quiet >/dev/null 2>&1' \
 assert_pattern_absent "$MAC" 'tld localhost >/dev/null 2>&1' \
     "60-web-stack/install.mac.sh — valet tld stderr NOT silenced"
 
+# Valet 4.x added a "Using a custom TLD is no longer officially supported"
+# confirmation prompt with default N. Without piping y, bootstrap hangs
+# waiting on stdin. printf 'y\n' auto-confirms.
+assert_pattern_present "$MAC" "printf 'y" \
+    "60-web-stack/install.mac.sh — valet tld auto-confirms the 'unsupported TLD' prompt"
+
 assert_pattern_absent "$MAC" 'park --quiet >/dev/null 2>&1' \
     "60-web-stack/install.mac.sh — valet park stderr NOT silenced"
 
