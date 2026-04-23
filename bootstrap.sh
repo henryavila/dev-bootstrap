@@ -34,6 +34,10 @@
 #                       (default 1 — tries to set zsh as default login
 #                       shell using the cached sudo ticket; falls back
 #                       to an advisory if refused)
+#   ATUIN_LOGIN_AUTO=0  skip running `atuin login` inline in 20-terminal-ux
+#                       (default 1 on TTY — opens browser for atuin.sh
+#                       OAuth; falls back to an advisory in NON_INTERACTIVE
+#                       mode or when this env is set to 0)
 #   DEV_DEFAULT_PORT    default port for *.front.localhost proxy (default 3000)
 #   FORCE_VALET_INSTALL=1  (Mac only) force re-run `valet install` even when
 #                       it appears already configured. Useful after macOS

@@ -188,19 +188,42 @@ Run:  chsh -s \"$zsh_bin\"   (prompts for your login password)"
     fi
 fi
 
-# ─── Post-install advisory: atuin login (browser OAuth) ─────────────
-# `atuin status` is the reliable login indicator — v18 stopped creating
-# ~/.local/share/atuin/session (credential moved to the daemon/SQLite
-# layer), so filesystem-based detection gave a permanent false-negative
-# advisory on already-logged-in machines.
+# ─── Post-install: atuin login ───────────────────────────────────────
+# Run the OAuth flow inline when the bootstrap is interactive — same
+# philosophy as the interactive chsh fallback above. `atuin login` in
+# v18 opens the system browser (via `open` on macOS) to atuin.sh/login,
+# polls for the OAuth code, and writes the credential into the daemon.
+#
+# Detection: `atuin status` exits 0 when logged in, non-zero with
+# "Error: You are not logged in" when not. v18 stopped creating the
+# ~/.local/share/atuin/session file (credential moved to daemon/SQLite),
+# so filesystem-based detection gave a permanent false-negative.
+#
+# Override: ATUIN_LOGIN_AUTO=0 bash bootstrap.sh  to skip the login
+# attempt and only print the advisory. NON_INTERACTIVE=1 also disables
+# the inline login so CI/automation never stalls for OAuth.
 if command -v atuin >/dev/null 2>&1; then
-    if ! atuin status >/dev/null 2>&1; then
+    if atuin status >/dev/null 2>&1; then
+        ok "atuin logged in (cross-machine history active)"
+    elif [ "${ATUIN_LOGIN_AUTO:-1}" = "1" ] \
+         && [ -t 0 ] && [ -t 1 ] \
+         && [ "${NON_INTERACTIVE:-0}" != "1" ]; then
+        info "atuin not logged in — running 'atuin login' (opens a browser for atuin.sh OAuth)"
+        info "  if the browser does not open, copy the URL atuin prints and finish OAuth there"
+        if atuin login </dev/tty; then
+            ok "atuin logged in (cross-machine history active)"
+        else
+            followup manual \
+"atuin login did not complete (user cancelled or OAuth failed).
+Run manually:  atuin login
+  (opens a browser → atuin.sh OAuth; no password or key needed)
+Skip the auto-attempt next time:  ATUIN_LOGIN_AUTO=0 bash bootstrap.sh"
+        fi
+    else
         followup manual \
 "atuin installed but not logged in (no cross-machine history yet).
 Run:  atuin login
   (opens a browser → atuin.sh OAuth; no password or key needed)"
-    else
-        ok "atuin logged in (cross-machine history active)"
     fi
 fi
 

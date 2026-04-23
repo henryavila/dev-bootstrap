@@ -549,6 +549,21 @@ assert_pattern_present "$TUX_MAC" 'atuin status >/dev/null 2>&1' \
 assert_pattern_absent "$TUX_MAC" '\[ ! -f "\$HOME/\.local/share/atuin/session" \]' \
     "20-terminal-ux/install.mac.sh — no longer checks ~/.local/share/atuin/session (v18 dropped it)"
 
+# Atuin login is now attempted inline when interactive — same design as
+# CHSH_AUTO. Deferring to a post-hoc manual step was inconsistent with
+# the auto-chsh/ngrok-passwordbox pattern shipped alongside it.
+assert_pattern_present "$TUX_WSL" 'ATUIN_LOGIN_AUTO:-1' \
+    "20-terminal-ux/install.wsl.sh — ATUIN_LOGIN_AUTO defaults to 1 (auto-on)"
+
+assert_pattern_present "$TUX_WSL" 'atuin login </dev/tty' \
+    "20-terminal-ux/install.wsl.sh — runs 'atuin login' inline via /dev/tty"
+
+assert_pattern_present "$TUX_MAC" 'ATUIN_LOGIN_AUTO:-1' \
+    "20-terminal-ux/install.mac.sh — ATUIN_LOGIN_AUTO defaults to 1 (auto-on)"
+
+assert_pattern_present "$TUX_MAC" 'atuin login </dev/tty' \
+    "20-terminal-ux/install.mac.sh — runs 'atuin login' inline via /dev/tty"
+
 # Issue 2 — secrets scaffold. bootstrap.sh must source lib/secrets.sh
 # and call secrets_load AFTER log.sh, BEFORE the menu runs.
 SECRETS_LIB="$ROOT/lib/secrets.sh"
