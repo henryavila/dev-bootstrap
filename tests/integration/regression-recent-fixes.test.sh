@@ -776,6 +776,27 @@ assert_pattern_present "$TUX_MAC" 'tmux kill-server' \
 assert_pattern_present "$TUX_MAC" 'tmux show-environment -g SHELL' \
     "20-terminal-ux/install.mac.sh — probes tmux server's cached SHELL"
 
+# tmux.conf must force default-shell from the authoritative login-shell
+# registry (getent passwd on Linux, dscl on macOS), NOT from $SHELL env
+# — because $SHELL is frozen at login time and goes stale after chsh.
+# Without this, `tmux new` after a fresh reconnect picks up the right
+# shell, but `tmux attach` to an old server (carrying stale env) keeps
+# opening the wrong shell. With this, a post-kill-server restart loads
+# tmux.conf and resolves default-shell from /etc/passwd — authoritative.
+TMUX_CONF="$ROOT/topics/40-tmux/templates/tmux.conf"
+
+assert_file_exists "$TMUX_CONF" \
+    "40-tmux/templates/tmux.conf — exists"
+
+assert_pattern_present "$TMUX_CONF" 'default-shell' \
+    "40-tmux/templates/tmux.conf — sets default-shell (not relying on \$SHELL env)"
+
+assert_pattern_present "$TMUX_CONF" 'getent passwd' \
+    "40-tmux/templates/tmux.conf — resolves shell via getent passwd (Linux)"
+
+assert_pattern_present "$TMUX_CONF" 'dscl.*UserShell' \
+    "40-tmux/templates/tmux.conf — resolves shell via dscl (macOS)"
+
 # Advisory text must NOT claim `exec zsh` is a sufficient fix — that
 # only changes the running process, not \$SHELL, so tmux/mosh etc still
 # inherit the stale value. The original "exec zsh" hint is still fine
