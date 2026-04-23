@@ -351,6 +351,24 @@ assert_pattern_present "$WSL" 'grep -qi "managed by dev-bootstrap"' \
     "60-web-stack/install.wsl.sh — legacy catchall removal marker check is case-insensitive"
 
 echo
+echo "═══ fzf shell integration: do NOT source completion.zsh (fzf-tab owns TAB) ═══"
+
+# Regression 2026-04-23: fzf's completion.zsh runs \`bindkey '^I' fzf-completion\`
+# at the end of its source, which races against fzf-tab's own TAB rebinding.
+# When fzf-tab fails to load (turbo regression, zinit issue, etc.), TAB stays
+# stuck on the primitive fzf-completion — user reports "autocomplete not
+# contextual". Defense in depth: only source key-bindings.zsh (Ctrl-R / Ctrl-T
+# / Alt-C); TAB is owned exclusively by fzf-tab, falling back to native zsh
+# \`expand-or-complete\` if fzf-tab is unavailable.
+TUX_ZSH="$ROOT/topics/20-terminal-ux/templates/zshrc.d-20-terminal-ux.sh.template"
+
+assert_pattern_absent "$TUX_ZSH" 'shell/completion\.zsh' \
+    "20-terminal-ux zsh template — does NOT source fzf's completion.zsh (stomps TAB / fzf-tab)"
+
+assert_pattern_present "$TUX_ZSH" 'shell/key-bindings\.zsh' \
+    "20-terminal-ux zsh template — DOES source fzf key-bindings.zsh (Ctrl-R / Ctrl-T / Alt-C)"
+
+echo
 echo "═══ Topic rename complete: no '60-laravel-stack' references in code ═══"
 
 # Allow:

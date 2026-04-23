@@ -17,19 +17,21 @@ fi
 # fzf integration. ${BREW_PREFIX} substituted at deploy time by envsubst
 # (deploy.sh allowlist) — supports brew in non-standard prefixes. Falls
 # through to standard Homebrew + Debian paths.
+#
+# ONLY key-bindings.zsh (Ctrl-R/Ctrl-T/Alt-C). completion.zsh is NOT
+# sourced — it would `bindkey '^I' fzf-completion`, stomping on fzf-tab
+# which rebinds TAB itself. If fzf-tab ever fails to load (turbo, zinit
+# broken, etc.), TAB falls back to zsh's native `expand-or-complete`
+# (with our matcher-list zstyles applied) — much better UX than the
+# primitive fzf-completion shell integration.
 __bootstrap_brew_prefix='${BREW_PREFIX}'
 for f in \
     "$__bootstrap_brew_prefix/opt/fzf/shell/key-bindings.zsh" \
-    "$__bootstrap_brew_prefix/opt/fzf/shell/completion.zsh" \
     /opt/homebrew/opt/fzf/shell/key-bindings.zsh \
-    /opt/homebrew/opt/fzf/shell/completion.zsh \
     /usr/local/opt/fzf/shell/key-bindings.zsh \
-    /usr/local/opt/fzf/shell/completion.zsh \
-    /usr/share/doc/fzf/examples/key-bindings.zsh \
-    /usr/share/doc/fzf/examples/completion.zsh; do
+    /usr/share/doc/fzf/examples/key-bindings.zsh; do
     # Skip the empty-prefix entries on non-brew machines
     [ "$f" = "/opt/fzf/shell/key-bindings.zsh" ] && continue
-    [ "$f" = "/opt/fzf/shell/completion.zsh" ] && continue
     # shellcheck source=/dev/null
     [ -f "$f" ] && source "$f"
 done
