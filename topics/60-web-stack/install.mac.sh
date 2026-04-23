@@ -230,7 +230,7 @@ _migration_ts="$(date +%Y%m%d-%H%M%S)"
 for legacy in "${LEGACY_FILES[@]}"; do
     [[ -z "$legacy" ]] && continue
     if sudo test -f "$legacy" 2>/dev/null \
-       && ! sudo grep -q "managed by dev-bootstrap" "$legacy" 2>/dev/null; then
+       && ! sudo grep -qi "managed by dev-bootstrap" "$legacy" 2>/dev/null; then
         backup="${legacy}.pre-bootstrap-bak-${_migration_ts}"
         info "migrating legacy unmarked file: $legacy → $backup"
         sudo mv "$legacy" "$backup"

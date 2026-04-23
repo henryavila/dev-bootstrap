@@ -330,6 +330,26 @@ assert_pattern_present "$MAC" 'managed by dev-bootstrap' \
 assert_pattern_present "$MAC" 'LEGACY_FILES=' \
     "60-web-stack/install.mac.sh — explicit allowlist of paths to migrate"
 
+# Case-insensitive marker check: templates write "Managed by dev-bootstrap"
+# (capital M), health-checks must use grep -i. A case-sensitive check caused
+# the nginx migration block to re-migrate already-migrated files on EVERY run,
+# producing one .pre-bootstrap-bak-<ts> backup per execution. Regression found
+# 2026-04-23 with 6 backups stacked up in 24h on M2.
+assert_pattern_present "$MAC" 'grep -qi "managed by dev-bootstrap"' \
+    "60-web-stack/install.mac.sh — migration marker check is case-insensitive (grep -qi)"
+
+assert_pattern_absent "$MAC" 'grep -q "managed by dev-bootstrap"' \
+    "60-web-stack/install.mac.sh — no case-sensitive marker check (would loop-migrate)"
+
+assert_pattern_present "$ROOT/lib/deploy.sh" 'grep -qiF "managed by dev-bootstrap"' \
+    "lib/deploy.sh — overwrite-protection marker check is case-insensitive"
+
+assert_pattern_absent "$ROOT/lib/deploy.sh" 'grep -qF "managed by dev-bootstrap"' \
+    "lib/deploy.sh — no case-sensitive marker check in overwrite protection"
+
+assert_pattern_present "$WSL" 'grep -qi "managed by dev-bootstrap"' \
+    "60-web-stack/install.wsl.sh — legacy catchall removal marker check is case-insensitive"
+
 echo
 echo "═══ Topic rename complete: no '60-laravel-stack' references in code ═══"
 

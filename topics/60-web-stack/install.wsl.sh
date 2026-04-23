@@ -282,7 +282,7 @@ sudo mkdir -p "$NGINX_AVAILABLE_DIR" "$NGINX_ENABLED_DIR" "$NGINX_SNIPPET_DIR" "
 # the new sites-available/catchall-php.conf + symlink doesn't conflict.
 OLD_CATCHALL="$NGINX_ENABLED_DIR/catchall.conf"
 if [[ -f "$OLD_CATCHALL" ]] && [[ ! -L "$OLD_CATCHALL" ]]; then
-    if grep -q "managed by dev-bootstrap" "$OLD_CATCHALL" 2>/dev/null; then
+    if grep -qi "managed by dev-bootstrap" "$OLD_CATCHALL" 2>/dev/null; then
         info "removing legacy $OLD_CATCHALL (replaced by split sites)"
         sudo rm -f "$OLD_CATCHALL"
     fi

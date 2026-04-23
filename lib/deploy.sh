@@ -291,7 +291,7 @@ deploy_one() {
         if [[ "$needs_header_check" == "1" ]] \
              && [[ "$looks_unowned" != "1" ]] \
              && [[ "${ALLOW_OVERWRITE_UNMANAGED:-0}" != "1" ]] \
-             && ! grep -qF "managed by dev-bootstrap" "$dst" 2>/dev/null; then
+             && ! grep -qiF "managed by dev-bootstrap" "$dst" 2>/dev/null; then
             # Persist the staged content so the user can diff it. tmp_staging/
             # is cleared when deploy.sh exits; /tmp survives until reboot.
             local inspect_path="/tmp/dev-bootstrap-would-overwrite-$(basename "$dst")-$$"
