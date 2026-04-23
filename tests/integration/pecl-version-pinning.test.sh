@@ -80,6 +80,13 @@ if [[ -f "$PEAR_CONFIG" ]]; then
     assert_pattern_present "$PEAR_CONFIG" 'PHP_PEAR_EXTENSION_DIR' \
         "PEAR Config.php reads PHP_PEAR_EXTENSION_DIR from environment"
 
+    # PHP_PEAR_METADATA_DIR isolates the PEAR registry per invocation —
+    # without this the global registry tracks one install per package,
+    # and the next `pecl install -f` uninstalls the previously-registered
+    # one (deleting the .so from a different PHP's ABI dir).
+    assert_pattern_present "$PEAR_CONFIG" 'PHP_PEAR_METADATA_DIR' \
+        "PEAR Config.php reads PHP_PEAR_METADATA_DIR (registry isolation)"
+
     # Red-flag pattern: PHP_PEAR_PHPIZE_BIN was the first (wrong) fix
     # idea — it does not exist in PEAR. If a future contributor adds
     # it back thinking it works, this assertion fires and they get the

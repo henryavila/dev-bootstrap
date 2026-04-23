@@ -167,8 +167,8 @@ pecl_install_for_version() {
     # land in the wrong ABI dir, and `php${ver} -m` keeps returning
     # "not loaded" for non-default versions on every subsequent run.
     #
-    # Fix: take THREE complementary steps, each targeting a different
-    # stage of the pecl → pear → build pipeline:
+    # Fix: take FOUR complementary steps, each targeting a different
+    # stage of the pecl → pear → build → registry pipeline:
     #
     #   1. PHP_PEAR_PHP_BIN  — pins /usr/bin/pecl's `exec` line to the
     #                          target PHP binary. (Shell-level.)
@@ -182,6 +182,17 @@ pecl_install_for_version() {
     #                          the .so is INSTALLED into the correct ABI
     #                          directory (/usr/lib/php/<api>/) instead of
     #                          the default-PHP's dir. (Installer-level.)
+    #   4. PHP_PEAR_METADATA_DIR — isolates the PEAR registry per call.
+    #                          Without this, the global registry at
+    #                          /usr/share/php/.registry/ tracks a single
+    #                          install per package; the NEXT per-version
+    #                          `pecl install -f` first uninstalls the
+    #                          previously-registered one — deleting the
+    #                          .so from a DIFFERENT PHP's ABI dir.
+    #                          Observed concretely in ultron run 15:48:
+    #                          8.3 installs landed correctly, then 8.5
+    #                          reinstalls deleted 8.3's .so files before
+    #                          building their own. (Registry-level.)
     #
     # Step 2 is what actually controls the ABI the build targets. PEAR
     # uses:
@@ -229,26 +240,44 @@ pecl_install_for_version() {
         return 0
     fi
 
-    # Scratch bin dir with per-version shims. PEAR will prepend this to
-    # PATH (via PHP_PEAR_BIN_DIR override) and any subsequent `phpize` /
-    # `php-config` lookup resolves here. Cleaned up after the install.
-    local tmpbin
-    tmpbin="$(mktemp -d -t dev-bootstrap-pecl.XXXXXX)"
+    # Per-invocation scratch state. TWO directories, both under mktemp:
+    #
+    #   $tmpbin   — PATH shim dir with phpize/php-config/php symlinks
+    #               pointing at the per-version binaries. PEAR prepends
+    #               this to PATH (via PHP_PEAR_BIN_DIR override) so
+    #               bare `phpize` + `php-config` resolve here.
+    #   $tmpmeta  — isolated PEAR registry dir. CRITICAL: without this,
+    #               pecl's global registry at /usr/share/php/.registry/
+    #               tracks "igbinary is installed at <last-target-dir>"
+    #               — and the next per-version `pecl install -f` would
+    #               first UNINSTALL the previously registered one,
+    #               DELETING the .so from a different PHP's ABI dir.
+    #               Isolated metadata per call means each invocation
+    #               sees an empty registry and only ever touches its
+    #               own target_ext_dir.
+    #
+    # Both dirs cleaned via `trap RETURN` even if pecl is killed.
+    local tmpbin tmpmeta
+    tmpbin="$(mktemp -d -t dev-bootstrap-pecl-bin.XXXXXX)"
+    tmpmeta="$(mktemp -d -t dev-bootstrap-pecl-meta.XXXXXX)"
     ln -s "$phpize_bin"      "$tmpbin/phpize"
     ln -s "$php_config_bin"  "$tmpbin/php-config"
     ln -s "$php_bin"         "$tmpbin/php"
-    # trap ensures cleanup even if printf/pecl is killed mid-pipeline
-    trap 'rm -rf "$tmpbin"' RETURN
+    trap 'rm -rf "$tmpbin" "$tmpmeta"' RETURN
 
     info "PHP $ver: pecl install $ext (target: $so_path)"
     # `-f` forces rebuild when pecl's internal cache thinks the ext is
-    # already installed (common after previous mis-targeted builds left
-    # a .so behind in the wrong ABI dir). `printf '\n'` accepts default
-    # prompts (imagick asks about ImageMagick autodetect).
+    # already installed. With isolated $tmpmeta the registry starts
+    # empty each call, so `-f` is defensive here (handles the case
+    # where /tmp/pear/cache already has a built tarball from a prior
+    # run) without the cross-version uninstall side-effect.
+    # `printf '\n'` accepts default prompts (imagick asks about
+    # ImageMagick autodetect).
     local pecl_out="" pecl_rc=0
     pecl_out=$(printf '\n' | sudo env \
         PHP_PEAR_PHP_BIN="$php_bin" \
         PHP_PEAR_BIN_DIR="$tmpbin" \
+        PHP_PEAR_METADATA_DIR="$tmpmeta" \
         PHP_PEAR_EXTENSION_DIR="$target_ext_dir" \
         "$pecl_bin" install -f "$ext" 2>&1) || pecl_rc=$?
 

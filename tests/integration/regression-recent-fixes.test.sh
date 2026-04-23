@@ -654,6 +654,20 @@ assert_pattern_present "$LANG_WSL" 'PHP_PEAR_PHP_BIN="\$php_bin"' \
 assert_pattern_present "$LANG_WSL" 'PHP_PEAR_BIN_DIR="\$tmpbin"' \
     "10-languages/install.wsl.sh — PHP_PEAR_BIN_DIR points to scratch shim dir"
 
+# CRITICAL: without isolated metadata_dir, each per-version `pecl install -f`
+# first UNINSTALLS the previously-registered version — deleting the .so
+# from a different PHP's ABI dir. Observed in ultron 15:48 run: 8.3
+# installs landed, then 8.5's install -f deleted them. Isolated registry
+# per call makes each install see an empty registry.
+assert_pattern_present "$LANG_WSL" 'PHP_PEAR_METADATA_DIR="\$tmpmeta"' \
+    "10-languages/install.wsl.sh — PHP_PEAR_METADATA_DIR isolates PEAR registry per call"
+
+assert_pattern_present "$LANG_WSL" 'tmpmeta="\$\(mktemp -d' \
+    "10-languages/install.wsl.sh — allocates tmpmeta scratch dir"
+
+assert_pattern_present "$LANG_WSL" "trap 'rm -rf \"\\\$tmpbin\" \"\\\$tmpmeta\"' RETURN" \
+    "10-languages/install.wsl.sh — trap cleans both tmpbin AND tmpmeta"
+
 assert_pattern_present "$LANG_WSL" 'ln -s "\$phpize_bin"' \
     "10-languages/install.wsl.sh — scratch dir has phpize symlink → phpize\${ver}"
 
@@ -665,11 +679,8 @@ assert_pattern_present "$LANG_WSL" 'ln -s "\$php_config_bin"' \
 assert_pattern_present "$LANG_WSL" 'PHP_PEAR_EXTENSION_DIR="\$target_ext_dir"' \
     "10-languages/install.wsl.sh — .so target dir pinned via PHP_PEAR_EXTENSION_DIR"
 
-# Cleanup discipline — temp dir must be removed even if the install
-# is killed mid-pipeline. `trap RETURN` fires when the function exits
-# for any reason.
-assert_pattern_present "$LANG_WSL" "trap 'rm -rf \"\\\$tmpbin\"' RETURN" \
-    "10-languages/install.wsl.sh — scratch dir cleaned via trap RETURN"
+# (superseded by trap-cleans-both assertion above — removing the
+# single-dir trap check because current code cleans both scratch dirs)
 
 # `sudo env KEY=VAL cmd` survives sudoers env_reset; `sudo -E` does not.
 assert_pattern_present "$LANG_WSL" 'sudo env \\' \
