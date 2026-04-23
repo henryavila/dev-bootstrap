@@ -112,17 +112,68 @@ if [ -x "$HERE/scripts/configure-iterm2-font.sh" ]; then
     bash "$HERE/scripts/configure-iterm2-font.sh" || warn "iTerm2 font config failed (non-fatal)"
 fi
 
-# ─── Post-install advisory: shell migration (Mac usually defaults to
-#     zsh already, but we still check in case of /bin/bash login shell) ─
+# ─── Post-install: zsh as default login shell ────────────────────────
+# Mac usually already defaults to /bin/zsh, but the brew-installed zsh
+# at $BREW_PREFIX/bin/zsh is a distinct binary — we make brew zsh
+# authoritative so the plugin stack + version are the ones the user
+# actually runs.
+#
+# Default: attempt `sudo chsh` using the cached sudo ticket from
+# bootstrap.sh's upfront `sudo -v`. Mac has no `usermod`; chsh is the
+# only path, but it normally accepts the sudo cache without prompting.
+#
+# Override: CHSH_AUTO=0 bash bootstrap.sh  to skip the auto attempt.
 if command -v zsh >/dev/null 2>&1; then
-    current_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
     zsh_bin="$(command -v zsh)"
-    if [ -n "$current_shell" ] && [ "$current_shell" != "$zsh_bin" ]; then
+    current_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
+
+    if [ -n "$current_shell" ] && [ "$current_shell" = "$zsh_bin" ]; then
+        ok "zsh is the default login shell"
+    elif [ "${CHSH_AUTO:-1}" = "1" ]; then
+        info "attempting to set zsh as default login shell"
+
+        # brew-installed zsh path is NOT in /etc/shells by default on
+        # macOS (the OS lists /bin/zsh, not $BREW_PREFIX/bin/zsh).
+        # Adding it ourselves avoids a confusing chsh failure for
+        # users running brew zsh instead of system zsh.
+        if ! grep -qxF "$zsh_bin" /etc/shells 2>/dev/null; then
+            info "adding $zsh_bin to /etc/shells"
+            echo "$zsh_bin" | sudo tee -a /etc/shells >/dev/null 2>&1 || true
+        fi
+
+        chsh_ok=0
+        if sudo -n chsh -s "$zsh_bin" "$USER" 2>/dev/null; then
+            chsh_ok=1
+        fi
+
+        if [ "$chsh_ok" = "1" ]; then
+            new_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
+            if [ "$new_shell" = "$zsh_bin" ]; then
+                ok "default login shell set to $zsh_bin"
+                followup info \
+"zsh set as default login shell. Open a new Terminal tab (or run
+'exec zsh') to start using it; the current session is unaffected."
+            else
+                # chsh returned 0 but DirectoryService is unchanged —
+                # unusual on a personal Mac, more common on MDM /
+                # domain-bound enterprise macs where the directory is
+                # authoritative.
+                followup manual \
+"automatic chsh returned success but DirectoryService is unchanged
+— your account may be MDM/directory-managed.
+Try:  chsh -s \"$zsh_bin\"   (prompts for your login password)"
+            fi
+        else
+            followup manual \
+"could not set default shell automatically (sudo chsh refused).
+Run manually:  chsh -s \"$zsh_bin\"   (prompts for your login password)
+Skip the auto-attempt next time:  CHSH_AUTO=0 bash bootstrap.sh"
+        fi
+    else
         followup manual \
 "zsh installed but NOT the default login shell (currently: $current_shell).
+CHSH_AUTO=0 — auto-attempt skipped.
 Run:  chsh -s \"$zsh_bin\"   (prompts for your login password)"
-    else
-        ok "zsh is the default login shell"
     fi
 fi
 

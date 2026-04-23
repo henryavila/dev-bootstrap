@@ -86,10 +86,10 @@ Right after the menu (or immediately, when skipped), the bootstrap runs `sudo -v
 
 The bootstrap **prints at the end everything that still needs a human touch** — you don't need to remember a list. The post-run advisories cover:
 
-- `chsh` to set zsh as the login shell (prints the exact command when zsh isn't already default).
+- `chsh` — the bootstrap **tries `sudo chsh` automatically** using the warm sudo ticket (`sudo usermod -s` as a Linux fallback). Falls back to an advisory only on LDAP/SSSD-managed corporate accounts, restricted PAM, or missing sudo cache. Opt out with `CHSH_AUTO=0`.
 - `atuin login` to join cross-machine history (prints the command when the session file is missing; opens a browser for atuin.sh OAuth, no password or key on the CLI).
 - `newgrp docker` / log out+in, when 45-docker just added you to the `docker` group.
-- `ngrok config add-authtoken <token>`, when `INCLUDE_NGROK=1` ran without `NGROK_AUTHTOKEN` exported.
+- `ngrok config add-authtoken <token>`, when `INCLUDE_NGROK=1` ran without a token available. The bootstrap **prompts for the token in the interactive menu** and stores it to `~/.local/state/dev-bootstrap/secrets.env` (mode 0600), so it's only asked once per machine. Automation mode: export `NGROK_AUTHTOKEN=<token>` before running.
 - Manual `mailpit &` / `docker` service start, when systemd isn't available (rare).
 - `gpg --full-generate-key`, when `GPG_SIGN=1` ran without an existing key.
 

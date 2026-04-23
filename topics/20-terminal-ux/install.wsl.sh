@@ -265,20 +265,77 @@ else
     ok "procs already installed"
 fi
 
-# ─── Post-install advisory: shell migration ──────────────────────────
-# This script is idempotent and safe to re-run on ANY machine — it's the
+# ─── Post-install: zsh as default login shell ────────────────────────
+# This script is idempotent + safe to re-run on ANY machine — it's the
 # canonical path to migrate bash → zsh, not just a first-time installer.
-# We never run `chsh` silently (it requires the login password and would
-# block the script), so we advise the user what's left to do interactively.
+#
+# Default: attempt `sudo chsh` (and `sudo usermod -s` as fallback) using
+# the cached sudo ticket from bootstrap.sh's upfront `sudo -v`. Many
+# single-user Ubuntu/Debian/WSL setups succeed here silently. Anything
+# refusing — LDAP/SSSD-managed accounts on corporate laptops (M4 = crc),
+# a restricted PAM policy, or a dropped sudo cache — falls through to
+# the existing `followup manual` advisory. User is never worse off than
+# the pre-auto behavior.
+#
+# Override: CHSH_AUTO=0 bash bootstrap.sh  to skip the auto attempt.
 if command -v zsh >/dev/null 2>&1; then
+    zsh_bin="$(command -v zsh)"
     current_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
-    if [ "$current_shell" != "$(command -v zsh)" ]; then
+
+    if [ "$current_shell" = "$zsh_bin" ]; then
+        ok "zsh is already the default login shell"
+    elif [ "${CHSH_AUTO:-1}" = "1" ]; then
+        info "attempting to set zsh as default login shell"
+
+        # /etc/shells gate — chsh/usermod refuse a shell not listed
+        # there. apt-installed /usr/bin/zsh is listed by default, but
+        # defense-in-depth in case someone symlinked a custom zsh.
+        if ! grep -qxF "$zsh_bin" /etc/shells 2>/dev/null; then
+            info "adding $zsh_bin to /etc/shells"
+            echo "$zsh_bin" | sudo tee -a /etc/shells >/dev/null 2>&1 || true
+        fi
+
+        # Try chsh first (friendlier error messages). Fall back to
+        # usermod -s — some PAM policies refuse chsh but accept
+        # usermod since it only writes /etc/passwd directly. Both
+        # need sudo, and sudo uses the already-warm ticket.
+        chsh_ok=0
+        if sudo -n chsh -s "$zsh_bin" "$USER" 2>/dev/null; then
+            chsh_ok=1
+        elif sudo -n usermod -s "$zsh_bin" "$USER" 2>/dev/null; then
+            chsh_ok=1
+        fi
+
+        if [ "$chsh_ok" = "1" ]; then
+            new_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
+            if [ "$new_shell" = "$zsh_bin" ]; then
+                ok "default login shell set to $zsh_bin"
+                followup info \
+"zsh set as default login shell. Open a new terminal (or run 'exec zsh')
+to start using it; the current session is unaffected."
+            else
+                # Exit 0 but /etc/passwd unchanged = account is managed
+                # externally (LDAP/SSSD/AD). /etc/passwd writes appear
+                # successful but aren't authoritative.
+                followup manual \
+"automatic chsh appeared to succeed but /etc/passwd is unchanged
+— your account is likely managed externally (LDAP/SSSD/AD).
+Ask IT, or try:   chsh -s \"\$(command -v zsh)\"
+Then:   log out / log back in (or 'exec zsh' to try it first)"
+            fi
+        else
+            followup manual \
+"could not set default shell automatically (sudo chsh + usermod refused).
+Run manually:   chsh -s \"\$(command -v zsh)\"   (prompts for password)
+Then:           log out / log back in (or 'exec zsh' to try it first)
+Skip the auto-attempt next time:  CHSH_AUTO=0 bash bootstrap.sh"
+        fi
+    else
         followup manual \
 "zsh installed but NOT the default login shell (currently: $current_shell).
+CHSH_AUTO=0 — auto-attempt skipped.
 Run:     chsh -s \"\$(command -v zsh)\"
 Then:    log out / log back in (or 'exec zsh' to try it first)"
-    else
-        ok "zsh is already the default login shell"
     fi
 fi
 

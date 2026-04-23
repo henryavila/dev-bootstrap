@@ -412,6 +412,36 @@ MSSQL takes ~2 min (auto-accepts Microsoft's EULA via ACCEPT_EULA=Y)." \
                 mssql)    export INCLUDE_MSSQL=1 ;;
             esac
         done
+
+        # --- 3e · ngrok authtoken ---
+        # ngrok is the one extra with no CLI OAuth flow — user pastes a
+        # token from the dashboard. Ask once, persist to secrets.env
+        # (0600), and every future bootstrap on this host skips the
+        # prompt. Skipped outright if the token is already known via
+        # env or secrets.env, or if ngrok config already has one.
+        if [[ "${INCLUDE_NGROK:-0}" == "1" ]] \
+           && ! secrets_has NGROK_AUTHTOKEN \
+           && ! ngrok config check >/dev/null 2>&1; then
+            local ngrok_token=""
+            ngrok_token=$(whiptail --title "60-web-stack :: ngrok authtoken" \
+                --passwordbox \
+"Paste your ngrok authtoken from
+  https://dashboard.ngrok.com/get-started/your-authtoken
+
+Stored at $BOOTSTRAP_SECRETS_FILE (mode 0600).
+Leave empty to skip — you can set it later via:
+  ngrok config add-authtoken <token>
+or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
+                16 78 "" \
+                3>&1 1>&2 2>&3) || ngrok_token=""
+
+            if [[ -n "$ngrok_token" ]]; then
+                secrets_set NGROK_AUTHTOKEN "$ngrok_token"
+                export NGROK_AUTHTOKEN="$ngrok_token"
+                ok "ngrok authtoken captured → $BOOTSTRAP_SECRETS_FILE (0600)"
+            fi
+            unset ngrok_token
+        fi
     fi
 
     # ---------- Screen 4: confirm ----------

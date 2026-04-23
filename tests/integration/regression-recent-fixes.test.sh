@@ -484,4 +484,83 @@ assert_pattern_absent "$MENU" "echo 'export INCLUDE_LARAVEL=1'" \
     "lib/menu.sh — state file does NOT persist legacy INCLUDE_LARAVEL"
 
 echo
+echo "═══ 2026-04-23 : auto-chsh + secrets.env scaffold ═══"
+
+# Issue 1 — zsh auto-chsh. Bootstrap must try sudo chsh/usermod before
+# falling through to the advisory, default-on, CHSH_AUTO=0 opts out.
+TUX_WSL="$ROOT/topics/20-terminal-ux/install.wsl.sh"
+TUX_MAC="$ROOT/topics/20-terminal-ux/install.mac.sh"
+
+assert_pattern_present "$TUX_WSL" 'CHSH_AUTO:-1' \
+    "20-terminal-ux/install.wsl.sh — CHSH_AUTO defaults to 1 (auto-on)"
+
+assert_pattern_present "$TUX_WSL" 'sudo -n chsh -s' \
+    "20-terminal-ux/install.wsl.sh — attempts sudo chsh with cached ticket"
+
+assert_pattern_present "$TUX_WSL" 'sudo -n usermod -s' \
+    "20-terminal-ux/install.wsl.sh — falls back to sudo usermod when chsh refused"
+
+assert_pattern_present "$TUX_WSL" 'grep -qxF "\$zsh_bin" /etc/shells' \
+    "20-terminal-ux/install.wsl.sh — /etc/shells check before chsh"
+
+# LDAP/SSSD fallback: chsh returns 0 but /etc/passwd doesn't update —
+# the code must detect this and emit an advisory, not claim success.
+assert_pattern_present "$TUX_WSL" 'managed externally' \
+    "20-terminal-ux/install.wsl.sh — advisory when account is LDAP/SSSD-managed"
+
+assert_pattern_present "$TUX_MAC" 'CHSH_AUTO:-1' \
+    "20-terminal-ux/install.mac.sh — CHSH_AUTO defaults to 1 (auto-on)"
+
+assert_pattern_present "$TUX_MAC" 'sudo -n chsh -s' \
+    "20-terminal-ux/install.mac.sh — attempts sudo chsh with cached ticket"
+
+assert_pattern_present "$TUX_MAC" 'MDM/directory-managed' \
+    "20-terminal-ux/install.mac.sh — advisory when directory is authoritative"
+
+# Issue 2 — secrets scaffold. bootstrap.sh must source lib/secrets.sh
+# and call secrets_load AFTER log.sh, BEFORE the menu runs.
+SECRETS_LIB="$ROOT/lib/secrets.sh"
+
+assert_file_exists "$SECRETS_LIB" \
+    "lib/secrets.sh — new helper in place"
+
+assert_pattern_present "$BOOTSTRAP" 'source "\$HERE/lib/secrets.sh"' \
+    "bootstrap.sh — sources lib/secrets.sh"
+
+assert_pattern_present "$BOOTSTRAP" 'secrets_load' \
+    "bootstrap.sh — calls secrets_load"
+
+# Order check: secrets must be loaded before menu is sourced/run so the
+# menu's secrets_has NGROK_AUTHTOKEN gate behaves correctly.
+secrets_line=$(grep -n 'secrets_load' "$BOOTSTRAP" | head -1 | cut -d: -f1)
+menu_line=$(grep -n 'source "\$HERE/lib/menu.sh"' "$BOOTSTRAP" | head -1 | cut -d: -f1)
+if [[ -n "$secrets_line" && -n "$menu_line" ]] && [[ "$secrets_line" -lt "$menu_line" ]]; then
+    pass "bootstrap.sh — secrets_load runs before menu is sourced (line $secrets_line < $menu_line)"
+else
+    fail "bootstrap.sh — secrets_load must run before menu (secrets=$secrets_line, menu=$menu_line)"
+fi
+
+# Menu: prompts for ngrok token only when selected and not already known.
+assert_pattern_present "$MENU" 'secrets_has NGROK_AUTHTOKEN' \
+    "lib/menu.sh — gates ngrok prompt on secrets_has"
+
+assert_pattern_present "$MENU" 'passwordbox' \
+    "lib/menu.sh — ngrok token uses --passwordbox (masked input)"
+
+assert_pattern_present "$MENU" 'secrets_set NGROK_AUTHTOKEN' \
+    "lib/menu.sh — persists ngrok token via secrets_set (NOT config.env)"
+
+# secrets.env must NOT be written by _persist_menu_state (wrong file + mode).
+assert_pattern_absent "$MENU" 'echo .export NGROK_AUTHTOKEN' \
+    "lib/menu.sh — _persist_menu_state does NOT echo NGROK_AUTHTOKEN into config.env"
+
+# Taxonomy check: secrets.sh header must document forbidden keys so a future
+# contributor can't "just add GITHUB_TOKEN" without reading the rationale.
+assert_pattern_present "$SECRETS_LIB" 'GITHUB_TOKEN.*gh auth' \
+    "lib/secrets.sh — documents GITHUB_TOKEN belongs to gh auth, not here"
+
+assert_pattern_present "$SECRETS_LIB" 'ATUIN_KEY.*atuin login' \
+    "lib/secrets.sh — documents ATUIN_KEY belongs to atuin login, not here"
+
+echo
 summary

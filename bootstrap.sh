@@ -28,6 +28,12 @@
 #   INCLUDE_MSSQL=1     installs Microsoft SQL Server ODBC driver + sqlsrv/pdo_sqlsrv
 #                       PECL extensions (ACCEPT_EULA=Y auto-set)
 #   NGROK_AUTHTOKEN     ngrok token to auto-configure during install
+#                       (if unset, the menu prompts once + persists to
+#                       ~/.local/state/dev-bootstrap/secrets.env, mode 0600)
+#   CHSH_AUTO=0         skip the auto `sudo chsh` attempt in 20-terminal-ux
+#                       (default 1 — tries to set zsh as default login
+#                       shell using the cached sudo ticket; falls back
+#                       to an advisory if refused)
 #   DEV_DEFAULT_PORT    default port for *.front.localhost proxy (default 3000)
 #   FORCE_VALET_INSTALL=1  (Mac only) force re-run `valet install` even when
 #                       it appears already configured. Useful after macOS
@@ -86,6 +92,16 @@ cd "$HERE"
 
 # shellcheck disable=SC1091
 source "$HERE/lib/log.sh"
+
+# ─── Secrets (tokens) ───────────────────────────────────────────────
+# Separate from config.env because of different mode (0600 vs 0644)
+# and different blast-radius semantics. Sourced BEFORE the menu so
+# `secrets_has NGROK_AUTHTOKEN` can gate whether the menu prompts
+# for a token, and BEFORE topics run so installers just read env.
+# See lib/secrets.sh for the allowed/forbidden key taxonomy.
+# shellcheck disable=SC1091
+source "$HERE/lib/secrets.sh"
+secrets_load || warn "secrets file present but could not be sourced — continuing without it"
 
 usage() {
     cat <<'EOF'

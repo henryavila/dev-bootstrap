@@ -140,7 +140,15 @@ MAIL_ENCRYPTION=null
 
 ### ngrok (public tunnel)
 
-Opt-in via menu or `INCLUDE_NGROK=1`. Needs a free authtoken from ngrok.com — either pass it via `NGROK_AUTHTOKEN=` during bootstrap, or run `ngrok config add-authtoken <token>` later.
+Opt-in via menu or `INCLUDE_NGROK=1`. Needs a free authtoken from ngrok.com.
+
+Three ways to provide the token, by priority:
+
+1. `NGROK_AUTHTOKEN=<token>` exported in the bootstrap environment (for automation / CI).
+2. The interactive menu's passwordbox — shown once when ngrok is selected and no token is already known. Persisted to `~/.local/state/dev-bootstrap/secrets.env` (mode 0600), so re-runs on this host never re-ask.
+3. Manually post-bootstrap: `ngrok config add-authtoken <token>`.
+
+The secrets file is dev-bootstrap's shared scratchpad for input-only tokens (see `lib/secrets.sh` header for the allowed / forbidden keys taxonomy — GitHub tokens, AWS creds, and atuin keys have their own native stores and do *not* belong here). It's outside any repo, owner-only, and rotatable from the ngrok dashboard if ever exposed.
 
 ```bash
 share-project foo               # tunnels https://foo.localhost (via nginx catchall)
