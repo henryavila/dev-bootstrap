@@ -837,4 +837,67 @@ for f in "$TMUX_BASHRC" "$TMUX_ZSHRC"; do
 done
 
 echo
+echo "═══ Baseline shell aliases migrated from private dotfiles to public topics ═══"
+
+# 30-shell — navigation + shell shortcuts + alert + mkd/md/fs/tre
+SHELL_ZSH="$ROOT/topics/30-shell/templates/zshrc.d-30-shell.sh.template"
+SHELL_BASH="$ROOT/topics/30-shell/templates/bashrc.d-30-shell.sh.template"
+
+for f in "$SHELL_ZSH" "$SHELL_BASH"; do
+    base="$(basename "$f")"
+    assert_pattern_present "$f" "alias \\.\\.='cd \\.\\.'" \
+        "$base — navigation '..' alias"
+    assert_pattern_present "$f" "alias home='cd ~'" \
+        "$base — 'home' alias"
+    assert_pattern_present "$f" "alias c='clear'" \
+        "$base — 'c' clear alias"
+    assert_pattern_present "$f" 'mkd\(\) \{' \
+        "$base — mkd() function"
+    assert_pattern_present "$f" 'notify-send' \
+        "$base — 'alert' Linux desktop helper gated on notify-send"
+done
+
+# 20-terminal-ux — Phase E CLI replacements (btop/duf/dust/gping/xh/procs)
+TUX_ZSH="$ROOT/topics/20-terminal-ux/templates/zshrc.d-20-terminal-ux.sh.template"
+TUX_BASH="$ROOT/topics/20-terminal-ux/templates/bashrc.d-20-terminal-ux.sh.template"
+
+for f in "$TUX_ZSH" "$TUX_BASH"; do
+    base="$(basename "$f")"
+    assert_pattern_present "$f" "alias top='btop'" \
+        "$base — Phase E: top→btop"
+    assert_pattern_present "$f" "alias df='duf'" \
+        "$base — Phase E: df→duf"
+    assert_pattern_present "$f" "alias ping='gping'" \
+        "$base — Phase E: ping→gping"
+done
+
+# 60-web-stack — Laravel + service restart (new fragments)
+WEB_ZSH="$ROOT/topics/60-web-stack/templates/zshrc.d-60-web-stack.sh"
+WEB_BASH="$ROOT/topics/60-web-stack/templates/bashrc.d-60-web-stack.sh"
+
+for f in "$WEB_ZSH" "$WEB_BASH"; do
+    base="$(basename "$f")"
+    assert_file_exists "$f" "$base — fragment exists"
+    assert_pattern_present "$f" "alias art='php artisan'" \
+        "$base — Laravel artisan shortcut"
+    assert_pattern_present "$f" 'alias srn=' \
+        "$base — service restart nginx"
+done
+
+# 70-remote-access — Tailscale aliases + tip-of function
+REM_ZSH="$ROOT/topics/70-remote-access/templates/zshrc.d-70-remote-access.sh"
+REM_BASH="$ROOT/topics/70-remote-access/templates/bashrc.d-70-remote-access.sh"
+
+for f in "$REM_ZSH" "$REM_BASH"; do
+    base="$(basename "$f")"
+    assert_file_exists "$f" "$base — fragment exists"
+    assert_pattern_present "$f" "alias ts='tailscale status'" \
+        "$base — Tailscale status alias"
+    assert_pattern_present "$f" "tip-of\\(\\) \\{" \
+        "$base — tip-of() helper"
+    assert_pattern_present "$f" 'command -v tailscale' \
+        "$base — aliases gated on 'command -v tailscale'"
+done
+
+echo
 summary

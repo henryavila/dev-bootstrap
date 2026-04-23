@@ -22,3 +22,51 @@ fi
 alias grep='grep --color=auto'
 alias fgrep='fgrep --color=auto'
 alias egrep='egrep --color=auto'
+
+# ---------- Navigation (go up N dirs) ----------
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias .....='cd ../../../..'
+alias home='cd ~'
+
+# ---------- Shell shortcuts ----------
+alias h='history'
+alias j='jobs'
+alias e='exit'
+alias c='clear'
+alias cla='clear && ls -la'
+
+# ---------- Desktop notification helper (Linux only — notify-send) ----------
+# Usage: `make build; alert` — sends desktop notification when previous
+# command completes. Mac/macOS has `osascript` instead; Mac users can
+# override in their private dotfiles (~/.zshrc.d/99-personal-aliases.sh).
+if command -v notify-send >/dev/null 2>&1; then
+    alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+fi
+
+# ---------- Utility functions ----------
+# mkdir + cd in one step
+mkd() { mkdir -p "$@" && cd "$@" || return; }
+md()  { mkdir -p "$@" && cd "$@" || return; }
+
+# Total size of files / dir contents — preferences GNU du's -b (bytes)
+# when available, falls back to BSD-compatible -sh.
+fs() {
+    local arg
+    if du -b /dev/null > /dev/null 2>&1; then
+        arg=-sbh
+    else
+        arg=-sh
+    fi
+    if [ -n "$*" ]; then
+        du "$arg" -- "$@"
+    else
+        du "$arg" .[^.]* ./*
+    fi
+}
+
+# `tree` with hidden files, ignoring common noise, paged via less.
+tre() {
+    tree -aC -I '.git|node_modules|bower_components|.venv|vendor' --dirsfirst "$@" | less -FRNX
+}

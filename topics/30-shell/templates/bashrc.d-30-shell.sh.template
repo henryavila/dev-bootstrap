@@ -42,3 +42,47 @@ shopt -s globstar 2>/dev/null || true
 alias grep='grep --color=auto'
 alias fgrep='fgrep --color=auto'
 alias egrep='egrep --color=auto'
+
+# ---------- Navigation (go up N dirs) ----------
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias .....='cd ../../../..'
+alias home='cd ~'
+
+# ---------- Shell shortcuts ----------
+alias h='history'
+alias j='jobs'
+alias e='exit'
+alias c='clear'
+alias cla='clear && ls -la'
+
+# ---------- Desktop notification helper (Linux only — notify-send) ----------
+# Usage: `make build; alert`. Mac/macOS users can define their own with
+# osascript in ~/.bashrc.d/99-personal-aliases.sh.
+if command -v notify-send >/dev/null 2>&1; then
+    # shellcheck disable=SC2142
+    alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+fi
+
+# ---------- Utility functions ----------
+mkd() { mkdir -p "$@" && cd "$@" || return; }
+md()  { mkdir -p "$@" && cd "$@" || return; }
+
+fs() {
+    local arg
+    if du -b /dev/null > /dev/null 2>&1; then
+        arg=-sbh
+    else
+        arg=-sh
+    fi
+    if [ -n "$*" ]; then
+        du "$arg" -- "$@"
+    else
+        du "$arg" .[^.]* ./*
+    fi
+}
+
+tre() {
+    tree -aC -I '.git|node_modules|bower_components|.venv|vendor' --dirsfirst "$@" | less -FRNX
+}

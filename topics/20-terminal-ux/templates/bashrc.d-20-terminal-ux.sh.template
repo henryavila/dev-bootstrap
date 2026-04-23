@@ -78,3 +78,16 @@ if command -v atuin >/dev/null 2>&1; then
     fi
     eval "$(atuin init bash --disable-up-arrow)"
 fi
+
+# ───────────────────────────────────────────────────────────────────
+# Phase E — modern CLI replacements (see zsh fragment for full notes)
+# ───────────────────────────────────────────────────────────────────
+if command -v btop >/dev/null 2>&1; then
+    alias top='btop'
+    alias htop='btop'
+fi
+command -v duf   >/dev/null 2>&1 && alias df='duf'
+command -v dust  >/dev/null 2>&1 && alias du='dust'
+command -v gping >/dev/null 2>&1 && alias ping='gping'
+command -v xh    >/dev/null 2>&1 && alias http='xh'
+command -v procs >/dev/null 2>&1 && alias ps='procs'

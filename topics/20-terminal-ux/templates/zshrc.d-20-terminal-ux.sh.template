@@ -69,3 +69,36 @@ fi
 if command -v atuin >/dev/null 2>&1; then
     eval "$(atuin init zsh --disable-up-arrow)"
 fi
+
+# ───────────────────────────────────────────────────────────────────
+# Phase E — modern CLI replacements (aliases only fire when installed)
+# ───────────────────────────────────────────────────────────────────
+# Each block gates on `command -v`, so aliases no-op on machines
+# where the replacement hasn't been installed yet. Scripts that
+# depend on the original tools' exact output are NOT affected —
+# aliases only apply to interactive shells.
+
+# btop — colored top with mouse, sparklines, tree view. Replaces top+htop.
+if command -v btop >/dev/null 2>&1; then
+    alias top='btop'
+    alias htop='btop'
+fi
+
+# duf — disk usage with friendlier table than df.
+command -v duf >/dev/null 2>&1 && alias df='duf'
+
+# dust — recursive directory size, better than du -sh.
+command -v dust >/dev/null 2>&1 && alias du='dust'
+
+# gping — ping with a live graph. Scripts still call /bin/ping directly.
+command -v gping >/dev/null 2>&1 && alias ping='gping'
+
+# xh — HTTPie-style, JSON-aware HTTP client. Single static binary.
+command -v xh >/dev/null 2>&1 && alias http='xh'
+
+# procs — colored process listing with tree view.
+command -v procs >/dev/null 2>&1 && alias ps='procs'
+
+# tealdeer / tldr — cheatsheet pages. Intentionally NOT aliased as
+# `man` — full manual pages remain valuable for serious diving.
+# Usage: tldr tar / tldr git-rebase
