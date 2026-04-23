@@ -390,7 +390,18 @@ assert_pattern_present "$LANG_MAC" 'BREW_PREFIX/opt/php@\$\{ver\}/bin/php' \
 assert_pattern_present "$LANG_MAC" 'chmod \+x "\$_wrapper"' \
     "10-languages/install.mac.sh — wrapper is made executable"
 
-# WSL: wrapper uses /usr/bin/php<ver> + /usr/local/bin/composer
+# Wrapper resolves composer at RUN time (via `command -v composer`),
+# NOT at generation time — so it picks up whichever composer is first
+# on the user's PATH at invocation. Works around brew-composer
+# PharException bugs and survives `brew upgrade composer` without
+# re-running bootstrap.
+assert_pattern_present "$LANG_MAC" 'command -v composer' \
+    "10-languages/install.mac.sh — wrapper resolves composer at runtime (not hardcoded)"
+
+assert_pattern_absent "$LANG_MAC" 'exec "\$\{_php_bin\}" "\$\{_composer_bin\}"' \
+    "10-languages/install.mac.sh — does NOT bake \$BREW_PREFIX/bin/composer into wrapper"
+
+# WSL: wrapper uses /usr/bin/php<ver> + runtime-resolved composer
 LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
 
 assert_pattern_present "$LANG_WSL" 'composer\$\{ver\}' \
@@ -404,6 +415,9 @@ assert_pattern_present "$LANG_WSL" '/usr/bin/php\$\{ver\}' \
 
 assert_pattern_present "$LANG_WSL" 'chmod \+x "\$_wrapper"' \
     "10-languages/install.wsl.sh — wrapper is made executable"
+
+assert_pattern_present "$LANG_WSL" 'command -v composer' \
+    "10-languages/install.wsl.sh — wrapper resolves composer at runtime (not hardcoded)"
 
 echo
 echo "═══ Topic rename complete: no '60-laravel-stack' references in code ═══"

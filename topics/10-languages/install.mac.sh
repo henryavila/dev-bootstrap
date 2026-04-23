@@ -450,7 +450,6 @@ brew_install_if_missing python@3.13
 # never touches versions the user removed from the config.
 _compose_wrapper_dir="$HOME/.local/bin"
 mkdir -p "$_compose_wrapper_dir"
-_composer_bin="$BREW_PREFIX/bin/composer"
 for ver in $PHP_VERSIONS; do
     [[ "$ver" == "$PHP_DEFAULT" ]] && continue
     _php_bin="$BREW_PREFIX/opt/php@${ver}/bin/php"
@@ -459,22 +458,37 @@ for ver in $PHP_VERSIONS; do
         warn "composer${ver}: php@${ver} not installed at $_php_bin — skipping wrapper"
         continue
     fi
-    if [[ ! -x "$_composer_bin" ]]; then
-        warn "composer${ver}: $_composer_bin not executable — skipping wrapper"
-        continue
-    fi
+    # Resolve composer path at wrapper RUN time, not generation time.
+    # Two reasons:
+    #  (a) User may have a standalone composer in ~/.local/bin/composer
+    #      that works when brew's /opt/homebrew/bin/composer is broken
+    #      (e.g. PharException signature failures seen on Mac M2 with
+    #      brew formula 2.9.7). Runtime resolution picks whichever
+    #      composer is first on PATH — which is the one the user's
+    #      shell uses anyway.
+    #  (b) If brew upgrades composer between bootstrap runs, the
+    #      wrapper picks up the new path automatically.
     cat > "$_wrapper" <<EOF
 #!/usr/bin/env bash
 # composer${ver} — Managed by dev-bootstrap / 10-languages.
 # Runs Composer with PHP ${ver} instead of the machine's default PHP.
 # Generated once per non-default version in PHP_VERSIONS; safe to delete
 # (bootstrap re-creates) but not safe to edit (overwritten on next run).
-exec "${_php_bin}" "${_composer_bin}" "\$@"
+set -e
+# Drop \$0 (self) from PATH lookup so 'command -v composer' cannot
+# accidentally resolve to a future same-named wrapper in the same dir.
+_self_dir="\$(cd "\$(dirname "\$0")" && pwd)"
+_composer_bin="\$(PATH="\${PATH//\$_self_dir:/}\${PATH//:\$_self_dir/}" command -v composer 2>/dev/null || true)"
+if [[ -z "\$_composer_bin" ]]; then
+    echo "composer${ver}: no 'composer' found on PATH" >&2
+    exit 127
+fi
+exec "${_php_bin}" "\$_composer_bin" "\$@"
 EOF
     chmod +x "$_wrapper"
     ok "composer${ver} → php@${ver}"
 done
-unset _compose_wrapper_dir _composer_bin _php_bin _wrapper
+unset _compose_wrapper_dir _php_bin _wrapper
 
 # ─── Brew install failure summary ────────────────────────────────────
 if [[ "${#BREW_INSTALL_FAILED[@]}" -gt 0 ]]; then
