@@ -188,74 +188,83 @@ _is_brew_missing() {
 # Using the full path binds the build to the right PHP ABI.
 #
 # ── 3-path reconciliation (brew in non-standard HOMEBREW_PREFIX) ──
-# With HOMEBREW_PREFIX=/opt/homebrew or /usr/local, the php formula
-# creates a symlink lib/php/pecl/<api> → Cellar/.../pecl/<api> that
-# papers over the divergence between where PECL writes the .so and
-# where PHP searches for it. In a non-standard prefix (e.g.
-# /Volumes/External/homebrew) that symlink is NOT created, so three
-# paths drift apart:
+# brew-php's extension layout splits into 3 paths that MUST all resolve
+# to the same file for `php -m` to load an extension:
 #
-#   (1) ext_dir reported by php runtime
-#       .../Cellar/php/<ver>/lib/php/<api>/       ← php loads from here
-#   (2) where PECL actually writes the built .so
-#       .../Cellar/php/<ver>/pecl/<api>/          ← build lands here
-#   (3) brew fallback path (secondary search list in PHP)
-#       $BREW_PREFIX/lib/php/pecl/<api>/          ← never exists in custom prefix
+#   (A) where PECL actually writes the built .so (via php-config)
+#       .../Cellar/php@<ver>/<X.Y.Z>/pecl/<api>/    ← build lands here
+#   (B) the path php.ini has hardcoded in `extension_dir`
+#       $BREW_PREFIX/lib/php/pecl/<api>/            ← where PHP searches
+#   (C) the ABI-default path PHP uses if extension_dir is unset
+#       .../Cellar/php@<ver>/<X.Y.Z>/lib/php/<api>/ ← belt-and-suspenders
 #
-# All three must resolve to the same file for `php -m` to load the
-# extension. `_reconcile_pecl_paths` symlinks (1) and (3) to point at
-# the real .so in (2).
-_derive_pecl_cellar_dir() {
-    # Input: extension_dir as reported by `php -r 'echo ini_get(...);'`
-    #        e.g. /Volumes/External/homebrew/Cellar/php/8.5.5/lib/php/20250925
-    # Output: .../Cellar/php/8.5.5/pecl/20250925  (where brew-php's pecl builds land)
-    local ext_dir="$1"
-    [[ -z "$ext_dir" || "$ext_dir" != */lib/php/* ]] && return 1
-    local api cellar_root
-    api="$(basename "$ext_dir")"
-    cellar_root="$(dirname "$(dirname "$(dirname "$ext_dir")")")"
-    echo "$cellar_root/pecl/$api"
+# With HOMEBREW_PREFIX=/opt/homebrew or /usr/local, the brew-php formula
+# creates (B) as a symlink to (A) post-install, papering over the split.
+# In a non-standard prefix (e.g. /Volumes/External/homebrew) that symlink
+# is NOT created — every `php -v` emits "Unable to load dynamic library"
+# warnings, pecl install succeeds but the .so is unreachable.
+#
+# Fix strategy: use `php-config --extension-dir` as the authoritative
+# source for (A). `php-config` is a shell script, emits no warnings, is
+# not sensitive to ini file state — three properties we need when the
+# install is already half-broken.
+#
+# We deliberately do NOT use `php -r 'echo ini_get("extension_dir");'`
+# as input: php.ini overrides extension_dir (to path B), and when any
+# extension ini is dangling, PHP emits warnings to stdout (CLI w/
+# display_errors=1) that contaminate the captured value.
+
+_pecl_cellar_dir_for() {
+    # Return path (A) — where brew-php's pecl actually installs.
+    # Arg 1: PHP major.minor (e.g. "8.5" — matches php@<ver> formula).
+    # Prints the directory (without trailing slash); empty on failure.
+    local ver="$1"
+    local config="$BREW_PREFIX/opt/php@${ver}/bin/php-config"
+    [[ ! -x "$config" ]] && return 1
+    "$config" --extension-dir 2>/dev/null
 }
 
 _find_pecl_so() {
     # Search every plausible location for <ext>.so in priority order.
-    # Returns the first match and exits 0; otherwise exits 1.
-    local ext="$1" ext_dir="$2"
-    local api pecl_cellar_dir
-    # 1. extension_dir itself (may already contain a symlink from a prior run)
-    [[ -n "$ext_dir" && -f "$ext_dir/$ext.so" ]] && { echo "$ext_dir/$ext.so"; return 0; }
-    # 2. Cellar pecl dir (where brew-php's pecl actually installs)
-    pecl_cellar_dir="$(_derive_pecl_cellar_dir "$ext_dir" || true)"
-    [[ -n "$pecl_cellar_dir" && -f "$pecl_cellar_dir/$ext.so" ]] && { echo "$pecl_cellar_dir/$ext.so"; return 0; }
-    # 3. brew fallback path ($BREW_PREFIX/lib/php/pecl/<api>)
-    if [[ -n "$ext_dir" ]]; then
-        api="$(basename "$ext_dir")"
+    # Priority: (A) > (B) > (C). Prints first match + exits 0.
+    local ext="$1" pecl_cellar_dir="$2"
+    local api canonical_ext_dir cellar_root
+    # (A) where pecl actually writes the .so
+    if [[ -n "$pecl_cellar_dir" && -f "$pecl_cellar_dir/$ext.so" ]]; then
+        echo "$pecl_cellar_dir/$ext.so"; return 0
+    fi
+    # Derive api + canonical from (A): ../pecl/<api> → ../lib/php/<api>
+    if [[ -n "$pecl_cellar_dir" && "$pecl_cellar_dir" == */pecl/* ]]; then
+        api="$(basename "$pecl_cellar_dir")"
+        cellar_root="$(dirname "$(dirname "$pecl_cellar_dir")")"
+        canonical_ext_dir="$cellar_root/lib/php/$api"
+        # (B) brew fallback path (php.ini's default extension_dir)
         [[ -f "$BREW_PREFIX/lib/php/pecl/$api/$ext.so" ]] && { echo "$BREW_PREFIX/lib/php/pecl/$api/$ext.so"; return 0; }
+        # (C) ABI-default (rarely populated; checked last)
+        [[ -f "$canonical_ext_dir/$ext.so" ]] && { echo "$canonical_ext_dir/$ext.so"; return 0; }
     fi
     return 1
 }
 
 _reconcile_pecl_paths() {
-    # Ensure <ext>.so is reachable via both extension_dir (primary) and
-    # $BREW_PREFIX/lib/php/pecl/<api> (fallback). Idempotent: re-running
-    # updates symlinks in place. Returns 0 if the .so exists somewhere;
-    # 1 if nothing to reconcile (no .so found anywhere).
-    local ext="$1" ext_dir="$2"
-    local real_so api fallback_dir
-    real_so="$(_find_pecl_so "$ext" "$ext_dir" || true)"
+    # Given the real .so in (A), create symlinks in (B) and (C) so PHP
+    # finds the extension no matter which search path it tries.
+    # Idempotent: re-running updates symlinks in place.
+    # Arg 1: extension name
+    # Arg 2: pecl_cellar_dir (path A) — source of truth
+    local ext="$1" pecl_cellar_dir="$2"
+    local real_so api canonical_ext_dir cellar_root fallback_dir
+    real_so="$(_find_pecl_so "$ext" "$pecl_cellar_dir" || true)"
     [[ -z "$real_so" ]] && return 1
-    # Derive fallback dir for path (3)
-    [[ -z "$ext_dir" ]] && return 0   # can't place symlinks without knowing api
-    api="$(basename "$ext_dir")"
+    [[ -z "$pecl_cellar_dir" || "$pecl_cellar_dir" != */pecl/* ]] && return 0
+    api="$(basename "$pecl_cellar_dir")"
+    cellar_root="$(dirname "$(dirname "$pecl_cellar_dir")")"
+    canonical_ext_dir="$cellar_root/lib/php/$api"
     fallback_dir="$BREW_PREFIX/lib/php/pecl/$api"
-    # Create directories + symlinks (mkdir -p idempotent; ln -sf overwrites).
-    mkdir -p "$ext_dir" "$fallback_dir"
-    if [[ "$real_so" != "$ext_dir/$ext.so" ]]; then
-        ln -sf "$real_so" "$ext_dir/$ext.so"
-    fi
-    if [[ "$real_so" != "$fallback_dir/$ext.so" ]]; then
-        ln -sf "$real_so" "$fallback_dir/$ext.so"
-    fi
+    # Create both dirs (mkdir -p idempotent, ln -sf overwrites stale links).
+    mkdir -p "$fallback_dir" "$canonical_ext_dir"
+    [[ "$real_so" != "$fallback_dir/$ext.so" ]] && ln -sf "$real_so" "$fallback_dir/$ext.so"
+    [[ "$real_so" != "$canonical_ext_dir/$ext.so" ]] && ln -sf "$real_so" "$canonical_ext_dir/$ext.so"
     return 0
 }
 
@@ -269,13 +278,15 @@ pecl_install_for_mac() {
 
     [[ ! -x "$pecl_bin" ]] && { warn "$pecl_bin not found — skipping ext=$ext for php@${ver}"; return; }
 
-    # Resolve the canonical extension_dir for THIS PHP binary (depends
-    # on the Zend module API, e.g. 20250925 for PHP 8.5.x). This is ONE
-    # of three paths that must align — see 3-path reconciliation block
-    # above. filesystem (pecl's actual output) is still truth, registry
-    # lies freely.
-    local ext_dir
-    ext_dir="$("$php_bin" -r 'echo ini_get("extension_dir");' 2>/dev/null)"
+    # Resolve (A) — where pecl actually installs .so files — via
+    # php-config. Uses a shell script, no ini file sourcing, no warning
+    # contamination. This is the anchor for 3-path reconciliation.
+    local pecl_cellar_dir
+    pecl_cellar_dir="$(_pecl_cellar_dir_for "$ver" || true)"
+    if [[ -z "$pecl_cellar_dir" ]]; then
+        warn "php@${ver}: php-config --extension-dir empty — skipping ext=$ext"
+        return
+    fi
 
     _ensure_ini() {
         mkdir -p "$ini_dir"
@@ -286,16 +297,15 @@ pecl_install_for_mac() {
 
     # ── PRE-FLIGHT CLEANUP ───────────────────────────────────────────
     # Only remove the ini if the .so is truly gone from EVERY candidate
-    # path. Previous versions checked only extension_dir and nuked the
-    # ini whenever PECL had written the .so to Cellar/pecl/<api>
-    # instead — triggering the "infinite reinstall loop" on custom
-    # prefixes. Now: if a .so is reachable anywhere, reconcile paths
-    # instead of deleting.
-    if [[ -f "$ini_file" && -n "$ext_dir" ]]; then
-        if _find_pecl_so "$ext" "$ext_dir" >/dev/null; then
-            _reconcile_pecl_paths "$ext" "$ext_dir" || true
+    # path. Previous versions checked only one path and nuked valid inis
+    # whenever PECL had written the .so somewhere else — triggering an
+    # "infinite reinstall loop" on custom prefixes. Now: if a .so is
+    # reachable anywhere, reconcile paths instead of deleting.
+    if [[ -f "$ini_file" ]]; then
+        if _find_pecl_so "$ext" "$pecl_cellar_dir" >/dev/null; then
+            _reconcile_pecl_paths "$ext" "$pecl_cellar_dir" || true
         else
-            warn "php@${ver}: removing stale ini → $ini_file (.so not found in ext_dir/Cellar/fallback)"
+            warn "php@${ver}: removing stale ini → $ini_file (.so not found in Cellar/fallback/canonical)"
             rm -f "$ini_file"
         fi
     fi
@@ -303,6 +313,9 @@ pecl_install_for_mac() {
     # ── DETECTION PATHS (in order; first match returns) ──────────────
 
     # Path 1: extension already LOADED in PHP — fully done.
+    # `php -m` returns the name case-sensitively, normalized (e.g. "igbinary",
+    # "mongodb"). Stderr dropped because warnings from *other* dangling
+    # extensions would leak in without -m ever being the point of failure.
     if "$php_bin" -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
         _ensure_ini   # belt-and-suspenders
         ok "php@${ver}: $ext already loaded"
@@ -310,28 +323,27 @@ pecl_install_for_mac() {
     fi
 
     # Path 2: .so file exists on disk SOMEWHERE — reconcile paths + write ini.
-    # Trust the FILESYSTEM here, not pecl's registry. The .so being
-    # present is the only reliable signal that the build actually
-    # succeeded at some point. Search across all 3 paths.
+    # Trust the FILESYSTEM, not pecl's registry. The .so being present
+    # is the only reliable signal that the build actually succeeded.
     local real_so
-    if real_so="$(_find_pecl_so "$ext" "$ext_dir")"; then
+    if real_so="$(_find_pecl_so "$ext" "$pecl_cellar_dir")"; then
         info "php@${ver}: $ext .so present at $real_so → reconciling paths + writing ini"
-        _reconcile_pecl_paths "$ext" "$ext_dir" || true
+        _reconcile_pecl_paths "$ext" "$pecl_cellar_dir" || true
         _ensure_ini
         ok "php@${ver}: $ext enabled (existing .so + reconciled symlinks)"
         return 0
     fi
 
     # Path 3: genuine install. Capture output for diagnostics.
-    info "php@${ver}: pecl install $ext (ext_dir: $ext_dir)"
+    info "php@${ver}: pecl install $ext (target: $pecl_cellar_dir/$ext.so)"
     local pecl_out pecl_rc
     pecl_out=$(printf '\n' | "$pecl_bin" install "$ext" 2>&1) ; pecl_rc=$?
 
     # Verify by FILESYSTEM (3-path search), not by exit code alone. pecl
     # can return 0 but leave no .so (defective build), or return 1 with
     # "already installed" while the .so is missing (registry corruption).
-    if _find_pecl_so "$ext" "$ext_dir" >/dev/null; then
-        _reconcile_pecl_paths "$ext" "$ext_dir" || true
+    if _find_pecl_so "$ext" "$pecl_cellar_dir" >/dev/null; then
+        _reconcile_pecl_paths "$ext" "$pecl_cellar_dir" || true
         _ensure_ini
         ok "php@${ver}: $ext enabled"
         return 0
@@ -347,8 +359,8 @@ pecl_install_for_mac() {
         warn "php@${ver}: pecl registry has $ext but .so missing — cleaning + retrying"
         "$pecl_bin" uninstall "$ext" >/dev/null 2>&1 || true
         pecl_out=$(printf '\n' | "$pecl_bin" install "$ext" 2>&1) ; pecl_rc=$?
-        if _find_pecl_so "$ext" "$ext_dir" >/dev/null; then
-            _reconcile_pecl_paths "$ext" "$ext_dir" || true
+        if _find_pecl_so "$ext" "$pecl_cellar_dir" >/dev/null; then
+            _reconcile_pecl_paths "$ext" "$pecl_cellar_dir" || true
             _ensure_ini
             ok "php@${ver}: $ext enabled (after registry cleanup + reinstall)"
             return 0

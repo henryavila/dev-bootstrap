@@ -187,6 +187,16 @@ assert_code_absent "$LANG_MAC" 'pecl_bin" install -f' \
 assert_pattern_present "$LANG_MAC" '_find_pecl_so "\$ext"' \
     "10-languages/install.mac.sh — detection uses multi-path .so filesystem check (not pecl registry)"
 
+# Resolver must use php-config --extension-dir (no warning contamination)
+# instead of `php -r 'echo ini_get(...);'` (which can pick up dangling-ini
+# warnings on stdout when display_errors=1 in php.ini).
+assert_pattern_present "$LANG_MAC" '\-\-extension-dir' \
+    "10-languages/install.mac.sh — uses php-config --extension-dir (no warning contamination)"
+
+# Ensure no ASSIGNMENT uses ini_get (comment mentioning it for documentation is fine).
+assert_pattern_absent "$LANG_MAC" '[a-z_]+=.*ini_get\("extension_dir"' \
+    "10-languages/install.mac.sh — no assignment via ini_get(\"extension_dir\") from php CLI (can leak warnings to stdout)"
+
 # pecl "already installed" must be treated as success (it returns
 # non-zero exit code but the .so is on disk — Path 2 in the function
 # above ALSO handles this preemptively).
@@ -246,42 +256,43 @@ echo "═══ PECL 3-path reconciliation (brew in non-standard HOMEBREW_PREFIX
 # Fix: _derive_pecl_cellar_dir + _find_pecl_so (search all 3 paths) +
 # _reconcile_pecl_paths (symlink (1) and (3) to real file in (2)).
 
-assert_pattern_present "$LANG_MAC" '_derive_pecl_cellar_dir\(\) \{' \
-    "10-languages/install.mac.sh — defines _derive_pecl_cellar_dir helper"
+assert_pattern_present "$LANG_MAC" '_pecl_cellar_dir_for\(\) \{' \
+    "10-languages/install.mac.sh — defines _pecl_cellar_dir_for helper (php-config backed)"
 
 assert_pattern_present "$LANG_MAC" '_reconcile_pecl_paths\(\) \{' \
     "10-languages/install.mac.sh — defines _reconcile_pecl_paths helper"
 
-# _find_pecl_so must search all 3 paths (ext_dir, Cellar/pecl, fallback).
-assert_pattern_present "$LANG_MAC" 'ext_dir/\$ext\.so' \
-    "10-languages/install.mac.sh — _find_pecl_so checks extension_dir (path 1)"
-
+# _find_pecl_so must search all 3 paths: (A) pecl Cellar dir, (B) brew
+# fallback path (what php.ini hardcodes), (C) canonical Cellar lib/php.
 assert_pattern_present "$LANG_MAC" 'pecl_cellar_dir/\$ext\.so' \
-    "10-languages/install.mac.sh — _find_pecl_so checks Cellar/pecl/<api> (path 2 — where brew-php PECL actually writes)"
+    "10-languages/install.mac.sh — _find_pecl_so checks (A) Cellar/pecl/<api> — where brew-php PECL actually writes"
 
 assert_pattern_present "$LANG_MAC" 'BREW_PREFIX/lib/php/pecl/\$api/\$ext\.so' \
-    "10-languages/install.mac.sh — _find_pecl_so checks \$BREW_PREFIX/lib/php/pecl/<api> (path 3 — PHP fallback)"
+    "10-languages/install.mac.sh — _find_pecl_so checks (B) \$BREW_PREFIX/lib/php/pecl/<api> — what php.ini hardcodes"
 
-# _reconcile_pecl_paths must create symlinks in BOTH extension_dir AND fallback_dir.
-assert_pattern_present "$LANG_MAC" 'ln -sf "\$real_so" "\$ext_dir' \
-    "10-languages/install.mac.sh — symlinks real .so into extension_dir (so PHP finds it)"
+assert_pattern_present "$LANG_MAC" 'canonical_ext_dir/\$ext\.so' \
+    "10-languages/install.mac.sh — _find_pecl_so checks (C) Cellar/.../lib/php/<api> — ABI default"
 
+# _reconcile_pecl_paths must create symlinks in fallback_dir AND canonical_ext_dir.
 assert_pattern_present "$LANG_MAC" 'ln -sf "\$real_so" "\$fallback_dir' \
-    "10-languages/install.mac.sh — symlinks real .so into \$BREW_PREFIX/lib/php/pecl/<api> (fallback path)"
+    "10-languages/install.mac.sh — symlinks real .so into \$BREW_PREFIX/lib/php/pecl/<api> (path B — what PHP searches)"
+
+assert_pattern_present "$LANG_MAC" 'ln -sf "\$real_so" "\$canonical_ext_dir' \
+    "10-languages/install.mac.sh — symlinks real .so into Cellar/.../lib/php/<api> (path C — ABI default)"
 
 # Pre-flight stale-ini sweep must be gated on _find_pecl_so (all paths),
 # NOT on a single path check. This was THE bug: previous code checked
 # only \$ext_dir/\$ext.so, which in custom prefix never exists, so it
 # nuked working inis every run → infinite reinstall loop.
-assert_pattern_absent "$LANG_MAC" 'if \[\[ -f "\$ini_file" && -n "\$ext_dir" && ! -f "\$so_file" \]\]' \
-    "10-languages/install.mac.sh — stale-ini sweep no longer uses single-path check (would nuke valid inis)"
+assert_pattern_absent "$LANG_MAC" '\-n "\$ext_dir" && ! -f "\$so_file"' \
+    "10-languages/install.mac.sh — stale-ini sweep no longer uses single-path check"
 
-assert_pattern_present "$LANG_MAC" 'if _find_pecl_so "\$ext" "\$ext_dir" >/dev/null; then' \
+assert_pattern_present "$LANG_MAC" 'if _find_pecl_so "\$ext" "\$pecl_cellar_dir" >/dev/null' \
     "10-languages/install.mac.sh — stale-ini sweep gated on multi-path _find_pecl_so"
 
 # Every Path 2/3 success branch must call _reconcile_pecl_paths before
 # _ensure_ini, so the symlinks exist before PHP tries to load.
-reconcile_count=$(_count_matches '_reconcile_pecl_paths "\$ext" "\$ext_dir"' "$LANG_MAC")
+reconcile_count=$(_count_matches '_reconcile_pecl_paths "\$ext" "\$pecl_cellar_dir"' "$LANG_MAC")
 if [[ "$reconcile_count" -ge 3 ]]; then
     pass "10-languages/install.mac.sh — _reconcile_pecl_paths called on all success paths (count=$reconcile_count, expected ≥3)"
 else
