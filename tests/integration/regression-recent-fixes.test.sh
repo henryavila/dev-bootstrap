@@ -805,4 +805,36 @@ assert_pattern_present "$TMUX_CONF" 'dscl.*UserShell' \
 # forbid 'exec zsh' because it's still a useful convenience.
 
 echo
+echo "═══ 40-tmux ships generic tmux aliases (tl / ta / tn / tm) ═══"
+
+# These used to live in Henry's private dotfiles; lifted to the
+# public dev-bootstrap after the 'tm' alias proved useful enough
+# to belong in the shared baseline. The dotfiles-private file
+# should NOT redeclare them — the aliases_private_keeps_only_project
+# assertion catches accidental drift.
+TMUX_BASHRC="$ROOT/topics/40-tmux/templates/bashrc.d-40-tmux.sh"
+TMUX_ZSHRC="$ROOT/topics/40-tmux/templates/zshrc.d-40-tmux.sh"
+
+assert_file_exists "$TMUX_BASHRC" \
+    "40-tmux — bashrc fragment exists"
+assert_file_exists "$TMUX_ZSHRC" \
+    "40-tmux — zshrc fragment exists"
+
+for f in "$TMUX_BASHRC" "$TMUX_ZSHRC"; do
+    base="$(basename "$f")"
+    assert_pattern_present "$f" "alias tl='tmux ls'" \
+        "$base — ships 'tl' (list sessions)"
+    assert_pattern_present "$f" "alias ta='tmux attach -t'" \
+        "$base — ships 'ta' (attach by name)"
+    assert_pattern_present "$f" "alias tn='tmux new -s'" \
+        "$base — ships 'tn' (new by name)"
+    assert_pattern_present "$f" "alias tm='tmux new -A -s main'" \
+        "$base — ships 'tm' (attach-or-create 'main')"
+    # Fragment must be no-op when tmux isn't on PATH — otherwise it
+    # pollutes the shell on machines where the user skipped 40-tmux.
+    assert_pattern_present "$f" 'command -v tmux' \
+        "$base — gates aliases on 'command -v tmux'"
+done
+
+echo
 summary
