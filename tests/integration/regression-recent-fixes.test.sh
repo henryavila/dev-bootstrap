@@ -665,8 +665,11 @@ assert_pattern_present "$LANG_WSL" 'PHP_PEAR_METADATA_DIR="\$tmpmeta"' \
 assert_pattern_present "$LANG_WSL" 'tmpmeta="\$\(mktemp -d' \
     "10-languages/install.wsl.sh — allocates tmpmeta scratch dir"
 
-assert_pattern_present "$LANG_WSL" "trap 'rm -rf \"\\\$tmpbin\" \"\\\$tmpmeta\"' RETURN" \
-    "10-languages/install.wsl.sh — trap cleans both tmpbin AND tmpmeta"
+assert_pattern_present "$LANG_WSL" "trap 'sudo rm -rf \"\\\$tmpbin\" \"\\\$tmpmeta\"" \
+    "10-languages/install.wsl.sh — trap cleans both tmpbin AND tmpmeta with sudo"
+
+assert_pattern_present "$LANG_WSL" "'sudo rm.*2>/dev/null \|\| true' RETURN" \
+    "10-languages/install.wsl.sh — trap absorbs rm errors (else set -e aborts the loop)"
 
 assert_pattern_present "$LANG_WSL" 'ln -s "\$phpize_bin"' \
     "10-languages/install.wsl.sh — scratch dir has phpize symlink → phpize\${ver}"

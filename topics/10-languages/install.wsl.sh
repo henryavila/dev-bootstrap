@@ -257,13 +257,20 @@ pecl_install_for_version() {
     #               own target_ext_dir.
     #
     # Both dirs cleaned via `trap RETURN` even if pecl is killed.
+    # Cleanup MUST use sudo + absorb errors: pecl runs as root via
+    # `sudo env` below and writes root-owned files inside $tmpmeta
+    # (.registry/*, .channels/*). A plain `rm -rf` as the bootstrap
+    # user then fails with "Permission denied", and under `set -e`
+    # that aborts the entire PECL loop — first discovered on ultron
+    # run 162613 which processed igbinary for 8.3 then died on
+    # cleanup, skipping every other ext × ver combination.
     local tmpbin tmpmeta
     tmpbin="$(mktemp -d -t dev-bootstrap-pecl-bin.XXXXXX)"
     tmpmeta="$(mktemp -d -t dev-bootstrap-pecl-meta.XXXXXX)"
     ln -s "$phpize_bin"      "$tmpbin/phpize"
     ln -s "$php_config_bin"  "$tmpbin/php-config"
     ln -s "$php_bin"         "$tmpbin/php"
-    trap 'rm -rf "$tmpbin" "$tmpmeta"' RETURN
+    trap 'sudo rm -rf "$tmpbin" "$tmpmeta" 2>/dev/null || true' RETURN
 
     info "PHP $ver: pecl install $ext (target: $so_path)"
     # `-f` forces rebuild when pecl's internal cache thinks the ext is
