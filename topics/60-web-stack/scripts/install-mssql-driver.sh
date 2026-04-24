@@ -68,7 +68,7 @@ for p in "${pkgs[@]}"; do
 done
 if [[ "${#missing[@]}" -gt 0 ]]; then
     info "installing: ${missing[*]}"
-    sudo ACCEPT_EULA=Y apt-get install -y -qq "${missing[@]}"
+    sudo ACCEPT_EULA=Y apt-get install -y -qq --no-install-recommends "${missing[@]}"
 fi
 
 # Add sqlcmd + bcp to PATH via a login-shell profile snippet (once)
@@ -99,7 +99,7 @@ for ver in $PHP_VERSIONS_TO_PATCH; do
     # verify defensively so a standalone run of this script still works.
     if ! dpkg -s "php${ver}-dev" >/dev/null 2>&1; then
         info "installing php${ver}-dev (required for PECL build)"
-        sudo apt-get install -y -qq "php${ver}-dev"
+        sudo apt-get install -y -qq --no-install-recommends "php${ver}-dev"
     fi
 
     pecl_install_for_version_linux "$ver" sqlsrv     "SQL Server support won't work on this PHP"

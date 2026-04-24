@@ -92,7 +92,15 @@ install_php_version() {
     fi
 
     info "apt install PHP $ver + extensions (${#missing[@]} pkgs)"
-    sudo apt-get install -y -qq "${missing[@]}"
+    # `--no-install-recommends`: the `phpX.Y` meta-package on Sury PPA carries
+    #   Recommends: libapache2-mod-phpX.Y | phpX.Y-fpm
+    # When BOTH are absent at install time apt picks the FIRST option (the
+    # mod_php shim), which Depends: apache2 + apache2-bin + apache2-data +
+    # apache2-utils. apache2 then starts on :80 by default, blocking nginx.
+    # On crc 2026-04-24 this dragged apache2 onto the corporate machine and
+    # left nginx in `failed` for 22h. Our pkgs[] is exhaustive — Recommends
+    # only ADD packages we did not request, so suppressing them is safe.
+    sudo apt-get install -y -qq --no-install-recommends "${missing[@]}"
     ok "PHP $ver installed"
 }
 
@@ -146,14 +154,14 @@ for p in "${combined_deps[@]}"; do
 done
 if [[ "${#missing_deps[@]}" -gt 0 ]]; then
     info "installing PECL build deps: ${missing_deps[*]}"
-    sudo apt-get install -y -qq "${missing_deps[@]}"
+    sudo apt-get install -y -qq --no-install-recommends "${missing_deps[@]}"
 fi
 
 # Also need per-version dev headers to compile .so for that PHP
 for ver in $PHP_VERSIONS; do
     if ! dpkg -s "php${ver}-dev" >/dev/null 2>&1; then
         info "installing php${ver}-dev (headers for PECL build)"
-        sudo apt-get install -y -qq "php${ver}-dev"
+        sudo apt-get install -y -qq --no-install-recommends "php${ver}-dev"
     fi
 done
 

@@ -88,7 +88,7 @@ done
 if [[ "${#missing[@]}" -gt 0 ]]; then
     info "installing: ${missing[*]} (apt; mysql-server can take 30-60s on first run)"
     sudo apt-get update -q
-    sudo apt-get install "${APT_NONINTERACTIVE_FLAGS[@]}" "${missing[@]}"
+    sudo apt-get install "${APT_NONINTERACTIVE_FLAGS[@]}" --no-install-recommends "${missing[@]}"
 fi
 
 # PHP-FPM for every installed version (each FPM runs independently, socket
@@ -97,7 +97,7 @@ fi
 for ver in ${PHP_VERSIONS:-$PHP_DEFAULT}; do
     if ! dpkg -s "php${ver}-fpm" >/dev/null 2>&1; then
         info "installing php${ver}-fpm"
-        sudo apt-get install "${APT_NONINTERACTIVE_FLAGS[@]}" "php${ver}-fpm"
+        sudo apt-get install "${APT_NONINTERACTIVE_FLAGS[@]}" --no-install-recommends "php${ver}-fpm"
     fi
 done
 
@@ -300,6 +300,30 @@ for site in catchall-php.conf catchall-proxy.conf; do
         ok "$site already enabled"
     fi
 done
+
+# ─── Cleanup: purge apache2 if dragged in by older bootstrap runs ────
+# A previous version of 10-languages/install.wsl.sh installed PHP without
+# `--no-install-recommends`. The phpX.Y meta-package's
+#   Recommends: libapache2-modX.Y | phpX.Y-fpm
+# resolved (under some apt orderings, esp. on corporate machines with
+# pre-existing PHP/Apache state) to the mod_php shim, dragging apache2 in.
+# The current installer prevents new infections, but already-affected
+# machines (crc 2026-04-24) need active cleanup. This block is idempotent:
+# noop when none of the offending packages are present.
+APACHE_PKGS=(apache2 apache2-bin apache2-data apache2-utils libapache2-mod-php8.3 libapache2-mod-php8.4 libapache2-mod-php8.5)
+apache_present=()
+for p in "${APACHE_PKGS[@]}"; do
+    dpkg -s "$p" >/dev/null 2>&1 && apache_present+=("$p")
+done
+if [[ "${#apache_present[@]}" -gt 0 ]]; then
+    info "purging apache2 (was pulled in as PHP recommend before --no-install-recommends fix): ${apache_present[*]}"
+    # Stop + disable BEFORE purge so systemd doesn't fight us during removal.
+    # `|| true` so already-stopped/already-disabled units don't fail set -e.
+    sudo systemctl disable --now apache2 2>/dev/null || true
+    sudo apt-get purge "${APT_NONINTERACTIVE_FLAGS[@]}" "${apache_present[@]}" || warn "apache2 purge had issues — re-run by hand: sudo apt-get purge ${apache_present[*]}"
+    sudo apt-get autoremove "${APT_NONINTERACTIVE_FLAGS[@]}" || true
+    ok "apache2 + mod_php removed"
+fi
 
 # ─── Pre-flight: port :80 / :443 conflict detection ──────────────────
 # Corporate / pre-provisioned machines (and any host where Apache shipped
