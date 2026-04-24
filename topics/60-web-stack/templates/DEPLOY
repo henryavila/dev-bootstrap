@@ -31,3 +31,10 @@ nginx-sites/catchall-proxy.conf.template=${NGINX_AVAILABLE_DIR}/catchall-proxy.c
 # User-facing CLI helpers
 bin/link-project.template=${HOME}/.local/bin/link-project
 bin/share-project.template=${HOME}/.local/bin/share-project
+
+# Shell fragments (Laravel + service shortcuts: art, srn, srp, …).
+# auto_map_name in lib/deploy.sh handles bashrc.d-*/zshrc.d-* implicitly,
+# but auto-mapping is bypassed entirely when DEPLOY exists — every template
+# must be enumerated here or it becomes dead code (regression 2026-04-24).
+bashrc.d-60-web-stack.sh=${HOME}/.bashrc.d/60-web-stack.sh
+zshrc.d-60-web-stack.sh=${HOME}/.zshrc.d/60-web-stack.sh

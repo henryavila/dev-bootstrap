@@ -3,3 +3,10 @@
 # deploy.sh elevates with sudo automatically for paths outside $HOME.
 
 sshd-snippet.template=/etc/ssh/sshd_config.d/99-${USER}.conf
+
+# Shell fragments (Tailscale shortcuts: ts, tip, tup, tping, tssh, tip-of()).
+# auto_map_name in lib/deploy.sh handles bashrc.d-*/zshrc.d-* implicitly,
+# but auto-mapping is bypassed entirely when DEPLOY exists — every template
+# must be enumerated here or it becomes dead code (regression 2026-04-24).
+bashrc.d-70-remote-access.sh=${HOME}/.bashrc.d/70-remote-access.sh
+zshrc.d-70-remote-access.sh=${HOME}/.zshrc.d/70-remote-access.sh
