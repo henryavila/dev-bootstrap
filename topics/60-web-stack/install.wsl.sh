@@ -301,8 +301,45 @@ for site in catchall-php.conf catchall-proxy.conf; do
     fi
 done
 
+# ─── Pre-flight: port :80 / :443 conflict detection ──────────────────
+# Corporate / pre-provisioned machines (and any host where Apache shipped
+# in the base image) frequently have apache2 already bound to :80. apt
+# happily installs nginx alongside Apache — the conflict only surfaces
+# when systemd tries to start nginx and the bind() fails. Without an
+# upfront check, the topic prints "couldn't reload nginx" once and exits 0;
+# the failure mode (nginx in `failed` state for 22h, web stack non-functional)
+# is invisible until the user later visits *.localhost and sees a connection
+# refused. Detected on crc 2026-04-24.
+#
+# We use `ss -tlnp` (sudo for the -p column to show owner). If something
+# other than nginx owns :80 we emit a `followup critical` with the exact
+# disable command and set PORT_CONFLICT=1 to skip the reload below
+# (avoids the misleading "could not reload" line on top of the real cause).
+PORT_CONFLICT=""
+if command -v ss >/dev/null 2>&1; then
+    port80_owner="$(sudo ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print $NF}' | head -1)"
+    if [[ -n "$port80_owner" ]] && [[ "$port80_owner" != *'"nginx"'* ]]; then
+        # Extract the program name from ss's `users:(("apache2",pid=N,fd=M))` form
+        owner_name="$(printf '%s' "$port80_owner" | sed -nE 's/.*\(\("([^"]+)".*/\1/p')"
+        : "${owner_name:=unknown}"
+        PORT_CONFLICT=1
+        case "$owner_name" in
+            apache2|apache|httpd)
+                followup critical "port 80 is owned by $owner_name (not nginx) — disable it and start nginx with:
+        sudo systemctl disable --now ${owner_name}
+        sudo systemctl restart nginx"
+                ;;
+            *)
+                followup critical "port 80 is owned by '$owner_name' (not nginx) — stop it (e.g. 'sudo systemctl disable --now ${owner_name}') then 'sudo systemctl restart nginx'"
+                ;;
+        esac
+    fi
+fi
+
 # Validate config before suggesting reload — catches obvious breakage on first run
-if sudo nginx -t >/dev/null 2>&1; then
+if [[ -n "$PORT_CONFLICT" ]]; then
+    warn "skipping nginx reload — another service owns port 80 (see followup summary above)"
+elif sudo nginx -t >/dev/null 2>&1; then
     ok "nginx config is valid"
     sudo systemctl reload nginx 2>/dev/null \
         || sudo service nginx reload 2>/dev/null \
