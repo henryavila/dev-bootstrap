@@ -31,11 +31,11 @@ color.ui=auto
 # aliases — quick navigation (git-side; complement the shell aliases in
 # templates/bashrc.d-50-git.sh + zshrc.d-50-git.sh).
 #
-# `co=checkout` was removed 2026-04-24 — replaced by shell alias `gch`
-# which works at the prompt without typing `git`. install.sh is additive
-# only (does not unset removed keys), so machines that already had
-# `git co` keep it until you manually run:
-#     git config --global --unset alias.co
+# Deprecation flow: when removing a key from THIS file, ALSO add it to
+# data/gitconfig.removed — install.sh reads that file and runs
+# `git config --global --unset` for each entry on every run, so machines
+# already provisioned get cleaned up automatically on next bootstrap.
+# (Without the dual edit, removed keys persist in ~/.gitconfig forever.)
 alias.br=branch
 alias.st=status
 alias.ci=commit

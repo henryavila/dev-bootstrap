@@ -1,0 +1,18 @@
+# gitconfig.removed — keys that were once installed by 50-git but are now
+# deprecated. install.sh runs `git config --global --unset <key>` for each
+# entry on every bootstrap run.
+#
+# Idempotency: `--unset` returns exit 5 on a non-existent key — silenced
+# by `|| true` in the install loop. Safe to leave entries here forever;
+# they're a permanent record of "we used to install this, don't anymore".
+#
+# Format: one key per line. Comments (#) and blank lines ignored.
+#
+# When removing a key from gitconfig.keys, ALSO add it here so machines
+# already provisioned get cleaned up on their next `bash bootstrap.sh`.
+# Without this dual edit, the deleted key persists in ~/.gitconfig forever.
+
+# Removed 2026-04-24: replaced by shell alias `gch` (in
+# topics/50-git/templates/{bashrc,zshrc}.d-50-git.sh) which works at the
+# prompt directly without typing `git`.
+alias.co

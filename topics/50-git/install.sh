@@ -45,6 +45,39 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
 done < "$keys_file"
 
+# ─── Unset deprecated keys ────────────────────────────────────────────
+# When we remove a key from gitconfig.keys, the install loop above stops
+# adding it on fresh machines — but on machines that already had it set,
+# the value persists forever (install.sh is additive). data/gitconfig.removed
+# lists keys we want explicitly UNSET on every run, regardless of source.
+#
+# `git config --unset` returns exit 5 if the key doesn't exist; `|| true`
+# silences that so the loop stays idempotent. Real failures (lock contention,
+# permission denied) still bubble up because we only swallow the unset call.
+removed_file="$HERE/data/gitconfig.removed"
+if [[ -f "$removed_file" ]]; then
+    while IFS= read -r key || [[ -n "$key" ]]; do
+        key="${key%$'\r'}"
+        [[ -z "${key// }" ]] && continue
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        key="${key#"${key%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"
+
+        # Refuse to touch user.* / credential.* (same protection as the install loop)
+        case "$key" in
+            user.*|credential.*)
+                warn "skip unset $key (preserved from existing config)"
+                continue
+                ;;
+        esac
+
+        if git config --global --get "$key" >/dev/null 2>&1; then
+            info "git config --global --unset $key (deprecated)"
+            git config --global --unset "$key" || true
+        fi
+        # else: already absent — no log noise
+    done < "$removed_file"
+fi
+
 # Apply GIT_NAME/GIT_EMAIL from env var only if user.name/user.email not set
 current_name="$(git config --global --get user.name 2>/dev/null || true)"
 current_email="$(git config --global --get user.email 2>/dev/null || true)"
