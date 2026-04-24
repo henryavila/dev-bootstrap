@@ -28,8 +28,14 @@ rebase.autoStash=true
 # color
 color.ui=auto
 
-# aliases — quick navigation
-alias.co=checkout
+# aliases — quick navigation (git-side; complement the shell aliases in
+# templates/bashrc.d-50-git.sh + zshrc.d-50-git.sh).
+#
+# `co=checkout` was removed 2026-04-24 — replaced by shell alias `gch`
+# which works at the prompt without typing `git`. install.sh is additive
+# only (does not unset removed keys), so machines that already had
+# `git co` keep it until you manually run:
+#     git config --global --unset alias.co
 alias.br=branch
 alias.st=status
 alias.ci=commit

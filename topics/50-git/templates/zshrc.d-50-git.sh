@@ -2,27 +2,33 @@
 # 50-git shell fragment (zsh)
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 # Shell-level git shortcuts. See bashrc.d-50-git.sh for rationale.
+#
+# All shortcuts delegate to `g` (not `git`) — silences the zsh-you-should-use
+# (YSU) plugin's "you should use 'g' instead of 'git'" warning. YSU detects
+# by matching alias VALUES against the expanded command, so making the value
+# `g status` (instead of `git status`) avoids the match while preserving
+# identical behavior (since `g='git'`).
 
 alias g='git'
-alias gs='git status'
-alias gl='git log --oneline --graph --decorate -15'
-alias gd='git diff'
-alias gds='git diff --staged'
-alias gco='git checkout'
-alias gb='git branch'
-alias gp='git pull'
-alias gaa='git add .'
-alias gc='git commit'
-alias grb='git rebase -i'
-alias gsh='git show'
-alias glog='git log --oneline --decorate --graph'
-alias gloga='git log --oneline --decorate --graph --all'
+alias gs='g status'
+alias gl='g log --oneline --graph --decorate -15'
+alias gd='g diff'
+alias gds='g diff --staged'
+alias gch='g checkout'
+alias gb='g branch'
+alias gp='g pull'
+alias gaa='g add .'
+alias gc='g commit'
+alias grb='g rebase -i'
+alias gsh='g show'
+alias glog='g log --oneline --decorate --graph'
+alias gloga='g log --oneline --decorate --graph --all'
 
 # Destructive helper — resets everything, cleans untracked. Use with care.
-alias whoops='git reset --hard && git clean -df'
+alias whoops='g reset --hard && g clean -df'
 
 # Sync main into current branch without losing your place
-alias gmm='echo "Switching to main..." && git checkout main && echo -e "\nUpdating main..." && git pull && echo -e "\nReturning to previous branch..." && git checkout - && echo -e "\nMerging main..." && git merge main'
+alias gmm='echo "Switching to main..." && g checkout main && echo -e "\nUpdating main..." && g pull && echo -e "\nReturning to previous branch..." && g checkout - && echo -e "\nMerging main..." && g merge main'
 
 # zsh inherits git completion via compinit (which starship/ohmyzsh users already
 # run). No equivalent to bash's __git_complete needed; `compdef _git g=git` works

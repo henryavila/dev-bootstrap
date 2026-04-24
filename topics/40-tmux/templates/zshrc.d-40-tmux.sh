@@ -11,6 +11,11 @@ alias tl='tmux ls'
 alias ta='tmux attach -t'
 alias tn='tmux new -s'
 
+# `td` — detach from current session WITHOUT killing it. Equivalent to
+# the `prefix d` keybind, but works as a regular shell command (useful
+# in scripts and one-liners).
+alias td='tmux detach'
+
 # `tm` — attach-or-create the canonical 'main' session.
 # `-A` on new-session behaves like attach-session when the session
 # already exists, so the first call spawns and every subsequent
