@@ -247,31 +247,95 @@ run_menu() {
             DOTFILES_DIR="$candidate_dir"
             export DOTFILES_REPO DOTFILES_DIR
         else
-            DOTFILES_REPO=$(whiptail --title "95-dotfiles-personal :: repo" \
-                --inputbox \
+            # Two-path prompt: (a) create new fork from a public template via
+            # `gh repo create --template`, or (b) provide an existing URL.
+            # Path (a) is the on-ramp for first-time users — they don't have to
+            # leave the terminal to fork the template manually on github.com.
+            # Path (b) handles existing repos, local testing (`file://`), or
+            # forks-of-forks where the template default doesn't apply.
+            #
+            # Both paths set DOTFILES_REPO + DOTFILES_DIR. Path (a) ALSO exports
+            # CREATE_DOTFILES_FROM_TEMPLATE=1 + the inputs for `gh repo create`,
+            # which 95-dotfiles-personal/install.sh consumes (gh CLI is ready
+            # by then — installed by 05-identity earlier in the topic order).
+            if whiptail --title "95-dotfiles-personal :: source" \
+                --yesno \
+"Create your dotfiles repo NOW from a GitHub template?
+
+Yes  →  prompt for owner/template, run \`gh repo create --template …\`,
+        clone, then run install.sh of the clone.
+No   →  point me at an existing dotfiles repo URL." \
+                12 78 3>&1 1>&2 2>&3; then
+
+                local _template_default="${DOTFILES_TEMPLATE_REPO:-henryavila/dotfiles-template}"
+                DOTFILES_TEMPLATE_REPO=$(whiptail --title "create from template :: source template" \
+                    --inputbox \
+"Template repo (owner/name).
+Press ENTER to accept the default skeleton; override for forks-of-forks
+or enterprise templates." \
+                    11 78 "$_template_default" \
+                    3>&1 1>&2 2>&3) || _menu_cancel
+
+                # Default new owner = system $USER (matches a common case where
+                # local user matches the GitHub username). User can override.
+                local _new_owner=$(whiptail --title "create from template :: new repo owner" \
+                    --inputbox \
+"Your GitHub username (or organization). The new repo will be created
+as <owner>/<name>." \
+                    10 70 "${DOTFILES_NEW_REPO_OWNER:-$USER}" \
+                    3>&1 1>&2 2>&3) || _menu_cancel
+
+                local _new_name=$(whiptail --title "create from template :: new repo name" \
+                    --inputbox \
+"Name for the new repo:" \
+                    10 70 "${DOTFILES_NEW_REPO_NAME:-dotfiles}" \
+                    3>&1 1>&2 2>&3) || _menu_cancel
+
+                # Default = private. The recommendation is private even for
+                # solo devs because dotfiles often pick up secrets/identity.
+                local _new_private=1
+                if ! whiptail --title "create from template :: visibility" \
+                    --yesno "Make the new repo PRIVATE? (recommended)" \
+                    8 60 3>&1 1>&2 2>&3; then
+                    _new_private=0
+                fi
+
+                DOTFILES_NEW_REPO_OWNER="$_new_owner"
+                DOTFILES_NEW_REPO_NAME="$_new_name"
+                DOTFILES_NEW_REPO_PRIVATE="$_new_private"
+                CREATE_DOTFILES_FROM_TEMPLATE=1
+                DOTFILES_REPO="git@github.com:${_new_owner}/${_new_name}.git"
+                DOTFILES_DIR="${DOTFILES_DIR:-$HOME/${_new_name}}"
+                export CREATE_DOTFILES_FROM_TEMPLATE DOTFILES_TEMPLATE_REPO
+                export DOTFILES_NEW_REPO_OWNER DOTFILES_NEW_REPO_NAME DOTFILES_NEW_REPO_PRIVATE
+                export DOTFILES_REPO DOTFILES_DIR
+            else
+                DOTFILES_REPO=$(whiptail --title "95-dotfiles-personal :: repo" \
+                    --inputbox \
 "URL of your personal dotfiles repo.
 Examples:
   git@github.com:youruser/dotfiles.git
   https://github.com/youruser/dotfiles.git
   file:///home/youruser/dotfiles   (local testing)" \
-                14 78 "${DOTFILES_REPO:-}" \
-                3>&1 1>&2 2>&3) || _menu_cancel
-
-            if [[ -z "$DOTFILES_REPO" ]]; then
-                warn "empty dotfiles URL — skipping 95-dotfiles-personal"
-            else
-                export DOTFILES_REPO
-
-                # DOTFILES_DIR — where the repo will be cloned.
-                # Pre-fill with expanded path so whiptail returns a valid absolute
-                # path (tilde would NOT be expanded by the shell since it came
-                # from user input, not a literal).
-                DOTFILES_DIR=$(whiptail --title "95-dotfiles-personal :: clone path" \
-                    --inputbox \
-"Where to clone the dotfiles repo:" \
-                    10 70 "${DOTFILES_DIR:-$HOME/dotfiles}" \
+                    14 78 "${DOTFILES_REPO:-}" \
                     3>&1 1>&2 2>&3) || _menu_cancel
-                export DOTFILES_DIR
+
+                if [[ -z "$DOTFILES_REPO" ]]; then
+                    warn "empty dotfiles URL — skipping 95-dotfiles-personal"
+                else
+                    export DOTFILES_REPO
+
+                    # DOTFILES_DIR — where the repo will be cloned.
+                    # Pre-fill with expanded path so whiptail returns a valid absolute
+                    # path (tilde would NOT be expanded by the shell since it came
+                    # from user input, not a literal).
+                    DOTFILES_DIR=$(whiptail --title "95-dotfiles-personal :: clone path" \
+                        --inputbox \
+"Where to clone the dotfiles repo:" \
+                        10 70 "${DOTFILES_DIR:-$HOME/dotfiles}" \
+                        3>&1 1>&2 2>&3) || _menu_cancel
+                    export DOTFILES_DIR
+                fi
             fi
         fi
     fi
