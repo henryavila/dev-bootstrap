@@ -5,6 +5,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/../../lib/uninstall.sh"
 
 # _has_ctty — 0 iff the running process has a usable controlling TTY.
 # Why not use stdout-is-tty tests: bootstrap.sh wraps each installer
@@ -33,10 +35,9 @@ _has_ctty() {
 #                                  fuzzy Ctrl-R + cross-machine sync (manual
 #                                  `atuin register`/`atuin import zsh` first time).
 #   - forgit                       fzf-powered git helpers (ga, gd, gco, gi, …).
-#   - zsh-you-should-use           nags when you skip an alias you defined.
 pkgs=(fzf bat eza zoxide ripgrep fd starship lazygit git-delta tmux \
       zsh-completions zsh-autosuggestions zsh-syntax-highlighting \
-      zsh-history-substring-search atuin forgit zsh-you-should-use \
+      zsh-history-substring-search atuin forgit \
       btop dust duf gping xh sd tealdeer procs \
       neovim)
 
@@ -275,5 +276,12 @@ Run:  atuin login
   (opens a browser → atuin.sh OAuth; no password or key needed)"
     fi
 fi
+
+# ─── Drift cleanup (deprecated artifacts) ─────────────────────────────
+# Reads data/uninstall.list and removes anything listed there. Idempotent,
+# silent when nothing to do. To deprecate something, add a line in the
+# manifest in the SAME commit that removes the active install — see the
+# header of data/uninstall.list for syntax.
+uninstall_apply "$HERE/data/uninstall.list"
 
 ok "20-terminal-ux done"
