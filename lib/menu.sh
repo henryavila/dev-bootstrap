@@ -258,14 +258,21 @@ run_menu() {
             # CREATE_DOTFILES_FROM_TEMPLATE=1 + the inputs for `gh repo create`,
             # which 95-dotfiles-personal/install.sh consumes (gh CLI is ready
             # by then — installed by 05-identity earlier in the topic order).
-            if whiptail --title "95-dotfiles-personal :: source" \
+            # Capture rc explicitly: whiptail returns 0=Yes / 1=No / 255=ESC.
+            # We MUST distinguish ESC (cancel) from "No" — without this, ESC
+            # silently falls into the "No" branch and conflates user-cancelled
+            # input with explicit choice, producing surprising states.
+            local _src_rc=0
+            whiptail --title "95-dotfiles-personal :: source" \
                 --yesno \
 "Create your dotfiles repo NOW from a GitHub template?
 
 Yes  →  prompt for owner/template, run \`gh repo create --template …\`,
         clone, then run install.sh of the clone.
 No   →  point me at an existing dotfiles repo URL." \
-                12 78 3>&1 1>&2 2>&3; then
+                12 78 3>&1 1>&2 2>&3 || _src_rc=$?
+            (( _src_rc == 255 )) && _menu_cancel
+            if (( _src_rc == 0 )); then
 
                 local _template_default="${DOTFILES_TEMPLATE_REPO:-henryavila/dotfiles-template}"
                 DOTFILES_TEMPLATE_REPO=$(whiptail --title "create from template :: source template" \
@@ -293,12 +300,15 @@ as <owner>/<name>." \
 
                 # Default = private. The recommendation is private even for
                 # solo devs because dotfiles often pick up secrets/identity.
-                local _new_private=1
-                if ! whiptail --title "create from template :: visibility" \
+                # ESC must NOT silently flip to public — capture rc and cancel
+                # on 255 so the user has to explicitly choose.
+                local _vis_rc=0
+                whiptail --title "create from template :: visibility" \
                     --yesno "Make the new repo PRIVATE? (recommended)" \
-                    8 60 3>&1 1>&2 2>&3; then
-                    _new_private=0
-                fi
+                    8 60 3>&1 1>&2 2>&3 || _vis_rc=$?
+                (( _vis_rc == 255 )) && _menu_cancel
+                local _new_private=1
+                (( _vis_rc != 0 )) && _new_private=0
 
                 DOTFILES_NEW_REPO_OWNER="$_new_owner"
                 DOTFILES_NEW_REPO_NAME="$_new_name"

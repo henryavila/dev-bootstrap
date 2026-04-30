@@ -26,20 +26,32 @@ if [[ "${CREATE_DOTFILES_FROM_TEMPLATE:-0}" == "1" ]] && [[ ! -d "$DOTFILES_DIR/
 05-identity topic enabled, or run 'gh auth login' manually then:
     gh repo create $DOTFILES_NEW_REPO_OWNER/$DOTFILES_NEW_REPO_NAME \\
         --template $DOTFILES_TEMPLATE_REPO --clone --directory $DOTFILES_DIR"
-        exit 0
+        exit 1
     fi
     if ! gh auth status >/dev/null 2>&1; then
         followup critical "create-from-template requested, but gh is not authenticated.
 Run 'gh auth login' (browser OAuth) and re-run bootstrap, or run manually:
     gh repo create $DOTFILES_NEW_REPO_OWNER/$DOTFILES_NEW_REPO_NAME \\
         --template $DOTFILES_TEMPLATE_REPO --clone --directory $DOTFILES_DIR"
-        exit 0
+        exit 1
+    fi
+    # gh auth status exits 0 even with missing scopes — verify a real API
+    # call works before invoking 'gh repo create' so a failure surfaces with
+    # a clear scope hint instead of an opaque GraphQL error from gh.
+    if ! gh api user -q .login >/dev/null 2>&1; then
+        followup critical "gh auth present but the API rejected our token (likely missing 'repo' or 'workflow' scope).
+Run 'gh auth refresh -s repo,workflow' and re-run bootstrap, or invoke gh manually."
+        exit 1
     fi
 
     visibility="--private"
     [[ "${DOTFILES_NEW_REPO_PRIVATE:-1}" == "0" ]] && visibility="--public"
 
     info "creating $DOTFILES_NEW_REPO_OWNER/$DOTFILES_NEW_REPO_NAME from template $DOTFILES_TEMPLATE_REPO ($visibility)"
+    # shellcheck disable=SC2086
+    # $visibility is a single flag; intentional word-split. If a future change
+    # makes it carry multiple tokens (e.g. "--private --include-all-branches"),
+    # convert to an array.
     if gh repo create "$DOTFILES_NEW_REPO_OWNER/$DOTFILES_NEW_REPO_NAME" \
         --template "$DOTFILES_TEMPLATE_REPO" \
         $visibility \
@@ -50,7 +62,7 @@ Run 'gh auth login' (browser OAuth) and re-run bootstrap, or run manually:
 Check that $DOTFILES_NEW_REPO_OWNER/$DOTFILES_NEW_REPO_NAME does not already exist
 (or pick a new name) and that gh auth has 'repo' + 'workflow' scopes.
 Re-run bootstrap with the same answers, or invoke gh manually."
-        exit 0
+        exit 1
     fi
 fi
 
