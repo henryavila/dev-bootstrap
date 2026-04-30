@@ -3,11 +3,10 @@
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 # Shell-level git shortcuts. See bashrc.d-50-git.sh for rationale.
 #
-# All shortcuts delegate to `g` (not `git`) — silences the zsh-you-should-use
-# (YSU) plugin's "you should use 'g' instead of 'git'" warning. YSU detects
-# by matching alias VALUES against the expanded command, so making the value
-# `g status` (instead of `git status`) avoids the match while preserving
-# identical behavior (since `g='git'`).
+# All shortcuts delegate to `g` (not `git`) so the alias-tips plugin
+# emits one concise reminder per command (e.g. "Alias tip: gs") instead
+# of multiple noisy reminders for the underlying `git` form. `g='git'`
+# keeps behavior identical — `g status` is just `git status`.
 
 alias g='git'
 alias gs='g status'

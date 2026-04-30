@@ -6,8 +6,8 @@
 #   - Modern CLI tools: fzf bat eza zoxide ripgrep fd-find → all via apt
 #   - zsh core + 2 plugins available in apt: zsh, zsh-autosuggestions, zsh-syntax-highlighting
 #   - The other 5 plugins (zsh-completions, zsh-history-substring-search,
-#     fzf-tab, forgit, alias-tips, zsh-abbr, zsh-you-should-use) are NOT
-#     packaged in Ubuntu 24.04 apt — we clone each into ~/.local/share/
+#     fzf-tab, forgit, alias-tips, zsh-abbr) are NOT packaged in
+#     Ubuntu 24.04 apt — we clone each into ~/.local/share/
 #     so zshrc.local sources them from the same path regardless of OS.
 #   - atuin: binary via setup.atuin.sh (no cargo needed).
 #   - starship, lazygit, git-delta: existing install blocks preserved.
@@ -16,6 +16,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/../../lib/uninstall.sh"
 
 # _has_ctty — 0 iff the running process has a usable controlling TTY.
 # Why not use stdout-is-tty tests: bootstrap.sh wraps each installer
@@ -87,7 +89,6 @@ clone_or_pull Aloxaf/fzf-tab                           "$SHARE_DIR/fzf-tab"     
 clone_or_pull wfxr/forgit                              "$SHARE_DIR/forgit"                         forgit
 clone_or_pull djui/alias-tips                          "$SHARE_DIR/alias-tips"                     alias-tips
 clone_or_pull olets/zsh-abbr                           "$SHARE_DIR/zsh-abbr"                       zsh-abbr
-clone_or_pull MichaelAquilina/zsh-you-should-use       "$SHARE_DIR/zsh-you-should-use"             zsh-you-should-use
 
 # Phase C: Powerlevel10k as a standalone clone (also turbo-loaded via
 # zinit in zshrc.local — this parallel copy is the graceful-degrade
@@ -472,5 +473,12 @@ fi
 if [ -x "$HERE/scripts/configure-windows-terminal.sh" ]; then
     bash "$HERE/scripts/configure-windows-terminal.sh" || warn "Windows Terminal config failed (non-fatal)"
 fi
+
+# ─── Drift cleanup (deprecated artifacts) ─────────────────────────────
+# Reads data/uninstall.list and removes anything listed there. Idempotent,
+# silent when nothing to do. To deprecate something, add a line in the
+# manifest in the SAME commit that removes the active install — see the
+# header of data/uninstall.list for syntax.
+uninstall_apply "$HERE/data/uninstall.list"
 
 ok "20-terminal-ux done"

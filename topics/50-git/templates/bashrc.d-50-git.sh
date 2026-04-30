@@ -5,11 +5,10 @@
 # that topic 50-git installs in ~/.gitconfig (e.g. `git st`, `git br`) — those
 # work inside `git`; these work at the shell prompt directly.
 #
-# All shortcuts delegate to `g` (not `git`) so that the zsh-you-should-use
-# (YSU) plugin stays quiet — YSU detects "you should use 'g' instead of 'git'"
-# by matching alias values against the typed/expanded command. Using `g` as
-# the base in alias values silences that warning while preserving identical
-# behavior (since `g='git'`, `g status` still ends up as `git status`).
+# All shortcuts delegate to `g` (not `git`) so that, when paired with the
+# zsh `alias-tips` plugin in interactive shells, the user gets one concise
+# reminder per command instead of duplicates. `g='git'` keeps behavior
+# identical (`g status` is `git status`).
 
 alias g='git'
 alias gs='g status'

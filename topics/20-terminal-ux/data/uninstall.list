@@ -1,0 +1,25 @@
+# data/uninstall.list — artifacts this topic used to install but no longer does.
+# Read every run by install.<suffix>.sh via lib/uninstall.sh::uninstall_apply.
+# Idempotent: each removal is silent when the artifact is already absent.
+#
+# Sintaxe: verb:arg   (linhas em branco e # ignoradas)
+# Verbos suportados (ver lib/uninstall.sh para detalhes):
+#   apt:<pkg>            sudo apt-get purge        (Linux only)
+#   brew:<formula>       brew uninstall --ignore-dependencies  (Mac only)
+#   brew-cask:<cask>     brew uninstall --cask     (Mac only)
+#   font:<cask>          alias of brew-cask
+#   clone:<dir>          rm -rf ~/.local/share/<dir>
+#   zinit:<owner>/<repo> rm -rf ~/.local/share/zinit/plugins/<owner>---<repo>
+#   user-bin:<name>      rm -f ~/.local/bin/<name>
+#   sys-bin:<name>       sudo rm -f /usr/local/bin/<name>
+#
+# Quando deprecar algo: adicione a entrada AQUI no MESMO commit que remove
+# a instalação ativa de install.<suffix>.sh. Sem o dual-edit, máquinas já
+# provisionadas mantêm o artefato pra sempre.
+
+# Removed 2026-04-30: zsh-you-should-use produzia mensagem redundante junto
+# de djui/alias-tips (que já cobre o mesmo caso de uso). Resultado para o
+# usuário: dois avisos de alias por comando — verboso e ruidoso. alias-tips
+# fica como o único notificador. Vide PROJECT_STATUS D37.
+brew:zsh-you-should-use
+clone:zsh-you-should-use
