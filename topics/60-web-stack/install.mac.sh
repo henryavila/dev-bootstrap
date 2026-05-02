@@ -168,9 +168,11 @@ if [[ -x "$VALET_BIN" ]]; then
             info "brew in non-standard prefix ($BREW_PREFIX) — hardening LaunchDaemon Standard*Path"
             sudo mkdir -p /var/log/homebrew
             _hardening_changed=0
+            _plist_found=0
             for svc in php nginx dnsmasq; do
                 plist="/Library/LaunchDaemons/homebrew.mxcl.${svc}.plist"
                 sudo test -f "$plist" || continue
+                _plist_found=1
                 target_log="/var/log/homebrew/${svc}.log"
                 current_err="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null || echo "")"
                 current_out="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardOutPath" "$plist" 2>/dev/null || echo "")"
@@ -194,10 +196,12 @@ if [[ -x "$VALET_BIN" ]]; then
                     sudo launchctl bootstrap system "$plist" >/dev/null 2>&1 \
                         || warn "bootstrap of homebrew.mxcl.${svc} failed (likely TCC sandbox + external noowners volume — pre-existing, see §4.7.5)"
                 done
-            else
+            elif [[ $_plist_found -eq 1 ]]; then
                 ok "LaunchDaemon Standard*Path already hardened"
+            else
+                info "no homebrew system LaunchDaemons present — re-run with FORCE_VALET_INSTALL=1 to (re)create the web stack (plists will be hardened automatically)"
             fi
-            unset _hardening_changed
+            unset _hardening_changed _plist_found
             ;;
     esac
 

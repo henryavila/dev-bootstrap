@@ -102,6 +102,13 @@ assert_pattern_present "$WEB_MAC" 'for svc in php nginx dnsmasq' \
 assert_pattern_present "$WEB_MAC" '_hardening_changed=' \
     "60-web-stack/install.mac.sh — tracks whether any plist was actually changed (idempotence)"
 
+# UX honesty: distinguish 'no plists found' (suggest FORCE_VALET_INSTALL=1) from
+# 'all plists already hardened' (genuine success on a previously-hardened machine)
+assert_pattern_present "$WEB_MAC" '_plist_found=' \
+    "60-web-stack/install.mac.sh — tracks whether any plist was found (UX honesty: no-plists vs already-hardened)"
+assert_pattern_present "$WEB_MAC" 'FORCE_VALET_INSTALL=1.*to .re.create the web stack' \
+    "60-web-stack/install.mac.sh — points user to FORCE_VALET_INSTALL=1 when no plists found"
+
 # Negative: no NEW absolute reference to /Volumes/External/homebrew/var/
 # (only the comment that explains the bug may mention the phantom path)
 non_comment_volumes_paths="$(grep -nE '^[^#]*StandardErrorPath.*"/Volumes/' "$WEB_MAC" || true)"
