@@ -141,6 +141,66 @@ if [[ -x "$VALET_BIN" ]]; then
             || warn "valet install returned non-zero"
     fi
 
+    # ─── Harden LaunchDaemons against boot-time phantom mkdir ────────
+    # When BREW_PREFIX is non-standard (e.g., /Volumes/External/homebrew),
+    # `valet install` above triggered `sudo brew services start` for
+    # nginx/dnsmasq/php, generating plists in /Library/LaunchDaemons/
+    # with absolute paths burned in. On the NEXT boot, launchd loads
+    # these daemons before the external disk finishes mounting; opening
+    # `StandardErrorPath` with O_CREAT triggers `mkdir -p` of the parent
+    # on rootfs, creating a phantom `/Volumes/External/homebrew/var/log/`.
+    # When the real disk mounts, diskarbitrationd sufixes → `External 1`,
+    # breaking every cached PATH and bootstrap. See
+    # feedback_launchdaemon_phantom_volumes_mkdir_race.md for the
+    # forensic of the 2026-05-02 incident.
+    #
+    # Fix: rewrite Standard{Error,Out}Path to live in /var/log/homebrew/
+    # (rootfs-resident, always writable). ProgramArguments still points
+    # to the external binary; if the disk isn't mounted at boot, daemon
+    # fails (KeepAlive=true retries) but no phantom is created
+    # (`posix_spawn` doesn't mkdir). Idempotent: PlistBuddy Set with the
+    # same value is a no-op.
+    case "$BREW_PREFIX" in
+        /opt/homebrew|/usr/local)
+            : # standard prefix — system-scope plists never phantom
+            ;;
+        *)
+            info "brew in non-standard prefix ($BREW_PREFIX) — hardening LaunchDaemon Standard*Path"
+            sudo mkdir -p /var/log/homebrew
+            _hardening_changed=0
+            for svc in php nginx dnsmasq; do
+                plist="/Library/LaunchDaemons/homebrew.mxcl.${svc}.plist"
+                sudo test -f "$plist" || continue
+                target_log="/var/log/homebrew/${svc}.log"
+                current_err="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null || echo "")"
+                current_out="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardOutPath" "$plist" 2>/dev/null || echo "")"
+                if [[ "$current_err" != "$target_log" ]]; then
+                    sudo /usr/libexec/PlistBuddy -c "Set :StandardErrorPath $target_log" "$plist" 2>/dev/null \
+                        || sudo /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string $target_log" "$plist"
+                    _hardening_changed=1
+                fi
+                if [[ -n "$current_out" && "$current_out" != "$target_log" ]]; then
+                    sudo /usr/libexec/PlistBuddy -c "Set :StandardOutPath $target_log" "$plist"
+                    _hardening_changed=1
+                fi
+            done
+            if [[ $_hardening_changed -eq 1 ]]; then
+                ok "LaunchDaemon Standard*Path → /var/log/homebrew/* (no longer phantoms /Volumes/...)"
+                # Re-bootstrap to apply rewritten plists to launchd's in-memory state
+                for svc in php nginx dnsmasq; do
+                    plist="/Library/LaunchDaemons/homebrew.mxcl.${svc}.plist"
+                    sudo test -f "$plist" || continue
+                    sudo launchctl bootout "system/homebrew.mxcl.${svc}" >/dev/null 2>&1 || true
+                    sudo launchctl bootstrap system "$plist" >/dev/null 2>&1 \
+                        || warn "bootstrap of homebrew.mxcl.${svc} failed (likely TCC sandbox + external noowners volume — pre-existing, see §4.7.5)"
+                done
+            else
+                ok "LaunchDaemon Standard*Path already hardened"
+            fi
+            unset _hardening_changed
+            ;;
+    esac
+
     # All `valet` subcommands below shell out to sudo for daemon
     # restarts (dnsmasq, nginx). Refresh the sudo cache once here so the
     # next 1-3 valet commands don't re-prompt mid-flow if the bootstrap's
