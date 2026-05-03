@@ -155,8 +155,10 @@ _uninstall_brew_cask() {
 # Returns 0 if safe, 1 if rejected (with warn already emitted).
 _sandbox_name() {
     local verb="$1" arg="$2"
+    # `*/*` covers any string containing a slash, which subsumes `/*`
+    # (absolute paths) — shellcheck SC2221/SC2222 flagged the redundancy.
     case "$arg" in
-        */*|*..*|/*|"")
+        */*|*..*|"")
             warn "uninstall.sh: $verb:$arg rejected by sandbox (no slashes, no '..')"
             return 1 ;;
     esac

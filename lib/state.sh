@@ -15,6 +15,17 @@
 #
 # Source from a topic or bootstrap.sh; do not execute directly.
 #
+# Bash-only: this file uses bash 3.2 idioms (printf-driven escaping, parameter
+# expansion patterns) that don't always parse cleanly when sourced from zsh.
+# All dev-bootstrap entry points are bash (#!/usr/bin/env bash), so this is a
+# self-imposed limit, not a production concern. To inspect state from any
+# shell interactively, source the OUTPUT file directly:
+#
+#     source ~/.config/dev-bootstrap/state.env
+#     echo "$BREW_PREFIX"
+#
+# That file is plain KEY="VALUE" and works in zsh, bash, sh, dash, …
+#
 # Public API:
 #   state_path                          → prints path to state file
 #   state_load                          → sources state file if present (sets BREW_PREFIX, ...)
