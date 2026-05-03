@@ -22,9 +22,22 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/../../lib/launch-wrapper.sh"
 
 : "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
 : "${BREW_PREFIX:?BREW_PREFIX not set}"
+
+# Decide whether `brew services start <svc>` will produce a working
+# user-scope LaunchAgent. The bug only affects user-scope plists whose
+# ProgramArguments path is in a noowners volume — TCC sandbox blocks
+# them with exit 78 EX_CONFIG. Fix path: lib/launch-wrapper.sh wraps the
+# external binary with a rootfs script that passes TCC and exec's the
+# real binary, inheriting the entitlement.
+case "$BREW_PREFIX" in
+    /opt/homebrew|/usr/local) use_launch_wrapper=0 ;;
+    *)                        use_launch_wrapper=1 ;;
+esac
 
 info "this topic provisions the web stack (MySQL + Redis + mkcert + Valet); may take 1-3min on first run"
 
@@ -85,8 +98,19 @@ done
 # Linux/WSL still calls mkcert -install in its install.wsl.sh because there
 # we manage nginx + the trust store ourselves (no Valet equivalent).
 
-info "starting redis via brew services"
-"$BREW_BIN" services start redis >/dev/null 2>&1 || true
+if [[ "$use_launch_wrapper" == "1" ]]; then
+    info "starting redis via launch-wrapper (custom BREW_PREFIX = $BREW_PREFIX)"
+    launch_wrapper_install_extbrew \
+        --svc redis \
+        --label "com.${USER}.redis" \
+        --brew-bin "$BREW_PREFIX/opt/redis/bin/redis-server" \
+        --workdir "$BREW_PREFIX/var" \
+        -- "$BREW_PREFIX/etc/redis.conf" \
+        || warn "launch-wrapper for redis failed (non-fatal — service can be started manually)"
+else
+    info "starting redis via brew services"
+    "$BREW_BIN" services start redis >/dev/null 2>&1 || true
+fi
 
 # ─── Laravel Valet (replaces manual nginx + dnsmasq) ─────────────────
 # Installed via composer global; the binary ends up at

@@ -23,6 +23,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../../lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/../../../lib/launch-wrapper.sh"
 
 OS=""
 case "$(uname -s)" in
@@ -59,7 +61,21 @@ fi
 # ─── Service / launch wiring ─────────────────────────────────────────
 case "$OS" in
     mac)
-        if "$BREW_BIN" services list 2>/dev/null | awk '$1=="mailpit" && $2=="started"{found=1} END{exit !found}'; then
+        # Decide between brew services (canonical prefix) and launch-wrapper
+        # (custom prefix; user-scope LaunchAgents in /Volumes/* hit TCC exit 78).
+        : "${BREW_PREFIX:?BREW_PREFIX not set}"
+        case "$BREW_PREFIX" in
+            /opt/homebrew|/usr/local) mp_use_wrapper=0 ;;
+            *)                        mp_use_wrapper=1 ;;
+        esac
+        if [[ "$mp_use_wrapper" == "1" ]]; then
+            info "starting mailpit via launch-wrapper (custom BREW_PREFIX = $BREW_PREFIX)"
+            launch_wrapper_install_extbrew \
+                --svc mailpit \
+                --label "com.${USER}.mailpit" \
+                --brew-bin "$BREW_PREFIX/opt/mailpit/bin/mailpit" \
+                || warn "launch-wrapper for mailpit failed (non-fatal — service can be started manually)"
+        elif "$BREW_BIN" services list 2>/dev/null | awk '$1=="mailpit" && $2=="started"{found=1} END{exit !found}'; then
             ok "mailpit brew service already started"
         else
             info "starting mailpit via brew services"

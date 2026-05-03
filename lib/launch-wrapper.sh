@@ -289,6 +289,15 @@ launch_wrapper_install_extbrew() {
     wrapper_path="$(_launch_wrapper_script_path "$svc")"
 
     _launch_wrapper_write_script "$svc" "$brew_bin" "$@"
-    _launch_wrapper_write_plist "$label" "$wrapper_path" "$workdir" "${env_vars[@]+"${env_vars[@]}"}"
+    # Bash 3.2 quirk: `"${arr[@]+"${arr[@]}"}"` expands to one empty arg when
+    # the array is empty (not zero args, as in bash 4+). The empty arg
+    # propagates into the plist's EnvironmentVariables dict as `<key></key>
+    # <string></string>`, which is malformed XML — launchd rejects with
+    # EX_CONFIG (exit 78). Guard explicitly on array length.
+    if [[ ${#env_vars[@]} -gt 0 ]]; then
+        _launch_wrapper_write_plist "$label" "$wrapper_path" "$workdir" "${env_vars[@]}"
+    else
+        _launch_wrapper_write_plist "$label" "$wrapper_path" "$workdir"
+    fi
     _launch_wrapper_bootstrap "$label"
 }
