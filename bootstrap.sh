@@ -108,6 +108,14 @@ source "$HERE/lib/log.sh"
 source "$HERE/lib/secrets.sh"
 secrets_load || warn "secrets file present but could not be sourced — continuing without it"
 
+# ─── Persistent state (prefixes, decisions) ───────────────────────────
+# Loaded BEFORE topics so 00-core can honor a previously-recorded
+# BREW_PREFIX choice (e.g. user picked /Volumes/External/homebrew on a
+# previous run; never re-prompt). See lib/state.sh.
+# shellcheck disable=SC1091
+source "$HERE/lib/state.sh"
+state_load
+
 usage() {
     cat <<'EOF'
 dev-bootstrap — set up a development machine
