@@ -127,35 +127,54 @@ install_brew_at_custom_prefix() {
     fi
 }
 
-# Decide where Homebrew should live. Prints the chosen prefix to stdout
-# and assigns the decision method to global var $BREW_DECISION_METHOD as
-# a side effect (for caller logging + state.env recording).
+# Decide where Homebrew should live. Emits eval-able KEY=value lines on
+# stdout, mirroring lib/detect-brew.sh:
+#
+#     BREW_DECISION_METHOD=<one of: detected_existing | state_replay | env_var | prompt | default>
+#     BREW_PREFIX_CHOSEN=<absolute path>
+#     [BREW_BIN=<path>]      # rung 1 only — passed through from detect-brew.sh
+#     [BREW_PREFIX=<path>]   # rung 1 only — passed through from detect-brew.sh
+#
+# Caller MUST capture via `eval "$(decide_brew_prefix)"` because it runs in a
+# command-substitution subshell — plain global assignments (`BREW_DECISION_METHOD=…`)
+# do not propagate back to the parent shell. Earlier versions of this function
+# used the global-side-effect pattern and tripped `set -u` ("BREW_DECISION_METHOD:
+# unbound variable") on every Mac run after reboot — green static-grep tests did
+# not exercise the subshell path.
 #
 # Honors the ladder documented at the top of this file.
 decide_brew_prefix() {
-    BREW_DECISION_METHOD=""
-
     # 1. Already installed on disk — detect-brew.sh wins.
-    local out
-    if out="$(bash "$HERE/../../lib/detect-brew.sh" 2>/dev/null)"; then
-        eval "$out"
-        BREW_DECISION_METHOD="detected_existing"
-        printf '%s' "$BREW_PREFIX"
+    local detect_out
+    if detect_out="$(bash "$HERE/../../lib/detect-brew.sh" 2>/dev/null)"; then
+        # Pass through BREW_BIN= and BREW_PREFIX= unchanged so the caller
+        # eval populates them — same contract as lib/detect-brew.sh.
+        printf '%s\n' "$detect_out"
+        # Extract BREW_PREFIX from detect-brew's output to mirror it as
+        # BREW_PREFIX_CHOSEN (stable name across all rungs).
+        local prefix
+        prefix="$(printf '%s\n' "$detect_out" | sed -n 's/^BREW_PREFIX=//p')"
+        # Strip a single layer of bash %q quoting if present (printf %q
+        # double-quotes path-with-spaces or special chars).
+        prefix="${prefix%\'}"
+        prefix="${prefix#\'}"
+        printf 'BREW_DECISION_METHOD=%q\n' "detected_existing"
+        printf 'BREW_PREFIX_CHOSEN=%q\n' "$prefix"
         return 0
     fi
 
     # 2. State file has a recorded BREW_PREFIX (user chose this on a previous run)
     local recorded
     if recorded="$(state_get BREW_PREFIX 2>/dev/null)" && [[ -n "$recorded" ]]; then
-        BREW_DECISION_METHOD="state_replay"
-        printf '%s' "$recorded"
+        printf 'BREW_DECISION_METHOD=%q\n' "state_replay"
+        printf 'BREW_PREFIX_CHOSEN=%q\n' "$recorded"
         return 0
     fi
 
     # 3. BREW_CUSTOM_PREFIX env var
     if [[ -n "${BREW_CUSTOM_PREFIX:-}" ]]; then
-        BREW_DECISION_METHOD="env_var"
-        printf '%s' "$BREW_CUSTOM_PREFIX"
+        printf 'BREW_DECISION_METHOD=%q\n' "env_var"
+        printf 'BREW_PREFIX_CHOSEN=%q\n' "$BREW_CUSTOM_PREFIX"
         return 0
     fi
 
@@ -176,22 +195,18 @@ decide_brew_prefix() {
 EOF
         printf '  prefix [/opt/homebrew]: ' >&2
         if read -r reply </dev/tty 2>/dev/null; then
-            if [[ -z "$reply" ]]; then
-                BREW_DECISION_METHOD="prompt"
-                printf '/opt/homebrew'
-                return 0
-            fi
-            BREW_DECISION_METHOD="prompt"
-            printf '%s' "$reply"
+            local chosen="${reply:-/opt/homebrew}"
+            printf 'BREW_DECISION_METHOD=%q\n' "prompt"
+            printf 'BREW_PREFIX_CHOSEN=%q\n' "$chosen"
             return 0
         fi
     fi
 
-    # 5. Non-interactive default
-    BREW_DECISION_METHOD="default"
-    warn "non-interactive context — defaulting to /opt/homebrew"
-    warn "  (set BREW_CUSTOM_PREFIX=/path/to/brew to override on next run)"
-    printf '/opt/homebrew'
+    # 5. Non-interactive default — warn() goes to stderr (won't pollute eval input).
+    warn "non-interactive context — defaulting to /opt/homebrew" >&2
+    warn "  (set BREW_CUSTOM_PREFIX=/path/to/brew to override on next run)" >&2
+    printf 'BREW_DECISION_METHOD=%q\n' "default"
+    printf 'BREW_PREFIX_CHOSEN=%q\n' "/opt/homebrew"
     return 0
 }
 
@@ -201,7 +216,20 @@ EOF
 
 # Decide the prefix BEFORE attempting to install. The decision function
 # also detects "brew already installed" and short-circuits.
-chosen_prefix="$(decide_brew_prefix)"
+#
+# decide_brew_prefix runs in `$(...)` which forks a subshell — plain global
+# assignments inside it would NOT leak back here. We use the eval-able
+# stdout contract (mirrors lib/detect-brew.sh): the function emits
+# `KEY=value` lines, the parent sources them via eval, all the resulting
+# variables (BREW_DECISION_METHOD, BREW_PREFIX_CHOSEN, plus BREW_BIN /
+# BREW_PREFIX when rung 1 hits) land in the parent's scope.
+__decide_out="$(decide_brew_prefix)" || {
+    fail "decide_brew_prefix could not resolve a prefix"
+    exit 1
+}
+eval "$__decide_out"
+unset __decide_out
+chosen_prefix="$BREW_PREFIX_CHOSEN"
 
 case "$chosen_prefix" in
     /opt/homebrew|/usr/local)
