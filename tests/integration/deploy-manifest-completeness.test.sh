@@ -42,8 +42,15 @@ for topic_dir in "$ROOT"/topics/*/templates; do
         continue
     fi
 
-    # Build set of files referenced as src in DEPLOY (left side of `=`)
-    declare -A deploy_srcs=()
+    # Build set of files referenced as src in DEPLOY (left side of `=`).
+    #
+    # bash 3.2 (the macOS default at /bin/bash) lacks `declare -A`, so we
+    # cannot use an associative array here. Instead store the keys as a
+    # newline-delimited string with leading + trailing newlines as anchors,
+    # and probe via `[[ "$haystack" == *$'\n'"$needle"$'\n'* ]]`. Zero forks,
+    # bash-3.2-safe, identical semantics for the lookup we need (membership
+    # only, no per-key payload). See feedback_bash32_compat_macos.md.
+    deploy_srcs=$'\n'
     while IFS= read -r line || [[ -n "$line" ]]; do
         line="${line%$'\r'}"
         [[ -z "${line// }" ]] && continue
@@ -53,7 +60,7 @@ for topic_dir in "$ROOT"/topics/*/templates; do
         src="${src#"${src%%[![:space:]]*}"}"
         src="${src%"${src##*[![:space:]]}"}"
         [[ -z "$src" ]] && continue
-        deploy_srcs["$src"]=1
+        deploy_srcs="${deploy_srcs}${src}"$'\n'
     done < "$deploy_file"
 
     # Walk every template file, check membership
@@ -66,7 +73,7 @@ for topic_dir in "$ROOT"/topics/*/templates; do
             *.md|*.txt) continue ;;
         esac
 
-        if [[ -n "${deploy_srcs[$rel]:-}" ]]; then
+        if [[ "$deploy_srcs" == *$'\n'"$rel"$'\n'* ]]; then
             pass "$topic_name: $rel listed in DEPLOY"
         else
             # Highlight high-risk auto-mapped names so the failure is actionable
