@@ -48,7 +48,9 @@ Run 'gh auth refresh -s repo,workflow' and re-run bootstrap, or invoke gh manual
 
     # Use an array for the visibility flag so we never need an SC2086 disable
     # and so future expansions ("--private --include-all-branches") just append.
-    local _visibility=("--private")
+    # Underscore prefix to reduce collision risk with anything sourced later
+    # (we're at script scope here; `local` is only valid inside functions).
+    _visibility=("--private")
     [[ "${DOTFILES_NEW_REPO_PRIVATE:-1}" == "0" ]] && _visibility=("--public")
 
     info "creating $DOTFILES_NEW_REPO_OWNER/$DOTFILES_NEW_REPO_NAME from template $DOTFILES_TEMPLATE_REPO (${_visibility[*]})"
