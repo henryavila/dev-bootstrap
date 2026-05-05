@@ -124,6 +124,8 @@ bash bootstrap.sh --help                   # list topics + env vars
 | `INCLUDE_WEBSTACK=1` | enable topic `60-web-stack` (default: skip) |
 | `INCLUDE_REMOTE=1` | enable topic `70-remote-access` (default: skip) |
 | `INCLUDE_EDITOR=1` | enable topic `90-editor` (default: skip) |
+| `INCLUDE_POSTGRES=1` | install PostgreSQL inside `60-web-stack` (default: ON in interactive menu, OFF when `WEBSTACK` is opt-in via env) |
+| `POSTGRES_VERSION=17` | PostgreSQL major version pin when `INCLUDE_POSTGRES=1` (default 17) |
 | `NO_COLOR=1` | disable colored output (auto when not a TTY) |
 
 ### Flow
@@ -151,7 +153,7 @@ bash bootstrap.sh --help                   # list topics + env vars
 ```
 
 **Variables exported by the runner** (inherited by all installers and deploy.sh):
-`OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `DOTFILES_REPO`, `DOTFILES_DIR`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_WEBSTACK`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
+`OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `DOTFILES_REPO`, `DOTFILES_DIR`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_WEBSTACK`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `INCLUDE_POSTGRES`, `POSTGRES_VERSION`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
 
 ### Log
 
@@ -360,7 +362,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 ### `60-web-stack` (opt-in)
 
-**Purpose:** local stack for Laravel dev — MySQL, Redis, Nginx with a `*.localhost` catch-all, PHP-FPM, mkcert.
+**Purpose:** local Web + DB stack for Laravel-style dev — MySQL, Redis, Nginx with a `*.localhost` catch-all, PHP-FPM, mkcert. PostgreSQL as opt-in sub-flag.
 
 **Activation:** `INCLUDE_WEBSTACK=1 bash bootstrap.sh`
 
@@ -368,13 +370,19 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 - WSL: `apt install mysql-server redis-server nginx php8.4-fpm`, `curl | bash` mkcert
 - Mac: `brew install mysql redis nginx mkcert` + `brew services start`
 
+**Sub-opt-ins (gated on `INCLUDE_WEBSTACK=1`):**
+- `INCLUDE_MAILPIT=1` — local SMTP catcher (`scripts/install-mailpit.sh`)
+- `INCLUDE_NGROK=1` — public tunnel + `share-project` wrapper (`scripts/install-ngrok.sh`)
+- `INCLUDE_MSSQL=1` — Microsoft SQL Server ODBC + sqlsrv/pdo_sqlsrv PECL (`scripts/install-mssql-driver.sh`, Linux only; Mac is documented-but-manual)
+- `INCLUDE_POSTGRES=1` — PostgreSQL server + role/db for `$USER` (`scripts/install-postgres.sh`, Mac + Linux). Major version controlled by `POSTGRES_VERSION` (default `17`). Mac uses `lib/launch-wrapper.sh` when the brew prefix is non-canonical (TCC sandbox workaround per D43); Linux uses the PGDG APT repo (`apt.postgresql.org`) with `signed-by` keyring under `/etc/apt/keyrings/`. Pristine-only role/db creation (`createuser -s $USER` + `createdb $USER` only when both are absent, so existing custom setups aren't disturbed).
+
 **Templates:**
 - `nginx-catchall.conf.template` — deployed via the `DEPLOY` file:
   - WSL: `$NGINX_CONF_DIR=/etc/nginx/sites-enabled`
   - Mac: `$NGINX_CONF_DIR=$BREW_PREFIX/etc/nginx/servers` (uses `lib/detect-brew.sh`)
 - `bin/link-project.template` — script that wires `$CODE_DIR/<name>/public` → `<name>.localhost` (uses env var `CODE_DIR`, default `~/code/web`)
 
-**Env vars used:** `CODE_DIR`, `BREW_PREFIX` (via detect-brew on Mac).
+**Env vars used:** `CODE_DIR`, `BREW_PREFIX` (via detect-brew on Mac), `POSTGRES_VERSION` (when `INCLUDE_POSTGRES=1`).
 
 **Post-install:** print `start-services.sh` as a reference.
 
