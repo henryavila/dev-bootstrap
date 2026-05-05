@@ -272,6 +272,11 @@ if [[ "${INCLUDE_MSSQL:-0}" == "1" ]] && [[ -x "$HERE/scripts/install-mssql-driv
     bash "$HERE/scripts/install-mssql-driver.sh" || warn "MSSQL driver install failed (non-fatal)"
 fi
 
+if [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && [[ -x "$HERE/scripts/install-postgres.sh" ]]; then
+    info "installing PostgreSQL ${POSTGRES_VERSION:-17}"
+    bash "$HERE/scripts/install-postgres.sh" || warn "postgres install failed (non-fatal)"
+fi
+
 # ─── Nginx dirs + sites-enabled symlinks ─────────────────────────────
 # deploy.sh already dropped files into NGINX_AVAILABLE_DIR. Create symlinks
 # in NGINX_ENABLED_DIR so nginx loads them (Debian convention).
