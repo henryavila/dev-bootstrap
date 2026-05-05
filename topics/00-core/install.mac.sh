@@ -290,6 +290,29 @@ fi
 
 ok "brew ready at $BREW_BIN"
 
+# Refresh formula index on every run, mirroring the `apt-get update -qq`
+# step in install.wsl.sh:34. Without this, `detected_existing` and
+# canonical-install re-runs leave the index stale and the user sees the
+# "N outdated formulae" nag accumulate over time. The official installer
+# does refresh on first canonical install, and install_brew_at_custom_prefix
+# does it for state_replay/custom paths — but neither covers re-runs where
+# brew was already on disk (the most common case after onboarding).
+#
+# `brew upgrade` is intentionally NOT run here: auto-upgrading can silently
+# major-bump packages whose data layout changed (postgres, php), so we
+# leave that as an explicit user decision. The outdated-count surface
+# below makes the choice visible without acting on it.
+info "brew update --quiet"
+"$BREW_BIN" update --quiet || warn "brew update returned non-zero (formula index may be stale)"
+
+# Surface outdated count without acting — keeps the user informed.
+# `brew outdated --quiet` prints one formula name per line; a wc count
+# avoids parsing version specifiers, which differ by tap.
+outdated_count="$("$BREW_BIN" outdated --quiet 2>/dev/null | grep -c . || true)"
+if [[ "$outdated_count" -gt 0 ]]; then
+    warn "$outdated_count formula(s) outdated — run \`$BREW_BIN upgrade\` when convenient"
+fi
+
 pkgs=(
     git
     curl
