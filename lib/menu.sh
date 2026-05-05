@@ -10,6 +10,9 @@
 #
 # Exports set by run_menu (only when user selects them):
 #   INCLUDE_DOCKER, INCLUDE_WEBSTACK, INCLUDE_REMOTE, INCLUDE_EDITOR
+#   INCLUDE_MAILPIT, INCLUDE_NGROK, INCLUDE_MSSQL, INCLUDE_POSTGRES,
+#   INCLUDE_FRONTEND_PROXY
+#   PHP_VERSIONS, PHP_DEFAULT, POSTGRES_VERSION
 #   DOTFILES_REPO, GIT_NAME, GIT_EMAIL
 #
 # Depends on: $OS (from bootstrap.sh), $BREW_BIN (mac only), log.sh helpers.
@@ -37,7 +40,9 @@ should_show_menu() {
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]]  && return 1
+        [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && return 1
         [[ -n "${PHP_VERSIONS:-}" ]]          && return 1
+        [[ -n "${POSTGRES_VERSION:-}" ]]      && return 1
         [[ -n "${DOTFILES_REPO:-}" ]]         && return 1
     }
 
@@ -167,7 +172,7 @@ run_menu() {
         "Select optional topics to install (SPACE toggles, ENTER confirms).\nDefaults reflect what's already installed on this machine." \
         20 85 6 \
         "docker"   "45-docker: Docker Engine (WSL) / Colima (Mac)"    "$(_topic_default_state docker)" \
-        "webstack" "60-web-stack: multi-PHP + nginx + MySQL + mkcert + reverse proxy" "$(_topic_default_state webstack)" \
+        "webstack" "60-web-stack: Web + DB stack (PHP + nginx + MySQL + Postgres + mkcert)" "$(_topic_default_state webstack)" \
         "remote"   "70-remote-access: SSH + Tailscale + Syncthing"    "$(_topic_default_state remote)" \
         "editor"   "90-editor: typora-wait (open .md from CLI)"       "$(_topic_default_state editor)" \
         "dotfiles" "95-dotfiles-personal: your private dotfiles"      "$(_topic_default_state dotfiles)" \
@@ -444,8 +449,8 @@ The LAST one checked becomes the CLI / Composer / FPM default
         # so the user isn't guessing. Detection is best-effort (cheap
         # binary + extension checks) — false positives/negatives are OK
         # because the installers themselves are idempotent.
-        local mp_state ng_state fe_state ms_state
-        local mp_tag ng_tag fe_tag ms_tag
+        local mp_state ng_state fe_state ms_state pg_state
+        local mp_tag ng_tag fe_tag ms_tag pg_tag
 
         command -v mailpit >/dev/null 2>&1 \
             && { mp_state=ON;  mp_tag="(installed)"; } \
@@ -467,21 +472,32 @@ The LAST one checked becomes the CLI / Composer / FPM default
             && { ms_state=ON;  ms_tag="(installed)"; } \
             || { ms_state=OFF; ms_tag="(not installed yet)"; }
 
+        # Postgres detection: psql/postgres binary present is the canonical
+        # signal — version-agnostic and host-relevant. Default ON (most
+        # backend devs want it; user unchecks on hosts where they don't).
+        if command -v psql >/dev/null 2>&1 || command -v postgres >/dev/null 2>&1; then
+            pg_state=ON;  pg_tag="(installed)"
+        else
+            pg_state=ON;  pg_tag="(not installed yet)"
+        fi
+
         local extras_choices
         extras_choices=$(whiptail --title "60-web-stack :: optional extras" \
             --checklist \
-"Add-ons to the Laravel stack.
+"Add-ons to the Web + DB stack.
 
   Check    = install / configure if missing, keep if already there
   Uncheck  = skip this run. Nothing is uninstalled — remove manually
              with apt/brew if you really want it gone.
 
-MSSQL takes ~2 min (auto-accepts Microsoft's EULA via ACCEPT_EULA=Y)." \
-            20 82 4 \
+MSSQL takes ~2 min (auto-accepts Microsoft's EULA via ACCEPT_EULA=Y).
+Postgres prompts for a major version on the next screen." \
+            20 82 5 \
             "mailpit"  "local mail catcher, SMTP :1025 + UI :8025    $mp_tag"  "$mp_state" \
             "ngrok"    "public tunnel (share-project wrapper)        $ng_tag"  "$ng_state" \
             "frontend" "*.front.localhost proxy catchall             $fe_tag"  "$fe_state" \
             "mssql"    "SQL Server ODBC + sqlsrv/pdo_sqlsrv PECL     $ms_tag"  "$ms_state" \
+            "postgres" "PostgreSQL server + role/db for \$USER         $pg_tag"  "$pg_state" \
             3>&1 1>&2 2>&3) || _menu_cancel
 
         local -a extras_selected=()
@@ -492,8 +508,32 @@ MSSQL takes ~2 min (auto-accepts Microsoft's EULA via ACCEPT_EULA=Y)." \
                 ngrok)    export INCLUDE_NGROK=1 ;;
                 frontend) export INCLUDE_FRONTEND_PROXY=1 ;;
                 mssql)    export INCLUDE_MSSQL=1 ;;
+                postgres) export INCLUDE_POSTGRES=1 ;;
             esac
         done
+
+        # --- 3d-bis · Postgres major version ---
+        # Only ask when postgres was just selected. Default to 17 (latest
+        # stable as of 2026-05). Power users can pre-seed POSTGRES_VERSION
+        # via env var to skip the prompt entirely.
+        if [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && [[ -z "${POSTGRES_VERSION:-}" ]]; then
+            local pg_default="17"
+            local pg_ver_input=""
+            pg_ver_input=$(whiptail --title "60-web-stack :: postgres version" \
+                --inputbox \
+"Which PostgreSQL major version?
+
+  16 — previous stable
+  17 — current stable (recommended)
+
+The version pins what gets installed (brew postgresql@<v> on Mac;
+postgresql-<v> from PGDG APT repo on Linux). Detected install on this
+machine, if any, takes precedence over this answer." \
+                14 78 "$pg_default" \
+                3>&1 1>&2 2>&3) || _menu_cancel
+            POSTGRES_VERSION="${pg_ver_input:-$pg_default}"
+            export POSTGRES_VERSION
+        fi
 
         # --- 3e · ngrok authtoken ---
         # ngrok is the one extra with no CLI OAuth flow — user pastes a
@@ -597,6 +637,14 @@ _persist_menu_state() {
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]] && echo 'export INCLUDE_NGROK=1'
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]] && echo 'export INCLUDE_MSSQL=1'
         [[ "${INCLUDE_FRONTEND_PROXY:-0}" == "1" ]] && echo 'export INCLUDE_FRONTEND_PROXY=1'
+        # POSTGRES_VERSION coupled to INCLUDE_POSTGRES — only meaningful when
+        # the opt-in is on. Persisting the version separately would let it
+        # leak into a future toggle-on without the user's intent. Both keys
+        # round-trip together so `bash bootstrap.sh --non-interactive` (and
+        # therefore `mesh update --full`) restore the user's last menu choice.
+        [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && echo 'export INCLUDE_POSTGRES=1'
+        [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && [[ -n "${POSTGRES_VERSION:-}" ]] \
+            && printf 'export POSTGRES_VERSION=%q\n' "$POSTGRES_VERSION"
     } > "$tmp"
     mv -f "$tmp" "$BOOTSTRAP_STATE_CONFIG"
 }

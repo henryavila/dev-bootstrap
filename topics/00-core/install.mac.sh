@@ -59,9 +59,9 @@ emit_custom_prefix_warning() {
   │    • LaunchDaemons that log to \$BREW_PREFIX/var/log/* trigger a
   │      phantom-mkdir race on first boot if the volume is external
   │      (D42 — PlistBuddy hardening in topics/60-web-stack).
-  │    • User-scope LaunchAgents (mailpit/redis/postgres@17/syncthing)
+  │    • User-scope LaunchAgents (mailpit/redis/postgres/syncthing)
   │      hit the TCC sandbox and exit 78 — all wrapped via rootfs
-  │      shims by lib/launch-wrapper.sh in their topics.
+  │      shims by lib/launch-wrapper.sh when their topic/opt-in runs.
   │
   │  All of the above are AUTOMATED by dev-bootstrap; you don't need
   │  to do anything manually. The note exists so you understand why

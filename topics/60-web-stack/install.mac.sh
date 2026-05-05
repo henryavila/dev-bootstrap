@@ -291,6 +291,11 @@ if [[ "${INCLUDE_MSSQL:-0}" == "1" ]]; then
     warn "  Automated install on Mac is a future enhancement."
 fi
 
+if [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && [[ -x "$HERE/scripts/install-postgres.sh" ]]; then
+    info "installing PostgreSQL ${POSTGRES_VERSION:-17}"
+    bash "$HERE/scripts/install-postgres.sh" || warn "postgres install failed (non-fatal)"
+fi
+
 # ─── Pre-migrate legacy unmarked nginx files ────────────────────────
 # deploy.sh refuses to overwrite files in $BREW_PREFIX/etc/nginx/ that
 # don't carry the "managed by dev-bootstrap" marker — that's the safety
