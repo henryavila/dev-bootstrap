@@ -637,6 +637,14 @@ _persist_menu_state() {
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]] && echo 'export INCLUDE_NGROK=1'
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]] && echo 'export INCLUDE_MSSQL=1'
         [[ "${INCLUDE_FRONTEND_PROXY:-0}" == "1" ]] && echo 'export INCLUDE_FRONTEND_PROXY=1'
+        # POSTGRES_VERSION coupled to INCLUDE_POSTGRES — only meaningful when
+        # the opt-in is on. Persisting the version separately would let it
+        # leak into a future toggle-on without the user's intent. Both keys
+        # round-trip together so `bash bootstrap.sh --non-interactive` (and
+        # therefore `mesh update --full`) restore the user's last menu choice.
+        [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && echo 'export INCLUDE_POSTGRES=1'
+        [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && [[ -n "${POSTGRES_VERSION:-}" ]] \
+            && printf 'export POSTGRES_VERSION=%q\n' "$POSTGRES_VERSION"
     } > "$tmp"
     mv -f "$tmp" "$BOOTSTRAP_STATE_CONFIG"
 }
