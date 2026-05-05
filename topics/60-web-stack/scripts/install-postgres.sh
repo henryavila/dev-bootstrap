@@ -4,25 +4,33 @@
 # INCLUDE_POSTGRES=1 (set via the menu or env).
 #
 # What this script does (idempotent top to bottom):
-#   1. Resolves POSTGRES_VERSION (default 17). If a different major is
-#      already installed, warns and skips reinstall — auto-migration is
-#      out of scope.
-#   2. Installs PostgreSQL:
+#   1. Validates inputs hard (POSTGRES_VERSION numeric, $USER safe for
+#      role/db naming).
+#   2. Resolves POSTGRES_VERSION (default 17). If a different major is
+#      already installed and the user EXPLICITLY requested another, hard
+#      stops with a `followup critical`. Auto-downgrade is never silent.
+#   3. Detects parallel-major installs (e.g. pg16 AND pg17 both present)
+#      and hard stops — port 5432 can only serve one cluster at a time.
+#   4. Installs PostgreSQL:
 #        Mac      → brew install postgresql@${POSTGRES_VERSION}
 #        Linux    → PGDG APT repo (apt.postgresql.org) + apt install
 #                   postgresql-${POSTGRES_VERSION}
-#   3. Pre-flight port :5432 conflict check. Owner != postgres → emit
-#      followup and skip launching service (mirrors web-stack-port-conflict
-#      pattern for nginx :80).
-#   4. Starts the service:
+#   5. Pre-flight port :5432 conflict check. Owner != postgres → emit
+#      `followup critical` and skip launching service AND role/db setup.
+#   6. Starts the service (capture stderr; on failure → rollback +
+#      `followup critical` + exit):
 #        Mac canonical prefix → brew services start
 #        Mac custom prefix     → launch_wrapper_install_extbrew (TCC-safe;
 #                                see feedback_tcc_entitlement_spawn_only.md)
-#        Linux                 → systemctl enable+start
-#   5. Waits up to 15s for the socket to be live (pg_isready).
-#   6. Auto-creates role and database for $USER, but ONLY when both are
-#      absent. Pristine-guard: if the role already exists, skip both —
-#      this preserves any custom setup the user did manually.
+#        Linux                 → pg_lsclusters detection + systemctl;
+#                                WSL-without-systemd path is explicit.
+#   7. Waits up to 30s for the socket to be live (pg_isready). Failure
+#      → `followup critical`.
+#   8. Pristine-guards role and database creation INDEPENDENTLY: only
+#      missing pieces are created. Stderr from createuser/createdb is
+#      surfaced — no "may already exist" lies.
+#   9. Final "ready" banner gated on PG_READY flag — never claims success
+#      when an upstream step failed.
 #
 # Connection from Laravel .env:
 #   DB_CONNECTION=pgsql
@@ -40,15 +48,36 @@ source "$HERE/../../../lib/log.sh"
 # shellcheck disable=SC1091
 source "$HERE/../../../lib/launch-wrapper.sh"
 
+# ─── 1 · Capture caller intent before defaulting ─────────────────────
+# POSTGRES_VERSION_REQUESTED is set ONLY when the caller passed it via
+# env or menu; empty when we fall back to the default. Cross-major
+# detection (step 3) treats explicit-vs-default differently: an explicit
+# request that collides with an existing different major MUST hard-stop;
+# a silent default fall-through is allowed to defer.
+POSTGRES_VERSION_REQUESTED="${POSTGRES_VERSION:-}"
 POSTGRES_VERSION="${POSTGRES_VERSION:-17}"
 
-# Validate the version looks like a major number (1-3 digits). Stops a
-# typo'd POSTGRES_VERSION from cascading into apt/brew with cryptic
-# errors deep in the install.
-if [[ ! "$POSTGRES_VERSION" =~ ^[0-9]{1,3}$ ]]; then
-    fail "POSTGRES_VERSION='$POSTGRES_VERSION' is not a valid major version (expected like 16, 17)"
+# Numeric major version, plausibly a real PG release (10-29 covers
+# everything from PG10 in 2017 to comfortably future-proofed). Reject
+# anything outside that band — "17.2", "latest", "12; rm -rf /", etc.
+if [[ ! "$POSTGRES_VERSION" =~ ^(1[0-9]|2[0-9])$ ]]; then
+    fail "POSTGRES_VERSION='$POSTGRES_VERSION' invalid — supported majors: 10-29 (e.g. 16, 17)"
+    exit 1
 fi
 
+# ─── 2 · Sanitize $USER for role/db naming ───────────────────────────
+# We interpolate $USER into psql -tAc queries below. Postgres identifier
+# rules + a defense-in-depth filter: alphanumeric, underscore, hyphen,
+# starts with letter/underscore, max 31 chars (PG NAMEDATALEN-1). On
+# real machines $USER is benign; this guards against env-var surprises
+# in containers, CI, and exotic LDAP setups where $USER could carry
+# spaces, quotes, or worse.
+if [[ ! "$USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]{0,30}$ ]]; then
+    fail "refusing to use suspicious USER='$USER' as PostgreSQL role/db name (expected ^[a-zA-Z_][a-zA-Z0-9_-]{0,30}\$)"
+    exit 1
+fi
+
+# ─── 3 · OS detection + Linux distro sanity check ────────────────────
 OS=""
 case "$(uname -s)" in
     Darwin) OS="mac" ;;
@@ -56,43 +85,41 @@ case "$(uname -s)" in
     *)      fail "unsupported OS"; exit 1 ;;
 esac
 
+# Linux branch needs apt + dpkg. The bootstrap doesn't claim to support
+# non-Debian distros today, but a user could call this script directly.
+case "$OS" in
+    wsl|linux)
+        if ! command -v dpkg >/dev/null 2>&1 || ! command -v apt-get >/dev/null 2>&1; then
+            distro="$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-unknown}")"
+            followup critical "install-postgres.sh requires Debian/Ubuntu (apt + dpkg). Detected: $distro"
+            exit 1
+        fi
+        ;;
+esac
+
 # ─── Helpers ─────────────────────────────────────────────────────────
 
-# Detect whether ANY postgres major is already installed on this host.
-# Returns the detected version (e.g. "16", "17") on stdout, empty if none.
-_postgres_installed_version() {
+# Print every installed postgres major, one per line. Empty output
+# means none. Caller decides what "more than one" means.
+_postgres_installed_versions() {
     case "$OS" in
         mac)
             : "${BREW_BIN:?BREW_BIN not set}"
-            # Find any postgresql@<v> formula installed via brew.
             "$BREW_BIN" list --formula 2>/dev/null \
-                | awk -F'@' '/^postgresql@[0-9]+$/ {print $2; exit}'
+                | awk -F'@' '/^postgresql@[0-9]+$/ {print $2}'
             ;;
         wsl|linux)
-            # Find postgresql-<v> via dpkg (matches PGDG APT pattern).
-            dpkg -l 2>/dev/null | awk '/^ii\s+postgresql-[0-9]+\s/ {
-                split($2, a, "-"); print a[2]; exit }'
+            dpkg -l 2>/dev/null \
+                | awk '/^ii\s+postgresql-[0-9]+\s/ { split($2, a, "-"); print a[2] }'
             ;;
     esac
 }
 
-# Returns 0 if port :5432 has a listener owned by postgres, 1 otherwise.
-# Used to short-circuit role/db creation when the listener is foreign.
-_port_5432_owner_is_postgres() {
-    case "$OS" in
-        mac)
-            local owner
-            owner=$(lsof -nP -iTCP:5432 -sTCP:LISTEN 2>/dev/null \
-                | awk 'NR==2 {print $1; exit}')
-            [[ "$owner" == "postgres" ]]
-            ;;
-        wsl|linux)
-            ss -ltnp 'sport = :5432' 2>/dev/null | grep -q '"postgres"'
-            ;;
-    esac
-}
-
-# Returns 0 if anything other than postgres listens on :5432.
+# Returns 0 if anything other than postgres listens on :5432. Mac uses
+# the lsof USER column (-F u) instead of the COMMAND name to align with
+# the Linux check (which inspects the user= field of ss output) — both
+# OSes now signal "owned by postgres OS user" rather than "named like
+# postgres", which is more robust against same-named foreign binaries.
 _port_5432_in_foreign_use() {
     case "$OS" in
         mac)
@@ -109,9 +136,26 @@ _port_5432_in_foreign_use() {
     esac
 }
 
-# Wait up to ${1:-15} seconds for postgres to accept connections on :5432.
+# Returns 0 if :5432 has a listener and it IS postgres.
+_port_5432_owner_is_postgres() {
+    case "$OS" in
+        mac)
+            local owner
+            owner=$(lsof -nP -iTCP:5432 -sTCP:LISTEN 2>/dev/null \
+                | awk 'NR==2 {print $1; exit}')
+            [[ "$owner" == "postgres" ]]
+            ;;
+        wsl|linux)
+            ss -ltnp 'sport = :5432' 2>/dev/null | grep -q '"postgres"'
+            ;;
+    esac
+}
+
+# Wait up to ${1:-30} seconds for postgres to accept connections on
+# :5432. 30s default tolerates cold systemd start + first-time initdb
+# on a slow disk.
 _wait_postgres_ready() {
-    local timeout="${1:-15}"
+    local timeout="${1:-30}"
     local i=0
     while [[ $i -lt $timeout ]]; do
         if pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; then
@@ -123,19 +167,45 @@ _wait_postgres_ready() {
     return 1
 }
 
-# Resolve the brew-bin path for postgres on this machine. Used both for
-# `brew services start` and (in custom-prefix mode) as the wrapped binary
-# for launch_wrapper_install_extbrew.
 _pg_brew_path() {
     : "${BREW_PREFIX:?BREW_PREFIX not set}"
     echo "$BREW_PREFIX/opt/postgresql@${POSTGRES_VERSION}/bin/postgres"
 }
 
-# ─── 1 · Detect existing install (cross-major guard) ─────────────────
-existing_pg_ver="$(_postgres_installed_version || true)"
+# Detect "is systemd actually running as PID 1?" — more reliable than
+# `systemctl is-system-running` which returns "offline" on WSL but
+# `--version` succeeds because the binary is present.
+_systemd_is_pid1() {
+    [[ "$(ps -p 1 -o comm= 2>/dev/null | tr -d ' ')" == "systemd" ]]
+}
+
+# ─── 4 · Cross-major detection ───────────────────────────────────────
+# Collect ALL installed majors. Parallel installs (pg16 AND pg17 both
+# present) are unsupported by this script — port 5432 can only serve
+# one cluster at a time, and silently picking one would orphan the
+# other.
+existing_majors=()
+while IFS= read -r maj; do
+    [[ -n "$maj" ]] && existing_majors+=("$maj")
+done < <(_postgres_installed_versions || true)
+
+if [[ "${#existing_majors[@]}" -gt 1 ]]; then
+    followup critical "Multiple PostgreSQL majors installed: ${existing_majors[*]}. Bootstrap will not auto-pick one — port 5432 can only serve one cluster at a time. Decide: pg_dumpall the one you want to keep, then purge the others, then re-run."
+    exit 1
+fi
+
+existing_pg_ver="${existing_majors[0]:-}"
+
 if [[ -n "$existing_pg_ver" ]] && [[ "$existing_pg_ver" != "$POSTGRES_VERSION" ]]; then
-    warn "PostgreSQL ${existing_pg_ver} already installed; requested ${POSTGRES_VERSION} — skipping install"
-    warn "  to migrate: 1) pg_dumpall > backup.sql 2) uninstall pg${existing_pg_ver} 3) re-run with POSTGRES_VERSION=${POSTGRES_VERSION} 4) psql < backup.sql"
+    if [[ -n "$POSTGRES_VERSION_REQUESTED" ]]; then
+        # User explicitly asked for a version that conflicts with what's
+        # installed. Auto-downgrading would silently subvert their request.
+        followup critical "Requested PostgreSQL ${POSTGRES_VERSION} but ${existing_pg_ver} is already installed. Bootstrap will not auto-downgrade. Choose: (a) keep existing — re-run with POSTGRES_VERSION=${existing_pg_ver}; or (b) migrate — pg_dumpall, uninstall pg${existing_pg_ver}, re-run with POSTGRES_VERSION=${POSTGRES_VERSION}."
+        exit 1
+    fi
+    # Silent default fall-through: caller didn't insist on 17, host has
+    # 16 — keep using 16. Inform but don't escalate.
+    info "PostgreSQL ${existing_pg_ver} already installed; defaulting to it (no POSTGRES_VERSION requested)"
     POSTGRES_VERSION="$existing_pg_ver"
 elif [[ -z "$existing_pg_ver" ]]; then
     info "installing postgresql@${POSTGRES_VERSION}"
@@ -150,23 +220,53 @@ elif [[ -z "$existing_pg_ver" ]]; then
             # universe which usually pins one major behind.
             KEYRING="/etc/apt/keyrings/postgresql.gpg"
             SOURCES_LIST="/etc/apt/sources.list.d/pgdg.list"
-            if [[ ! -f "$KEYRING" ]]; then
-                info "adding PostgreSQL Global Development Group GPG keyring"
-                sudo install -d -m 0755 /etc/apt/keyrings
-                curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-                    | sudo gpg --dearmor -o "$KEYRING"
+
+            # Atomic keyring write: tempfile → mv. A previous run that
+            # crashed mid-write (network reset, signal, gpg crash) would
+            # otherwise leave a corrupt keyring file, and our `[[ ! -f ]]`
+            # guard would skip re-creation forever — apt-get update then
+            # fails on signature verification with no recovery hint.
+            # Verify content with `gpg --show-keys` before declaring it good.
+            need_keyring=0
+            if [[ ! -s "$KEYRING" ]] \
+               || ! sudo gpg --show-keys "$KEYRING" >/dev/null 2>&1; then
+                need_keyring=1
             fi
+            if [[ "$need_keyring" == "1" ]]; then
+                info "writing PGDG GPG keyring atomically"
+                sudo install -d -m 0755 /etc/apt/keyrings
+                tmp_key=$(sudo mktemp)
+                if ! curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+                        | sudo gpg --dearmor -o "$tmp_key"; then
+                    sudo rm -f "$tmp_key"
+                    followup critical "failed to fetch+dearmor PGDG GPG key — inspect network and curl/gpg availability"
+                    exit 1
+                fi
+                sudo mv "$tmp_key" "$KEYRING"
+                sudo chmod 0644 "$KEYRING"
+            fi
+
             if [[ ! -f "$SOURCES_LIST" ]]; then
                 # shellcheck disable=SC1091
                 . /etc/os-release    # provides VERSION_CODENAME
                 info "adding PGDG APT source for ${VERSION_CODENAME}"
                 echo "deb [signed-by=$KEYRING] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
                     | sudo tee "$SOURCES_LIST" > /dev/null
-                sudo apt-get update -qq
             fi
-            sudo apt-get install -y -qq --no-install-recommends \
-                "postgresql-${POSTGRES_VERSION}" \
-                "postgresql-client-${POSTGRES_VERSION}"
+
+            # Always update; cheap insurance against partial state where
+            # keyring was just renewed but cache wasn't refreshed.
+            sudo apt-get update -qq
+
+            apt_err=""
+            if ! apt_err="$(sudo apt-get install -y -qq --no-install-recommends \
+                    "postgresql-${POSTGRES_VERSION}" \
+                    "postgresql-client-${POSTGRES_VERSION}" 2>&1 1>/dev/null)"; then
+                # shellcheck disable=SC1091
+                . /etc/os-release 2>/dev/null
+                followup critical "apt-get install postgresql-${POSTGRES_VERSION} failed on ${VERSION_CODENAME:-unknown}. Apt error: ${apt_err}. Diagnose: apt-cache madison postgresql-${POSTGRES_VERSION}. PGDG codename support: https://wiki.postgresql.org/wiki/Apt"
+                exit 1
+            fi
             ;;
     esac
     ok "postgresql@${POSTGRES_VERSION} installed"
@@ -174,28 +274,28 @@ else
     ok "postgresql@${POSTGRES_VERSION} already installed"
 fi
 
-# ─── 2 · Pre-flight port :5432 conflict ──────────────────────────────
+# ─── 5 · Pre-flight port :5432 conflict ──────────────────────────────
 PORT_CONFLICT=0
 if _port_5432_in_foreign_use; then
     PORT_CONFLICT=1
     case "$OS" in
         mac)
-            owner=$(lsof -nP -iTCP:5432 -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}')
-            warn "port 5432 is held by '$owner' — skipping postgres service start"
-            warn "  if '$owner' is Postgres.app / EDB installer, stop it before re-running"
+            owner=$(lsof -nP -iTCP:5432 -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1; exit}')
+            followup critical "port 5432 held by '$owner' — postgres service NOT started, role/db NOT created. Stop '$owner' (Postgres.app / EDB / etc.) and re-run."
             ;;
         wsl|linux)
-            warn "port 5432 is in foreign use — skipping postgres service start"
-            warn "  inspect with: sudo ss -tlnp 'sport = :5432'"
+            followup critical "port 5432 in foreign use — postgres service NOT started, role/db NOT created. Inspect: sudo ss -tlnp 'sport = :5432'"
             ;;
     esac
 fi
 
-# ─── 3 · Start the service ───────────────────────────────────────────
+# ─── 6 · Start the service ───────────────────────────────────────────
+SERVICE_STARTED=0
 if [[ "$PORT_CONFLICT" == "1" ]]; then
-    : # skipped — port is foreign-owned
+    : # skipped — port is foreign-owned (followup already emitted)
 elif _port_5432_owner_is_postgres; then
     ok "postgres already listening on :5432"
+    SERVICE_STARTED=1
 else
     case "$OS" in
         mac)
@@ -204,92 +304,167 @@ else
                 /opt/homebrew|/usr/local) pg_use_wrapper=0 ;;
                 *)                        pg_use_wrapper=1 ;;
             esac
+
             if [[ "$pg_use_wrapper" == "1" ]]; then
                 # Custom prefix → user-scope LaunchAgent in /Volumes/* hits
-                # TCC sandbox exit 78. Wrap via rootfs shim. Cluster data
-                # lives at $BREW_PREFIX/var/postgresql@${POSTGRES_VERSION}.
+                # TCC sandbox exit 78. Wrap via rootfs shim.
                 info "starting postgres via launch-wrapper (custom BREW_PREFIX = $BREW_PREFIX)"
-                launch_wrapper_install_extbrew \
-                    --svc "postgresql@${POSTGRES_VERSION}" \
-                    --label "com.${USER}.postgresql@${POSTGRES_VERSION}" \
-                    --brew-bin "$(_pg_brew_path)" \
-                    --workdir "$BREW_PREFIX/var/postgresql@${POSTGRES_VERSION}" \
-                    --env LC_ALL=en_US.UTF-8 \
-                    -- -D "$BREW_PREFIX/var/postgresql@${POSTGRES_VERSION}" \
-                    || warn "launch-wrapper for postgres failed (non-fatal — start manually)"
+                pg_label="com.${USER}.postgresql@${POSTGRES_VERSION}"
+                pg_brew_plist="$LAUNCH_WRAPPER_PLIST_DIR/homebrew.mxcl.postgresql@${POSTGRES_VERSION}.plist"
+
+                if launch_wrapper_install_extbrew \
+                        --svc "postgresql@${POSTGRES_VERSION}" \
+                        --label "$pg_label" \
+                        --brew-bin "$(_pg_brew_path)" \
+                        --workdir "$BREW_PREFIX/var/postgresql@${POSTGRES_VERSION}" \
+                        --env LC_ALL=en_US.UTF-8 \
+                        -- -D "$BREW_PREFIX/var/postgresql@${POSTGRES_VERSION}"; then
+                    SERVICE_STARTED=1
+                else
+                    # Wrapper failed AFTER having renamed the brew plist
+                    # to .bak and written a new one. Roll back: tear down
+                    # the wrapper plist + restore the brew one — leaves
+                    # the user with the same state they started in, plus
+                    # an actionable followup.
+                    launch_wrapper_teardown "$pg_label" || true
+                    [[ -f "${pg_brew_plist}.bak" ]] && mv "${pg_brew_plist}.bak" "$pg_brew_plist"
+                    followup critical "launch-wrapper for postgresql@${POSTGRES_VERSION} failed. State rolled back to brew-managed plist. If you saw exit 78 / TCC denial, see feedback_tcc_entitlement_spawn_only.md"
+                    exit 1
+                fi
             else
-                info "starting postgres via brew services"
-                "$BREW_BIN" services start "postgresql@${POSTGRES_VERSION}" >/dev/null 2>&1 \
-                    || warn "brew services start postgresql@${POSTGRES_VERSION} failed"
+                brew_err=""
+                if ! brew_err="$("$BREW_BIN" services start "postgresql@${POSTGRES_VERSION}" 2>&1 1>/dev/null)"; then
+                    followup critical "brew services start postgresql@${POSTGRES_VERSION} failed. Output: ${brew_err}"
+                    exit 1
+                fi
+                SERVICE_STARTED=1
             fi
             ;;
         wsl|linux)
-            # WSL without systemd needs a different path; detect first.
-            if ! systemctl is-system-running --quiet 2>/dev/null \
-               && ! systemctl --version >/dev/null 2>&1; then
-                warn "systemd not active — start postgres manually:"
-                warn "  sudo pg_ctlcluster ${POSTGRES_VERSION} main start"
+            if ! _systemd_is_pid1; then
+                followup manual "systemd not running as PID 1 (WSL without systemd?). Start postgres manually each session: sudo pg_ctlcluster ${POSTGRES_VERSION} main start. Enable systemd in WSL: https://learn.microsoft.com/windows/wsl/systemd"
             else
-                info "enabling + starting postgresql service"
-                sudo systemctl enable "postgresql@${POSTGRES_VERSION}-main" >/dev/null 2>&1 || true
-                sudo systemctl enable postgresql >/dev/null 2>&1 || true
-                sudo systemctl start "postgresql@${POSTGRES_VERSION}-main" 2>/dev/null \
-                    || sudo systemctl start postgresql 2>/dev/null \
-                    || warn "systemctl start postgresql failed — try: sudo pg_ctlcluster ${POSTGRES_VERSION} main start"
+                # Detect existing clusters via pg_lsclusters (ships in
+                # postgresql-common, an autodep of postgresql-N). Picking
+                # the right unit name matters: PGDG packages emit
+                # postgresql@N-<cluster>.service. Default cluster is
+                # `main`; multi-cluster hosts may have others.
+                clusters=()
+                if command -v pg_lsclusters >/dev/null 2>&1; then
+                    while IFS= read -r cl; do
+                        [[ -n "$cl" ]] && clusters+=("$cl")
+                    done < <(pg_lsclusters --no-header 2>/dev/null \
+                        | awk -v v="$POSTGRES_VERSION" '$1==v {print $2}')
+                fi
+
+                if [[ "${#clusters[@]}" -eq 0 ]]; then
+                    followup critical "PostgreSQL ${POSTGRES_VERSION} package installed but no cluster exists. Create one: sudo pg_createcluster ${POSTGRES_VERSION} main --start"
+                    exit 1
+                fi
+
+                cluster="${clusters[0]}"
+                unit="postgresql@${POSTGRES_VERSION}-${cluster}"
+
+                enable_err=""
+                if ! enable_err="$(sudo systemctl enable "$unit" 2>&1)"; then
+                    # enable() failures are typically benign (Synchronizing
+                    # state… preset-not-allowed). Inform but don't escalate
+                    # unless the unit is genuinely missing.
+                    if echo "$enable_err" | grep -qiE "not found|no such"; then
+                        followup critical "systemctl enable $unit failed: $enable_err"
+                        exit 1
+                    fi
+                    warn "systemctl enable $unit: $enable_err (non-fatal)"
+                fi
+
+                start_err=""
+                if ! start_err="$(sudo systemctl start "$unit" 2>&1)"; then
+                    followup critical "systemctl start $unit failed: $start_err. Diagnose: sudo journalctl -u $unit -n 50"
+                    exit 1
+                fi
+                SERVICE_STARTED=1
             fi
             ;;
     esac
 fi
 
-# ─── 4 · Wait for socket + pristine-only role/db creation ────────────
-if [[ "$PORT_CONFLICT" == "1" ]]; then
+# ─── 7 · Wait for socket + pristine-only role/db creation ────────────
+PG_READY=0
+if [[ "$PORT_CONFLICT" == "1" ]] || [[ "$SERVICE_STARTED" == "0" ]]; then
     warn "skipping role/db setup — service was not started"
-elif _wait_postgres_ready 15; then
+elif _wait_postgres_ready 30; then
     case "$OS" in
         mac)
-            # Mac brew default: trust local + auto-creates `$USER` superuser
-            # on first start. Idempotent createuser/createdb anyway.
-            if ! psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$USER'" postgres 2>/dev/null | grep -q '^1$'; then
+            # Mac: brew default = trust local. Connect to `template1`
+            # (always present, vs `postgres` which a stock brew install
+            # may not have) to query meta tables.
+            role_err=""
+            if ! psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$USER'" template1 2>/dev/null | grep -q '^1$'; then
                 info "creating role '$USER' (superuser)"
-                createuser -s "$USER" 2>/dev/null \
-                    || warn "createuser '$USER' failed (may already exist)"
+                if ! role_err="$(createuser -s "$USER" 2>&1)"; then
+                    followup critical "createuser '$USER' failed: $role_err. Diagnose: psql -h 127.0.0.1 template1 -c '\\du'"
+                    exit 1
+                fi
             else
                 ok "role '$USER' already exists"
             fi
-            if ! psql -tAc "SELECT 1 FROM pg_database WHERE datname='$USER'" postgres 2>/dev/null | grep -q '^1$'; then
+
+            db_err=""
+            if ! psql -tAc "SELECT 1 FROM pg_database WHERE datname='$USER'" template1 2>/dev/null | grep -q '^1$'; then
                 info "creating database '$USER'"
-                createdb "$USER" 2>/dev/null \
-                    || warn "createdb '$USER' failed (may already exist)"
+                if ! db_err="$(createdb "$USER" 2>&1)"; then
+                    followup critical "createdb '$USER' failed: $db_err"
+                    exit 1
+                fi
             else
                 ok "database '$USER' already exists"
             fi
+            PG_READY=1
             ;;
         wsl|linux)
-            # apt default: cluster owned by 'postgres' OS user, peer auth.
-            # We need sudo -u postgres for admin work. Pristine-guard:
-            # only create role + db when role doesn't yet exist.
+            # Linux: peer auth — admin DDL requires `sudo -u postgres`.
+            # Role and database are checked INDEPENDENTLY (mirrors the
+            # Mac path); previously this block created both inside one
+            # `if !`, so a half-applied state (role created, db missing)
+            # was never repaired on re-run.
+            role_err=""
             if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$USER'" 2>/dev/null | grep -q '^1$'; then
                 info "creating role '$USER' (superuser, peer-auth)"
-                sudo -u postgres createuser -s "$USER" \
-                    || warn "createuser '$USER' failed"
-                info "creating database '$USER'"
-                sudo -u postgres createdb -O "$USER" "$USER" \
-                    || warn "createdb '$USER' failed"
+                if ! role_err="$(sudo -u postgres createuser -s "$USER" 2>&1)"; then
+                    followup critical "createuser '$USER' failed: $role_err. Diagnose: sudo -u postgres psql -c '\\du'"
+                    exit 1
+                fi
             else
-                ok "role '$USER' already exists — skipping pristine setup"
+                ok "role '$USER' already exists"
             fi
+
+            db_err=""
+            if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$USER'" 2>/dev/null | grep -q '^1$'; then
+                info "creating database '$USER'"
+                if ! db_err="$(sudo -u postgres createdb -O "$USER" "$USER" 2>&1)"; then
+                    followup critical "createdb '$USER' failed: $db_err"
+                    exit 1
+                fi
+            else
+                ok "database '$USER' already exists"
+            fi
+            PG_READY=1
             ;;
     esac
 else
-    warn "postgres did not become ready within 15s — role/db setup skipped"
-    warn "  inspect: pg_isready -h 127.0.0.1 -p 5432"
+    followup critical "postgres did not become ready within 30s — role/db setup skipped. Inspect: pg_isready -h 127.0.0.1 -p 5432. Mac: brew services list | grep postgresql. Linux: sudo systemctl status postgresql@${POSTGRES_VERSION}-main"
 fi
 
-# ─── 5 · Done ────────────────────────────────────────────────────────
-ok "PostgreSQL ${POSTGRES_VERSION} ready:"
-ok "  socket:  127.0.0.1:5432"
-ok "  role:    $USER (superuser)"
-ok "  db:      $USER"
-ok "  Laravel .env:"
-ok "    DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432"
-ok "    DB_DATABASE=$USER DB_USERNAME=$USER DB_PASSWORD="
+# ─── 8 · Done banner — only when everything succeeded ────────────────
+if [[ "$PG_READY" == "1" ]]; then
+    ok "PostgreSQL ${POSTGRES_VERSION} ready:"
+    ok "  socket:  127.0.0.1:5432"
+    ok "  role:    $USER (superuser)"
+    ok "  db:      $USER"
+    ok "  Laravel .env:"
+    ok "    DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432"
+    ok "    DB_DATABASE=$USER DB_USERNAME=$USER DB_PASSWORD="
+else
+    warn "PostgreSQL ${POSTGRES_VERSION} install completed but not fully usable — see followup summary at end of bootstrap"
+    exit 1
+fi
