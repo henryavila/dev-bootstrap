@@ -23,6 +23,7 @@ LANG_MAC="$ROOT/topics/10-languages/install.mac.sh"
 REMOTE_MAC="$ROOT/topics/70-remote-access/install.mac.sh"
 BOOTSTRAP="$ROOT/bootstrap.sh"
 MENU="$ROOT/lib/menu.sh"
+LOG="$ROOT/lib/log.sh"
 
 # Helper: count matches of an extended regex in a file (works on bash 3.2)
 _count_matches() {
@@ -835,6 +836,15 @@ for f in "$TMUX_BASHRC" "$TMUX_ZSHRC"; do
     assert_pattern_present "$f" 'command -v tmux' \
         "$base — gates aliases on 'command -v tmux'"
 done
+
+echo
+echo "═══ Bash 3.2 color variables must be braced before Unicode literals ═══"
+
+# macOS /bin/bash 3.2 treats non-ASCII bytes adjacent to an unbraced
+# parameter expansion as part of the parameter token. Under `set -u`,
+# `$_C_RED✗$_C_RST` aborts as `_C_RED�: unbound variable`.
+assert_pattern_absent "$LOG" '\$_C_[A-Z]+[✓✗→]' \
+    "lib/log.sh — _C_* color vars are braced before Unicode symbols"
 
 echo
 echo "═══ Baseline shell aliases migrated from private dotfiles to public topics ═══"

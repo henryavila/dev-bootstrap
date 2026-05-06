@@ -98,7 +98,7 @@ render_followup_summary() {
             "$_C_RED$_C_BLD" "$_C_RST"
         local i
         for ((i=0; i<${#crit_msgs[@]}; i++)); do
-            _render_followup_item "$_C_RED✗$_C_RST" "${crit_msgs[$i]}"
+            _render_followup_item "${_C_RED}✗${_C_RST}" "${crit_msgs[$i]}"
         done
     fi
 
@@ -113,7 +113,7 @@ render_followup_summary() {
     if [[ "${#info_msgs[@]}" -gt 0 ]]; then
         printf '\n%sOptional / info%s:\n' "$_C_BLU$_C_BLD" "$_C_RST"
         for ((i=0; i<${#info_msgs[@]}; i++)); do
-            _render_followup_item "$_C_BLU→$_C_RST" "${info_msgs[$i]}"
+            _render_followup_item "${_C_BLU}→${_C_RST}" "${info_msgs[$i]}"
         done
     fi
     echo
