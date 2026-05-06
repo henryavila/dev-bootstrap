@@ -90,6 +90,7 @@ For project-specific session names (e.g. `th` → "arch", `tsda` → "sda"), add
 | `gco` | `git checkout` |
 | `gb` | `git branch` |
 | `gp` | `git pull` |
+| `gps` | `git push` |
 | `gaa` | `git add .` |
 | `gc` | `git commit` |
 | `grb` | `git rebase -i` |
@@ -113,7 +114,7 @@ For project-specific session names (e.g. `th` → "arch", `tsda` → "sda"), add
 
 ### Autocomplete (bash-only)
 
-The fragment calls `__git_complete` for `g`, `gco`, `gb`, `gp`, `gd` — Tab autocompletes branches as if you had typed `git`. Requires `bash-completion` (installed by 20-terminal-ux).
+The fragment calls `__git_complete` for `g`, `gco`, `gb`, `gp`, `gps`, `gd` — Tab autocompletes branches/remotes as if you had typed `git`. Requires `bash-completion` (installed by 20-terminal-ux).
 
 Zsh uses stock `compinit` — already resolves completion on aliases automatically.
 

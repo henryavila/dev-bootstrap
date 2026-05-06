@@ -18,6 +18,7 @@ alias gds='g diff --staged'
 alias gch='g checkout'
 alias gb='g branch'
 alias gp='g pull'
+alias gps='g push'
 alias gaa='g add .'
 alias gc='g commit'
 alias grb='g rebase -i'
@@ -38,5 +39,6 @@ if type __git_complete &>/dev/null; then
     __git_complete gch _git_checkout
     __git_complete gb  _git_branch
     __git_complete gp  _git_pull
+    __git_complete gps _git_push
     __git_complete gd  _git_diff
 fi

@@ -20,11 +20,11 @@ Applies `data/gitconfig.keys` — each line becomes `git config --global <key> <
 
 Shell aliases (short, prompt-friendly — not to be confused with the `git config alias.*` ones above):
 
-- `g`, `gs`, `gl`, `gd`, `gds`, `gco`, `gb`, `gp`, `gaa`, `gc`, `grb`, `gsh`, `glog`, `gloga`
+- `g`, `gs`, `gl`, `gd`, `gds`, `gco`, `gb`, `gp`, `gps`, `gaa`, `gc`, `grb`, `gsh`, `glog`, `gloga`
 - `whoops` — reset hard + clean -df (destructive)
 - `gmm` — merge main into current branch
 
-Bash additionally gets `__git_complete g|gco|gb|gp|gd` so those aliases autocomplete as if they were plain `git`.
+Bash additionally gets `__git_complete g|gco|gb|gp|gps|gd` so those aliases autocomplete as if they were plain `git`.
 
 ## Identity
 
