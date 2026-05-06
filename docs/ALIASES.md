@@ -8,7 +8,7 @@ Compact list of the aliases **every dev who ran `bootstrap.sh`** receives, regar
 |----------|-------|----------|
 | `topics/30-shell/templates/{bash,zsh}rc.d-30-shell.sh.template` | always-on | navigation (`..`, `home`), shell shortcuts (`h`, `c`, `cla`), grep colored, `alert` (Linux desktop notify), `mkd`/`md`/`fs`/`tre` helpers |
 | `topics/20-terminal-ux/templates/{bash,zsh}rc.d-20-terminal-ux.sh.template` | always-on | listing (`ls`/`ll`/`la`), view (`cat`→bat), Phase E replacements (`top`→btop, `df`→duf, `du`→dust, `ping`→gping, `http`→xh, `ps`→procs) |
-| `topics/40-tmux/templates/{bash,zsh}rc.d-40-tmux.sh` | always-on | tmux shortcuts: `tl` list, `ta` attach, `tn` new, **`tm`** attach-or-create 'main' |
+| `topics/40-tmux/templates/{bash,zsh}rc.d-40-tmux.sh` | always-on | tmux shortcuts: `tl` list, `ta` attach, `tn` new, **`tm`** go to 'main' without nesting |
 | `topics/50-git/templates/{bash,zsh}rc.d-50-git.sh` | always-on | shell-level git aliases (g/gs/gco…) + autocomplete |
 | `topics/60-web-stack/templates/{bash,zsh}rc.d-60-web-stack.sh` | `INCLUDE_WEBSTACK=1` | Laravel (`art`, `artisan`, `cinst`, `migrate`…) + service restart (`srn`, `srp`, `srr`…) |
 | `topics/70-remote-access/templates/{bash,zsh}rc.d-70-remote-access.sh` | `INCLUDE_REMOTE=1` | Tailscale (`ts`, `tip`, `tup`, `tping`, `tssh`…) + `tip-of()` function |
@@ -72,7 +72,7 @@ Each block gates on `command -v`, so aliases no-op on machines without the tool 
 | `tl` | `tmux ls` | list sessions |
 | `ta <name>` | `tmux attach -t` | attach by name |
 | `tn <name>` | `tmux new -s` | new session |
-| **`tm`** | `tmux new -A -s main` | attach-or-create the canonical 'main' session — `-A` means "behave as attach-session if it exists", so the first call spawns and every subsequent call re-enters |
+| **`tm`** | Outside tmux: `tmux new-session -A -s main`; inside tmux: `tmux switch-client -t main` after creating `main` detached if needed | go to the canonical `main` session without nesting tmux clients |
 
 For project-specific session names (e.g. `th` → "arch", `tsda` → "sda"), add them to your private `~/.bashrc.d/99-personal-aliases.sh`.
 

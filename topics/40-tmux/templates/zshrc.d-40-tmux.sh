@@ -16,9 +16,18 @@ alias tn='tmux new -s'
 # in scripts and one-liners).
 alias td='tmux detach'
 
-# `tm` — attach-or-create the canonical 'main' session.
-# `-A` on new-session behaves like attach-session when the session
-# already exists, so the first call spawns and every subsequent
-# call re-enters the same tmux. Good default for "just give me
-# tmux" without naming anything.
-alias tm='tmux new -A -s main'
+# `tm` — go to the canonical 'main' session.
+# Outside tmux, `new-session -A` attaches if main exists or creates it.
+# Inside tmux, switch the current client instead of nesting a second tmux
+# client inside the pane.
+tm() {
+    if [ -n "${TMUX:-}" ]; then
+        if tmux has-session -t main 2>/dev/null; then
+            tmux switch-client -t main
+        else
+            tmux new-session -d -s main && tmux switch-client -t main
+        fi
+    else
+        tmux new-session -A -s main
+    fi
+}
