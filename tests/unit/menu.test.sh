@@ -20,8 +20,10 @@ source "$HERE/../lib/assert.sh"
 
 MENU="$REPO_ROOT/lib/menu.sh"
 DOTFILES_TOPIC="$REPO_ROOT/topics/95-dotfiles-personal/install.sh"
+BOOTSTRAP="$REPO_ROOT/bootstrap.sh"
 assert_file_exists "$MENU" "lib/menu.sh present"
 assert_file_exists "$DOTFILES_TOPIC" "95-dotfiles-personal install.sh present"
+assert_file_exists "$BOOTSTRAP" "bootstrap.sh present"
 
 # Source menu.sh in isolation. Needs OS + log.sh helpers first.
 # shellcheck disable=SC2034 # consumed by lib/menu.sh after source
@@ -109,6 +111,73 @@ assert_not_contains "$npm_global_state" "DOTFILES_NPM_GLOBAL" \
 
 assert_pattern_present "$DOTFILES_TOPIC" 'DOTFILES_NPM_GLOBAL="\$\{DOTFILES_NPM_GLOBAL:-0\}" bash "\$DOTFILES_DIR/install.sh"' \
     "95-dotfiles-personal forwards DOTFILES_NPM_GLOBAL to dotfiles install.sh"
+
+echo
+echo "macOS menu dependencies"
+
+_test_mac_menu_bootstraps_brew_when_whiptail_needs_homebrew() {
+    local tmp fake_root marker
+    tmp="$(mktemp -d)"
+    fake_root="$tmp/dev-bootstrap"
+    marker="$tmp/00-core-ran"
+    mkdir -p "$fake_root/topics/00-core" "$fake_root/lib" "$tmp/homebrew/bin" "$tmp/bin"
+    local bash_bin
+    bash_bin="$(command -v bash)"
+    ln -s "$bash_bin" "$tmp/bin/bash"
+
+    cat > "$fake_root/topics/00-core/install.mac.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+echo ran > "$marker"
+EOF
+    chmod +x "$fake_root/topics/00-core/install.mac.sh"
+
+    cat > "$tmp/homebrew/bin/brew" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "--prefix" ]]; then
+    printf '%s\n' "$tmp/homebrew"
+    exit 0
+fi
+exit 0
+EOF
+    chmod +x "$tmp/homebrew/bin/brew"
+
+    cat > "$fake_root/lib/detect-brew.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'BREW_BIN=%q\n' "$tmp/homebrew/bin/brew"
+printf 'BREW_PREFIX=%q\n' "$tmp/homebrew"
+EOF
+    chmod +x "$fake_root/lib/detect-brew.sh"
+
+    local old_path="$PATH"
+    PATH="$tmp/bin"
+    OS="mac"
+    BREW_BIN=""
+    BREW_PREFIX=""
+    DEV_BOOTSTRAP_ROOT="$fake_root"
+
+    prepare_interactive_menu_dependencies
+
+    assert_eq "$(<"$marker")" "ran" "mac menu prereq runs 00-core before whiptail when brew is missing"
+    assert_eq "$BREW_BIN" "$tmp/homebrew/bin/brew" "mac menu prereq refreshes BREW_BIN after 00-core"
+    assert_eq "$BREW_PREFIX" "$tmp/homebrew" "mac menu prereq refreshes BREW_PREFIX after 00-core"
+
+    PATH="$old_path"
+    rm -rf "$tmp"
+}
+
+_test_mac_menu_bootstraps_brew_when_whiptail_needs_homebrew
+
+assert_pattern_present "$BOOTSTRAP" 'prepare_interactive_menu_dependencies' \
+    "bootstrap prepares macOS menu dependencies before ensure_whiptail"
+prepare_line="$(grep -n 'prepare_interactive_menu_dependencies' "$BOOTSTRAP" | head -1 | cut -d: -f1)"
+ensure_line="$(grep -n 'ensure_whiptail' "$BOOTSTRAP" | head -1 | cut -d: -f1)"
+if [[ -n "$prepare_line" && -n "$ensure_line" && "$prepare_line" -lt "$ensure_line" ]]; then
+    pass "bootstrap prepares dependencies before calling ensure_whiptail"
+else
+    fail "bootstrap prepares dependencies before calling ensure_whiptail"
+fi
 
 echo
 echo "data/php-versions.conf parses to a non-empty list"

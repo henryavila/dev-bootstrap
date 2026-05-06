@@ -79,6 +79,36 @@ ensure_whiptail() {
     return 1
 }
 
+prepare_interactive_menu_dependencies() {
+    command -v whiptail >/dev/null 2>&1 && return 0
+    [[ "$OS" == "mac" ]] || return 0
+    [[ -n "${BREW_BIN:-}" ]] && return 0
+
+    local root installer detect_out
+    root="${DEV_BOOTSTRAP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+    installer="$root/topics/00-core/install.mac.sh"
+
+    if [[ ! -x "$installer" ]]; then
+        warn "mac menu needs Homebrew to install whiptail, but $installer is unavailable"
+        return 1
+    fi
+
+    info "mac menu needs Homebrew for whiptail/newt; running 00-core first"
+    if ! bash "$installer"; then
+        warn "00-core failed before the interactive menu; continuing without whiptail"
+        return 1
+    fi
+
+    if detect_out="$(bash "$root/lib/detect-brew.sh" 2>/dev/null)"; then
+        eval "$detect_out"
+        export BREW_BIN BREW_PREFIX
+        return 0
+    fi
+
+    warn "00-core completed, but Homebrew still was not detected; continuing without whiptail"
+    return 1
+}
+
 # whiptail exits non-zero when the user cancels (ESC or Cancel button).
 # We treat any cancel as "user changed their mind" — exit the whole bootstrap
 # cleanly so no partial state remains.

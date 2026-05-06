@@ -255,6 +255,7 @@ fi
 # shellcheck disable=SC1091
 source "$HERE/lib/menu.sh"
 if should_show_menu; then
+    prepare_interactive_menu_dependencies || true
     if ensure_whiptail; then
         run_menu
     fi
