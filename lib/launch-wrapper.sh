@@ -12,7 +12,8 @@
 # feedback_tcc_entitlement_spawn_only.md for the full finding.
 #
 # Source from a topic; do not execute directly.
-# On non-Mac, all public functions noop and return 0.
+# On non-Mac, all public functions noop and return 0, except dry-run tests
+# which still generate files without invoking launchctl.
 #
 # Public API:
 #   launch_wrapper_install_extbrew --svc NAME --label LABEL --brew-bin PATH \
@@ -34,6 +35,10 @@ LAUNCH_WRAPPER_PLIST_DIR="${LAUNCH_WRAPPER_PLIST_DIR:-$HOME/Library/LaunchAgents
 # ---------- Internals ----------
 _launch_wrapper_is_mac() {
     [[ "$(uname -s)" == "Darwin" ]]
+}
+
+_launch_wrapper_should_run() {
+    _launch_wrapper_is_mac || [[ -n "${LAUNCH_WRAPPER_DRY_RUN:-}" ]]
 }
 
 _launch_wrapper_script_path() {
@@ -192,7 +197,7 @@ _launch_wrapper_bootstrap() {
 # Tear down a homebrew.mxcl.<svc>.plist that we're replacing with our wrapper.
 # bootout + rename to .bak so brew can detect & restore if user wants.
 launch_wrapper_teardown_homebrew_plist() {
-    _launch_wrapper_is_mac || return 0
+    _launch_wrapper_should_run || return 0
     local svc="$1"
     local label="homebrew.mxcl.${svc}"
     local plist="$LAUNCH_WRAPPER_PLIST_DIR/${label}.plist"
@@ -217,7 +222,7 @@ launch_wrapper_teardown_homebrew_plist() {
 # Tear down a wrapper-managed plist (e.g. com.<user>.<svc>). Removes plist,
 # wrapper script, and bootouts. Used by uninstall flows.
 launch_wrapper_teardown() {
-    _launch_wrapper_is_mac || return 0
+    _launch_wrapper_should_run || return 0
     local label="$1"
     local svc="${label##*.}"
     local plist
@@ -256,7 +261,7 @@ launch_wrapper_teardown() {
 #       --brew-bin /Volumes/External/homebrew/bin/syncthing \
 #       -- serve --no-browser --no-restart
 launch_wrapper_install_extbrew() {
-    _launch_wrapper_is_mac || return 0
+    _launch_wrapper_should_run || return 0
 
     local svc="" label="" brew_bin="" workdir=""
     local -a env_vars

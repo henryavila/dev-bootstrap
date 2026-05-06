@@ -82,7 +82,7 @@ fi
 
 if [[ -f "$DOTFILES_DIR/install.sh" ]]; then
     info "running $DOTFILES_DIR/install.sh"
-    bash "$DOTFILES_DIR/install.sh"
+    DOTFILES_NPM_GLOBAL="${DOTFILES_NPM_GLOBAL:-0}" bash "$DOTFILES_DIR/install.sh"
 else
     warn "$DOTFILES_DIR/install.sh not found — dotfiles cloned but not applied"
 fi

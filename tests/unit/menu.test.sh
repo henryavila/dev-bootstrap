@@ -12,15 +12,18 @@
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+# Source log helpers before assert.sh so assert.sh owns pass/fail counters.
+# shellcheck source=/dev/null
+source "$REPO_ROOT/lib/log.sh"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
 MENU="$REPO_ROOT/lib/menu.sh"
+DOTFILES_TOPIC="$REPO_ROOT/topics/95-dotfiles-personal/install.sh"
 assert_file_exists "$MENU" "lib/menu.sh present"
+assert_file_exists "$DOTFILES_TOPIC" "95-dotfiles-personal install.sh present"
 
 # Source menu.sh in isolation. Needs OS + log.sh helpers first.
-# shellcheck source=/dev/null
-source "$REPO_ROOT/lib/log.sh"
 # shellcheck disable=SC2034 # consumed by lib/menu.sh after source
 OS="wsl"
 # shellcheck source=/dev/null
@@ -38,7 +41,7 @@ _test_gates() {
     unset NON_INTERACTIVE ONLY_TOPICS
     unset INCLUDE_DOCKER INCLUDE_LARAVEL INCLUDE_REMOTE INCLUDE_EDITOR
     unset INCLUDE_MAILPIT INCLUDE_NGROK INCLUDE_MSSQL
-    unset PHP_VERSIONS DOTFILES_REPO
+    unset PHP_VERSIONS DOTFILES_REPO DOTFILES_NPM_GLOBAL
     unset CI
 
     # Set the one being tested
@@ -59,7 +62,53 @@ _test_gates "INCLUDE_NGROK=1"
 _test_gates "INCLUDE_MSSQL=1"
 _test_gates "PHP_VERSIONS=8.5"
 _test_gates "DOTFILES_REPO=git@github.com:x/y.git"
+_test_gates "DOTFILES_NPM_GLOBAL=1"
 _test_gates "CI=true"
+
+echo
+echo "npm global opt-in is first-class in the interactive menu"
+
+assert_pattern_present "$MENU" '^[[:space:]]*"npm-global"[[:space:]]+"95-dotfiles-personal: npm globals under ~/.npm-global"' \
+    "menu checklist shows npm-global opt-in"
+
+assert_pattern_present "$MENU" 'npm-global\) export DOTFILES_NPM_GLOBAL=1' \
+    "menu selection exports DOTFILES_NPM_GLOBAL"
+
+assert_file_contains "$MENU" 'DOTFILES_NPM_GLOBAL:-0\}" == "1" \]\] *&& return 1' \
+    "should_show_menu treats DOTFILES_NPM_GLOBAL as a pre-seed signal"
+
+assert_file_contains "$MENU" "echo 'export DOTFILES_NPM_GLOBAL=1'" \
+    "_persist_menu_state persists DOTFILES_NPM_GLOBAL"
+
+_test_persist_npm_global() {
+    local enabled="$1"
+    bash -c "
+        set -uo pipefail
+        TMP=\$(mktemp -d)
+        export BOOTSTRAP_STATE_CONFIG=\"\$TMP/config.env\"
+        export DOTFILES_NPM_GLOBAL='$enabled'
+        ok()   { :; }
+        info() { :; }
+        warn() { :; }
+        fail() { :; }
+        # shellcheck disable=SC1091
+        source '$MENU' 2>/dev/null || true
+        _persist_menu_state
+        cat \"\$BOOTSTRAP_STATE_CONFIG\" 2>/dev/null
+        rm -rf \"\$TMP\"
+    "
+}
+
+npm_global_state="$(_test_persist_npm_global 1)"
+assert_contains "$npm_global_state" "export DOTFILES_NPM_GLOBAL=1" \
+    "_persist_menu_state round-trips npm global opt-in when enabled"
+
+npm_global_state="$(_test_persist_npm_global 0)"
+assert_not_contains "$npm_global_state" "DOTFILES_NPM_GLOBAL" \
+    "_persist_menu_state omits npm global opt-in when disabled"
+
+assert_pattern_present "$DOTFILES_TOPIC" 'DOTFILES_NPM_GLOBAL="\$\{DOTFILES_NPM_GLOBAL:-0\}" bash "\$DOTFILES_DIR/install.sh"' \
+    "95-dotfiles-personal forwards DOTFILES_NPM_GLOBAL to dotfiles install.sh"
 
 echo
 echo "data/php-versions.conf parses to a non-empty list"

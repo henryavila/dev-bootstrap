@@ -11,6 +11,7 @@
 #   DRY_RUN=1           print actions without executing
 #   DOTFILES_REPO       personal dotfiles repo URL (enables 95-dotfiles-personal)
 #   DOTFILES_DIR        where to clone dotfiles (default: ~/dotfiles)
+#   DOTFILES_NPM_GLOBAL=1 configure npm globals under ~/.npm-global via dotfiles
 #   GIT_NAME, GIT_EMAIL identity for 50-git
 #   GPG_SIGN=1          enable commit/tag signing in 50-git (opt-in)
 #   GPG_KEY_ID          explicit signing key (else first secret key is picked)
@@ -137,6 +138,7 @@ Opt-in topics (menu toggles these, or set env var in automation):
   70-remote-access      INCLUDE_REMOTE=1
   90-editor             INCLUDE_EDITOR=1
   95-dotfiles-personal  DOTFILES_REPO=<url>
+                       DOTFILES_NPM_GLOBAL=1  npm globals under ~/.npm-global
 
 Other env vars:
   GIT_NAME, GIT_EMAIL, CODE_DIR, DOTFILES_DIR, NO_COLOR
@@ -261,6 +263,7 @@ fi
 # ---------- Defaults for inherited vars ----------
 export DOTFILES_REPO="${DOTFILES_REPO:-}"
 export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
+export DOTFILES_NPM_GLOBAL="${DOTFILES_NPM_GLOBAL:-0}"
 export GIT_NAME="${GIT_NAME:-}"
 export GIT_EMAIL="${GIT_EMAIL:-}"
 export CODE_DIR="${CODE_DIR:-$HOME/code/web}"

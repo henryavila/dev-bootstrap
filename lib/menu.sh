@@ -13,7 +13,7 @@
 #   INCLUDE_MAILPIT, INCLUDE_NGROK, INCLUDE_MSSQL, INCLUDE_POSTGRES,
 #   INCLUDE_FRONTEND_PROXY
 #   PHP_VERSIONS, PHP_DEFAULT, POSTGRES_VERSION
-#   DOTFILES_REPO, GIT_NAME, GIT_EMAIL
+#   DOTFILES_REPO, DOTFILES_NPM_GLOBAL, GIT_NAME, GIT_EMAIL
 #
 # Depends on: $OS (from bootstrap.sh), $BREW_BIN (mac only), log.sh helpers.
 
@@ -41,6 +41,7 @@ should_show_menu() {
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && return 1
+        [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && return 1
         [[ -n "${PHP_VERSIONS:-}" ]]          && return 1
         [[ -n "${POSTGRES_VERSION:-}" ]]      && return 1
         [[ -n "${DOTFILES_REPO:-}" ]]         && return 1
@@ -145,6 +146,16 @@ _topic_default_state() {
                 echo OFF
             fi
             ;;
+        npm-global)
+            if [[ -f "$HOME/.bashrc.d/20-npm-global.sh" ]] \
+               || [[ -f "$HOME/.zshrc.d/20-npm-global.sh" ]] \
+               || grep -qxF 'prefix=${HOME}/.npm-global' "$HOME/.npmrc" 2>/dev/null \
+               || grep -qxF "prefix=${HOME}/.npm-global" "$HOME/.npmrc" 2>/dev/null; then
+                echo ON
+            else
+                echo OFF
+            fi
+            ;;
         *)
             echo OFF
             ;;
@@ -170,11 +181,12 @@ run_menu() {
     choices=$(whiptail --title "dev-bootstrap :: opt-in topics" \
         --checklist \
         "Select optional topics to install (SPACE toggles, ENTER confirms).\nDefaults reflect what's already installed on this machine." \
-        20 85 6 \
+        21 85 7 \
         "docker"   "45-docker: Docker Engine (WSL) / Colima (Mac)"    "$(_topic_default_state docker)" \
         "webstack" "60-web-stack: Web + DB stack (PHP + nginx + MySQL + Postgres + mkcert)" "$(_topic_default_state webstack)" \
         "remote"   "70-remote-access: SSH + Tailscale + Syncthing"    "$(_topic_default_state remote)" \
         "editor"   "90-editor: typora-wait (open .md from CLI)"       "$(_topic_default_state editor)" \
+        "npm-global" "95-dotfiles-personal: npm globals under ~/.npm-global" "$(_topic_default_state npm-global)" \
         "dotfiles" "95-dotfiles-personal: your private dotfiles"      "$(_topic_default_state dotfiles)" \
         3>&1 1>&2 2>&3) || _menu_cancel
 
@@ -191,6 +203,7 @@ run_menu() {
             webstack) export INCLUDE_WEBSTACK=1 ;;
             remote)   export INCLUDE_REMOTE=1 ;;
             editor)   export INCLUDE_EDITOR=1 ;;
+            npm-global) export DOTFILES_NPM_GLOBAL=1; need_dotfiles=1 ;;
             dotfiles) need_dotfiles=1 ;;
         esac
     done
@@ -577,9 +590,10 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
     [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && summary+="    ✓ 70-remote-access\n"
     [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && summary+="    ✓ 90-editor\n"
     [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    ✓ 95-dotfiles-personal\n"
+    [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    ✓ npm globals in ~/.npm-global\n"
     if [[ "${INCLUDE_DOCKER:-0}"  != "1" && "${INCLUDE_WEBSTACK:-0}" != "1" \
        && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_EDITOR:-0}"  != "1" \
-       && -z "${DOTFILES_REPO:-}" ]]; then
+       && -z "${DOTFILES_REPO:-}" && "${DOTFILES_NPM_GLOBAL:-0}" != "1" ]]; then
         summary+="    (none selected)\n"
     fi
     summary+="\n  Git identity:\n"
@@ -589,6 +603,7 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
         summary+="\n  Paths:\n"
         [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    dotfiles   = $DOTFILES_DIR  ← $DOTFILES_REPO\n"
         [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && summary+="    code       = $CODE_DIR\n"
+        [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    npm global = ~/.npm-global/bin\n"
     fi
     summary+="\nProceed?"
 
@@ -637,6 +652,7 @@ _persist_menu_state() {
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]] && echo 'export INCLUDE_NGROK=1'
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]] && echo 'export INCLUDE_MSSQL=1'
         [[ "${INCLUDE_FRONTEND_PROXY:-0}" == "1" ]] && echo 'export INCLUDE_FRONTEND_PROXY=1'
+        [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && echo 'export DOTFILES_NPM_GLOBAL=1'
         # POSTGRES_VERSION coupled to INCLUDE_POSTGRES — only meaningful when
         # the opt-in is on. Persisting the version separately would let it
         # leak into a future toggle-on without the user's intent. Both keys

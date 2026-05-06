@@ -24,6 +24,10 @@ export DEV_BOOTSTRAP_STATE_DIR="$TMPROOT/state"
 # shellcheck source=../../lib/state.sh
 source "$LIB"
 
+_stat_mode() {
+    stat -c "%a" "$1" 2>/dev/null || stat -f "%Lp" "$1"
+}
+
 # ---------- state_path ----------
 echo
 echo "═══ state_path ═══"
@@ -45,11 +49,11 @@ val="$(state_get FOO)"
 assert_eq "$val" "hello" "state_get returns what state_set wrote"
 
 # File mode must be 0600 (contains decisions, can include path info)
-mode="$(stat -f "%Lp" "$(state_path)" 2>/dev/null || stat -c "%a" "$(state_path)")"
+mode="$(_stat_mode "$(state_path)")"
 assert_eq "$mode" "600" "state file mode is 0600"
 
 # Dir mode 0700
-dir_mode="$(stat -f "%Lp" "$(dirname "$(state_path)")" 2>/dev/null || stat -c "%a" "$(dirname "$(state_path)")")"
+dir_mode="$(_stat_mode "$(dirname "$(state_path)")")"
 assert_eq "$dir_mode" "700" "state dir mode is 0700"
 
 # ---------- multiple keys preserved across writes ----------

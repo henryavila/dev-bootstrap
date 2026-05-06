@@ -50,7 +50,7 @@ bash bootstrap.sh
 
 Running without any control env var opens a `whiptail` menu that asks:
 
-1. Which opt-in topics to enable (`60-web-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` — all pre-checked by default; deselect what you don't want).
+1. Which opt-in topics to enable (`60-web-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` / `npm-global`).
 2. `GIT_NAME` / `GIT_EMAIL` (skipped silently when `git config --global` already has them).
 3. `DOTFILES_REPO` + `DOTFILES_DIR` (only when `95-dotfiles-personal` is checked).
 4. `CODE_DIR` (only when `60-web-stack` is checked).
@@ -76,9 +76,12 @@ INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash bootstrap.sh
 
 # pull personal dotfiles at the end
 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
+
+# also configure npm globals under ~/.npm-global and persist PATH via dotfiles
+DOTFILES_REPO=git@github.com:you/dotfiles.git DOTFILES_NPM_GLOBAL=1 bash bootstrap.sh
 ```
 
-The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `DOTFILES_REPO`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
+The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `DOTFILES_REPO`, `DOTFILES_NPM_GLOBAL`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
 
 Right after the menu (or immediately, when skipped), the bootstrap runs `sudo -v` to warm up the sudo cache — one password prompt, then subsequent `sudo` calls within the cache window (~5–15min) are silent.
 
@@ -109,7 +112,7 @@ If you see a `!` line in the bootstrap output, it's pointing at a next step. Rea
 | `70-remote-access` | sshd (hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + systemd drop-in setting MTU 1200 on `tailscale0` (prevents SSH KEX PQ hang); shell fragment with Tailscale aliases (`ts`, `tip`, `tup`, `tping`, `tssh`…) + `tip-of()` helper | `INCLUDE_REMOTE=1` |
 | `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — foundation for cross-machine Claude Sync via the dotfiles layer | — |
 | `90-editor` | `~/.local/bin/typora-wait` — opens `.md` files in the Typora GUI from the terminal; WSL delegates to `Typora.exe` via interop (`wslpath -w`), macOS uses `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
-| `95-dotfiles-personal` | clones `$DOTFILES_REPO` into `$DOTFILES_DIR` (default `~/dotfiles`) + runs its `install.sh` | `DOTFILES_REPO=<url>` |
+| `95-dotfiles-personal` | clones `$DOTFILES_REPO` into `$DOTFILES_DIR` (default `~/dotfiles`) + runs its `install.sh`; optional `DOTFILES_NPM_GLOBAL=1` configures npm globals under `~/.npm-global` and persists PATH through the dotfiles installer | `DOTFILES_REPO=<url>` |
 
 Full alias inventory: [`docs/ALIASES.md`](docs/ALIASES.md).
 
@@ -128,6 +131,7 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 | `ONLY_TOPICS` | run only these topics |
 | `DOTFILES_REPO` | URL/path of the personal dotfiles repo (accepts `file://` for local testing) |
 | `DOTFILES_DIR` | clone destination (default `~/dotfiles`) |
+| `DOTFILES_NPM_GLOBAL=1` | pass opt-in to the dotfiles installer to set npm global prefix to `~/.npm-global` and persist `~/.npm-global/bin` on shell PATH |
 | `GIT_NAME` / `GIT_EMAIL` | identity — applied only when `user.name` / `user.email` aren't set yet (topic 50-git preserves existing values) |
 | `CODE_DIR` | projects root (default `~/code/web`) |
 | `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` / `INCLUDE_DOCKER` | enable opt-in topics |
