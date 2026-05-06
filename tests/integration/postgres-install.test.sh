@@ -238,6 +238,11 @@ assert_pattern_present "$PG_SCRIPT" 'followup critical "port 5432' \
 assert_pattern_present "$PG_SCRIPT" 'PORT_CONFLICT=1' \
     "PORT_CONFLICT flag set on conflict detection"
 
+assert_pattern_present "$PG_SCRIPT" "pg_isready -h 127.0.0.1 -p 5432" \
+    "Linux postgres-port detector falls back to pg_isready when ss omits process owner"
+assert_pattern_present "$PG_SCRIPT" 'no response' \
+    "Linux postgres-port detector treats pg_isready 'no response' as foreign/unknown listener"
+
 # SERVICE_STARTED flag explicitly tracked (replaces previous fall-through
 # behavior where success was assumed from "no warn yet").
 assert_pattern_present "$PG_SCRIPT" 'SERVICE_STARTED=0' \

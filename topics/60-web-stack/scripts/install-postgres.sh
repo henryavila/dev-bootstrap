@@ -116,10 +116,9 @@ _postgres_installed_versions() {
 }
 
 # Returns 0 if anything other than postgres listens on :5432. Mac uses
-# the lsof USER column (-F u) instead of the COMMAND name to align with
-# the Linux check (which inspects the user= field of ss output) — both
-# OSes now signal "owned by postgres OS user" rather than "named like
-# postgres", which is more robust against same-named foreign binaries.
+# lsof's process column; Linux/WSL first uses ss process metadata when
+# available, then falls back to pg_isready because unprivileged ss can omit
+# the Process column even for the real postgres listener.
 _port_5432_in_foreign_use() {
     case "$OS" in
         mac)
@@ -131,7 +130,11 @@ _port_5432_in_foreign_use() {
         wsl|linux)
             local line
             line=$(ss -ltnp 'sport = :5432' 2>/dev/null | awk 'NR==2')
-            [[ -n "$line" ]] && ! echo "$line" | grep -q '"postgres"'
+            [[ -z "$line" ]] && return 1
+            echo "$line" | grep -q '"postgres"' && return 1
+            pg_isready -h 127.0.0.1 -p 5432 2>/dev/null | grep -q 'accepting connections' && return 1
+            pg_isready -h 127.0.0.1 -p 5432 2>/dev/null | grep -q 'no response' && return 0
+            return 0
             ;;
     esac
 }
@@ -146,7 +149,8 @@ _port_5432_owner_is_postgres() {
             [[ "$owner" == "postgres" ]]
             ;;
         wsl|linux)
-            ss -ltnp 'sport = :5432' 2>/dev/null | grep -q '"postgres"'
+            ss -ltnp 'sport = :5432' 2>/dev/null | grep -q '"postgres"' \
+                || pg_isready -h 127.0.0.1 -p 5432 2>/dev/null | grep -q 'accepting connections'
             ;;
     esac
 }
