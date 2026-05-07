@@ -583,6 +583,17 @@ assert_pattern_present "$TUX_WSL" 'ATUIN_LOGIN_AUTO:-1' \
 assert_pattern_present "$TUX_WSL" 'atuin login </dev/tty' \
     "20-terminal-ux/install.wsl.sh — runs 'atuin login' inline via /dev/tty"
 
+# The upstream setup.atuin.sh script now has its own import/register/setup
+# prompts. `mesh run update -f` calls bootstrap.sh with --non-interactive
+# but still allocates ssh -tt, so upstream sees /dev/tty unless we pass
+# its explicit flag. Regression: crc appeared stuck after "Atuin installed
+# successfully!" and each ENTER answered one hidden upstream prompt.
+assert_pattern_present "$TUX_WSL" 'NON_INTERACTIVE:-0.*=.*1' \
+    "20-terminal-ux/install.wsl.sh — checks NON_INTERACTIVE before setup.atuin.sh"
+
+assert_pattern_present "$TUX_WSL" 'sh -s -- --non-interactive' \
+    "20-terminal-ux/install.wsl.sh — passes --non-interactive to setup.atuin.sh in automation"
+
 assert_pattern_present "$TUX_MAC" 'ATUIN_LOGIN_AUTO:-1' \
     "20-terminal-ux/install.mac.sh — ATUIN_LOGIN_AUTO defaults to 1 (auto-on)"
 

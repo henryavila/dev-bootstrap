@@ -145,7 +145,11 @@ fi
 # the surrounding rc-snapshot block restores anything setup.atuin.sh touches.
 if ! command -v atuin >/dev/null 2>&1; then
     info "installing atuin via setup.atuin.sh"
-    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh
+    if [ "${NON_INTERACTIVE:-0}" = "1" ]; then
+        curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh -s -- --non-interactive
+    else
+        curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh
+    fi
 else
     ok "atuin already installed"
 fi
