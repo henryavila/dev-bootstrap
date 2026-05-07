@@ -828,11 +828,14 @@ assert_pattern_present "$TMUX_CONF" '@dev_bootstrap_pane_cwd' \
 assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?#\{@dev_bootstrap_pane_cwd\},#\{b:@dev_bootstrap_pane_cwd\},#\{b:pane_current_path\}\}' \
     "40-tmux/templates/tmux.conf — status directory falls back to tmux pane_current_path"
 
-assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?SSH_CONNECTION,' \
-    "40-tmux/templates/tmux.conf — SSH status block is conditional"
+assert_pattern_present "$TMUX_CONF" '@dev_bootstrap_ssh_context' \
+    "40-tmux/templates/tmux.conf — SSH status block can use shell-reported SSH context"
 
-assert_pattern_present "$TMUX_CONF" 'status-right.*󰣀 .*#\{USER\}@#h' \
-    "40-tmux/templates/tmux.conf — SSH status block shows icon plus user@host"
+assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?#\{@dev_bootstrap_ssh_context\}.*SSH_CONNECTION' \
+    "40-tmux/templates/tmux.conf — SSH status block falls back to SSH_CONNECTION"
+
+assert_pattern_present "$TMUX_CONF" 'status-right.*󰣀 .*@dev_bootstrap_ssh_context' \
+    "40-tmux/templates/tmux.conf — SSH status block shows icon plus user@host context"
 
 assert_pattern_present "$TMUX_CONF" 'status-right-length 150' \
     "40-tmux/templates/tmux.conf — status-right has room for SSH indicator"
@@ -886,11 +889,23 @@ assert_pattern_present "$TMUX_BASHRC" '@dev_bootstrap_pane_cwd' \
 assert_pattern_present "$TMUX_BASHRC" 'PROMPT_COMMAND.*__dev_bootstrap_tmux_update_cwd' \
     "bashrc.d-40-tmux.sh — refreshes tmux cwd from PROMPT_COMMAND"
 
+assert_pattern_present "$TMUX_BASHRC" '@dev_bootstrap_ssh_context' \
+    "bashrc.d-40-tmux.sh — reports SSH context into tmux"
+
+assert_pattern_present "$TMUX_BASHRC" 'SSH_CONNECTION.*SSH_CLIENT.*SSH_TTY' \
+    "bashrc.d-40-tmux.sh — detects SSH using standard SSH environment variables"
+
 assert_pattern_present "$TMUX_ZSHRC" '@dev_bootstrap_pane_cwd' \
     "zshrc.d-40-tmux.sh — reports cwd into a pane-local tmux option"
 
 assert_pattern_present "$TMUX_ZSHRC" 'chpwd_functions.*__dev_bootstrap_tmux_update_cwd' \
     "zshrc.d-40-tmux.sh — refreshes tmux cwd on chpwd"
+
+assert_pattern_present "$TMUX_ZSHRC" '@dev_bootstrap_ssh_context' \
+    "zshrc.d-40-tmux.sh — reports SSH context into tmux"
+
+assert_pattern_present "$TMUX_ZSHRC" 'SSH_CONNECTION.*SSH_CLIENT.*SSH_TTY' \
+    "zshrc.d-40-tmux.sh — detects SSH using standard SSH environment variables"
 
 echo
 echo "═══ Bash 3.2 color variables must be braced before Unicode literals ═══"

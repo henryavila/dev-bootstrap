@@ -11,7 +11,22 @@ __dev_bootstrap_tmux_update_cwd() {
     tmux set-option -p -q @dev_bootstrap_pane_cwd "$PWD" >/dev/null 2>&1 || true
 }
 
+__dev_bootstrap_tmux_short_host() {
+    hostname -s 2>/dev/null || hostname 2>/dev/null || printf '%s' unknown
+}
+
+__dev_bootstrap_tmux_update_ssh_context() {
+    [ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ] || return 0
+
+    local scope='-g'
+    [ -n "${TMUX:-}" ] && scope='-p'
+
+    tmux set-option "$scope" -q @dev_bootstrap_ssh_context \
+        "${USER:-user}@$(__dev_bootstrap_tmux_short_host)" >/dev/null 2>&1 || true
+}
+
 __dev_bootstrap_tmux_update_cwd
+__dev_bootstrap_tmux_update_ssh_context
 case ";${PROMPT_COMMAND:-};" in
     *";__dev_bootstrap_tmux_update_cwd;"*) ;;
     *) PROMPT_COMMAND="__dev_bootstrap_tmux_update_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
