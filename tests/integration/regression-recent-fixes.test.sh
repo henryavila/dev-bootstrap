@@ -319,6 +319,30 @@ assert_pattern_present "$LANG_MAC" 'has_head' \
     "10-languages/install.mac.sh — probes formula for HEAD spec before invoking --HEAD"
 
 echo
+echo "═══ Composer PHAR must avoid Homebrew bottle relocation on non-standard prefix ═══"
+
+assert_pattern_present "$LANG_MAC" 'install_composer\(\)' \
+    "10-languages/install.mac.sh — Composer uses dedicated installer"
+
+assert_pattern_absent "$LANG_MAC" '^brew_install_if_missing composer$' \
+    "10-languages/install.mac.sh — no top-level generic brew install for Composer"
+
+assert_pattern_present "$LANG_MAC" 'brew install --build-from-source composer' \
+    "10-languages/install.mac.sh — non-default prefix installs Composer from source"
+
+assert_pattern_present "$LANG_MAC" 'reinstall --build-from-source composer' \
+    "10-languages/install.mac.sh — broken Composer PHAR is repaired from source"
+
+assert_pattern_present "$LANG_MAC" 'composer_has_broken_phar_signature' \
+    "10-languages/install.mac.sh — detects broken Composer PHAR signature"
+
+assert_pattern_present "$LANG_MAC" 'SHA512 signature could not be verified: broken signature' \
+    "10-languages/install.mac.sh — matches the Composer PHAR failure string"
+
+assert_pattern_present "$LANG_MAC" 'composer_is_usable \|\| fail' \
+    "10-languages/install.mac.sh — validates composer --version after install/reinstall"
+
+echo
 echo "═══ Pre-migration of legacy unmarked nginx files (60-web-stack mac) ═══"
 
 assert_pattern_present "$MAC" 'pre-bootstrap-bak' \

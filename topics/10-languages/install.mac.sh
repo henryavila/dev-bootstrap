@@ -108,6 +108,77 @@ brew_install_if_missing() {
     fi
 }
 
+brew_prefix_is_default() {
+    case "$BREW_PREFIX" in
+        /opt/homebrew|/usr/local)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+composer_is_usable() {
+    "$BREW_PREFIX/bin/composer" --version >/dev/null 2>&1
+}
+
+composer_has_broken_phar_signature() {
+    local out
+    out="$("$BREW_PREFIX/bin/composer" --version 2>&1)" && return 1
+    case "$out" in
+        *"SHA512 signature could not be verified: broken signature"*|*"PharException"*broken*signature*)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+install_composer() {
+    if "$BREW_BIN" list --formula composer >/dev/null 2>&1; then
+        if composer_is_usable; then
+            ok "composer already installed"
+            return 0
+        fi
+
+        if composer_has_broken_phar_signature; then
+            warn "composer PHAR signature is broken — reinstalling from source to avoid bottle relocation"
+            "$BREW_BIN" reinstall --build-from-source composer
+            composer_is_usable || fail "composer reinstall completed but composer --version still fails"
+            ok "composer reinstalled from source"
+            return 0
+        fi
+
+        fail "composer is installed but unusable; run '$BREW_PREFIX/bin/composer --version' for details"
+        return 1
+    fi
+
+    if brew_prefix_is_default; then
+        brew_install_if_missing composer
+        composer_is_usable || fail "composer install completed but composer --version still fails"
+        return 0
+    else
+        info "brew install --build-from-source composer"
+        if "$BREW_BIN" install --build-from-source composer; then
+            composer_is_usable || fail "composer install completed but composer --version still fails"
+            return 0
+        fi
+
+        warn "composer source install failed — falling back to generic brew retry tiers"
+        brew_install_if_missing composer
+        if composer_is_usable; then
+            return 0
+        fi
+        if composer_has_broken_phar_signature; then
+            warn "composer installed from bottle with broken PHAR signature — reinstalling from source"
+            "$BREW_BIN" reinstall --build-from-source composer
+            composer_is_usable || fail "composer reinstall completed but composer --version still fails"
+            return 0
+        fi
+        fail "composer install completed but composer --version still fails"
+    fi
+}
+
 # ─── fnm + Node ────────────────────────────────────────────────────────
 brew_install_if_missing fnm
 
@@ -434,7 +505,7 @@ for line in "${PECL_LINES[@]}"; do
 done
 
 # ─── Composer + Python ───────────────────────────────────────────────
-brew_install_if_missing composer
+install_composer
 brew_install_if_missing python@3.13
 
 # ─── Per-version composer wrappers ──────────────────────────────────
