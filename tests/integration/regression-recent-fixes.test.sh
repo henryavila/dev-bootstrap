@@ -870,8 +870,12 @@ for f in "$TMUX_BASHRC" "$TMUX_ZSHRC"; do
     base="$(basename "$f")"
     assert_pattern_present "$f" "alias tl='tmux ls'" \
         "$base — ships 'tl' (list sessions)"
-    assert_pattern_present "$f" "alias ta='tmux attach -t'" \
-        "$base — ships 'ta' (attach by name)"
+    assert_pattern_present "$f" "ta()" \
+        "$base — ships 'ta' as a function"
+    assert_pattern_present "$f" "tmux attach -t" \
+        "$base — 'ta' attaches by name outside tmux"
+    assert_pattern_present "$f" "tmux switch-client -t" \
+        "$base — 'ta' switches clients instead of nesting inside tmux"
     assert_pattern_present "$f" "alias tn='tmux new -s'" \
         "$base — ships 'tn' (new by name)"
     assert_pattern_present "$f" "tm()" \

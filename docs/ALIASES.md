@@ -70,7 +70,7 @@ Each block gates on `command -v`, so aliases no-op on machines without the tool 
 | Alias | Expands to | Purpose |
 |-------|------------|---------|
 | `tl` | `tmux ls` | list sessions |
-| `ta <name>` | `tmux attach -t` | attach by name |
+| `ta <name>` | Outside tmux: `tmux attach -t`; inside tmux: `tmux switch-client -t` | attach/switch by name without nesting tmux clients |
 | `tn <name>` | `tmux new -s` | new session |
 | **`tm`** | Outside tmux: `tmux new-session -A -s main`; inside tmux: `tmux switch-client -t main` after creating `main` detached if needed | go to the canonical `main` session without nesting tmux clients |
 

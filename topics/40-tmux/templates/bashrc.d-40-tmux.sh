@@ -6,6 +6,53 @@
 
 command -v tmux >/dev/null 2>&1 || return 0
 
+__dev_bootstrap_tmux_auto_main_done=0
+
+__dev_bootstrap_tmux_auto_main_ready() {
+    [ "${DEV_BOOTSTRAP_TMUX_AUTO_MAIN:-1}" != "0" ] || return 1
+    case "$-" in *i*) ;; *) return 1 ;; esac
+    [ -z "${TMUX:-}" ] || return 1
+    [ "${__dev_bootstrap_tmux_auto_main_done:-0}" = "0" ] || return 1
+}
+
+__dev_bootstrap_tmux_auto_main() {
+    __dev_bootstrap_tmux_auto_main_ready || return 1
+    [ -t 0 ] && [ -t 1 ] || return 1
+
+    __dev_bootstrap_tmux_auto_main_done=1
+    tmux new-session -A -s main
+}
+
+__dev_bootstrap_tmux_auto_main_remove_prompt() {
+    case ";${PROMPT_COMMAND:-};" in
+        *";__dev_bootstrap_tmux_auto_main_prompt;"*)
+            local __dev_bootstrap_tmux_pc
+            __dev_bootstrap_tmux_pc=";${PROMPT_COMMAND:-};"
+            __dev_bootstrap_tmux_pc="${__dev_bootstrap_tmux_pc//;__dev_bootstrap_tmux_auto_main_prompt;/;}"
+            __dev_bootstrap_tmux_pc="${__dev_bootstrap_tmux_pc#;}"
+            __dev_bootstrap_tmux_pc="${__dev_bootstrap_tmux_pc%;}"
+            PROMPT_COMMAND="$__dev_bootstrap_tmux_pc"
+            ;;
+    esac
+}
+
+__dev_bootstrap_tmux_auto_main_prompt() {
+    if __dev_bootstrap_tmux_auto_main || ! __dev_bootstrap_tmux_auto_main_ready; then
+        __dev_bootstrap_tmux_auto_main_remove_prompt
+    fi
+}
+
+if __dev_bootstrap_tmux_auto_main_ready; then
+    if [ -t 0 ] && [ -t 1 ]; then
+        __dev_bootstrap_tmux_auto_main
+    else
+        case ";${PROMPT_COMMAND:-};" in
+            *";__dev_bootstrap_tmux_auto_main_prompt;"*) ;;
+            *) PROMPT_COMMAND="__dev_bootstrap_tmux_auto_main_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+        esac
+    fi
+fi
+
 __dev_bootstrap_tmux_update_cwd() {
     [ -n "${TMUX:-}" ] || return 0
     tmux set-option -p -q @dev_bootstrap_pane_cwd "$PWD" >/dev/null 2>&1 || true
@@ -19,8 +66,17 @@ esac
 
 # List / attach / create — short forms of the usual incantations.
 alias tl='tmux ls'
-alias ta='tmux attach -t'
 alias tn='tmux new -s'
+
+ta() {
+    [ "$#" -gt 0 ] || { printf 'usage: ta <session>\n' >&2; return 2; }
+
+    if [ -n "${TMUX:-}" ]; then
+        tmux switch-client -t "$1"
+    else
+        tmux attach -t "$1"
+    fi
+}
 
 # `td` — detach from current session WITHOUT killing it. Equivalent to
 # the `prefix d` keybind, but works as a regular shell command (useful
