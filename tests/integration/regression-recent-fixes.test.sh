@@ -828,17 +828,20 @@ assert_pattern_present "$TMUX_CONF" '@dev_bootstrap_pane_cwd' \
 assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?#\{@dev_bootstrap_pane_cwd\},#\{b:@dev_bootstrap_pane_cwd\},#\{b:pane_current_path\}\}' \
     "40-tmux/templates/tmux.conf — status directory falls back to tmux pane_current_path"
 
-assert_pattern_present "$TMUX_CONF" '@dev_bootstrap_outbound_ssh_context' \
-    "40-tmux/templates/tmux.conf — SSH status block shows outbound pane SSH context"
-
 assert_pattern_absent "$TMUX_CONF" 'SSH_CONNECTION' \
-    "40-tmux/templates/tmux.conf — SSH status does not mean 'tmux was entered over SSH'"
+    "40-tmux/templates/tmux.conf — does not infer inbound SSH as status"
 
-assert_pattern_present "$TMUX_CONF" 'status-right.*󰣀 .*@dev_bootstrap_outbound_ssh_context' \
-    "40-tmux/templates/tmux.conf — SSH status block shows icon plus outbound user@host context"
+assert_pattern_present "$TMUX_CONF" '#\{user\}@#h' \
+    "40-tmux/templates/tmux.conf — host card shows user@short-host"
 
-assert_pattern_present "$TMUX_CONF" 'status-right-length 150' \
-    "40-tmux/templates/tmux.conf — status-right has room for SSH indicator"
+assert_pattern_absent "$TMUX_CONF" '@dev_bootstrap_outbound_ssh_context' \
+    "40-tmux/templates/tmux.conf — no fragile outbound SSH status context"
+
+assert_pattern_absent "$TMUX_CONF" '󰣀' \
+    "40-tmux/templates/tmux.conf — no separate SSH card in nested-tmux model"
+
+assert_pattern_present "$TMUX_CONF" 'status-right-length 120' \
+    "40-tmux/templates/tmux.conf — status-right sized for cwd + user@host"
 
 # Advisory text must NOT claim `exec zsh` is a sufficient fix — that
 # only changes the running process, not \$SHELL, so tmux/mosh etc still
@@ -889,11 +892,11 @@ assert_pattern_present "$TMUX_BASHRC" '@dev_bootstrap_pane_cwd' \
 assert_pattern_present "$TMUX_BASHRC" 'PROMPT_COMMAND.*__dev_bootstrap_tmux_update_cwd' \
     "bashrc.d-40-tmux.sh — refreshes tmux cwd from PROMPT_COMMAND"
 
-assert_pattern_present "$TMUX_BASHRC" '@dev_bootstrap_outbound_ssh_context' \
-    "bashrc.d-40-tmux.sh — reports outbound SSH context into tmux"
+assert_pattern_absent "$TMUX_BASHRC" '@dev_bootstrap_outbound_ssh_context' \
+    "bashrc.d-40-tmux.sh — does not report SSH context into tmux"
 
-assert_pattern_present "$TMUX_BASHRC" 'ssh\(\)' \
-    "bashrc.d-40-tmux.sh — wraps ssh so tmux can show active outbound connections"
+assert_pattern_absent "$TMUX_BASHRC" 'ssh\(\)' \
+    "bashrc.d-40-tmux.sh — does not wrap ssh"
 
 assert_pattern_present "$TMUX_ZSHRC" '@dev_bootstrap_pane_cwd' \
     "zshrc.d-40-tmux.sh — reports cwd into a pane-local tmux option"
@@ -901,11 +904,11 @@ assert_pattern_present "$TMUX_ZSHRC" '@dev_bootstrap_pane_cwd' \
 assert_pattern_present "$TMUX_ZSHRC" 'chpwd_functions.*__dev_bootstrap_tmux_update_cwd' \
     "zshrc.d-40-tmux.sh — refreshes tmux cwd on chpwd"
 
-assert_pattern_present "$TMUX_ZSHRC" '@dev_bootstrap_outbound_ssh_context' \
-    "zshrc.d-40-tmux.sh — reports outbound SSH context into tmux"
+assert_pattern_absent "$TMUX_ZSHRC" '@dev_bootstrap_outbound_ssh_context' \
+    "zshrc.d-40-tmux.sh — does not report SSH context into tmux"
 
-assert_pattern_present "$TMUX_ZSHRC" 'ssh\(\)' \
-    "zshrc.d-40-tmux.sh — wraps ssh so tmux can show active outbound connections"
+assert_pattern_absent "$TMUX_ZSHRC" 'ssh\(\)' \
+    "zshrc.d-40-tmux.sh — does not wrap ssh"
 
 echo
 echo "═══ Bash 3.2 color variables must be braced before Unicode literals ═══"
