@@ -24,6 +24,7 @@ __dev_bootstrap_tmux_auto_main() {
 }
 
 __dev_bootstrap_tmux_auto_main_remove_precmd() {
+    # shellcheck disable=SC2206 # zsh array filter syntax; quoting changes semantics.
     precmd_functions=(${precmd_functions:#__dev_bootstrap_tmux_auto_main_precmd})
 }
 

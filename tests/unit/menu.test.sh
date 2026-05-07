@@ -152,10 +152,10 @@ EOF
 
     local old_path="$PATH"
     PATH="$tmp/bin"
-    OS="mac"
+    export OS="mac"
     BREW_BIN=""
     BREW_PREFIX=""
-    DEV_BOOTSTRAP_ROOT="$fake_root"
+    export DEV_BOOTSTRAP_ROOT="$fake_root"
 
     prepare_interactive_menu_dependencies
 
