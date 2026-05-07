@@ -20,16 +20,16 @@ assert_file_exists "$LINK"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# This test targets the Linux/nginx catchall branch. On a Mac developer
-# machine the template delegates to Valet and may call the real user Valet
-# binary, so pin uname to Linux and isolate HOME.
-mkdir -p "$tmp/bin" "$tmp/home"
-cat > "$tmp/bin/uname" <<'EOF'
+# The template branches on uname. Force the Linux/WSL path so this test does
+# not call a real macOS Valet install when run on a Mac developer machine.
+stubbin="$tmp/bin"
+mkdir -p "$stubbin" "$tmp/home"
+cat > "$stubbin/uname" <<'EOF'
 #!/usr/bin/env bash
 printf 'Linux\n'
 EOF
-chmod +x "$tmp/bin/uname"
-export PATH="$tmp/bin:$PATH"
+chmod +x "$stubbin/uname"
+export PATH="$stubbin:$PATH"
 export HOME="$tmp/home"
 
 echo "--help / no args exit 0 + prints usage"

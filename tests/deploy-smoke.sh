@@ -173,8 +173,8 @@ ALLOW_OVERWRITE_UNMANAGED=1 bash "$DEPLOY_SH" "$fx4/templates" >"$fx4/log" 2>&1
 rc=$?
 assert "deploy.sh succeeded with escape hatch" "0" "$rc"
 assert_file_contains "new content deployed" "$HOME/.bashrc" "new_content=yes"
-# Backup should exist
-backup_count="$(ls "$HOME"/.bashrc.bak-* 2>/dev/null | wc -l)"
+# Backup should exist. BSD wc pads with spaces; normalize for bash 3.2/macOS.
+backup_count="$(ls "$HOME"/.bashrc.bak-* 2>/dev/null | wc -l | tr -d '[:space:]')"
 assert "one backup created" "1" "$backup_count"
 unset ALLOW_OVERWRITE_UNMANAGED
 
@@ -257,7 +257,7 @@ bash "$DEPLOY_SH" "$fx7/templates" >"$fx7/log" 2>&1 || true
 # Expected: 5 newest (new + 4 old) + 1 oldest = 6 total + new file-count = 7?
 # Actually deploy creates ONE new backup, then prune_backups is called which
 # keeps 5 newest + oldest. With 9 total (8 + 1 new), prune keeps 6.
-final_count="$(ls "$HOME"/.bashrc.bak-* 2>/dev/null | wc -l)"
+final_count="$(ls "$HOME"/.bashrc.bak-* 2>/dev/null | wc -l | tr -d '[:space:]')"
 assert "prune left 6 backups" "6" "$final_count"
 # Oldest (-010000) should survive
 if [[ -f "$HOME/.bashrc.bak-20260420-010000" ]]; then
