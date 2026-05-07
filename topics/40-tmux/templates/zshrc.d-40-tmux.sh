@@ -9,7 +9,10 @@ command -v tmux >/dev/null 2>&1 || return 0
 __dev_bootstrap_tmux_auto_main_done=0
 
 __dev_bootstrap_tmux_auto_main_ready() {
-    [ "${DEV_BOOTSTRAP_TMUX_AUTO_MAIN:-1}" != "0" ] || return 1
+    # Dormant by default: auto-attaching "main" proved unstable in
+    # Moshi and normal terminal login flows. Keep the implementation for
+    # explicit experiments only. See docs/INACTIVE_FEATURES.md.
+    [ "${DEV_BOOTSTRAP_TMUX_AUTO_MAIN:-0}" = "1" ] || return 1
     case "$-" in *i*) ;; *) return 1 ;; esac
     [ -z "${TMUX:-}" ] || return 1
     [ "${__dev_bootstrap_tmux_auto_main_done:-0}" = "0" ] || return 1
@@ -24,6 +27,7 @@ __dev_bootstrap_tmux_auto_main() {
 }
 
 __dev_bootstrap_tmux_auto_main_remove_precmd() {
+    # shellcheck disable=SC2206 # zsh array filter syntax; quoting changes semantics.
     precmd_functions=(${precmd_functions:#__dev_bootstrap_tmux_auto_main_precmd})
 }
 

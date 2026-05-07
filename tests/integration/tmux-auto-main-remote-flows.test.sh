@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# tests/integration/tmux-auto-main-remote-flows.test.sh — real remote-flow regressions.
+# tests/integration/tmux-auto-main-remote-flows.test.sh — dormant auto-main remote-flow regressions.
 #
 # These tests pin the user-visible failures:
 #   - Moshi command already starts tmux; shell startup must not start another one.
-#   - zsh + Powerlevel10k instant prompt redirects fd 0/1 during .zshrc; auto-main
-#     must still attach once the first prompt is reached.
-#   - Auto-main in an SSH login must leave a shell underneath so tmux detach
+#   - zsh + Powerlevel10k instant prompt redirects fd 0/1 during .zshrc; the
+#     dormant auto-main experiment used to defer attachment until the prompt.
+#   - Opted-in auto-main in an SSH login must leave a shell underneath so tmux detach
 #     returns to that SSH shell instead of closing the SSH connection.
 
 set -uo pipefail
@@ -94,17 +94,20 @@ EOF
 run_bash_login_command() {
     local home="$1"
     local command="$2"
+    shift 2 || true
     : > "$LOG"
     run_pty env -i \
         HOME="$home" \
         PATH="$STUBBIN:/usr/bin:/bin" \
         TEST_TMUX_STUBBIN="$STUBBIN" \
         TMUX_STUB_LOG="$LOG" \
+        "$@" \
         /bin/bash --login -ic "$command" >/dev/null 2>&1
 }
 
 run_zsh_p10k_like_startup() {
     local home="$1"
+    shift || true
     : > "$LOG"
     mkdir -p "$home/.zshrc.d"
     cp "$ZSH_FRAGMENT" "$home/.zshrc.d/40-tmux.sh"
@@ -135,6 +138,7 @@ EOF
         PATH="$STUBBIN:/usr/bin:/bin" \
         TEST_TMUX_STUBBIN="$STUBBIN" \
         TMUX_STUB_LOG="$LOG" \
+        "$@" \
         zsh -i >/dev/null 2>&1
 }
 
@@ -149,13 +153,24 @@ assert_eq "$(tmux_calls)" "switch-client -t main" \
 
 home_p10k="$TESTROOT/home-p10k"
 run_zsh_p10k_like_startup "$home_p10k"
+assert_eq "$(tmux_calls)" "" \
+    "zsh login with p10k-style redirected fds does not auto-attach main by default"
+
+home_p10k_optin="$TESTROOT/home-p10k-optin"
+run_zsh_p10k_like_startup "$home_p10k_optin" DEV_BOOTSTRAP_TMUX_AUTO_MAIN=1
 assert_eq "$(tmux_calls)" "new-session -A -s main" \
-    "zsh login with p10k-style redirected fds still auto-attaches main"
+    "DEV_BOOTSTRAP_TMUX_AUTO_MAIN=1 preserves p10k-style deferred auto-main experiment"
 
 home_bash="$TESTROOT/home-bash"
 make_bash_home "$home_bash"
 run_bash_login_command "$home_bash" "td"
+assert_eq "$(tmux_calls)" "detach" \
+    "ssh login does not auto-main before td by default"
+
+home_bash_optin="$TESTROOT/home-bash-optin"
+make_bash_home "$home_bash_optin"
+run_bash_login_command "$home_bash_optin" "td" DEV_BOOTSTRAP_TMUX_AUTO_MAIN=1
 assert_eq "$(tmux_calls)" $'new-session -A -s main\ndetach' \
-    "ssh auto-main leaves the shell alive after tmux detach"
+    "DEV_BOOTSTRAP_TMUX_AUTO_MAIN=1 still leaves the shell alive after tmux detach"
 
 summary

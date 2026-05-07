@@ -27,17 +27,25 @@ else
 fi
 
 # Discover tests
-mapfile -t all_tests < <(
+all_tests=()
+while IFS= read -r test_file; do
+    all_tests+=("$test_file")
+done < <(
     find "$HERE" -type f \( -name '*.test.sh' -o -name 'deploy-smoke.sh' \) \
         | sort
 )
 
+lower() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # Filter (if arg given, keep paths containing that substring — case-insensitive)
 tests=()
+filter_lower="$(lower "$filter")"
 for t in "${all_tests[@]}"; do
     rel="${t#"$HERE"/}"
     if [[ -n "$filter" ]]; then
-        if [[ "${rel,,}" == *"${filter,,}"* ]]; then
+        if [[ "$(lower "$rel")" == *"$filter_lower"* ]]; then
             tests+=("$t")
         fi
     else
