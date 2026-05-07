@@ -822,6 +822,18 @@ assert_pattern_present "$TMUX_CONF" 'getent passwd' \
 assert_pattern_present "$TMUX_CONF" 'dscl.*UserShell' \
     "40-tmux/templates/tmux.conf — resolves shell via dscl (macOS)"
 
+assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?SSH_CONNECTION,' \
+    "40-tmux/templates/tmux.conf — SSH status block is conditional"
+
+assert_pattern_present "$TMUX_CONF" 'status-right.*SSH .*SSH_CONNECTION' \
+    "40-tmux/templates/tmux.conf — SSH status block shows SSH connection source"
+
+assert_pattern_present "$TMUX_CONF" 'status-right.*\\\\1.*SSH_CONNECTION' \
+    "40-tmux/templates/tmux.conf — SSH source backreference is tmux-escaped"
+
+assert_pattern_present "$TMUX_CONF" 'status-right-length 150' \
+    "40-tmux/templates/tmux.conf — status-right has room for SSH indicator"
+
 # Advisory text must NOT claim `exec zsh` is a sufficient fix — that
 # only changes the running process, not \$SHELL, so tmux/mosh etc still
 # inherit the stale value. The original "exec zsh" hint is still fine
