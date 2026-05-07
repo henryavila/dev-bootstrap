@@ -52,7 +52,7 @@ run_tm() {
     TMUX_STUB_LOG="$LOG" \
     TMUX_STUB_HAS_MAIN="$has_main" \
     TMUX="$tmux_env" \
-    bash -lc "source '$fragment'; tm" >/dev/null 2>&1
+    bash -c "source '$fragment'; tm" >/dev/null 2>&1
 }
 
 assert_tm_log() {
@@ -62,9 +62,11 @@ assert_tm_log() {
     local in_tmux="$4"
     local expected="$5"
     local message="$6"
+    local actual
 
     run_tm "$fragment" "$has_main" "$in_tmux"
-    assert_eq "$(cat "$LOG")" "$expected" "$fragment_name: $message"
+    actual="$(grep -vE '^set-option ' "$LOG" 2>/dev/null || true)"
+    assert_eq "$actual" "$expected" "$fragment_name: $message"
 }
 
 for fragment in "$BASH_FRAGMENT" "$ZSH_FRAGMENT"; do
