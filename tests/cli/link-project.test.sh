@@ -17,6 +17,21 @@ source "$HERE/../lib/assert.sh"
 LINK="$REPO_ROOT/topics/60-web-stack/templates/bin/link-project.template"
 assert_file_exists "$LINK"
 
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# The template branches on uname. Force the Linux/WSL path so this test does
+# not call a real macOS Valet install when run on a Mac developer machine.
+stubbin="$tmp/bin"
+mkdir -p "$stubbin" "$tmp/home"
+cat > "$stubbin/uname" <<'EOF'
+#!/usr/bin/env bash
+printf 'Linux\n'
+EOF
+chmod +x "$stubbin/uname"
+export PATH="$stubbin:$PATH"
+export HOME="$tmp/home"
+
 echo "--help / no args exit 0 + prints usage"
 assert_exit_code 0 "bash '$LINK' --help"
 assert_exit_code 0 "bash '$LINK'"
@@ -24,8 +39,6 @@ assert_exit_code 0 "bash '$LINK'"
 echo
 echo "default mode fails on missing project dir"
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
 export CODE_DIR="$tmp/code"
 mkdir -p "$CODE_DIR"
 
