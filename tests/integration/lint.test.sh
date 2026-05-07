@@ -11,6 +11,14 @@ source "$HERE/../lib/assert.sh"
 
 echo "bash -n on every *.sh + *.template in topics/ and lib/"
 
+relpath() {
+    local path="$1"
+    case "$path" in
+        "$REPO_ROOT"/*) printf '%s' "${path#"$REPO_ROOT"/}" ;;
+        *)              printf '%s' "$path" ;;
+    esac
+}
+
 # bash -n on all shell files. Excludes *.conf.template (nginx snippets,
 # systemd units, etc. — those aren't shell and bash -n would false-fail).
 # Convention used: shell-template has either a shebang or lives under bin/.
@@ -35,7 +43,7 @@ is_shell_template() {
 
 while IFS= read -r -d '' f; do
     is_shell_template "$f" || continue
-    ASSERT_MSG="$(realpath --relative-to="$REPO_ROOT" "$f")"
+    ASSERT_MSG="$(relpath "$f")"
     assert_true "bash -n '$f'"
 done < <(find "$REPO_ROOT/topics" "$REPO_ROOT/lib" "$REPO_ROOT/ci" \
              -type f \( -name '*.sh' -o -name '*.template' \) -print0 2>/dev/null)
@@ -44,7 +52,7 @@ done < <(find "$REPO_ROOT/topics" "$REPO_ROOT/lib" "$REPO_ROOT/ci" \
 for f in "$REPO_ROOT/bootstrap.sh" \
          "$HERE/../run-all.sh" \
          "$HERE/../lib/assert.sh"; do
-    ASSERT_MSG="$(realpath --relative-to="$REPO_ROOT" "$f")"
+    ASSERT_MSG="$(relpath "$f")"
     assert_true "bash -n '$f'"
 done
 
@@ -53,7 +61,7 @@ echo "JSON syntax (jq parse)"
 
 if command -v jq >/dev/null 2>&1; then
     while IFS= read -r -d '' f; do
-        ASSERT_MSG="$(realpath --relative-to="$REPO_ROOT" "$f")"
+        ASSERT_MSG="$(relpath "$f")"
         assert_true "jq empty < '$f'"
     done < <(find "$REPO_ROOT/topics" -type f -name '*.json' -print0 2>/dev/null)
 else
@@ -64,7 +72,7 @@ echo
 echo "data/*.conf + *.txt files non-empty (SoT files)"
 for data_file in "$REPO_ROOT/topics/10-languages/data/"*.{conf,txt}; do
     [[ ! -f "$data_file" ]] && continue
-    ASSERT_MSG="$(realpath --relative-to="$REPO_ROOT" "$data_file")"
+    ASSERT_MSG="$(relpath "$data_file")"
     assert_true "grep -qvE '^\s*(#|$)' '$data_file'"
 done
 
@@ -99,7 +107,7 @@ for script in "${mac_reachable[@]}"; do
     for pattern in "${bash4_patterns[@]}"; do
         # Allow the pattern inside comments (documentation is fine).
         if grep -vE '^\s*#' "$script" | grep -qE "(^|[^a-zA-Z_])${pattern}([^a-zA-Z_]|$)"; then
-            ASSERT_MSG="no '$pattern' in $(realpath --relative-to="$REPO_ROOT" "$script") (bash 3.2 compat)"
+            ASSERT_MSG="no '$pattern' in $(relpath "$script") (bash 3.2 compat)"
             fail "$ASSERT_MSG"
         fi
     done

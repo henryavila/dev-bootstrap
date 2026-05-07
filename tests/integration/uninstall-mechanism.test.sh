@@ -107,7 +107,10 @@ assert_contains "$apt_block" 'autoremove' \
 echo
 echo "═══ per-topic wiring ═══"
 
-mapfile -t manifests < <(find "$ROOT/topics" -mindepth 3 -maxdepth 4 \
+manifests=()
+while IFS= read -r manifest; do
+    manifests+=("$manifest")
+done < <(find "$ROOT/topics" -mindepth 3 -maxdepth 4 \
     -path '*/data/uninstall.list' -type f 2>/dev/null | sort)
 
 if [[ "${#manifests[@]}" -eq 0 ]]; then
