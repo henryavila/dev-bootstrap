@@ -822,6 +822,12 @@ assert_pattern_present "$TMUX_CONF" 'getent passwd' \
 assert_pattern_present "$TMUX_CONF" 'dscl.*UserShell' \
     "40-tmux/templates/tmux.conf — resolves shell via dscl (macOS)"
 
+assert_pattern_present "$TMUX_CONF" '@dev_bootstrap_pane_cwd' \
+    "40-tmux/templates/tmux.conf — status directory prefers shell-reported pane cwd"
+
+assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?#\{@dev_bootstrap_pane_cwd\},#\{b:@dev_bootstrap_pane_cwd\},#\{b:pane_current_path\}\}' \
+    "40-tmux/templates/tmux.conf — status directory falls back to tmux pane_current_path"
+
 assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?SSH_CONNECTION,' \
     "40-tmux/templates/tmux.conf — SSH status block is conditional"
 
@@ -873,6 +879,18 @@ for f in "$TMUX_BASHRC" "$TMUX_ZSHRC"; do
     assert_pattern_present "$f" 'command -v tmux' \
         "$base — gates aliases on 'command -v tmux'"
 done
+
+assert_pattern_present "$TMUX_BASHRC" '@dev_bootstrap_pane_cwd' \
+    "bashrc.d-40-tmux.sh — reports cwd into a pane-local tmux option"
+
+assert_pattern_present "$TMUX_BASHRC" 'PROMPT_COMMAND.*__dev_bootstrap_tmux_update_cwd' \
+    "bashrc.d-40-tmux.sh — refreshes tmux cwd from PROMPT_COMMAND"
+
+assert_pattern_present "$TMUX_ZSHRC" '@dev_bootstrap_pane_cwd' \
+    "zshrc.d-40-tmux.sh — reports cwd into a pane-local tmux option"
+
+assert_pattern_present "$TMUX_ZSHRC" 'chpwd_functions.*__dev_bootstrap_tmux_update_cwd' \
+    "zshrc.d-40-tmux.sh — refreshes tmux cwd on chpwd"
 
 echo
 echo "═══ Bash 3.2 color variables must be braced before Unicode literals ═══"

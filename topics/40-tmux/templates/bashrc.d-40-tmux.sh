@@ -6,6 +6,17 @@
 
 command -v tmux >/dev/null 2>&1 || return 0
 
+__dev_bootstrap_tmux_update_cwd() {
+    [ -n "${TMUX:-}" ] || return 0
+    tmux set-option -p -q @dev_bootstrap_pane_cwd "$PWD" >/dev/null 2>&1 || true
+}
+
+__dev_bootstrap_tmux_update_cwd
+case ";${PROMPT_COMMAND:-};" in
+    *";__dev_bootstrap_tmux_update_cwd;"*) ;;
+    *) PROMPT_COMMAND="__dev_bootstrap_tmux_update_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+esac
+
 # List / attach / create — short forms of the usual incantations.
 alias tl='tmux ls'
 alias ta='tmux attach -t'
