@@ -76,6 +76,11 @@ fi
 # Also extend fpath with the `zsh-completions` brew formula (separate
 # from share/zsh/site-functions). It's installed by 20-terminal-ux on
 # macOS and provides community-maintained completions for popular tools.
+# User/template-provided completions live in ~/.local/share/zsh/site-functions
+# (for example the dotfiles-template `mesh` completion).
+if [ -d "$HOME/.local/share/zsh/site-functions" ]; then
+    fpath=("$HOME/.local/share/zsh/site-functions" $fpath)
+fi
 if [ -n "${HOMEBREW_PREFIX:-}" ] && [ -d "$HOMEBREW_PREFIX/share/zsh-completions" ]; then
     fpath=("$HOMEBREW_PREFIX/share/zsh-completions" $fpath)
 fi

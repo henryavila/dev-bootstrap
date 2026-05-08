@@ -125,6 +125,11 @@ if [ -x "$HERE/scripts/configure-iterm2-font.sh" ]; then
     bash "$HERE/scripts/configure-iterm2-font.sh" || warn "iTerm2 font config failed (non-fatal)"
 fi
 
+# Generate completions for CLIs that expose zsh completion generators.
+if [ -x "$HERE/scripts/generate-zsh-completions.sh" ]; then
+    bash "$HERE/scripts/generate-zsh-completions.sh" || warn "zsh completion generation failed (non-fatal)"
+fi
+
 # ─── Post-install: zsh as default login shell ────────────────────────
 # Mac usually already defaults to /bin/zsh, but the brew-installed zsh
 # at $BREW_PREFIX/bin/zsh is a distinct binary — we make brew zsh

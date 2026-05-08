@@ -70,6 +70,162 @@ if command -v atuin >/dev/null 2>&1; then
     eval "$(atuin init zsh --disable-up-arrow)"
 fi
 
+# fzf-tab previews. The completion system provides candidate metadata
+# (`word`, `desc`, `realpath`, and `words`); this preview turns command and
+# subcommand candidates into useful documentation by trying --help, then -h,
+# with a short timeout. File and directory candidates keep a content preview.
+__dev_bootstrap_fzf_doc_preview='
+    _db_timeout() {
+        _db_seconds="$1"
+        shift
+        if command -v timeout >/dev/null 2>&1; then
+            command timeout "$_db_seconds" "$@"
+        elif command -v gtimeout >/dev/null 2>&1; then
+            command gtimeout "$_db_seconds" "$@"
+        elif command -v perl >/dev/null 2>&1; then
+            command perl -e "alarm shift @ARGV; exec @ARGV" "$_db_seconds" "$@"
+        else
+            "$@"
+        fi
+    }
+
+    _db_print_limited() {
+        if command -v bat >/dev/null 2>&1; then
+            bat --color=always --style=plain --line-range=:120 "$1" 2>/dev/null \
+                || sed -n "1,120p" "$1"
+        else
+            sed -n "1,120p" "$1"
+        fi
+    }
+
+    _db_emit_help() {
+        local _db_tmp _db_timeout_seconds
+        local -a _db_cmd
+        _db_cmd=("$@")
+        (( ${#_db_cmd[@]} > 0 )) || return 1
+        [[ -n "${_db_cmd[1]}" ]] || return 1
+        command -v "${_db_cmd[1]}" >/dev/null 2>&1 || return 1
+
+        _db_tmp="${TMPDIR:-/tmp}/.fzf-tab-help-$$"
+        _db_timeout_seconds="${FZF_TAB_HELP_TIMEOUT:-1}"
+
+        _db_timeout "$_db_timeout_seconds" "${_db_cmd[@]}" --help >"$_db_tmp" 2>&1
+        if [[ -s "$_db_tmp" ]]; then
+            printf "Help: %s --help\n\n" "${_db_cmd[*]}"
+            _db_print_limited "$_db_tmp"
+            rm -f "$_db_tmp"
+            return 0
+        fi
+
+        _db_timeout "$_db_timeout_seconds" "${_db_cmd[@]}" -h >"$_db_tmp" 2>&1
+        if [[ -s "$_db_tmp" ]]; then
+            printf "Help: %s -h\n\n" "${_db_cmd[*]}"
+            _db_print_limited "$_db_tmp"
+            rm -f "$_db_tmp"
+            return 0
+        fi
+
+        rm -f "$_db_tmp"
+        return 1
+    }
+
+    _db_emit_man() {
+        command -v "${1:-}" >/dev/null 2>&1 || return 1
+        MANPAGER=cat man "$1" 2>/dev/null | sed -n "1,60p"
+    }
+
+    if [[ -n "${realpath:-}" && -d "$realpath" ]]; then
+        eza --tree --level=2 --color=always --icons --group-directories-first "$realpath" 2>/dev/null \
+            || eza -la --color=always --icons --group-directories-first "$realpath" 2>/dev/null \
+            || ls -la --color=always "$realpath" 2>/dev/null \
+            || echo "(no directory preview tool available)"
+    elif [[ -n "${realpath:-}" && -f "$realpath" ]]; then
+        if file --brief --mime "$realpath" 2>/dev/null | grep -q "charset=binary"; then
+            printf "Binary file\n\n"
+            file --brief "$realpath" 2>/dev/null
+            echo
+            ls -la --color=always "$realpath" 2>/dev/null
+        else
+            bat --color=always \
+                --style=numbers,header \
+                --line-range=:200 \
+                --theme="${BAT_THEME:-Catppuccin Mocha}" \
+                "$realpath" 2>/dev/null \
+                || sed -n "1,200p" "$realpath" 2>/dev/null \
+                || echo "(no file preview tool available)"
+        fi
+    elif alias "$word" >/dev/null 2>&1; then
+        printf "Alias\n\n"
+        alias "$word" | sed "s/^alias //"
+        _db_alias_expansion="${aliases[$word]-}"
+        if [[ -n "$_db_alias_expansion" ]]; then
+            _db_alias_words=(${(z)_db_alias_expansion})
+            if (( ${#_db_alias_words[@]} > 0 )); then
+                echo
+                _db_emit_help "${_db_alias_words[@]}" || true
+            fi
+        fi
+    elif typeset -f "$word" >/dev/null 2>&1; then
+        printf "Function\n\n"
+        typeset -f "$word" 2>/dev/null \
+            | bat --color=always --language=bash --style=plain --line-range=:120 2>/dev/null \
+            || typeset -f "$word" | head -80
+    else
+        _db_desc_printed=0
+        if [[ -n "${desc:-}" && "${desc:-}" != "$word" ]]; then
+            printf "%s\n\n" "$desc"
+            _db_desc_printed=1
+        fi
+
+        typeset -a _db_prefix _db_doc_cmd _db_head_alias_words
+        _db_prefix=()
+        _db_doc_cmd=()
+        _db_word="${word:-}"
+        _db_words_count=${#words[@]}
+
+        for (( _db_i=1; _db_i<_db_words_count; _db_i++ )); do
+            [[ -n "${words[$_db_i]}" ]] && _db_prefix+=("${words[$_db_i]}")
+        done
+
+        if (( ${#_db_prefix[@]} > 0 )) && [[ -n "${aliases[${_db_prefix[1]}]-}" ]]; then
+            _db_head_alias_words=(${(z)aliases[${_db_prefix[1]}]})
+            if (( ${#_db_head_alias_words[@]} > 0 )); then
+                _db_prefix=("${_db_head_alias_words[@]}" "${_db_prefix[@]:2}")
+            fi
+        fi
+
+        if [[ "$_db_word" == -* ]]; then
+            _db_doc_cmd=("${_db_prefix[@]}")
+        elif (( ${#_db_prefix[@]} == 0 )); then
+            if [[ -n "${aliases[$_db_word]-}" ]]; then
+                _db_doc_cmd=(${(z)aliases[$_db_word]})
+            else
+                _db_doc_cmd=("$_db_word")
+            fi
+        else
+            _db_doc_cmd=("${_db_prefix[@]}" "$_db_word")
+        fi
+
+        if (( ${#_db_doc_cmd[@]} > 0 )); then
+            if command -v "${_db_doc_cmd[1]}" >/dev/null 2>&1; then
+                printf "Command\n\n"
+                type -a "${_db_doc_cmd[1]}" 2>/dev/null | head -5
+                echo
+            fi
+
+            _db_emit_help "${_db_doc_cmd[@]}" \
+                || _db_emit_man "${_db_doc_cmd[1]}" \
+                || (( _db_desc_printed )) \
+                || echo "${desc:-$word}"
+        else
+            (( _db_desc_printed )) || echo "${desc:-$word}"
+        fi
+    fi
+'
+zstyle ':fzf-tab:complete:*:*' fzf-preview "$__dev_bootstrap_fzf_doc_preview"
+zstyle ':fzf-tab:complete:-command-:*' fzf-preview "$__dev_bootstrap_fzf_doc_preview"
+unset __dev_bootstrap_fzf_doc_preview
+
 # ───────────────────────────────────────────────────────────────────
 # Phase E — modern CLI replacements (aliases only fire when installed)
 # ───────────────────────────────────────────────────────────────────

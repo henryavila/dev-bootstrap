@@ -282,6 +282,11 @@ else
     ok "procs already installed"
 fi
 
+# Generate completions for CLIs that expose zsh completion generators.
+if [ -x "$HERE/scripts/generate-zsh-completions.sh" ]; then
+    bash "$HERE/scripts/generate-zsh-completions.sh" || warn "zsh completion generation failed (non-fatal)"
+fi
+
 # ─── Post-install: zsh as default login shell ────────────────────────
 # This script is idempotent + safe to re-run on ANY machine — it's the
 # canonical path to migrate bash → zsh, not just a first-time installer.

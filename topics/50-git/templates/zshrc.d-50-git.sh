@@ -30,6 +30,20 @@ alias whoops='g reset --hard && g clean -df'
 # Sync main into current branch without losing your place
 alias gmm='echo "Switching to main..." && g checkout main && echo -e "\nUpdating main..." && g pull && echo -e "\nReturning to previous branch..." && g checkout - && echo -e "\nMerging main..." && g merge main'
 
-# zsh inherits git completion via compinit (which starship/ohmyzsh users already
-# run). No equivalent to bash's __git_complete needed; `compdef _git g=git` works
-# if you want explicit alias completion — left out here to stay minimal.
+if command -v compdef >/dev/null 2>&1; then
+    compdef _git g=git
+    compdef _git gs=git-status
+    compdef _git gl=git-log
+    compdef _git gd=git-diff
+    compdef _git gds=git-diff
+    compdef _git gch=git-checkout
+    compdef _git gco=git-checkout
+    compdef _git gb=git-branch
+    compdef _git gp=git-pull
+    compdef _git gps=git-push
+    compdef _git gc=git-commit
+    compdef _git grb=git-rebase
+    compdef _git gsh=git-show
+    compdef _git glog=git-log
+    compdef _git gloga=git-log
+fi

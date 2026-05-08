@@ -41,3 +41,60 @@ fi
 alias srr='sudo service redis restart'
 alias ssr='sudo service redis status'
 unset _WEBSTACK_PHP_VERSION
+
+_dev_bootstrap_artisan_completion() {
+    local artisan_bin="./artisan"
+    local line
+    local -a artisan_commands
+
+    if [[ ! -x "$artisan_bin" && ! -f "$artisan_bin" ]]; then
+        _message "no artisan file in current directory"
+        return 1
+    fi
+
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && artisan_commands+=("$line")
+    done < <(php "$artisan_bin" list --raw 2>/dev/null | awk '
+        NF {
+            command_name = $1
+            sub(/^[[:space:]]*[^[:space:]]+[[:space:]]*/, "")
+            gsub(/:/, "\\:", command_name)
+            if (length($0) > 0) {
+                print command_name ":" $0
+            } else {
+                print command_name
+            }
+        }
+    ')
+
+    if (( CURRENT == 2 )); then
+        _describe -t commands 'artisan command' artisan_commands
+    else
+        _files
+    fi
+}
+
+_dev_bootstrap_php_with_artisan_completion() {
+    if (( CURRENT >= 3 )) && [[ "${words[2]}" == "artisan" ]]; then
+        local -a saved_words
+        local saved_current
+        saved_words=("${words[@]}")
+        saved_current="$CURRENT"
+
+        words=("artisan" "${words[@]:2}")
+        CURRENT=$(( CURRENT - 1 ))
+        _dev_bootstrap_artisan_completion "$@"
+
+        words=("${saved_words[@]}")
+        CURRENT="$saved_current"
+        return
+    fi
+
+    _php "$@"
+}
+
+if command -v compdef >/dev/null 2>&1; then
+    compdef _dev_bootstrap_artisan_completion art
+    compdef _dev_bootstrap_artisan_completion artisan
+    compdef _dev_bootstrap_php_with_artisan_completion php
+fi
