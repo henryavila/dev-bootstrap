@@ -114,6 +114,39 @@ else
     fail "30-shell did not add user site-functions to fpath"
 fi
 
+deploy_home="$TESTROOT/deploy-home"
+mkdir -p "$deploy_home"
+HOME="$deploy_home" BREW_PREFIX="" \
+    bash "$REPO_ROOT/lib/deploy.sh" "$REPO_ROOT/topics/20-terminal-ux/templates" >/dev/null
+
+assert_file_contains "$deploy_home/.local/share/zsh/site-functions/_mesh" "run:run a mesh subcommand" \
+    "20-terminal-ux deploys mesh completion into zsh site-functions"
+
+mesh_completion_out="$(
+    HOME="$deploy_home" zsh -fic "
+        source '$REPO_ROOT/topics/30-shell/templates/zshrc.template'
+        words=(mesh '')
+        CURRENT=2
+        curcontext=''
+        _arguments() {
+            state=subcommand
+            return 0
+        }
+        _describe() {
+            local array_name=\"\${@[-1]}\"
+            print -rl -- \"\${(@P)array_name}\"
+        }
+        _files() { print -r -- FILE_FALLBACK; }
+        autoload -Uz _mesh
+        _mesh
+    " 2>/dev/null
+)"
+
+assert_contains "$mesh_completion_out" "status:show cross-mesh status" \
+    "mesh completion offers subcommands after 20-terminal-ux deploy"
+assert_not_contains "$mesh_completion_out" "FILE_FALLBACK" \
+    "mesh completion does not fall back to file listing"
+
 mkdir -p "$TESTROOT/completion-bin" "$TESTROOT/site-functions"
 cat > "$TESTROOT/completion-bin/gh" <<'GH'
 #!/usr/bin/env bash

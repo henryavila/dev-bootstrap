@@ -123,6 +123,10 @@ auto_map_name() {
             local rest="${name#bin/}"
             printf '%s/.local/bin/%s' "$HOME" "$rest"
             ;;
+        zsh-site-functions/*)
+            local rest="${name#zsh-site-functions/}"
+            printf '%s/.local/share/zsh/site-functions/%s' "$HOME" "$rest"
+            ;;
         *)
             printf ''
             ;;
