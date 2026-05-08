@@ -895,6 +895,10 @@ for f in "$TMUX_BASHRC" "$TMUX_ZSHRC"; do
         "$base — 'tm' attaches-or-creates 'main' outside tmux"
     assert_pattern_present "$f" "tmux switch-client -t main" \
         "$base — 'tm' switches clients instead of nesting inside tmux"
+    assert_pattern_present "$f" "tmux_project()" \
+        "$base — ships reusable project-session helper"
+    assert_pattern_present "$f" 'tmux new-session -d -s "\$session" -c "\$dir"' \
+        "$base — tmux_project creates detached sessions with cwd inside tmux"
     # Fragment must be no-op when tmux isn't on PATH — otherwise it
     # pollutes the shell on machines where the user skipped 40-tmux.
     assert_pattern_present "$f" 'command -v tmux' \

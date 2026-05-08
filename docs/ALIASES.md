@@ -73,8 +73,9 @@ Each block gates on `command -v`, so aliases no-op on machines without the tool 
 | `ta <name>` | Outside tmux: `tmux attach -t`; inside tmux: `tmux switch-client -t` | attach/switch by name without nesting tmux clients |
 | `tn <name>` | `tmux new -s` | new session |
 | **`tm`** | Outside tmux: `tmux new-session -A -s main`; inside tmux: `tmux switch-client -t main` after creating `main` detached if needed | go to the canonical `main` session without nesting tmux clients |
+| `tmux_project <session> <dir>` | Outside tmux: attach/create with `-c <dir>`; inside tmux: switch/create detached first | reusable helper for private project shortcuts without nested tmux clients |
 
-For project-specific session names (e.g. `th` → "arch", `tsda` → "sda"), add them to your private `~/.bashrc.d/99-personal-aliases.sh`.
+For project-specific session names (e.g. `th` → "arch", `tsda` → "sda"), add thin wrappers in your private `~/.bashrc.d/99-personal-aliases.sh` that call `tmux_project`.
 
 ## 50-git — shell + git-level
 

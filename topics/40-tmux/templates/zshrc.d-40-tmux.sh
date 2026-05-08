@@ -91,6 +91,28 @@ ta() {
     fi
 }
 
+tmux_project() {
+    [ "$#" -eq 2 ] || { printf 'usage: tmux_project <session> <dir>\n' >&2; return 2; }
+
+    local session="$1"
+    local dir="$2"
+
+    if [ ! -d "$dir" ]; then
+        printf 'tmux_project: directory not found: %s\n' "$dir" >&2
+        return 1
+    fi
+
+    if [ -n "${TMUX:-}" ]; then
+        if tmux has-session -t "$session" 2>/dev/null; then
+            tmux switch-client -t "$session"
+        else
+            tmux new-session -d -s "$session" -c "$dir" && tmux switch-client -t "$session"
+        fi
+    else
+        tmux new-session -A -s "$session" -c "$dir"
+    fi
+}
+
 # `td` — detach from current session WITHOUT killing it. Equivalent to
 # the `prefix d` keybind, but works as a regular shell command (useful
 # in scripts and one-liners).
