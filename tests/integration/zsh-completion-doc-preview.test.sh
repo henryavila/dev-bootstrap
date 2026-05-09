@@ -144,8 +144,37 @@ mesh_completion_out="$(
 
 assert_contains "$mesh_completion_out" "status:show cross-mesh status" \
     "mesh completion offers subcommands after 20-terminal-ux deploy"
+assert_contains "$mesh_completion_out" "topic:list or run dev-bootstrap topics by number" \
+    "mesh completion offers topic subcommand after 20-terminal-ux deploy"
 assert_not_contains "$mesh_completion_out" "FILE_FALLBACK" \
     "mesh completion does not fall back to file listing"
+
+mesh_topic_completion_out="$(
+    HOME="$deploy_home" zsh -fic "
+        source '$REPO_ROOT/topics/30-shell/templates/zshrc.template'
+        words=(mesh topic '')
+        CURRENT=3
+        curcontext=''
+        _arguments() {
+            state=topic_arg
+            return 0
+        }
+        _describe() {
+            local array_name=\"\${@[-1]}\"
+            print -rl -- \"\${(@P)array_name}\"
+        }
+        _files() { print -r -- FILE_FALLBACK; }
+        autoload -Uz _mesh
+        _mesh
+    " 2>/dev/null
+)"
+
+assert_contains "$mesh_topic_completion_out" "list:list dev-bootstrap topics" \
+    "mesh topic completion offers list command"
+assert_contains "$mesh_topic_completion_out" "20:20-terminal-ux" \
+    "mesh topic completion offers numeric topic selectors"
+assert_not_contains "$mesh_topic_completion_out" "FILE_FALLBACK" \
+    "mesh topic completion does not fall back to file listing"
 
 mkdir -p "$TESTROOT/completion-bin" "$TESTROOT/site-functions"
 cat > "$TESTROOT/completion-bin/gh" <<'GH'

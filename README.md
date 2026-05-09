@@ -70,6 +70,10 @@ bash bootstrap.sh --non-interactive
 
 # run specific topics only
 ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
+ONLY_TOPICS="20 30" bash bootstrap.sh
+
+# list official topic numbers
+bash bootstrap.sh --list-topics
 
 # enable opt-in topics
 INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash bootstrap.sh
@@ -126,9 +130,10 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 |------------|--------|
 | `--non-interactive` / `NON_INTERACTIVE=1` | Skip the menu even on a TTY |
 | `--dry-run` / `DRY_RUN=1` | Print what would run without executing (also skips `sudo -v`) |
+| `--list-topics` | List official topic numbers and names without running installers |
 | `--help` / `-h` | Usage message |
 | `SKIP_TOPICS` | space-separated list of topics to skip |
-| `ONLY_TOPICS` | run only these topics |
+| `ONLY_TOPICS` | run only these topics; accepts full names (`20-terminal-ux`) or numeric shorthand (`20`) |
 | `DOTFILES_REPO` | URL/path of the personal dotfiles repo (accepts `file://` for local testing) |
 | `DOTFILES_DIR` | clone destination (default `~/dotfiles`) |
 | `DOTFILES_NPM_GLOBAL=1` | pass opt-in to the dotfiles installer to set npm global prefix to `~/.npm-global` and persist `~/.npm-global/bin` on shell PATH |

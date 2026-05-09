@@ -117,6 +117,89 @@ secrets_load || warn "secrets file present but could not be sourced — continui
 source "$HERE/lib/state.sh"
 state_load
 
+LIST_TOPICS=0
+
+collect_topics() {
+    # Portable across bash 3.2 (macOS default) and bash 4+: no `mapfile`, no
+    # GNU find `-printf`. Parameter expansion `${p##*/}` does basename without
+    # a fork, and the while-read loop fills the array in bash-3-friendly syntax.
+    all_topics=()
+    while IFS= read -r topic_dir; do
+        all_topics+=("${topic_dir##*/}")
+    done < <(find "$HERE/topics" -mindepth 1 -maxdepth 1 -type d | sort)
+}
+
+# Opt-in gating map: topic_name -> env var that must equal 1.
+optin_var_for() {
+    case "$1" in
+        45-docker)        echo "INCLUDE_DOCKER" ;;
+        60-web-stack)     echo "INCLUDE_WEBSTACK" ;;
+        70-remote-access) echo "INCLUDE_REMOTE" ;;
+        90-editor)        echo "INCLUDE_EDITOR" ;;
+        *)                echo "" ;;
+    esac
+}
+
+print_topic_list() {
+    local topic number var
+    collect_topics
+    for topic in "${all_topics[@]+"${all_topics[@]}"}"; do
+        number="${topic%%-*}"
+        var="$(optin_var_for "$topic")"
+        if [[ -n "$var" ]]; then
+            printf '%s  %s  opt-in: %s=1\n' "$number" "$topic" "$var"
+        elif [[ "$topic" == "95-dotfiles-personal" ]]; then
+            printf '%s  %s  opt-in: DOTFILES_REPO=<url>\n' "$number" "$topic"
+        else
+            printf '%s  %s\n' "$number" "$topic"
+        fi
+    done
+}
+
+known_topics_inline() {
+    local topic
+    printf '%s' "${all_topics[*]:-}"
+}
+
+resolve_topic_selector() {
+    local selector="$1"
+    local topic number match=""
+    local matches=0
+
+    if in_list "$selector" "${all_topics[@]+"${all_topics[@]}"}"; then
+        printf '%s\n' "$selector"
+        return 0
+    fi
+
+    case "$selector" in
+        ''|*[!0-9]*)
+            fail "unknown topic selector '$selector' (known: $(known_topics_inline))"
+            return 1
+            ;;
+    esac
+
+    number="$(printf '%02d' "$((10#$selector))")"
+    for topic in "${all_topics[@]+"${all_topics[@]}"}"; do
+        case "$topic" in
+            "$number"-*)
+                match="$topic"
+                matches=$((matches + 1))
+                ;;
+        esac
+    done
+
+    case "$matches" in
+        1)
+            printf '%s\n' "$match"
+            return 0
+            ;;
+        *)
+            fail "unknown topic selector '$selector' (known: $(known_topics_inline))"
+            return 1
+            ;;
+    esac
+}
+
 usage() {
     cat <<'EOF'
 dev-bootstrap — set up a development machine
@@ -129,8 +212,10 @@ Automation / CI mode:
   bash bootstrap.sh --non-interactive       same, flag form
   DRY_RUN=1 bash bootstrap.sh               print actions without executing
   bash bootstrap.sh --dry-run               same, flag form
+  bash bootstrap.sh --list-topics           list topic numbers and names
   SKIP_TOPICS="NN-x" ...                    skip specific topics
   ONLY_TOPICS="NN-x NN-y" ...               run only these topics
+  ONLY_TOPICS="20 30" ...                   numeric shorthand is accepted
 
 Opt-in topics (menu toggles these, or set env var in automation):
   45-docker             INCLUDE_DOCKER=1
@@ -165,8 +250,16 @@ for arg in "$@"; do
         --dry-run)
             export DRY_RUN=1
             ;;
+        --list-topics)
+            LIST_TOPICS=1
+            ;;
     esac
 done
+
+if (( LIST_TOPICS )); then
+    print_topic_list
+    exit 0
+fi
 
 # ---------- Detect OS ----------
 OS="$(bash "$HERE/lib/detect-os.sh")"
@@ -277,6 +370,45 @@ export INCLUDE_REMOTE="${INCLUDE_REMOTE:-0}"
 export INCLUDE_EDITOR="${INCLUDE_EDITOR:-0}"
 export NO_COLOR="${NO_COLOR:-}"
 
+# ---------- Collect + validate topics ----------
+collect_topics
+
+in_list() {
+    local needle="$1"
+    shift
+    for x in "$@"; do
+        [[ "$x" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+# bash 3.2 (macOS default) + `set -u` is peculiar about empty arrays:
+# `skip_list=(${SKIP_TOPICS:-})` leaves `skip_list` "declared but unbound"
+# when the env var is empty, so any later `"${skip_list[@]}"` trips
+# "unbound variable". Workaround: only build the array when the source
+# var has content; otherwise stay explicit empty. Commas are accepted
+# too because `mesh update --topics 20,30` normalizes through this path.
+skip_list=()
+only_list=()
+if [[ -n "${SKIP_TOPICS:-}" ]]; then
+    skip_source="${SKIP_TOPICS//,/ }"
+    # shellcheck disable=SC2206
+    skip_raw=($skip_source)
+    for topic_selector in "${skip_raw[@]+"${skip_raw[@]}"}"; do
+        topic="$(resolve_topic_selector "$topic_selector")" || exit 1
+        skip_list+=("$topic")
+    done
+fi
+if [[ -n "${ONLY_TOPICS:-}" ]]; then
+    only_source="${ONLY_TOPICS//,/ }"
+    # shellcheck disable=SC2206
+    only_raw=($only_source)
+    for topic_selector in "${only_raw[@]+"${only_raw[@]}"}"; do
+        topic="$(resolve_topic_selector "$topic_selector")" || exit 1
+        only_list+=("$topic")
+    done
+fi
+
 # ---------- Sudo cache warmup ----------
 # Bootstrap needs sudo for apt, systemctl, /etc/ writes in several topics.
 # Prompt once upfront; subsequent sudo calls within the cache window
@@ -303,54 +435,9 @@ if [[ "$OS" == "wsl" || "$OS" == "linux" ]] && [[ "${DRY_RUN:-}" != "1" ]]; then
     fi
 fi
 
-# ---------- Collect topics ----------
-# Portable across bash 3.2 (macOS default) and bash 4+: no `mapfile`, no
-# GNU find `-printf`. Parameter expansion `${p##*/}` does basename without
-# a fork, and the while-read loop fills the array in bash-3-friendly syntax.
-all_topics=()
-while IFS= read -r topic_dir; do
-    all_topics+=("${topic_dir##*/}")
-done < <(find "$HERE/topics" -mindepth 1 -maxdepth 1 -type d | sort)
-
-in_list() {
-    local needle="$1"
-    shift
-    for x in "$@"; do
-        [[ "$x" == "$needle" ]] && return 0
-    done
-    return 1
-}
-
-# Opt-in gating map: topic_name → env var that must equal 1
-optin_var_for() {
-    case "$1" in
-        45-docker)        echo "INCLUDE_DOCKER" ;;
-        60-web-stack) echo "INCLUDE_WEBSTACK" ;;
-        70-remote-access) echo "INCLUDE_REMOTE" ;;
-        90-editor)        echo "INCLUDE_EDITOR" ;;
-        *)                echo "" ;;
-    esac
-}
-
 # ---------- Log file ----------
 LOG="/tmp/dev-bootstrap-$OS-$(date +%Y%m%d-%H%M%S).log"
 info "full log: $LOG"
-
-# bash 3.2 (macOS default) + `set -u` is peculiar about empty arrays:
-# `skip_list=(${SKIP_TOPICS:-})` leaves `skip_list` "declared but unbound"
-# when the env var is empty, so any later `"${skip_list[@]}"` trips
-# "unbound variable". Workaround: only build the array when the source
-# var has content; otherwise stay explicit empty.
-skip_list=()
-only_list=()
-if [[ -n "${SKIP_TOPICS:-}" ]]; then
-    # shellcheck disable=SC2206
-    skip_list=($SKIP_TOPICS)
-fi
-if [[ -n "${ONLY_TOPICS:-}" ]]; then
-    # shellcheck disable=SC2206
-    only_list=($ONLY_TOPICS)
-fi
 
 # Avoid `declare -a foo=() bar=() baz=()` one-liner — bash 3.2 parses it
 # inconsistently. Split into 3 plain assignments.
@@ -368,16 +455,28 @@ run_topic() {
     if [[ -n "$var" ]]; then
         local val="${!var:-0}"
         if [[ "$val" != "1" ]]; then
-            info "skip $topic (opt-in: set $var=1 to enable)"
-            skipped+=("$topic")
+            if [[ "${DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS:-0}" == "1" ]] && \
+               in_list "$topic" "${only_list[@]+"${only_list[@]}"}"; then
+                fail "$topic is opt-in; set $var=1 to run it"
+                failed+=("$topic")
+            else
+                info "skip $topic (opt-in: set $var=1 to enable)"
+                skipped+=("$topic")
+            fi
             return 0
         fi
     fi
 
     # 95-dotfiles-personal gate: requires DOTFILES_REPO
     if [[ "$topic" == "95-dotfiles-personal" ]] && [[ -z "$DOTFILES_REPO" ]]; then
-        info "skip $topic (set DOTFILES_REPO to enable)"
-        skipped+=("$topic")
+        if [[ "${DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS:-0}" == "1" ]] && \
+           in_list "$topic" "${only_list[@]+"${only_list[@]}"}"; then
+            fail "$topic is opt-in; set DOTFILES_REPO=<url> to run it"
+            failed+=("$topic")
+        else
+            info "skip $topic (set DOTFILES_REPO to enable)"
+            skipped+=("$topic")
+        fi
         return 0
     fi
 

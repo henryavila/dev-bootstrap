@@ -8,6 +8,7 @@ _mesh() {
         'status:show cross-mesh status and per-host detail'
         'snap:generate this host snapshot'
         'update:pull and apply dotfiles ecosystem updates'
+        'topic:list or run dev-bootstrap topics by number'
         'run:run a mesh subcommand on selected hosts'
     )
 
@@ -45,9 +46,44 @@ _mesh() {
                 '(-o --only)'{-o,--only}'[restrict update to one repo]:repo:(dev-bootstrap dotfiles bootstrap)' \
                 '(-f --full)'{-f,--full}'[force full apply]' \
                 '(-i --interactive)'{-i,--interactive}'[show dev-bootstrap full-apply menu]' \
+                '(-t --topics)'{-t,--topics}'[run only dev-bootstrap topics by number/name]:topics:' \
                 '--reset-auth[reset auth state during update]' \
                 '--from-shell-start[mark update as shell startup triggered]' \
                 '*:update flag:_files'
+            ;;
+        topic)
+            local -a topic_actions topic_specs
+            topic_actions=(
+                'list:list dev-bootstrap topics'
+            )
+            topic_specs=(
+                '00:00-core'
+                '05:05-identity'
+                '10:10-languages'
+                '20:20-terminal-ux'
+                '30:30-shell'
+                '40:40-tmux'
+                '45:45-docker'
+                '50:50-git'
+                '60:60-web-stack'
+                '70:70-remote-access'
+                '80:80-claude-code'
+                '90:90-editor'
+                '95:95-dotfiles-personal'
+            )
+            _arguments \
+                '(-h --help)'{-h,--help}'[show topic help]' \
+                '1:topic action or number:->topic_arg' \
+                '*:topic number/name:->topic_spec'
+            case "$state" in
+                topic_arg)
+                    _describe -t commands 'mesh topic command' topic_actions
+                    _describe -t topics 'dev-bootstrap topic' topic_specs
+                    ;;
+                topic_spec)
+                    _describe -t topics 'dev-bootstrap topic' topic_specs
+                    ;;
+            esac
             ;;
         run)
             local -a run_subcommands
