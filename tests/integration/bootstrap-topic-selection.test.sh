@@ -19,6 +19,11 @@ assert_contains "$list_out" "20  20-terminal-ux" \
     "bootstrap --list-topics lists topic numbers from topics/"
 assert_contains "$list_out" "60  60-web-stack" \
     "bootstrap --list-topics includes opt-in topics"
+if [[ ! -e "$TESTROOT/home-list/.local/state/dev-bootstrap" ]]; then
+    pass "bootstrap --list-topics is read-only and does not create runtime state"
+else
+    fail "bootstrap --list-topics should not create runtime state"
+fi
 
 dry_out="$(
     HOME="$TESTROOT/home-dry" \

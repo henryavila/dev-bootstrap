@@ -151,8 +151,21 @@ assert_contains "$mesh_completion_out" "topic:list or run dev-bootstrap topics b
 assert_not_contains "$mesh_completion_out" "FILE_FALLBACK" \
     "mesh completion does not fall back to file listing"
 
+mkdir -p "$TESTROOT/mesh-bin"
+cat > "$TESTROOT/mesh-bin/mesh" <<'MESH'
+#!/usr/bin/env bash
+if [ "$1" = "topic" ] && [ "$2" = "list" ]; then
+    printf '%s\n' \
+        '20  20-terminal-ux' \
+        '25  25-dynamic-test  opt-in: INCLUDE_DYNAMIC=1'
+    exit 0
+fi
+exit 1
+MESH
+chmod +x "$TESTROOT/mesh-bin/mesh"
+
 mesh_topic_completion_out="$(
-    HOME="$deploy_home" zsh -fic "
+    PATH="$TESTROOT/mesh-bin:/usr/bin:/bin" HOME="$deploy_home" zsh -fic "
         source '$REPO_ROOT/topics/30-shell/templates/zshrc.template'
         words=(mesh topic '')
         CURRENT=3
@@ -175,6 +188,8 @@ assert_contains "$mesh_topic_completion_out" "list:list dev-bootstrap topics" \
     "mesh topic completion offers list command"
 assert_contains "$mesh_topic_completion_out" "20:20-terminal-ux" \
     "mesh topic completion offers numeric topic selectors"
+assert_contains "$mesh_topic_completion_out" "25:25-dynamic-test" \
+    "mesh topic completion reads topic selectors from mesh topic list"
 assert_not_contains "$mesh_topic_completion_out" "FILE_FALLBACK" \
     "mesh topic completion does not fall back to file listing"
 

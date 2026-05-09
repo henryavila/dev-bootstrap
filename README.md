@@ -87,6 +87,10 @@ DOTFILES_REPO=git@github.com:you/dotfiles.git DOTFILES_NPM_GLOBAL=1 bash bootstr
 
 The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `DOTFILES_REPO`, `DOTFILES_NPM_GLOBAL`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
 
+`--list-topics` is read-only and intentionally lightweight. It is the official
+source for topic numbers used by `ONLY_TOPICS` and by the `mesh topic` wrapper
+from the dotfiles layer.
+
 Right after the menu (or immediately, when skipped), the bootstrap runs `sudo -v` to warm up the sudo cache — one password prompt, then subsequent `sudo` calls within the cache window (~5–15min) are silent.
 
 ### After the bootstrap finishes
@@ -108,7 +112,7 @@ If you see a `!` line in the bootstrap output, it's pointing at a next step. Rea
 |-------|--------------------|--------|
 | `00-core` | git, curl, build-essential, jq, unzip, envsubst (gettext) | — |
 | `10-languages` | Node via fnm + LTS, PHP (multi-version via ondrej ppa / brew; picked in the menu), Python 3, per-version `composer<ver>` wrappers | — |
-| `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove; ships shell fragment with listing + Phase E aliases (top→btop, df→duf, du→dust, ping→gping, http→xh, ps→procs) | — |
+| `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove; ships shell fragment with listing + Phase E aliases (top→btop, df→duf, du→dust, ping→gping, http→xh, ps→procs); deploys generated/static zsh completions such as `_mesh` | — |
 | `30-shell` | `~/.bashrc` / `~/.zshrc` loaders + `~/.inputrc` (word-kill, completion niceties); shell fragment with navigation (`..`, `home`), shortcuts (`h`/`c`/`cla`), `alert` (Linux), utility funcs (`mkd`/`md`/`fs`/`tre`) | — |
 | `40-tmux` | tmux + `~/.tmux.conf` (prefix `Ctrl+a`; `default-shell` resolved from `/etc/passwd`) + shell fragment with `tl`/`ta`/`tn`/`tm` helpers | — |
 | `50-git` | opinionated global gitconfig (delta, zdiff3, aliases) + `~/.bashrc.d/50-git.sh` with aliases `g` / `gs` / `gco` / `whoops` / `gmm` + `__git_complete` | — |
@@ -134,6 +138,7 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 | `--help` / `-h` | Usage message |
 | `SKIP_TOPICS` | space-separated list of topics to skip |
 | `ONLY_TOPICS` | run only these topics; accepts full names (`20-terminal-ux`) or numeric shorthand (`20`) |
+| `DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS=1` | strict topic mode used by `mesh topic`: if an explicitly requested opt-in topic is disabled, fail instead of silently skipping it |
 | `DOTFILES_REPO` | URL/path of the personal dotfiles repo (accepts `file://` for local testing) |
 | `DOTFILES_DIR` | clone destination (default `~/dotfiles`) |
 | `DOTFILES_NPM_GLOBAL=1` | pass opt-in to the dotfiles installer to set npm global prefix to `~/.npm-global` and persist `~/.npm-global/bin` on shell PATH |

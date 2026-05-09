@@ -46,7 +46,7 @@
 #                       recovering from a corrupted Valet state.
 #   NO_COLOR=1          disable colored output (auto if not a TTY)
 #
-# Usage: bash bootstrap.sh [--help] [--non-interactive]
+# Usage: bash bootstrap.sh [--help] [--non-interactive] [--dry-run] [--list-topics]
 
 set -euo pipefail
 
@@ -56,68 +56,7 @@ set -euo pipefail
 export USER="${USER:-$(id -un)}"
 export HOME="${HOME:-$(getent passwd "$USER" | cut -d: -f6)}"
 
-# Collect follow-up actions from every topic into a single file so we
-# can render one consolidated summary at the end (vs. scattering `!`
-# warnings across hundreds of lines of topic output). Topics invoke
-# `followup <severity> <msg>` from lib/log.sh — the severity bucket
-# (critical / manual / info) drives how the summary renders.
-BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t dev-bootstrap-followup.XXXXXX 2>/dev/null || mktemp)"
-export BOOTSTRAP_FOLLOWUP_FILE
-trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
-
-# Persistent state across bootstrap runs — stores last-used values so
-# the interactive menu can pre-fill fields (CODE_DIR, PHP_VERSIONS,
-# opt-in flags, etc.) on re-runs instead of always showing the defaults.
-# Format: shell-sourceable `export KEY=value` lines — readable, diff-able,
-# editable by hand. Delete the file to reset to defaults.
-export BOOTSTRAP_STATE_DIR="$HOME/.local/state/dev-bootstrap"
-export BOOTSTRAP_STATE_CONFIG="$BOOTSTRAP_STATE_DIR/config.env"
-mkdir -p "$BOOTSTRAP_STATE_DIR"
-if [[ -f "$BOOTSTRAP_STATE_CONFIG" ]]; then
-    # shellcheck source=/dev/null
-    source "$BOOTSTRAP_STATE_CONFIG"
-    # Signal to should_show_menu that the control vars came from state,
-    # not from a user-set env — state-loaded values must not suppress
-    # the interactive menu (we want it to re-show with them as defaults).
-    export STATE_LOADED=1
-fi
-
-# ─── Legacy alias: INCLUDE_LARAVEL=1 → INCLUDE_WEBSTACK=1 ───────────────
-# The topic was renamed from 60-laravel-stack to 60-web-stack (it installs
-# a full web dev stack: nginx + reverse proxy + MySQL + Redis + mkcert +
-# PHP-FPM, of which Laravel is just one consumer). The env var + state
-# file keys are canonically INCLUDE_WEBSTACK now, but we honor the
-# previous name indefinitely so automation scripts, CI configs, and
-# persisted state files from older runs keep working unchanged.
-if [[ -n "${INCLUDE_LARAVEL:-}" ]] && [[ -z "${INCLUDE_WEBSTACK:-}" ]]; then
-    export INCLUDE_WEBSTACK="$INCLUDE_LARAVEL"
-fi
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$HERE"
-
-# shellcheck disable=SC1091
-source "$HERE/lib/log.sh"
-
-# ─── Secrets (tokens) ───────────────────────────────────────────────
-# Separate from config.env because of different mode (0600 vs 0644)
-# and different blast-radius semantics. Sourced BEFORE the menu so
-# `secrets_has NGROK_AUTHTOKEN` can gate whether the menu prompts
-# for a token, and BEFORE topics run so installers just read env.
-# See lib/secrets.sh for the allowed/forbidden key taxonomy.
-# shellcheck disable=SC1091
-source "$HERE/lib/secrets.sh"
-secrets_load || warn "secrets file present but could not be sourced — continuing without it"
-
-# ─── Persistent state (prefixes, decisions) ───────────────────────────
-# Loaded BEFORE topics so 00-core can honor a previously-recorded
-# BREW_PREFIX choice (e.g. user picked /Volumes/External/homebrew on a
-# previous run; never re-prompt). See lib/state.sh.
-# shellcheck disable=SC1091
-source "$HERE/lib/state.sh"
-state_load
-
-LIST_TOPICS=0
 
 collect_topics() {
     # Portable across bash 3.2 (macOS default) and bash 4+: no `mapfile`, no
@@ -200,6 +139,75 @@ resolve_topic_selector() {
     esac
 }
 
+for arg in "$@"; do
+    case "$arg" in
+        --list-topics)
+            print_topic_list
+            exit 0
+            ;;
+    esac
+done
+
+# Collect follow-up actions from every topic into a single file so we
+# can render one consolidated summary at the end (vs. scattering `!`
+# warnings across hundreds of lines of topic output). Topics invoke
+# `followup <severity> <msg>` from lib/log.sh — the severity bucket
+# (critical / manual / info) drives how the summary renders.
+BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t dev-bootstrap-followup.XXXXXX 2>/dev/null || mktemp)"
+export BOOTSTRAP_FOLLOWUP_FILE
+trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
+
+# Persistent state across bootstrap runs — stores last-used values so
+# the interactive menu can pre-fill fields (CODE_DIR, PHP_VERSIONS,
+# opt-in flags, etc.) on re-runs instead of always showing the defaults.
+# Format: shell-sourceable `export KEY=value` lines — readable, diff-able,
+# editable by hand. Delete the file to reset to defaults.
+export BOOTSTRAP_STATE_DIR="$HOME/.local/state/dev-bootstrap"
+export BOOTSTRAP_STATE_CONFIG="$BOOTSTRAP_STATE_DIR/config.env"
+mkdir -p "$BOOTSTRAP_STATE_DIR"
+if [[ -f "$BOOTSTRAP_STATE_CONFIG" ]]; then
+    # shellcheck source=/dev/null
+    source "$BOOTSTRAP_STATE_CONFIG"
+    # Signal to should_show_menu that the control vars came from state,
+    # not from a user-set env — state-loaded values must not suppress
+    # the interactive menu (we want it to re-show with them as defaults).
+    export STATE_LOADED=1
+fi
+
+# ─── Legacy alias: INCLUDE_LARAVEL=1 → INCLUDE_WEBSTACK=1 ───────────────
+# The topic was renamed from 60-laravel-stack to 60-web-stack (it installs
+# a full web dev stack: nginx + reverse proxy + MySQL + Redis + mkcert +
+# PHP-FPM, of which Laravel is just one consumer). The env var + state
+# file keys are canonically INCLUDE_WEBSTACK now, but we honor the
+# previous name indefinitely so automation scripts, CI configs, and
+# persisted state files from older runs keep working unchanged.
+if [[ -n "${INCLUDE_LARAVEL:-}" ]] && [[ -z "${INCLUDE_WEBSTACK:-}" ]]; then
+    export INCLUDE_WEBSTACK="$INCLUDE_LARAVEL"
+fi
+
+cd "$HERE"
+
+# shellcheck disable=SC1091
+source "$HERE/lib/log.sh"
+
+# ─── Secrets (tokens) ───────────────────────────────────────────────
+# Separate from config.env because of different mode (0600 vs 0644)
+# and different blast-radius semantics. Sourced BEFORE the menu so
+# `secrets_has NGROK_AUTHTOKEN` can gate whether the menu prompts
+# for a token, and BEFORE topics run so installers just read env.
+# See lib/secrets.sh for the allowed/forbidden key taxonomy.
+# shellcheck disable=SC1091
+source "$HERE/lib/secrets.sh"
+secrets_load || warn "secrets file present but could not be sourced — continuing without it"
+
+# ─── Persistent state (prefixes, decisions) ───────────────────────────
+# Loaded BEFORE topics so 00-core can honor a previously-recorded
+# BREW_PREFIX choice (e.g. user picked /Volumes/External/homebrew on a
+# previous run; never re-prompt). See lib/state.sh.
+# shellcheck disable=SC1091
+source "$HERE/lib/state.sh"
+state_load
+
 usage() {
     cat <<'EOF'
 dev-bootstrap — set up a development machine
@@ -250,16 +258,8 @@ for arg in "$@"; do
         --dry-run)
             export DRY_RUN=1
             ;;
-        --list-topics)
-            LIST_TOPICS=1
-            ;;
     esac
 done
-
-if (( LIST_TOPICS )); then
-    print_topic_list
-    exit 0
-fi
 
 # ---------- Detect OS ----------
 OS="$(bash "$HERE/lib/detect-os.sh")"

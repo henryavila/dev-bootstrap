@@ -1,6 +1,44 @@
 #compdef mesh
 # managed by dev-bootstrap
 
+_mesh_topic_specs() {
+    local -a fallback specs parts
+    local line number name
+
+    fallback=(
+        '00:00-core'
+        '05:05-identity'
+        '10:10-languages'
+        '20:20-terminal-ux'
+        '30:30-shell'
+        '40:40-tmux'
+        '45:45-docker'
+        '50:50-git'
+        '60:60-web-stack'
+        '70:70-remote-access'
+        '80:80-claude-code'
+        '90:90-editor'
+        '95:95-dotfiles-personal'
+    )
+
+    if (( $+commands[mesh] )); then
+        while IFS= read -r line; do
+            parts=(${(z)line})
+            number="${parts[1]:-}"
+            name="${parts[2]:-}"
+            if [[ "$number" == [0-9][0-9] && "$name" == "$number"-* ]]; then
+                specs+=("${number}:${name}")
+            fi
+        done < <(command mesh topic list 2>/dev/null)
+    fi
+
+    if (( ${#specs[@]} )); then
+        print -rl -- "${specs[@]}"
+    else
+        print -rl -- "${fallback[@]}"
+    fi
+}
+
 _mesh() {
     local curcontext="$curcontext" state
     local -a subcommands
@@ -57,21 +95,7 @@ _mesh() {
             topic_actions=(
                 'list:list dev-bootstrap topics'
             )
-            topic_specs=(
-                '00:00-core'
-                '05:05-identity'
-                '10:10-languages'
-                '20:20-terminal-ux'
-                '30:30-shell'
-                '40:40-tmux'
-                '45:45-docker'
-                '50:50-git'
-                '60:60-web-stack'
-                '70:70-remote-access'
-                '80:80-claude-code'
-                '90:90-editor'
-                '95:95-dotfiles-personal'
-            )
+            topic_specs=("${(@f)$(_mesh_topic_specs)}")
             _arguments \
                 '(-h --help)'{-h,--help}'[show topic help]' \
                 '1:topic action or number:->topic_arg' \
