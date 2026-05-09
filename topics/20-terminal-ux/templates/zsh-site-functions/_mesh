@@ -1,4 +1,5 @@
 #compdef mesh
+# managed by dev-bootstrap
 
 _mesh() {
     local curcontext="$curcontext" state

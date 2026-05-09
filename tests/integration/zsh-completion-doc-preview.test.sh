@@ -121,6 +121,8 @@ HOME="$deploy_home" BREW_PREFIX="" \
 
 assert_file_contains "$deploy_home/.local/share/zsh/site-functions/_mesh" "run:run a mesh subcommand" \
     "20-terminal-ux deploys mesh completion into zsh site-functions"
+assert_file_contains "$deploy_home/.local/share/zsh/site-functions/_mesh" "managed by dev-bootstrap" \
+    "mesh completion is marked as dev-bootstrap-managed for future deploys"
 
 mesh_completion_out="$(
     HOME="$deploy_home" zsh -fic "
