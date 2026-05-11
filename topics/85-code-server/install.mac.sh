@@ -11,6 +11,8 @@ source "$HERE/../../lib/log.sh"
 : "${CODE_SERVER_TAILSCALE_SERVE:=1}"
 : "${CODE_SERVER_INSTALL_PREFIX:=$HOME/.local}"
 : "${CODE_SERVER_INSTALL_METHOD:=standalone}"
+: "${CODE_SERVER_UPGRADE:=0}"
+: "${CODE_SERVER_CHECK_UPDATES:=1}"
 
 CODE_SERVER_BIN=""
 CODE_SERVER_SERVICE_WRAPPER=""
@@ -65,6 +67,95 @@ plist_escape() {
 
 has_ctty() {
     [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]]
+}
+
+normalize_code_server_version() {
+    local raw="$1" version
+    version="$(printf '%s\n' "$raw" | awk '{
+        value=$1
+        sub(/^v/, "", value)
+        if (match(value, /^[0-9]+(\.[0-9]+)?(\.[0-9]+)?/)) {
+            print substr(value, RSTART, RLENGTH)
+        }
+    }')"
+    [[ -n "$version" ]] || return 1
+    printf '%s\n' "$version"
+}
+
+code_server_current_version() {
+    [[ -x "$CODE_SERVER_BIN" ]] || return 1
+    "$CODE_SERVER_BIN" --version 2>/dev/null | sed -n '1p' | awk '{ print $1; exit }'
+}
+
+semver_gt() {
+    local left right
+    left="$(normalize_code_server_version "$1")" || return 1
+    right="$(normalize_code_server_version "$2")" || return 1
+
+    awk -v left="$left" -v right="$right" '
+        function split_version(version, parts,    n, i) {
+            n = split(version, parts, ".")
+            for (i = n + 1; i <= 3; i++) {
+                parts[i] = 0
+            }
+        }
+        BEGIN {
+            split_version(left, a)
+            split_version(right, b)
+            for (i = 1; i <= 3; i++) {
+                if ((a[i] + 0) > (b[i] + 0)) exit 0
+                if ((a[i] + 0) < (b[i] + 0)) exit 1
+            }
+            exit 1
+        }
+    '
+}
+
+fetch_latest_code_server_version() {
+    local body tag
+
+    if [[ -n "${CODE_SERVER_LATEST_VERSION:-}" ]]; then
+        normalize_code_server_version "$CODE_SERVER_LATEST_VERSION"
+        return
+    fi
+
+    command -v curl >/dev/null 2>&1 || return 1
+    body="$(curl -fsSL --max-time 6 https://api.github.com/repos/coder/code-server/releases/latest 2>/dev/null)" || return 1
+    tag="$(printf '%s\n' "$body" | awk -F'"' '/"tag_name"[[:space:]]*:/ { print $4; exit }')"
+    normalize_code_server_version "$tag"
+}
+
+record_code_server_final_info() {
+    local msg="$1"
+    if [[ -n "${BOOTSTRAP_FOLLOWUP_FILE:-}" ]]; then
+        printf '%s\x1f%s\x1e' "info" "$msg" >> "$BOOTSTRAP_FOLLOWUP_FILE" 2>/dev/null || true
+    else
+        info "$msg"
+    fi
+}
+
+maybe_report_code_server_update() {
+    [[ "$CODE_SERVER_CHECK_UPDATES" == "1" ]] || return 0
+    [[ "$CODE_SERVER_UPGRADE" != "1" ]] || return 0
+
+    local current latest bootstrap_path command
+    current="$(code_server_current_version 2>/dev/null || true)"
+    current="$(normalize_code_server_version "$current" 2>/dev/null || true)"
+    [[ -n "$current" ]] || return 0
+
+    if ! latest="$(fetch_latest_code_server_version 2>/dev/null)"; then
+        info "code-server update check skipped (latest upstream release unavailable)"
+        return 0
+    fi
+
+    if semver_gt "$latest" "$current"; then
+        bootstrap_path="$(cd "$HERE/../.." && pwd -P)/bootstrap.sh"
+        command="INCLUDE_CODE_SERVER=1 CODE_SERVER_UPGRADE=1 CODE_SERVER_VERSION=$latest ONLY_TOPICS=85 bash \"$bootstrap_path\" --non-interactive"
+        record_code_server_final_info "code-server update available: $current -> $latest
+
+Update when ready:
+    $command"
+    fi
 }
 
 detect_code_server_env() {
@@ -124,8 +215,11 @@ install_code_server_standalone() {
         exit 1
     fi
 
-    if [[ -x "$CODE_SERVER_BIN" ]] && "$CODE_SERVER_BIN" --version >/dev/null 2>&1; then
+    local current_version=""
+    current_version="$(code_server_current_version 2>/dev/null || true)"
+    if [[ -n "$current_version" && "$CODE_SERVER_UPGRADE" != "1" ]]; then
         ok "code-server already installed at $CODE_SERVER_BIN ($("$CODE_SERVER_BIN" --version 2>/dev/null | head -1))"
+        maybe_report_code_server_update
         return 0
     fi
 
@@ -141,7 +235,7 @@ install_code_server_standalone() {
     fi
 
     "$CODE_SERVER_BIN" --version >/dev/null
-    ok "code-server installed at $CODE_SERVER_BIN"
+    ok "code-server installed at $CODE_SERVER_BIN ($("$CODE_SERVER_BIN" --version 2>/dev/null | head -1))"
 }
 
 record_generated_password_final() {
@@ -155,10 +249,12 @@ record_generated_password_final() {
         printf '%s\x1f%s\x1e' "info" "Generated code-server password for this first install:
     $CODE_SERVER_GENERATED_PASSWORD
 
-It is also stored in $CODE_SERVER_CONFIG_FILE (mode 0600)." >> "$BOOTSTRAP_FOLLOWUP_FILE" 2>/dev/null || true
+It is also stored in $CODE_SERVER_CONFIG_FILE (mode 0600). If you miss this
+summary, read the password from that file on this host." >> "$BOOTSTRAP_FOLLOWUP_FILE" 2>/dev/null || true
     else
         info "generated code-server password for this first install: $CODE_SERVER_GENERATED_PASSWORD"
         info "it is also stored in $CODE_SERVER_CONFIG_FILE (mode 0600)"
+        info "if you miss this summary, read the password from that file on this host"
     fi
 }
 

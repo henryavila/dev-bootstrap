@@ -21,6 +21,8 @@
 #   INCLUDE_REMOTE=1    enables 70-remote-access
 #   INCLUDE_CODE_SERVER=1 enables 85-code-server
 #   CODE_SERVER_VERSION=X.Y.Z pins the standalone code-server release
+#   CODE_SERVER_UPGRADE=1 reinstall/upgrade the standalone code-server release
+#   CODE_SERVER_CHECK_UPDATES=0 skip checking for a newer upstream release
 #   CODE_SERVER_LABEL=com.${USER}.code-server
 #   CODE_SERVER_PORT=8080
 #   CODE_SERVER_INSTALL_METHOD=standalone
@@ -380,6 +382,8 @@ export CODE_SERVER_PORT="${CODE_SERVER_PORT:-8080}"
 export CODE_SERVER_LABEL="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
 export CODE_SERVER_INSTALL_METHOD="${CODE_SERVER_INSTALL_METHOD:-standalone}"
 export CODE_SERVER_TAILSCALE_SERVE="${CODE_SERVER_TAILSCALE_SERVE:-1}"
+export CODE_SERVER_UPGRADE="${CODE_SERVER_UPGRADE:-0}"
+export CODE_SERVER_CHECK_UPDATES="${CODE_SERVER_CHECK_UPDATES:-1}"
 export INCLUDE_EDITOR="${INCLUDE_EDITOR:-0}"
 export NO_COLOR="${NO_COLOR:-}"
 

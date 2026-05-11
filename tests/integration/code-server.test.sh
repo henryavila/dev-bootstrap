@@ -31,6 +31,10 @@ assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_INSTALL_METHOD="\$\{CODE_SERVER
     "bootstrap default install method is standalone"
 assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_TAILSCALE_SERVE="\$\{CODE_SERVER_TAILSCALE_SERVE:-1\}"' \
     "bootstrap exposes code-server through Tailscale Serve by default"
+assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_UPGRADE="\$\{CODE_SERVER_UPGRADE:-0\}"' \
+    "bootstrap defaults code-server upgrades to explicit opt-in"
+assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_CHECK_UPDATES="\$\{CODE_SERVER_CHECK_UPDATES:-1\}"' \
+    "bootstrap checks for code-server updates by default"
 
 assert_pattern_present "$MENU" 'INCLUDE_CODE_SERVER' \
     "menu handles INCLUDE_CODE_SERVER automation/state"
@@ -50,6 +54,16 @@ assert_pattern_present "$INSTALL" 'env -u OS -u ARCH -u DISTRO sh -s --' \
     "installer clears dev-bootstrap OS env before running upstream install script"
 assert_pattern_absent "$INSTALL" 'brew install code-server' \
     "installer does not use Homebrew code-server formula"
+assert_pattern_present "$INSTALL" 'CODE_SERVER_UPGRADE:=0' \
+    "installer requires CODE_SERVER_UPGRADE=1 before reinstalling an existing binary"
+assert_pattern_present "$INSTALL" 'CODE_SERVER_CHECK_UPDATES:=1' \
+    "installer checks upstream releases by default"
+assert_pattern_present "$INSTALL" 'https://api\.github\.com/repos/coder/code-server/releases/latest' \
+    "installer checks the upstream code-server latest release"
+assert_pattern_present "$INSTALL" 'code-server update available: \$current -> \$latest' \
+    "installer records update availability in the final bootstrap summary"
+assert_pattern_present "$INSTALL" 'CODE_SERVER_UPGRADE=1 CODE_SERVER_VERSION=\$latest ONLY_TOPICS=85 bash' \
+    "installer prints an explicit pinned upgrade command"
 
 assert_pattern_present "$INSTALL" 'CODE_SERVER_INSTALL_METHOD.*!= "standalone"' \
     "installer rejects non-standalone install methods"
@@ -77,6 +91,8 @@ assert_pattern_present "$INSTALL" 'BOOTSTRAP_FOLLOWUP_FILE' \
     "generated password is deferred to bootstrap final summary"
 assert_pattern_present "$INSTALL" 'Deliberately bypass followup\(\)' \
     "generated password is not printed through tee'd topic logs"
+assert_pattern_present "$INSTALL" 'read the password from that file on this host' \
+    "final password summary tells how to recover a missed password"
 assert_pattern_absent "$INSTALL" 'echo "\$password"' \
     "installer does not echo generated password"
 
