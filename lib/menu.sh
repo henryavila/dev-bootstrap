@@ -9,7 +9,7 @@
 #   run_menu            — shows the full menu flow and exports selected vars
 #
 # Exports set by run_menu (only when user selects them):
-#   INCLUDE_DOCKER, INCLUDE_WEBSTACK, INCLUDE_REMOTE, INCLUDE_EDITOR
+#   INCLUDE_DOCKER, INCLUDE_WEBSTACK, INCLUDE_REMOTE, INCLUDE_CODE_SERVER, INCLUDE_EDITOR
 #   INCLUDE_MAILPIT, INCLUDE_NGROK, INCLUDE_MSSQL, INCLUDE_POSTGRES,
 #   INCLUDE_FRONTEND_PROXY
 #   PHP_VERSIONS, PHP_DEFAULT, POSTGRES_VERSION
@@ -36,6 +36,7 @@ should_show_menu() {
         [[ "${INCLUDE_DOCKER:-0}"  == "1" ]]  && return 1
         [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_REMOTE:-0}"  == "1" ]]  && return 1
+        [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && return 1
         [[ "${INCLUDE_EDITOR:-0}"  == "1" ]]  && return 1
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
@@ -168,6 +169,16 @@ _topic_default_state() {
                 echo OFF
             fi
             ;;
+        code-server)
+            local code_server_label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
+            if command -v code-server >/dev/null 2>&1 \
+               || [[ -x "$HOME/.local/bin/code-server" ]] \
+               || launchctl print "gui/$(id -u)/${code_server_label}" >/dev/null 2>&1; then
+                echo ON
+            else
+                echo OFF
+            fi
+            ;;
         dotfiles)
             local dir="${DOTFILES_DIR:-$HOME/dotfiles}"
             if [[ -d "$dir/.git" ]]; then
@@ -211,10 +222,11 @@ run_menu() {
     choices=$(whiptail --title "dev-bootstrap :: opt-in topics" \
         --checklist \
         "Select optional topics to install (SPACE toggles, ENTER confirms).\nDefaults reflect what's already installed on this machine." \
-        21 85 7 \
+        22 85 8 \
         "docker"   "45-docker: Docker Engine (WSL) / Colima (Mac)"    "$(_topic_default_state docker)" \
         "webstack" "60-web-stack: Web + DB stack (PHP + nginx + MySQL + Postgres + mkcert)" "$(_topic_default_state webstack)" \
         "remote"   "70-remote-access: SSH + Tailscale + Syncthing"    "$(_topic_default_state remote)" \
+        "code-server" "85-code-server: VS Code in browser via Tailscale" "$(_topic_default_state code-server)" \
         "editor"   "90-editor: typora-wait (open .md from CLI)"       "$(_topic_default_state editor)" \
         "npm-global" "95-dotfiles-personal: npm globals under ~/.npm-global" "$(_topic_default_state npm-global)" \
         "dotfiles" "95-dotfiles-personal: your private dotfiles"      "$(_topic_default_state dotfiles)" \
@@ -232,6 +244,7 @@ run_menu() {
             docker)   export INCLUDE_DOCKER=1 ;;
             webstack) export INCLUDE_WEBSTACK=1 ;;
             remote)   export INCLUDE_REMOTE=1 ;;
+            code-server) export INCLUDE_CODE_SERVER=1 ;;
             editor)   export INCLUDE_EDITOR=1 ;;
             npm-global) export DOTFILES_NPM_GLOBAL=1; need_dotfiles=1 ;;
             dotfiles) need_dotfiles=1 ;;
@@ -618,11 +631,13 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
     [[ "${INCLUDE_DOCKER:-0}"  == "1" ]] && summary+="    ✓ 45-docker\n"
     [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && summary+="    ✓ 60-web-stack\n"
     [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && summary+="    ✓ 70-remote-access\n"
+    [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && summary+="    ✓ 85-code-server\n"
     [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && summary+="    ✓ 90-editor\n"
     [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    ✓ 95-dotfiles-personal\n"
     [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    ✓ npm globals in ~/.npm-global\n"
     if [[ "${INCLUDE_DOCKER:-0}"  != "1" && "${INCLUDE_WEBSTACK:-0}" != "1" \
-       && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_EDITOR:-0}"  != "1" \
+       && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_CODE_SERVER:-0}" != "1" \
+       && "${INCLUDE_EDITOR:-0}"  != "1" \
        && -z "${DOTFILES_REPO:-}" && "${DOTFILES_NPM_GLOBAL:-0}" != "1" ]]; then
         summary+="    (none selected)\n"
     fi
@@ -677,6 +692,7 @@ _persist_menu_state() {
         [[ "${INCLUDE_DOCKER:-0}"  == "1" ]] && echo 'export INCLUDE_DOCKER=1'
         [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && echo 'export INCLUDE_WEBSTACK=1'
         [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && echo 'export INCLUDE_REMOTE=1'
+        [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && echo 'export INCLUDE_CODE_SERVER=1'
         [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && echo 'export INCLUDE_EDITOR=1'
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]] && echo 'export INCLUDE_MAILPIT=1'
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]] && echo 'export INCLUDE_NGROK=1'

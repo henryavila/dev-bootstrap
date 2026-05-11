@@ -19,6 +19,12 @@
 #   INCLUDE_DOCKER=1    enables 45-docker
 #   INCLUDE_WEBSTACK=1  enables 60-web-stack  (legacy alias: INCLUDE_LARAVEL=1)
 #   INCLUDE_REMOTE=1    enables 70-remote-access
+#   INCLUDE_CODE_SERVER=1 enables 85-code-server
+#   CODE_SERVER_VERSION=X.Y.Z pins the standalone code-server release
+#   CODE_SERVER_LABEL=com.${USER}.code-server
+#   CODE_SERVER_PORT=8080
+#   CODE_SERVER_INSTALL_METHOD=standalone
+#   CODE_SERVER_TAILSCALE_SERVE=0 disables the default Tailscale Serve exposure
 #   INCLUDE_EDITOR=1    enables 90-editor
 #   PHP_VERSIONS        space-separated list (e.g. "8.4 8.5"); last = default
 #                       (if unset: all versions listed in
@@ -74,6 +80,7 @@ optin_var_for() {
         45-docker)        echo "INCLUDE_DOCKER" ;;
         60-web-stack)     echo "INCLUDE_WEBSTACK" ;;
         70-remote-access) echo "INCLUDE_REMOTE" ;;
+        85-code-server)   echo "INCLUDE_CODE_SERVER" ;;
         90-editor)        echo "INCLUDE_EDITOR" ;;
         *)                echo "" ;;
     esac
@@ -229,6 +236,7 @@ Opt-in topics (menu toggles these, or set env var in automation):
   45-docker             INCLUDE_DOCKER=1
   60-web-stack          INCLUDE_WEBSTACK=1   (legacy: INCLUDE_LARAVEL=1 still accepted)
   70-remote-access      INCLUDE_REMOTE=1
+  85-code-server        INCLUDE_CODE_SERVER=1
   90-editor             INCLUDE_EDITOR=1
   95-dotfiles-personal  DOTFILES_REPO=<url>
                        DOTFILES_NPM_GLOBAL=1  npm globals under ~/.npm-global
@@ -367,6 +375,11 @@ export INCLUDE_WEBSTACK="${INCLUDE_WEBSTACK:-0}"
 # reads INCLUDE_LARAVEL continues to observe the canonical value.
 export INCLUDE_LARAVEL="$INCLUDE_WEBSTACK"
 export INCLUDE_REMOTE="${INCLUDE_REMOTE:-0}"
+export INCLUDE_CODE_SERVER="${INCLUDE_CODE_SERVER:-0}"
+export CODE_SERVER_PORT="${CODE_SERVER_PORT:-8080}"
+export CODE_SERVER_LABEL="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
+export CODE_SERVER_INSTALL_METHOD="${CODE_SERVER_INSTALL_METHOD:-standalone}"
+export CODE_SERVER_TAILSCALE_SERVE="${CODE_SERVER_TAILSCALE_SERVE:-1}"
 export INCLUDE_EDITOR="${INCLUDE_EDITOR:-0}"
 export NO_COLOR="${NO_COLOR:-}"
 
