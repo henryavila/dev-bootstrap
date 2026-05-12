@@ -157,7 +157,8 @@ cat > "$TESTROOT/mesh-bin/mesh" <<'MESH'
 if [ "$1" = "topic" ] && [ "$2" = "list" ]; then
     printf '%s\n' \
         '20  20-terminal-ux' \
-        '25  25-dynamic-test  opt-in: INCLUDE_DYNAMIC=1'
+        '25  25-dynamic-test  opt-in: INCLUDE_DYNAMIC=1' \
+        '95  95-dotfiles-personal  opt-in: INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>'
     exit 0
 fi
 exit 1
@@ -190,8 +191,87 @@ assert_contains "$mesh_topic_completion_out" "20:20-terminal-ux" \
     "mesh topic completion offers numeric topic selectors"
 assert_contains "$mesh_topic_completion_out" "25:25-dynamic-test" \
     "mesh topic completion reads topic selectors from mesh topic list"
+assert_contains "$mesh_topic_completion_out" "25:25-dynamic-test  opt-in: INCLUDE_DYNAMIC=1" \
+    "mesh topic completion preserves topic list detail text"
+assert_contains "$mesh_topic_completion_out" "95:95-dotfiles-personal  opt-in: INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>" \
+    "mesh topic completion preserves literal angle-bracket detail from topic list"
 assert_not_contains "$mesh_topic_completion_out" "FILE_FALLBACK" \
     "mesh topic completion does not fall back to file listing"
+
+mkdir -p "$TESTROOT/fake-dev-bootstrap"
+cat > "$TESTROOT/fake-dev-bootstrap/bootstrap.sh" <<'BOOTSTRAP'
+#!/usr/bin/env bash
+if [ "$1" = "--list-topics" ]; then
+    printf '%s\n' \
+        '60  60-web-stack  opt-in: INCLUDE_WEBSTACK=1' \
+        '82  82-ai-tools  opt-in: INCLUDE_AI_TOOLS=1' \
+        '88  88-future-topic  opt-in: INCLUDE_FUTURE=1' \
+        '95  95-dotfiles-personal  opt-in: INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>'
+    exit 0
+fi
+exit 1
+BOOTSTRAP
+chmod +x "$TESTROOT/fake-dev-bootstrap/bootstrap.sh"
+
+mesh_topic_repo_fallback_out="$(
+    PATH="/usr/bin:/bin" HOME="$deploy_home" DEV_BOOTSTRAP_ROOT="$TESTROOT/fake-dev-bootstrap" zsh -fic "
+        source '$REPO_ROOT/topics/30-shell/templates/zshrc.template'
+        words=(mesh topic '')
+        CURRENT=3
+        curcontext=''
+        _arguments() {
+            state=topic_arg
+            return 0
+        }
+        _describe() {
+            local array_name=\"\${@[-1]}\"
+            print -rl -- \"\${(@P)array_name}\"
+        }
+        _files() { print -r -- FILE_FALLBACK; }
+        autoload -Uz _mesh
+        _mesh
+    " 2>/dev/null
+)"
+
+assert_contains "$mesh_topic_repo_fallback_out" "82:82-ai-tools" \
+    "mesh topic completion falls back to DEV_BOOTSTRAP_ROOT topic catalog when mesh is unavailable"
+assert_contains "$mesh_topic_repo_fallback_out" "82:82-ai-tools  opt-in: INCLUDE_AI_TOOLS=1" \
+    "mesh topic completion repo fallback preserves opt-in detail text"
+assert_contains "$mesh_topic_repo_fallback_out" "88:88-future-topic" \
+    "mesh topic completion repo fallback is not a stale hard-coded topic list"
+assert_contains "$mesh_topic_repo_fallback_out" "95:95-dotfiles-personal  opt-in: INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>" \
+    "mesh topic completion repo fallback preserves literal angle-bracket detail text"
+
+mesh_topic_static_fallback_out="$(
+    PATH="/usr/bin:/bin" HOME="$deploy_home" DEV_BOOTSTRAP_ROOT="$TESTROOT/missing-dev-bootstrap" zsh -fic "
+        source '$REPO_ROOT/topics/30-shell/templates/zshrc.template'
+        words=(mesh topic '')
+        CURRENT=3
+        curcontext=''
+        _arguments() {
+            state=topic_arg
+            return 0
+        }
+        _describe() {
+            local array_name=\"\${@[-1]}\"
+            print -rl -- \"\${(@P)array_name}\"
+        }
+        _files() { print -r -- FILE_FALLBACK; }
+        autoload -Uz _mesh
+        _mesh
+    " 2>/dev/null
+)"
+
+assert_contains "$mesh_topic_static_fallback_out" "82:82-ai-tools" \
+    "mesh topic completion static fallback includes current topic 82"
+assert_contains "$mesh_topic_static_fallback_out" "82:82-ai-tools  opt-in: INCLUDE_AI_TOOLS=1" \
+    "mesh topic completion static fallback preserves topic 82 detail text"
+assert_contains "$mesh_topic_static_fallback_out" "82:82-ai-tools  opt-in: INCLUDE_AI_TOOLS=1 DOTFILES_REPO=<url>  AI review prompts + token-saving CLI tools" \
+    "mesh topic completion static fallback describes topic 82"
+assert_contains "$mesh_topic_static_fallback_out" "85:85-code-server" \
+    "mesh topic completion static fallback includes current topic 85"
+assert_contains "$mesh_topic_static_fallback_out" "95:95-dotfiles-personal  opt-in: INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>" \
+    "mesh topic completion static fallback preserves literal angle-bracket detail text"
 
 mkdir -p "$TESTROOT/completion-bin" "$TESTROOT/site-functions"
 cat > "$TESTROOT/completion-bin/gh" <<'GH'
