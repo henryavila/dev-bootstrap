@@ -2,6 +2,12 @@
 
 Two activation paths — both end the same way (`$DOTFILES_REPO` cloned to `$DOTFILES_DIR`, then `bash $DOTFILES_DIR/install.sh` runs).
 
+Related menu checkboxes can also pass optional dotfiles-layer behavior:
+`DOTFILES_NPM_GLOBAL=1` configures npm globals.
+
+AI tools are not part of this personal-data topic. Use `82-ai-tools` for
+package-level AI tool installation.
+
 ## Path A — interactive menu (recommended for first-time setup)
 
 When `bash bootstrap.sh` shows the menu (no `NON_INTERACTIVE=1`), opting into 95-dotfiles-personal triggers a 4-screen flow:
@@ -22,10 +28,11 @@ Skip the menu entirely by setting variables upfront:
 
 ```bash
 # Existing repo:
-DOTFILES_REPO=git@github.com:youruser/dotfiles.git bash bootstrap.sh
+INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=git@github.com:youruser/dotfiles.git bash bootstrap.sh
 
 # Or create from template non-interactively:
 CREATE_DOTFILES_FROM_TEMPLATE=1 \
+INCLUDE_DOTFILES_PERSONAL=1 \
 DOTFILES_TEMPLATE_REPO=henryavila/dotfiles-template \
 DOTFILES_NEW_REPO_OWNER=youruser \
 DOTFILES_NEW_REPO_NAME=dotfiles \

@@ -50,9 +50,9 @@ bash bootstrap.sh
 
 Running without any control env var opens a `whiptail` menu that asks:
 
-1. Which opt-in topics to enable (`60-web-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` / `npm-global`).
+1. Which opt-in topics to enable (`60-web-stack` / `70-remote-access` / `82-ai-tools` / `90-editor` / `95-dotfiles-personal` / `npm-global`).
 2. `GIT_NAME` / `GIT_EMAIL` (skipped silently when `git config --global` already has them).
-3. `DOTFILES_REPO` + `DOTFILES_DIR` (only when `95-dotfiles-personal` is checked).
+3. `DOTFILES_REPO` + `DOTFILES_DIR` (only when `82-ai-tools`, `95-dotfiles-personal`, or `npm-global` is checked).
 4. `CODE_DIR` (only when `60-web-stack` is checked).
 5. Final confirmation with a summary — cancelling at any screen aborts cleanly (no partial state).
 
@@ -83,9 +83,12 @@ DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
 
 # also configure npm globals under ~/.npm-global and persist PATH via dotfiles
 DOTFILES_REPO=git@github.com:you/dotfiles.git DOTFILES_NPM_GLOBAL=1 bash bootstrap.sh
+
+# install AI tools from the dotfiles manifest without applying personal dotfiles
+INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
 ```
 
-The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `DOTFILES_REPO`, `DOTFILES_NPM_GLOBAL`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
+The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `DOTFILES_REPO`, `DOTFILES_NPM_GLOBAL`, `DOTFILES_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
 
 `--list-topics` is read-only and intentionally lightweight. It is the official
 source for topic numbers used by `ONLY_TOPICS` and by the `mesh topic` wrapper
@@ -119,8 +122,9 @@ If you see a `!` line in the bootstrap output, it's pointing at a next step. Rea
 | `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, `*.localhost` catchall; **PostgreSQL** (opt-in, version configurable via `POSTGRES_VERSION`); shell fragment with Laravel (`art`, `artisan`, `cinst`, `migrate`…) + service restart (`srn`, `srp`, `srr`…) | `INCLUDE_WEBSTACK=1` |
 | `70-remote-access` | sshd (hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + systemd drop-in setting MTU 1200 on `tailscale0` (prevents SSH KEX PQ hang); shell fragment with Tailscale aliases (`ts`, `tip`, `tup`, `tping`, `tssh`…) + `tip-of()` helper | `INCLUDE_REMOTE=1` |
 | `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — foundation for cross-machine Claude Sync via the dotfiles layer | — |
+| `82-ai-tools` | installs package-selectable AI workflow tools from the dotfiles manifest: mdProbe for markdown review/MCP feedback, Atomic Skills for reusable agent prompts, and RTK for token-saving shell output; uses `$DOTFILES_REPO` only as manifest/installer source and does not apply personal dotfiles | `INCLUDE_AI_TOOLS=1 DOTFILES_REPO=<url>` |
 | `90-editor` | `~/.local/bin/typora-wait` — opens `.md` files in the Typora GUI from the terminal; WSL delegates to `Typora.exe` via interop (`wslpath -w`), macOS uses `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
-| `95-dotfiles-personal` | clones `$DOTFILES_REPO` into `$DOTFILES_DIR` (default `~/dotfiles`) + runs its `install.sh`; optional `DOTFILES_NPM_GLOBAL=1` configures npm globals under `~/.npm-global` and persists PATH through the dotfiles installer | `DOTFILES_REPO=<url>` |
+| `95-dotfiles-personal` | clones `$DOTFILES_REPO` into `$DOTFILES_DIR` (default `~/dotfiles`) + runs its `install.sh`; optional `DOTFILES_NPM_GLOBAL=1` configures npm globals under `~/.npm-global` | `INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>` |
 
 Full alias inventory: [`docs/ALIASES.md`](docs/ALIASES.md).
 
@@ -139,12 +143,15 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 | `SKIP_TOPICS` | space-separated list of topics to skip |
 | `ONLY_TOPICS` | run only these topics; accepts full names (`20-terminal-ux`) or numeric shorthand (`20`) |
 | `DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS=1` | strict topic mode used by `mesh topic`: if an explicitly requested opt-in topic is disabled, fail instead of silently skipping it |
-| `DOTFILES_REPO` | URL/path of the personal dotfiles repo (accepts `file://` for local testing) |
+| `DOTFILES_REPO` | URL/path of the dotfiles repo used by `82-ai-tools` and `95-dotfiles-personal` (accepts `file://` for local testing) |
 | `DOTFILES_DIR` | clone destination (default `~/dotfiles`) |
 | `DOTFILES_NPM_GLOBAL=1` | pass opt-in to the dotfiles installer to set npm global prefix to `~/.npm-global` and persist `~/.npm-global/bin` on shell PATH |
+| `INCLUDE_AI_TOOLS=1` | enable `82-ai-tools`; installs AI review prompts + token-saving CLI tools from the dotfiles manifest without applying personal dotfiles |
+| `INCLUDE_DOTFILES_PERSONAL=1` | enable `95-dotfiles-personal`; `DOTFILES_REPO=<url>` alone is still accepted as a legacy shorthand |
+| `DOTFILES_AI_PACKAGES=1` | legacy alias for `INCLUDE_AI_TOOLS=1` in dev-bootstrap |
 | `GIT_NAME` / `GIT_EMAIL` | identity — applied only when `user.name` / `user.email` aren't set yet (topic 50-git preserves existing values) |
 | `CODE_DIR` | projects root (default `~/code/web`) |
-| `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` / `INCLUDE_DOCKER` | enable opt-in topics |
+| `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_AI_TOOLS` / `INCLUDE_EDITOR` / `INCLUDE_DOCKER` | enable opt-in topics |
 | `INCLUDE_MAILPIT=1` / `INCLUDE_NGROK=1` / `INCLUDE_MSSQL=1` / `INCLUDE_POSTGRES=1` | 60-web-stack extras (when `INCLUDE_WEBSTACK=1`) |
 | `POSTGRES_VERSION=17` | PostgreSQL major version when `INCLUDE_POSTGRES=1` (default 17; menu prompts on first run, env var pre-seeds for automation) |
 | `NGROK_AUTHTOKEN` | ngrok token auto-configured during install; if unset, the menu prompts (passwordbox) and persists to `~/.local/state/dev-bootstrap/secrets.env` (mode 0600) |

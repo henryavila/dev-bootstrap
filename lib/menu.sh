@@ -9,11 +9,12 @@
 #   run_menu            — shows the full menu flow and exports selected vars
 #
 # Exports set by run_menu (only when user selects them):
-#   INCLUDE_DOCKER, INCLUDE_WEBSTACK, INCLUDE_REMOTE, INCLUDE_CODE_SERVER, INCLUDE_EDITOR
+#   INCLUDE_DOCKER, INCLUDE_WEBSTACK, INCLUDE_REMOTE, INCLUDE_AI_TOOLS,
+#   INCLUDE_CODE_SERVER, INCLUDE_EDITOR, INCLUDE_DOTFILES_PERSONAL
 #   INCLUDE_MAILPIT, INCLUDE_NGROK, INCLUDE_MSSQL, INCLUDE_POSTGRES,
 #   INCLUDE_FRONTEND_PROXY
 #   PHP_VERSIONS, PHP_DEFAULT, POSTGRES_VERSION
-#   DOTFILES_REPO, DOTFILES_NPM_GLOBAL, GIT_NAME, GIT_EMAIL
+#   DOTFILES_REPO, DOTFILES_NPM_GLOBAL, DOTFILES_AI_PACKAGES, GIT_NAME, GIT_EMAIL
 #
 # Depends on: $OS (from bootstrap.sh), $BREW_BIN (mac only), log.sh helpers.
 
@@ -36,13 +37,16 @@ should_show_menu() {
         [[ "${INCLUDE_DOCKER:-0}"  == "1" ]]  && return 1
         [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_REMOTE:-0}"  == "1" ]]  && return 1
+        [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && return 1
         [[ "${INCLUDE_EDITOR:-0}"  == "1" ]]  && return 1
+        [[ "${INCLUDE_DOTFILES_PERSONAL:-0}" == "1" ]] && return 1
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && return 1
         [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && return 1
+        [[ "${DOTFILES_AI_PACKAGES:-0}" == "1" ]] && return 1
         [[ -n "${PHP_VERSIONS:-}" ]]          && return 1
         [[ -n "${POSTGRES_VERSION:-}" ]]      && return 1
         [[ -n "${DOTFILES_REPO:-}" ]]         && return 1
@@ -197,10 +201,236 @@ _topic_default_state() {
                 echo OFF
             fi
             ;;
+        ai-tools)
+            if command -v mdprobe >/dev/null 2>&1 \
+               || command -v rtk >/dev/null 2>&1 \
+               || [[ -f "$HOME/.atomic-skills/manifest.json" ]]; then
+                echo ON
+            else
+                echo OFF
+            fi
+            ;;
         *)
             echo OFF
             ;;
     esac
+}
+
+_ai_line_is_comment_or_blank() {
+    local line="$1"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]]
+}
+
+_ai_manifest_mode() {
+    local manifest="$1" line normalized
+    [[ -f "$manifest" ]] || return 0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        _ai_line_is_comment_or_blank "$line" && continue
+        normalized="$(printf '%s' "$line" | tr -d '[:space:]')"
+        case "$normalized" in
+            mode=replace|mode:replace) printf 'replace\n' ;;
+            mode=extend|mode:extend)   printf 'extend\n' ;;
+        esac
+        return 0
+    done < "$manifest"
+}
+
+_ai_append_manifest_names() {
+    local manifest="$1" line name existing description_payload description_name description_text
+    [[ -f "$manifest" ]] || return 0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        if description_payload="$(_ai_manifest_description_line "$line")"; then
+            IFS=$'\t' read -r description_name description_text <<< "$description_payload"
+            _ai_remember_package_description "$description_name" "$description_text"
+            continue
+        fi
+        _ai_line_is_comment_or_blank "$line" && continue
+        [[ -n "$(_ai_manifest_mode_line "$line")" ]] && continue
+        IFS='|' read -r name _ <<< "$line"
+        name="${name#"${name%%[![:space:]]*}"}"
+        name="${name%"${name##*[![:space:]]}"}"
+        [[ -n "$name" ]] || continue
+        for existing in "${ai_package_names[@]+"${ai_package_names[@]}"}"; do
+            [[ "$existing" == "$name" ]] && continue 2
+        done
+        ai_package_names+=("$name")
+    done < "$manifest"
+}
+
+_ai_manifest_mode_line() {
+    local line normalized
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    normalized="$(printf '%s' "$line" | tr -d '[:space:]')"
+    case "$normalized" in
+        mode=replace|mode:replace|mode=extend|mode:extend) printf '1\n' ;;
+    esac
+}
+
+_ai_manifest_description_line() {
+    local line payload name description
+    line="${1%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    if [[ "$line" != "# desc:"* && "$line" != "# description:"* ]]; then
+        return 1
+    fi
+
+    payload="${line#\# desc:}"
+    payload="${payload#\# description:}"
+    IFS='|' read -r name description <<< "$payload"
+    name="${name#"${name%%[![:space:]]*}"}"
+    name="${name%"${name##*[![:space:]]}"}"
+    description="${description#"${description%%[![:space:]]*}"}"
+    description="${description%"${description##*[![:space:]]}"}"
+    [[ -n "$name" && -n "$description" ]] || return 1
+    printf '%s\t%s\n' "$name" "$description"
+}
+
+_ai_remember_package_description() {
+    local name="$1" description="$2" i
+    for (( i=0; i<${#ai_package_description_names[@]}; i++ )); do
+        if [[ "${ai_package_description_names[$i]}" == "$name" ]]; then
+            ai_package_descriptions[$i]="$description"
+            return 0
+        fi
+    done
+    ai_package_description_names+=("$name")
+    ai_package_descriptions+=("$description")
+}
+
+_ai_package_description() {
+    local name="$1" i
+    for (( i=0; i<${#ai_package_description_names[@]}; i++ )); do
+        if [[ "${ai_package_description_names[$i]}" == "$name" ]]; then
+            printf '%s\n' "${ai_package_descriptions[$i]}"
+            return 0
+        fi
+    done
+    printf 'custom AI package from manifest\n'
+}
+
+_dotfiles_manifest_root() {
+    local dir="${DOTFILES_DIR:-$HOME/dotfiles}"
+    if [[ -f "$dir/ai/packages.default.list" || -f "$dir/scripts/install-ai-packages.sh" ]]; then
+        printf '%s\n' "$dir"
+        return 0
+    fi
+
+    case "${DOTFILES_REPO:-}" in
+        file://*)
+            dir="${DOTFILES_REPO#file://}"
+            ;;
+        /*)
+            dir="$DOTFILES_REPO"
+            ;;
+        *)
+            dir=""
+            ;;
+    esac
+
+    if [[ -n "$dir" && ( -f "$dir/ai/packages.default.list" || -f "$dir/scripts/install-ai-packages.sh" ) ]]; then
+        printf '%s\n' "$dir"
+        return 0
+    fi
+
+    return 1
+}
+
+_ai_package_default_state() {
+    local package="$1" spec token normalized
+    spec="${DOTFILES_AI_PACKAGE_SELECTION:-}"
+    [[ -n "$spec" ]] || { printf 'ON\n'; return; }
+    normalized="$(printf '%s' "$spec" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        all|todos) printf 'ON\n'; return ;;
+        none|nenhum|q|quit|cancel|cancelar) printf 'OFF\n'; return ;;
+    esac
+    spec="${spec//,/ }"
+    for token in $spec; do
+        [[ "$token" == "$package" ]] && { printf 'ON\n'; return; }
+    done
+    printf 'OFF\n'
+}
+
+configure_ai_tools_menu() {
+    [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] || return 0
+
+    local root default_manifest local_manifest host_manifest replace_defaults
+    root="$(_dotfiles_manifest_root || true)"
+    if [[ -z "$root" ]]; then
+        whiptail --title "82-ai-tools :: packages" \
+            --msgbox \
+"The selected dotfiles repo is not available locally yet, so package-level
+selection cannot be shown before clone.
+
+Topic 82 will open the dotfiles AI package selector during install." \
+            11 78 || _menu_cancel
+        return 0
+    fi
+
+    ai_package_names=()
+    ai_package_description_names=()
+    ai_package_descriptions=()
+    default_manifest="$root/ai/packages.default.list"
+    local_manifest="$root/ai/packages.local.list"
+    host_manifest="${DOTFILES_AI_LOCAL_MANIFEST:-$HOME/.config/dotfiles/ai-packages.list}"
+    replace_defaults=0
+    [[ -f "$local_manifest" && "$(_ai_manifest_mode "$local_manifest")" == "replace" ]] && replace_defaults=1
+    [[ -f "$host_manifest" && "$(_ai_manifest_mode "$host_manifest")" == "replace" ]] && replace_defaults=1
+
+    if [[ "$replace_defaults" -eq 0 ]]; then
+        _ai_append_manifest_names "$default_manifest"
+    fi
+    _ai_append_manifest_names "$local_manifest"
+    _ai_append_manifest_names "$host_manifest"
+
+    if [[ "${#ai_package_names[@]}" -eq 0 ]]; then
+        whiptail --title "82-ai-tools :: packages" \
+            --msgbox "No AI package entries were found in $root/ai/." \
+            8 78 || _menu_cancel
+        export DOTFILES_AI_PACKAGE_SELECTION=none
+        return 0
+    fi
+
+    local -a items selected
+    local name choices selection
+    items=()
+    for name in "${ai_package_names[@]}"; do
+        items+=("$name" "$(_ai_package_description "$name")" "$(_ai_package_default_state "$name")")
+    done
+
+    choices=$(whiptail --title "82-ai-tools :: packages" \
+        --separate-output \
+        --checklist \
+"Select AI packages to install from the dotfiles manifest.
+
+Checked packages will run in topic 82 before the final summary.
+Unchecked packages are skipped for this run." \
+        18 78 8 \
+        "${items[@]}" \
+        3>&1 1>&2 2>&3) || _menu_cancel
+
+    selected=()
+    while IFS= read -r name || [[ -n "$name" ]]; do
+        name="${name%$'\r'}"
+        name="${name#"${name%%[![:space:]]*}"}"
+        name="${name%"${name##*[![:space:]]}"}"
+        [[ -n "$name" ]] && selected+=("$name")
+    done <<< "$choices"
+
+    if [[ "${#selected[@]}" -eq 0 ]]; then
+        selection="none"
+    else
+        selection="${selected[*]}"
+    fi
+    export DOTFILES_AI_PACKAGE_SELECTION="$selection"
 }
 
 run_menu() {
@@ -226,13 +456,15 @@ run_menu() {
         "docker"   "45-docker: Docker Engine (WSL) / Colima (Mac)"    "$(_topic_default_state docker)" \
         "webstack" "60-web-stack: Web + DB stack (PHP + nginx + MySQL + Postgres + mkcert)" "$(_topic_default_state webstack)" \
         "remote"   "70-remote-access: SSH + Tailscale + Syncthing"    "$(_topic_default_state remote)" \
+        "ai-tools" "82-ai-tools: AI review prompts + token-saving CLI tools" "$(_topic_default_state ai-tools)" \
         "code-server" "85-code-server: VS Code in browser via Tailscale" "$(_topic_default_state code-server)" \
         "editor"   "90-editor: typora-wait (open .md from CLI)"       "$(_topic_default_state editor)" \
         "npm-global" "95-dotfiles-personal: npm globals under ~/.npm-global" "$(_topic_default_state npm-global)" \
         "dotfiles" "95-dotfiles-personal: your private dotfiles"      "$(_topic_default_state dotfiles)" \
         3>&1 1>&2 2>&3) || _menu_cancel
 
-    local need_dotfiles=0
+    local need_dotfiles_repo=0
+    export INCLUDE_DOTFILES_PERSONAL=0
     # whiptail returns items quoted & space-separated: "webstack" "remote"
     # `local -a selected=()` (not just `local -a selected`) is needed for bash 3.2:
     # without an explicit empty-array initializer, `read -ra` into a still-undeclared
@@ -246,8 +478,9 @@ run_menu() {
             remote)   export INCLUDE_REMOTE=1 ;;
             code-server) export INCLUDE_CODE_SERVER=1 ;;
             editor)   export INCLUDE_EDITOR=1 ;;
-            npm-global) export DOTFILES_NPM_GLOBAL=1; need_dotfiles=1 ;;
-            dotfiles) need_dotfiles=1 ;;
+            npm-global) export DOTFILES_NPM_GLOBAL=1; export INCLUDE_DOTFILES_PERSONAL=1; need_dotfiles_repo=1 ;;
+            ai-tools) export INCLUDE_AI_TOOLS=1; export DOTFILES_AI_PACKAGES=1; need_dotfiles_repo=1 ;;
+            dotfiles) export INCLUDE_DOTFILES_PERSONAL=1; need_dotfiles_repo=1 ;;
         esac
     done
 
@@ -293,7 +526,7 @@ run_menu() {
     # Precedence: env var > existing clone's `git remote origin` > prompt.
     # Same pattern as git identity above — skips the prompt on re-run when
     # the dotfiles were already cloned.
-    if [[ "$need_dotfiles" == "1" ]]; then
+    if [[ "$need_dotfiles_repo" == "1" ]]; then
         local existing_dotfiles_repo=""
         local candidate_dir="${DOTFILES_DIR:-$HOME/dotfiles}"
         if command -v git >/dev/null 2>&1 && [[ -d "$candidate_dir/.git" ]]; then
@@ -317,21 +550,23 @@ run_menu() {
             #
             # Both paths set DOTFILES_REPO + DOTFILES_DIR. Path (a) ALSO exports
             # CREATE_DOTFILES_FROM_TEMPLATE=1 + the inputs for `gh repo create`,
-            # which 95-dotfiles-personal/install.sh consumes (gh CLI is ready
-            # by then — installed by 05-identity earlier in the topic order).
+            # which dotfiles-backed topics consume (gh CLI is ready by then —
+            # installed by 05-identity earlier in the topic order).
             # Capture rc explicitly: whiptail returns 0=Yes / 1=No / 255=ESC.
             # We MUST distinguish ESC (cancel) from "No" — without this, ESC
             # silently falls into the "No" branch and conflates user-cancelled
             # input with explicit choice, producing surprising states.
             local _src_rc=0
-            whiptail --title "95-dotfiles-personal :: source" \
+            whiptail --title "dotfiles repo :: source" \
                 --yesno \
-"Create your dotfiles repo NOW from a GitHub template?
+"The selected topics need a dotfiles repo.
+
+Create it NOW from a GitHub template?
 
 Yes  →  prompt for owner/template, run \`gh repo create --template …\`,
-        clone, then run install.sh of the clone.
+        then clone it.
 No   →  point me at an existing dotfiles repo URL." \
-                12 78 3>&1 1>&2 2>&3 || _src_rc=$?
+                14 78 3>&1 1>&2 2>&3 || _src_rc=$?
             (( _src_rc == 255 )) && _menu_cancel
             if (( _src_rc == 0 )); then
 
@@ -389,7 +624,7 @@ as <owner>/<name>." \
                 export DOTFILES_NEW_REPO_OWNER DOTFILES_NEW_REPO_NAME DOTFILES_NEW_REPO_PRIVATE
                 export DOTFILES_REPO DOTFILES_DIR
             else
-                DOTFILES_REPO=$(whiptail --title "95-dotfiles-personal :: repo" \
+                DOTFILES_REPO=$(whiptail --title "dotfiles repo :: URL" \
                     --inputbox \
 "URL of your personal dotfiles repo.
 Examples:
@@ -408,7 +643,7 @@ Examples:
                     # Pre-fill with expanded path so whiptail returns a valid absolute
                     # path (tilde would NOT be expanded by the shell since it came
                     # from user input, not a literal).
-                    DOTFILES_DIR=$(whiptail --title "95-dotfiles-personal :: clone path" \
+                    DOTFILES_DIR=$(whiptail --title "dotfiles repo :: clone path" \
                         --inputbox \
 "Where to clone the dotfiles repo:" \
                         10 70 "${DOTFILES_DIR:-$HOME/dotfiles}" \
@@ -622,6 +857,8 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
         fi
     fi
 
+    configure_ai_tools_menu
+
     # ---------- Screen 4: confirm ----------
     local summary="Bootstrap will run with this configuration:\n\n"
     summary+="  Always-on topics:\n"
@@ -631,14 +868,18 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
     [[ "${INCLUDE_DOCKER:-0}"  == "1" ]] && summary+="    ✓ 45-docker\n"
     [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && summary+="    ✓ 60-web-stack\n"
     [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && summary+="    ✓ 70-remote-access\n"
+    [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && summary+="    ✓ 82-ai-tools\n"
     [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && summary+="    ✓ 85-code-server\n"
     [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && summary+="    ✓ 90-editor\n"
-    [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    ✓ 95-dotfiles-personal\n"
+    [[ "${INCLUDE_DOTFILES_PERSONAL:-0}" == "1" ]] && summary+="    ✓ 95-dotfiles-personal\n"
     [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    ✓ npm globals in ~/.npm-global\n"
+    [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && summary+="    ✓ AI packages from dotfiles manifest\n"
     if [[ "${INCLUDE_DOCKER:-0}"  != "1" && "${INCLUDE_WEBSTACK:-0}" != "1" \
-       && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_CODE_SERVER:-0}" != "1" \
-       && "${INCLUDE_EDITOR:-0}"  != "1" \
-       && -z "${DOTFILES_REPO:-}" && "${DOTFILES_NPM_GLOBAL:-0}" != "1" ]]; then
+       && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_AI_TOOLS:-0}" != "1" \
+       && "${INCLUDE_CODE_SERVER:-0}" != "1" && "${INCLUDE_EDITOR:-0}"  != "1" \
+       && "${INCLUDE_DOTFILES_PERSONAL:-0}" != "1" \
+       && -z "${DOTFILES_REPO:-}" && "${DOTFILES_NPM_GLOBAL:-0}" != "1" \
+       && "${DOTFILES_AI_PACKAGES:-0}" != "1" ]]; then
         summary+="    (none selected)\n"
     fi
     summary+="\n  Git identity:\n"
@@ -649,6 +890,7 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
         [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    dotfiles   = $DOTFILES_DIR  ← $DOTFILES_REPO\n"
         [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && summary+="    code       = $CODE_DIR\n"
         [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    npm global = ~/.npm-global/bin\n"
+        [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && summary+="    ai tools   = dotfiles manifest selector\n"
     fi
     summary+="\nProceed?"
 
@@ -692,13 +934,18 @@ _persist_menu_state() {
         [[ "${INCLUDE_DOCKER:-0}"  == "1" ]] && echo 'export INCLUDE_DOCKER=1'
         [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && echo 'export INCLUDE_WEBSTACK=1'
         [[ "${INCLUDE_REMOTE:-0}"  == "1" ]] && echo 'export INCLUDE_REMOTE=1'
+        [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && echo 'export INCLUDE_AI_TOOLS=1'
         [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && echo 'export INCLUDE_CODE_SERVER=1'
         [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && echo 'export INCLUDE_EDITOR=1'
+        [[ -n "${DOTFILES_REPO:-}" ]] && printf 'export INCLUDE_DOTFILES_PERSONAL=%q\n' "${INCLUDE_DOTFILES_PERSONAL:-0}"
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]] && echo 'export INCLUDE_MAILPIT=1'
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]] && echo 'export INCLUDE_NGROK=1'
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]] && echo 'export INCLUDE_MSSQL=1'
         [[ "${INCLUDE_FRONTEND_PROXY:-0}" == "1" ]] && echo 'export INCLUDE_FRONTEND_PROXY=1'
         [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && echo 'export DOTFILES_NPM_GLOBAL=1'
+        [[ "${DOTFILES_AI_PACKAGES:-0}" == "1" ]] && echo 'export DOTFILES_AI_PACKAGES=1'
+        [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && [[ -n "${DOTFILES_AI_PACKAGE_SELECTION:-}" ]] \
+            && printf 'export DOTFILES_AI_PACKAGE_SELECTION=%q\n' "$DOTFILES_AI_PACKAGE_SELECTION"
         # POSTGRES_VERSION coupled to INCLUDE_POSTGRES — only meaningful when
         # the opt-in is on. Persisting the version separately would let it
         # leak into a future toggle-on without the user's intent. Both keys

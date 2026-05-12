@@ -9,9 +9,12 @@
 #   SKIP_TOPICS         space-separated list of topics to skip
 #   ONLY_TOPICS         space-separated list of topics to run exclusively
 #   DRY_RUN=1           print actions without executing
-#   DOTFILES_REPO       personal dotfiles repo URL (enables 95-dotfiles-personal)
+#   DOTFILES_REPO       dotfiles repo URL (used by 82-ai-tools / 95-dotfiles-personal)
 #   DOTFILES_DIR        where to clone dotfiles (default: ~/dotfiles)
+#   INCLUDE_AI_TOOLS=1  install AI review prompts + token-saving CLI tools
+#   INCLUDE_DOTFILES_PERSONAL=1 apply personal dotfiles from DOTFILES_REPO
 #   DOTFILES_NPM_GLOBAL=1 configure npm globals under ~/.npm-global via dotfiles
+#   DOTFILES_AI_PACKAGES=1 legacy alias for INCLUDE_AI_TOOLS=1
 #   GIT_NAME, GIT_EMAIL identity for 50-git
 #   GPG_SIGN=1          enable commit/tag signing in 50-git (opt-in)
 #   GPG_KEY_ID          explicit signing key (else first secret key is picked)
@@ -82,8 +85,10 @@ optin_var_for() {
         45-docker)        echo "INCLUDE_DOCKER" ;;
         60-web-stack)     echo "INCLUDE_WEBSTACK" ;;
         70-remote-access) echo "INCLUDE_REMOTE" ;;
+        82-ai-tools)      echo "INCLUDE_AI_TOOLS" ;;
         85-code-server)   echo "INCLUDE_CODE_SERVER" ;;
         90-editor)        echo "INCLUDE_EDITOR" ;;
+        95-dotfiles-personal) echo "INCLUDE_DOTFILES_PERSONAL" ;;
         *)                echo "" ;;
     esac
 }
@@ -94,10 +99,12 @@ print_topic_list() {
     for topic in "${all_topics[@]+"${all_topics[@]}"}"; do
         number="${topic%%-*}"
         var="$(optin_var_for "$topic")"
-        if [[ -n "$var" ]]; then
-            printf '%s  %s  opt-in: %s=1\n' "$number" "$topic" "$var"
+        if [[ "$topic" == "82-ai-tools" ]]; then
+            printf '%s  %s  opt-in: INCLUDE_AI_TOOLS=1 DOTFILES_REPO=<url>  AI review prompts + token-saving CLI tools\n' "$number" "$topic"
         elif [[ "$topic" == "95-dotfiles-personal" ]]; then
-            printf '%s  %s  opt-in: DOTFILES_REPO=<url>\n' "$number" "$topic"
+            printf '%s  %s  opt-in: INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>\n' "$number" "$topic"
+        elif [[ -n "$var" ]]; then
+            printf '%s  %s  opt-in: %s=1\n' "$number" "$topic" "$var"
         else
             printf '%s  %s\n' "$number" "$topic"
         fi
@@ -238,9 +245,10 @@ Opt-in topics (menu toggles these, or set env var in automation):
   45-docker             INCLUDE_DOCKER=1
   60-web-stack          INCLUDE_WEBSTACK=1   (legacy: INCLUDE_LARAVEL=1 still accepted)
   70-remote-access      INCLUDE_REMOTE=1
+  82-ai-tools           INCLUDE_AI_TOOLS=1 DOTFILES_REPO=<url>  AI review prompts + token-saving CLI tools
   85-code-server        INCLUDE_CODE_SERVER=1
   90-editor             INCLUDE_EDITOR=1
-  95-dotfiles-personal  DOTFILES_REPO=<url>
+  95-dotfiles-personal  INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>
                        DOTFILES_NPM_GLOBAL=1  npm globals under ~/.npm-global
 
 Other env vars:
@@ -368,6 +376,22 @@ fi
 export DOTFILES_REPO="${DOTFILES_REPO:-}"
 export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
 export DOTFILES_NPM_GLOBAL="${DOTFILES_NPM_GLOBAL:-0}"
+export DOTFILES_AI_PACKAGES="${DOTFILES_AI_PACKAGES:-0}"
+if [[ "${DOTFILES_AI_PACKAGES:-0}" == "1" && -z "${INCLUDE_AI_TOOLS:-}" ]]; then
+    export INCLUDE_AI_TOOLS=1
+fi
+if [[ -z "${INCLUDE_DOTFILES_PERSONAL+x}" ]]; then
+    # Backward compatibility: DOTFILES_REPO alone used to mean "run 95".
+    # The interactive menu sets this explicitly, so an AI-only selection can
+    # use DOTFILES_REPO as manifest source without applying personal dotfiles.
+    if [[ -n "${DOTFILES_REPO:-}" ]]; then
+        export INCLUDE_DOTFILES_PERSONAL=1
+    else
+        export INCLUDE_DOTFILES_PERSONAL=0
+    fi
+else
+    export INCLUDE_DOTFILES_PERSONAL="${INCLUDE_DOTFILES_PERSONAL:-0}"
+fi
 export GIT_NAME="${GIT_NAME:-}"
 export GIT_EMAIL="${GIT_EMAIL:-}"
 export CODE_DIR="${CODE_DIR:-$HOME/code/web}"
@@ -377,6 +401,7 @@ export INCLUDE_WEBSTACK="${INCLUDE_WEBSTACK:-0}"
 # reads INCLUDE_LARAVEL continues to observe the canonical value.
 export INCLUDE_LARAVEL="$INCLUDE_WEBSTACK"
 export INCLUDE_REMOTE="${INCLUDE_REMOTE:-0}"
+export INCLUDE_AI_TOOLS="${INCLUDE_AI_TOOLS:-0}"
 export INCLUDE_CODE_SERVER="${INCLUDE_CODE_SERVER:-0}"
 export CODE_SERVER_PORT="${CODE_SERVER_PORT:-8080}"
 export CODE_SERVER_LABEL="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
@@ -484,8 +509,8 @@ run_topic() {
         fi
     fi
 
-    # 95-dotfiles-personal gate: requires DOTFILES_REPO
-    if [[ "$topic" == "95-dotfiles-personal" ]] && [[ -z "$DOTFILES_REPO" ]]; then
+    # Dotfiles-backed opt-ins require DOTFILES_REPO.
+    if [[ ( "$topic" == "82-ai-tools" || "$topic" == "95-dotfiles-personal" ) && -z "$DOTFILES_REPO" ]]; then
         if [[ "${DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS:-0}" == "1" ]] && \
            in_list "$topic" "${only_list[@]+"${only_list[@]}"}"; then
             fail "$topic is opt-in; set DOTFILES_REPO=<url> to run it"

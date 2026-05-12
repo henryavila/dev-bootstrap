@@ -19,9 +19,11 @@ source "$REPO_ROOT/lib/log.sh"
 source "$HERE/../lib/assert.sh"
 
 MENU="$REPO_ROOT/lib/menu.sh"
+AI_TOPIC="$REPO_ROOT/topics/82-ai-tools/install.sh"
 DOTFILES_TOPIC="$REPO_ROOT/topics/95-dotfiles-personal/install.sh"
 BOOTSTRAP="$REPO_ROOT/bootstrap.sh"
 assert_file_exists "$MENU" "lib/menu.sh present"
+assert_file_exists "$AI_TOPIC" "82-ai-tools install.sh present"
 assert_file_exists "$DOTFILES_TOPIC" "95-dotfiles-personal install.sh present"
 assert_file_exists "$BOOTSTRAP" "bootstrap.sh present"
 
@@ -41,9 +43,10 @@ _test_gates() {
     local var="$1"
     # Unset everything relevant first
     unset NON_INTERACTIVE ONLY_TOPICS
-    unset INCLUDE_DOCKER INCLUDE_LARAVEL INCLUDE_REMOTE INCLUDE_EDITOR
+    unset INCLUDE_DOCKER INCLUDE_LARAVEL INCLUDE_REMOTE INCLUDE_AI_TOOLS INCLUDE_EDITOR
+    unset INCLUDE_DOTFILES_PERSONAL
     unset INCLUDE_MAILPIT INCLUDE_NGROK INCLUDE_MSSQL
-    unset PHP_VERSIONS DOTFILES_REPO DOTFILES_NPM_GLOBAL
+    unset PHP_VERSIONS DOTFILES_REPO DOTFILES_NPM_GLOBAL DOTFILES_AI_PACKAGES
     unset CI
 
     # Set the one being tested
@@ -58,37 +61,61 @@ _test_gates "ONLY_TOPICS=00-core"
 _test_gates "INCLUDE_DOCKER=1"
 _test_gates "INCLUDE_LARAVEL=1"
 _test_gates "INCLUDE_REMOTE=1"
+_test_gates "INCLUDE_AI_TOOLS=1"
 _test_gates "INCLUDE_EDITOR=1"
+_test_gates "INCLUDE_DOTFILES_PERSONAL=1"
 _test_gates "INCLUDE_MAILPIT=1"
 _test_gates "INCLUDE_NGROK=1"
 _test_gates "INCLUDE_MSSQL=1"
 _test_gates "PHP_VERSIONS=8.5"
 _test_gates "DOTFILES_REPO=git@github.com:x/y.git"
 _test_gates "DOTFILES_NPM_GLOBAL=1"
+_test_gates "DOTFILES_AI_PACKAGES=1"
 _test_gates "CI=true"
 
 echo
-echo "npm global opt-in is first-class in the interactive menu"
+echo "dotfiles-backed opt-ins are first-class in the interactive menu"
 
 assert_pattern_present "$MENU" '^[[:space:]]*"npm-global"[[:space:]]+"95-dotfiles-personal: npm globals under ~/.npm-global"' \
     "menu checklist shows npm-global opt-in"
 
+assert_pattern_present "$MENU" '^[[:space:]]*"ai-tools"[[:space:]]+"82-ai-tools: AI review prompts [+] token-saving CLI tools"' \
+    "menu checklist shows AI tools opt-in under topic 82"
+
 assert_pattern_present "$MENU" 'npm-global\) export DOTFILES_NPM_GLOBAL=1' \
     "menu selection exports DOTFILES_NPM_GLOBAL"
+
+assert_pattern_present "$MENU" 'ai-tools\) export INCLUDE_AI_TOOLS=1; export DOTFILES_AI_PACKAGES=1' \
+    "menu selection exports AI tools flags"
 
 assert_file_contains "$MENU" 'DOTFILES_NPM_GLOBAL:-0\}" == "1" \]\] *&& return 1' \
     "should_show_menu treats DOTFILES_NPM_GLOBAL as a pre-seed signal"
 
+assert_file_contains "$MENU" 'DOTFILES_AI_PACKAGES:-0\}" == "1" \]\] *&& return 1' \
+    "should_show_menu treats DOTFILES_AI_PACKAGES as a pre-seed signal"
+assert_file_contains "$MENU" 'INCLUDE_AI_TOOLS:-0\}" == "1" \]\] *&& return 1' \
+    "should_show_menu treats INCLUDE_AI_TOOLS as a pre-seed signal"
+
 assert_file_contains "$MENU" "echo 'export DOTFILES_NPM_GLOBAL=1'" \
     "_persist_menu_state persists DOTFILES_NPM_GLOBAL"
 
-_test_persist_npm_global() {
-    local enabled="$1"
+assert_file_contains "$MENU" "echo 'export DOTFILES_AI_PACKAGES=1'" \
+    "_persist_menu_state persists DOTFILES_AI_PACKAGES"
+assert_file_contains "$MENU" "echo 'export INCLUDE_AI_TOOLS=1'" \
+    "_persist_menu_state persists INCLUDE_AI_TOOLS"
+
+_test_persist_dotfiles_optins() {
+    local npm_enabled="$1"
+    local ai_enabled="$2"
     bash -c "
         set -uo pipefail
         TMP=\$(mktemp -d)
         export BOOTSTRAP_STATE_CONFIG=\"\$TMP/config.env\"
-        export DOTFILES_NPM_GLOBAL='$enabled'
+        export DOTFILES_NPM_GLOBAL='$npm_enabled'
+        export DOTFILES_AI_PACKAGES='$ai_enabled'
+        export INCLUDE_AI_TOOLS='$ai_enabled'
+        export DOTFILES_REPO='git@github.com:test/dotfiles.git'
+        export INCLUDE_DOTFILES_PERSONAL=0
         ok()   { :; }
         info() { :; }
         warn() { :; }
@@ -101,6 +128,16 @@ _test_persist_npm_global() {
     "
 }
 
+_test_persist_npm_global() {
+    local enabled="$1"
+    _test_persist_dotfiles_optins "$enabled" 0
+}
+
+_test_persist_ai_packages() {
+    local enabled="$1"
+    _test_persist_dotfiles_optins 0 "$enabled"
+}
+
 npm_global_state="$(_test_persist_npm_global 1)"
 assert_contains "$npm_global_state" "export DOTFILES_NPM_GLOBAL=1" \
     "_persist_menu_state round-trips npm global opt-in when enabled"
@@ -109,8 +146,133 @@ npm_global_state="$(_test_persist_npm_global 0)"
 assert_not_contains "$npm_global_state" "DOTFILES_NPM_GLOBAL" \
     "_persist_menu_state omits npm global opt-in when disabled"
 
-assert_pattern_present "$DOTFILES_TOPIC" 'DOTFILES_NPM_GLOBAL="\$\{DOTFILES_NPM_GLOBAL:-0\}" bash "\$DOTFILES_DIR/install.sh"' \
+ai_packages_state="$(_test_persist_ai_packages 1)"
+assert_contains "$ai_packages_state" "export DOTFILES_AI_PACKAGES=1" \
+    "_persist_menu_state round-trips AI packages opt-in when enabled"
+assert_contains "$ai_packages_state" "export INCLUDE_AI_TOOLS=1" \
+    "_persist_menu_state round-trips INCLUDE_AI_TOOLS when enabled"
+assert_contains "$ai_packages_state" "export INCLUDE_DOTFILES_PERSONAL=0" \
+    "_persist_menu_state records AI-only dotfiles repo without enabling 95"
+
+ai_packages_state="$(_test_persist_ai_packages 0)"
+assert_not_contains "$ai_packages_state" "DOTFILES_AI_PACKAGES" \
+    "_persist_menu_state omits AI packages opt-in when disabled"
+assert_not_contains "$ai_packages_state" "INCLUDE_AI_TOOLS=1" \
+    "_persist_menu_state omits INCLUDE_AI_TOOLS when disabled"
+
+assert_pattern_present "$DOTFILES_TOPIC" 'DOTFILES_NPM_GLOBAL="\$\{DOTFILES_NPM_GLOBAL:-0\}"' \
     "95-dotfiles-personal forwards DOTFILES_NPM_GLOBAL to dotfiles install.sh"
+
+assert_not_contains "$(cat "$DOTFILES_TOPIC")" "DOTFILES_AI_PACKAGES=" \
+    "95-dotfiles-personal does not install AI packages"
+assert_pattern_present "$AI_TOPIC" 'DOTFILES_AI_PACKAGES=1 bash "\$ai_installer"' \
+    "82-ai-tools runs the dotfiles AI package installer"
+
+_test_ai_tools_screen_runs_after_webstack_before_confirm() {
+    local tmp out titles selection extras_line ai_line confirm_line ai_args
+    tmp="$(mktemp -d)"
+    mkdir -p "$tmp/home" "$tmp/dotfiles/ai"
+    cat > "$tmp/dotfiles/ai/packages.default.list" <<'EOF'
+# name|check command|install command
+# desc:mdprobe|Markdown review UI with annotations and MCP feedback loop
+mdprobe|command -v mdprobe >/dev/null 2>&1|install-mdprobe
+# desc:atomic-skills|Focused agent skills/prompts installed across detected AI IDEs
+atomic-skills|test -f "$HOME/.atomic-skills/manifest.json"|install-atomic-skills
+# desc:rtk|Token-saving CLI proxy for compact agent shell output
+rtk|command -v rtk >/dev/null 2>&1|install-rtk
+EOF
+
+    cat > "$tmp/run-menu.sh" <<'BASH'
+set -uo pipefail
+source "$REPO_ROOT/lib/log.sh"
+OS="wsl"
+HOME="$TMP_ROOT/home"
+BOOTSTRAP_STATE_CONFIG="$TMP_ROOT/config.env"
+DOTFILES_REPO="file://$TMP_ROOT/dotfiles"
+DOTFILES_DIR="$TMP_ROOT/dotfiles"
+GIT_NAME="Test User"
+GIT_EMAIL="test@example.com"
+DEV_BOOTSTRAP_ROOT="$REPO_ROOT"
+export OS HOME BOOTSTRAP_STATE_CONFIG DOTFILES_REPO DOTFILES_DIR
+export GIT_NAME GIT_EMAIL DEV_BOOTSTRAP_ROOT
+
+secrets_has() { return 1; }
+secrets_set() { return 0; }
+ngrok() { return 1; }
+
+whiptail() {
+    local title="" arg
+    local original_args=("$@")
+    while (($#)); do
+        case "$1" in
+            --title)
+                shift
+                title="${1:-}"
+                ;;
+        esac
+        shift || break
+    done
+    printf '%s\n' "$title" >> "$TMP_ROOT/titles.log"
+    case "$title" in
+        "dev-bootstrap :: opt-in topics")
+            printf '"webstack" "ai-tools"\n' >&2
+            ;;
+        "60-web-stack :: projects root")
+            printf '%s/code\n' "$HOME" >&2
+            ;;
+        "60-web-stack :: PHP versions")
+            printf '"8.5"\n' >&2
+            ;;
+        "60-web-stack :: optional extras")
+            printf '\n' >&2
+            ;;
+        "82-ai-tools :: packages")
+            for arg in "${original_args[@]}"; do
+                printf '<%s>' "$arg" >> "$TMP_ROOT/ai-args.log"
+            done
+            printf '\n' >> "$TMP_ROOT/ai-args.log"
+            printf 'mdprobe\nrtk\n' >&2
+            ;;
+        "dev-bootstrap :: confirm")
+            return 0
+            ;;
+        *)
+            printf 'unexpected whiptail title: %s\n' "$title" >&2
+            return 1
+            ;;
+    esac
+}
+
+source "$MENU"
+run_menu >/dev/null
+printf 'SELECTION=%s\n' "${DOTFILES_AI_PACKAGE_SELECTION:-}"
+cat "$TMP_ROOT/titles.log"
+BASH
+    out="$(TMP_ROOT="$tmp" REPO_ROOT="$REPO_ROOT" MENU="$MENU" bash "$tmp/run-menu.sh")"
+
+    titles="$(printf '%s\n' "$out" | grep -v '^SELECTION=' || true)"
+    selection="$(printf '%s\n' "$out" | sed -n 's/^SELECTION=//p')"
+    extras_line="$(printf '%s\n' "$titles" | grep -nFx "60-web-stack :: optional extras" | head -1 | cut -d: -f1)"
+    ai_line="$(printf '%s\n' "$titles" | grep -nFx "82-ai-tools :: packages" | head -1 | cut -d: -f1)"
+    confirm_line="$(printf '%s\n' "$titles" | grep -nFx "dev-bootstrap :: confirm" | head -1 | cut -d: -f1)"
+    ai_args="$(cat "$tmp/ai-args.log" 2>/dev/null || true)"
+
+    if [[ -n "$extras_line" && -n "$ai_line" && -n "$confirm_line" \
+       && "$extras_line" -lt "$ai_line" && "$ai_line" -lt "$confirm_line" \
+       && "$selection" == "mdprobe rtk" \
+       && "$ai_args" == *"Markdown review UI with annotations and MCP feedback loop"* \
+       && "$ai_args" == *"Focused agent skills/prompts installed across detected AI IDEs"* \
+       && "$ai_args" == *"Token-saving CLI proxy for compact agent shell output"* ]]; then
+        pass "run_menu shows 82-ai-tools package details after 60-web-stack before confirm"
+    else
+        fail "run_menu should show 82-ai-tools package details after 60-web-stack before confirm" \
+            "selection=[$selection] titles=[$titles] ai_args=[$ai_args]"
+    fi
+
+    rm -rf "$tmp"
+}
+
+_test_ai_tools_screen_runs_after_webstack_before_confirm
 
 echo
 echo "macOS menu dependencies"

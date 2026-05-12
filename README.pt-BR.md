@@ -43,9 +43,9 @@ bash bootstrap.sh
 
 Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
 
-1. Quais topics opt-in ativar (`60-web-stack` / `70-remote-access` / `90-editor` / `95-dotfiles-personal` — todos pré-marcados; você desmarca o que não quer).
+1. Quais topics opt-in ativar (`60-web-stack` / `70-remote-access` / `82-ai-tools` / `90-editor` / `95-dotfiles-personal` — você desmarca o que não quer).
 2. `GIT_NAME` / `GIT_EMAIL` (pula silenciosamente se `git config --global` já tiver esses valores).
-3. `DOTFILES_REPO` + `DOTFILES_DIR` (só se você marcou `95-dotfiles-personal`).
+3. `DOTFILES_REPO` + `DOTFILES_DIR` (só se você marcou `82-ai-tools`, `95-dotfiles-personal` ou `npm-global`).
 4. `CODE_DIR` (só se você marcou `60-web-stack`).
 5. Tela final com resumo e confirmação — cancelar em qualquer tela aborta limpo (sem estado parcial).
 
@@ -69,9 +69,12 @@ INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash bootstrap.sh
 
 # aplicar dotfiles pessoais no fim
 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
+
+# instalar ferramentas de IA pelo manifesto dos dotfiles, sem aplicar dados pessoais
+INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
 ```
 
-O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) qualquer var de controle (`INCLUDE_*`, `DOTFILES_REPO`, `ONLY_TOPICS`, `CI`) já vem do env; (c) stdin/stdout não é TTY (pipe, cron, CI).
+O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) qualquer var de controle (`INCLUDE_*`, `DOTFILES_REPO`, `DOTFILES_NPM_GLOBAL`, `DOTFILES_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) já vem do env; (c) stdin/stdout não é TTY (pipe, cron, CI).
 
 Logo após o menu (ou imediatamente, quando pulado), o bootstrap roda `sudo -v` pra warmup do cache — uma única prompt de senha, e as chamadas `sudo` subsequentes dentro da janela do cache (~5–15min) são silenciosas.
 
@@ -88,8 +91,9 @@ Logo após o menu (ou imediatamente, quando pulado), o bootstrap roda `sudo -v` 
 | `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, catchall `*.localhost` | `INCLUDE_WEBSTACK=1` |
 | `70-remote-access` | sshd (com hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + drop-in systemd que seta MTU 1200 em `tailscale0` (prevenção do SSH KEX PQ hang) | `INCLUDE_REMOTE=1` |
 | `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — fundação do Claude Sync cross-machine via camada de dotfiles | — |
+| `82-ai-tools` | instala ferramentas de workflow com IA pelo manifesto dos dotfiles: mdProbe para revisão de Markdown/MCP, Atomic Skills para prompts/skills reutilizáveis e RTK para compactar saída de shell antes de chegar ao agente; usa `$DOTFILES_REPO` só como fonte do manifesto/installer, sem aplicar dotfiles pessoais | `INCLUDE_AI_TOOLS=1 DOTFILES_REPO=<url>` |
 | `90-editor` | `~/.local/bin/typora-wait` — abre `.md` no Typora GUI a partir do terminal; WSL delega pra `Typora.exe` via interop (`wslpath -w`), macOS usa `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
-| `95-dotfiles-personal` | clona `$DOTFILES_REPO` em `$DOTFILES_DIR` (default `~/dotfiles`) + roda o `install.sh` dele | `DOTFILES_REPO=<url>` |
+| `95-dotfiles-personal` | clona `$DOTFILES_REPO` em `$DOTFILES_DIR` (default `~/dotfiles`) + roda o `install.sh` dele | `INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>` |
 
 Cada topic tem o próprio `README.md`. Fluxo interno: `install.$OS.sh` (se existe) ou `install.sh` (fallback OS-agnóstico), depois `lib/deploy.sh` processa `templates/` quando houver. Templates `bashrc.d-<topic>.sh` / `zshrc.d-<topic>.sh` mapeiam automaticamente pra `~/.bashrc.d/<topic>.sh` / `~/.zshrc.d/<topic>.sh`.
 
