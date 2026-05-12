@@ -38,6 +38,8 @@ PG_SCRIPT="$ROOT/topics/60-web-stack/scripts/install-postgres.sh"
 MAC_INSTALL="$ROOT/topics/60-web-stack/install.mac.sh"
 WSL_INSTALL="$ROOT/topics/60-web-stack/install.wsl.sh"
 MENU="$ROOT/lib/menu.sh"
+PG_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/postgres-install-test.XXXXXX")"
+trap 'rm -rf "$PG_TEST_ROOT"' EXIT INT TERM
 
 assert_pattern_present() {
     local file="$1" pattern="$2" msg="$3"
@@ -267,8 +269,8 @@ assert_pattern_present "$PG_SCRIPT" 'pg_label="com\.\$\{USER\}\.postgresql@\$\{P
 assert_pattern_present "$PG_SCRIPT" 'launch_wrapper_install_extbrew' \
     "launch_wrapper_install_extbrew invoked"
 
-assert_pattern_present "$PG_SCRIPT" '\-\-workdir "\$BREW_PREFIX/var/postgresql@\$\{POSTGRES_VERSION\}"' \
-    "wrapper --workdir points at versioned cluster data dir"
+assert_pattern_present "$PG_SCRIPT" '\-\-workdir "\$pg_data_dir"' \
+    "wrapper --workdir points at the validated cluster data dir"
 
 # Rollback on wrapper failure (restores brew plist .bak).
 assert_pattern_present "$PG_SCRIPT" 'launch_wrapper_teardown "\$pg_label"' \
@@ -276,6 +278,173 @@ assert_pattern_present "$PG_SCRIPT" 'launch_wrapper_teardown "\$pg_label"' \
 
 assert_pattern_present "$PG_SCRIPT" 'mv "\$\{pg_brew_plist\}\.bak" "\$pg_brew_plist"' \
     "wrapper failure path restores brew plist from .bak"
+
+echo
+echo "═══ Layer 2d.1 — Mac cluster data-dir recovery (execution) ═══"
+
+_run_pg_mac_fixture() {
+    local mode="$1"
+    local work fake_prefix shim
+    work="$(mktemp -d "$PG_TEST_ROOT/mac-${mode}.XXXXXX")"
+    fake_prefix="$work/brew"
+    shim="$work/shim"
+    mkdir -p "$fake_prefix/opt/postgresql@17/bin" "$shim" \
+        "$work/wrapper-bin" "$work/launchagents" "$work/launchlogs"
+
+    cat > "$fake_prefix/opt/postgresql@17/bin/postgres" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$fake_prefix/opt/postgresql@17/bin/postgres"
+
+    cat > "$fake_prefix/opt/postgresql@17/bin/initdb" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$INITDB_CALLED_FILE"
+last=""
+for arg in "$@"; do
+    last="$arg"
+done
+mkdir -p "$last"
+printf '17\n' > "$last/PG_VERSION"
+exit 0
+EOF
+    chmod +x "$fake_prefix/opt/postgresql@17/bin/initdb"
+
+    cat > "$shim/brew" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "list" && "${2:-}" == "--formula" ]]; then
+    echo "postgresql@17"
+    exit 0
+fi
+echo "unexpected brew args: $*" >&2
+exit 1
+EOF
+    chmod +x "$shim/brew"
+
+    cat > "$shim/uname" <<'EOF'
+#!/usr/bin/env bash
+echo Darwin
+EOF
+    chmod +x "$shim/uname"
+
+    cat > "$shim/lsof" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+    chmod +x "$shim/lsof"
+
+    cat > "$shim/pg_isready" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$shim/pg_isready"
+
+    cat > "$shim/psql" <<'EOF'
+#!/usr/bin/env bash
+printf '1\n'
+exit 0
+EOF
+    chmod +x "$shim/psql"
+
+    case "$mode" in
+        missing)
+            ;;
+        initialized)
+            mkdir -p "$fake_prefix/var/postgresql@17"
+            printf '17\n' > "$fake_prefix/var/postgresql@17/PG_VERSION"
+            ;;
+        dirty)
+            mkdir -p "$fake_prefix/var/postgresql@17"
+            printf 'not postgres data\n' > "$fake_prefix/var/postgresql@17/README"
+            ;;
+        notdir)
+            mkdir -p "$fake_prefix/var"
+            printf 'not a directory\n' > "$fake_prefix/var/postgresql@17"
+            ;;
+        initdbfail)
+            cat > "$fake_prefix/opt/postgresql@17/bin/initdb" <<'EOF'
+#!/usr/bin/env bash
+echo "simulated initdb failure" >&2
+exit 42
+EOF
+            chmod +x "$fake_prefix/opt/postgresql@17/bin/initdb"
+            ;;
+        *)
+            fail "unknown pg mac fixture mode: $mode"
+            ;;
+    esac
+
+    local rc=0
+    INITDB_CALLED_FILE="$work/initdb.called" \
+    PATH="$shim:/usr/bin:/bin:/usr/sbin:/sbin" \
+    BREW_BIN="$shim/brew" \
+    BREW_PREFIX="$fake_prefix" \
+    POSTGRES_VERSION=17 \
+    USER=pgtest \
+    LAUNCH_WRAPPER_DRY_RUN=1 \
+    LAUNCH_WRAPPER_BIN_DIR="$work/wrapper-bin" \
+    LAUNCH_WRAPPER_PLIST_DIR="$work/launchagents" \
+    LAUNCH_WRAPPER_LOG_DIR="$work/launchlogs" \
+        bash "$PG_SCRIPT" > "$work/stdout" 2> "$work/stderr" || rc=$?
+    printf '%s\n' "$rc" > "$work/rc"
+    printf '%s\n' "$work"
+}
+
+fixture="$(_run_pg_mac_fixture missing)"
+fixture_rc="$(cat "$fixture/rc")"
+if [[ "$fixture_rc" -eq 0 ]] \
+   && [[ -f "$fixture/initdb.called" ]] \
+   && [[ -f "$fixture/brew/var/postgresql@17/PG_VERSION" ]]; then
+    pass "EXECUTION: Mac installed formula with missing data dir runs initdb before wrapper"
+else
+    fail "EXECUTION: missing Mac postgres data dir was not initialized (rc=$fixture_rc)"
+fi
+
+fixture="$(_run_pg_mac_fixture initialized)"
+fixture_rc="$(cat "$fixture/rc")"
+if [[ "$fixture_rc" -eq 0 ]] && [[ ! -f "$fixture/initdb.called" ]]; then
+    pass "EXECUTION: initialized Mac data dir does not run initdb again"
+else
+    fail "EXECUTION: initialized Mac data dir should be idempotent (rc=$fixture_rc)"
+fi
+
+fixture="$(_run_pg_mac_fixture dirty)"
+fixture_rc="$(cat "$fixture/rc")"
+fixture_out="$(cat "$fixture/stdout" "$fixture/stderr" 2>/dev/null)"
+if [[ "$fixture_rc" -ne 0 ]] \
+   && [[ ! -f "$fixture/initdb.called" ]] \
+   && echo "$fixture_out" | grep -q "not an initialized PostgreSQL data directory"; then
+    pass "EXECUTION: non-empty uninitialized Mac data dir hard-stops without clobber"
+else
+    fail "EXECUTION: dirty uninitialized Mac data dir was not rejected safely (rc=$fixture_rc)"
+fi
+
+fixture="$(_run_pg_mac_fixture notdir)"
+fixture_rc="$(cat "$fixture/rc")"
+fixture_out="$(cat "$fixture/stdout" "$fixture/stderr" 2>/dev/null)"
+if [[ "$fixture_rc" -ne 0 ]] \
+   && [[ ! -f "$fixture/initdb.called" ]] \
+   && echo "$fixture_out" | grep -q "is not a directory"; then
+    pass "EXECUTION: Mac data-dir path that is a file hard-stops"
+else
+    fail "EXECUTION: Mac data-dir file path was not rejected safely (rc=$fixture_rc)"
+fi
+
+fixture="$(_run_pg_mac_fixture initdbfail)"
+fixture_rc="$(cat "$fixture/rc")"
+fixture_out="$(cat "$fixture/stdout" "$fixture/stderr" 2>/dev/null)"
+if [[ "$fixture_rc" -ne 0 ]] \
+   && echo "$fixture_out" | grep -q "initdb for postgresql@17 failed"; then
+    pass "EXECUTION: Mac initdb failure exits non-zero with diagnostic"
+else
+    fail "EXECUTION: Mac initdb failure was not surfaced (rc=$fixture_rc)"
+fi
+
+assert_pattern_present "$PG_SCRIPT" 'pg_data_dir="\$\(_pg_data_dir\)"' \
+    "Mac service path stores validated data dir in pg_data_dir"
+
+assert_pattern_present "$PG_SCRIPT" '\-\-workdir "\$pg_data_dir"' \
+    "wrapper --workdir uses validated pg_data_dir variable"
 
 echo
 echo "═══ Layer 2e — Linux path (PGDG + systemd correctness) ═══"

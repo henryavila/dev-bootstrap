@@ -176,6 +176,48 @@ _pg_brew_path() {
     echo "$BREW_PREFIX/opt/postgresql@${POSTGRES_VERSION}/bin/postgres"
 }
 
+_pg_data_dir() {
+    : "${BREW_PREFIX:?BREW_PREFIX not set}"
+    echo "$BREW_PREFIX/var/postgresql@${POSTGRES_VERSION}"
+}
+
+_ensure_mac_pg_data_dir() {
+    local data_dir="$1"
+    local initdb_bin initdb_err existing_entry
+
+    if [[ -f "$data_dir/PG_VERSION" ]]; then
+        return 0
+    fi
+
+    if [[ -e "$data_dir" && ! -d "$data_dir" ]]; then
+        followup critical "$data_dir exists but is not a directory. PostgreSQL data directory cannot be initialized safely."
+        return 1
+    fi
+
+    existing_entry=""
+    if [[ -d "$data_dir" ]]; then
+        existing_entry="$(find "$data_dir" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)"
+    fi
+    if [[ -n "$existing_entry" ]]; then
+        followup critical "$data_dir exists but is not an initialized PostgreSQL data directory (missing PG_VERSION). Refusing to run initdb over existing content; move it aside or restore the cluster, then re-run."
+        return 1
+    fi
+
+    initdb_bin="$BREW_PREFIX/opt/postgresql@${POSTGRES_VERSION}/bin/initdb"
+    if [[ ! -x "$initdb_bin" ]]; then
+        followup critical "initdb not found for postgresql@${POSTGRES_VERSION}: $initdb_bin"
+        return 1
+    fi
+
+    info "initializing PostgreSQL data directory $data_dir"
+    initdb_err=""
+    if ! initdb_err="$(LC_ALL=en_US.UTF-8 "$initdb_bin" --locale=en_US.UTF-8 -E UTF-8 "$data_dir" 2>&1)"; then
+        followup critical "initdb for postgresql@${POSTGRES_VERSION} failed: $initdb_err"
+        return 1
+    fi
+    ok "PostgreSQL data directory initialized at $data_dir"
+}
+
 # Detect "is systemd actually running as PID 1?" — more reliable than
 # `systemctl is-system-running` which returns "offline" on WSL but
 # `--version` succeeds because the binary is present.
@@ -278,6 +320,14 @@ else
     ok "postgresql@${POSTGRES_VERSION} already installed"
 fi
 
+pg_data_dir=""
+if [[ "$OS" == "mac" ]]; then
+    pg_data_dir="$(_pg_data_dir)"
+    if ! _ensure_mac_pg_data_dir "$pg_data_dir"; then
+        exit 1
+    fi
+fi
+
 # ─── 5 · Pre-flight port :5432 conflict ──────────────────────────────
 PORT_CONFLICT=0
 if _port_5432_in_foreign_use; then
@@ -320,9 +370,9 @@ else
                         --svc "postgresql@${POSTGRES_VERSION}" \
                         --label "$pg_label" \
                         --brew-bin "$(_pg_brew_path)" \
-                        --workdir "$BREW_PREFIX/var/postgresql@${POSTGRES_VERSION}" \
+                        --workdir "$pg_data_dir" \
                         --env LC_ALL=en_US.UTF-8 \
-                        -- -D "$BREW_PREFIX/var/postgresql@${POSTGRES_VERSION}"; then
+                        -- -D "$pg_data_dir"; then
                     SERVICE_STARTED=1
                 else
                     # Wrapper failed AFTER having renamed the brew plist
