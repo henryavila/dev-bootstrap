@@ -212,7 +212,7 @@ fi
 cd "$HERE"
 
 # shellcheck disable=SC1091
-source "$HERE/lib/log.sh"
+source "$HERE/scripts/lib/log.sh"
 
 # ─── Secrets (tokens) ───────────────────────────────────────────────
 # Separate from config.env because of different mode (0600 vs 0644)
@@ -221,7 +221,7 @@ source "$HERE/lib/log.sh"
 # for a token, and BEFORE topics run so installers just read env.
 # See lib/secrets.sh for the allowed/forbidden key taxonomy.
 # shellcheck disable=SC1091
-source "$HERE/lib/secrets.sh"
+source "$HERE/scripts/lib/secrets.sh"
 secrets_load || warn "secrets file present but could not be sourced — continuing without it"
 
 # ─── Persistent state (prefixes, decisions) ───────────────────────────
@@ -229,7 +229,7 @@ secrets_load || warn "secrets file present but could not be sourced — continui
 # BREW_PREFIX choice (e.g. user picked /Volumes/External/homebrew on a
 # previous run; never re-prompt). See lib/state.sh.
 # shellcheck disable=SC1091
-source "$HERE/lib/state.sh"
+source "$HERE/scripts/lib/state.sh"
 state_load
 
 usage() {
@@ -288,7 +288,7 @@ for arg in "$@"; do
 done
 
 # ---------- Detect OS ----------
-OS="$(bash "$HERE/lib/detect-os.sh")"
+OS="$(bash "$HERE/scripts/lib/detect-os.sh")"
 export OS
 
 if [[ "$OS" == "unknown" ]]; then
@@ -308,7 +308,7 @@ detect_brew_if_mac() {
     if [[ "$OS" != "mac" ]]; then
         return 0
     fi
-    if out=$(bash "$HERE/lib/detect-brew.sh" 2>/dev/null); then
+    if out=$(bash "$HERE/scripts/lib/detect-brew.sh" 2>/dev/null); then
         eval "$out"
         export BREW_BIN BREW_PREFIX
     fi
@@ -372,7 +372,7 @@ fi
 
 # ---------- Interactive menu (default on TTYs; skipped for automation) ----------
 # shellcheck disable=SC1091
-source "$HERE/lib/menu.sh"
+source "$HERE/scripts/lib/menu.sh"
 if should_show_menu; then
     prepare_interactive_menu_dependencies || true
     if ensure_whiptail; then
@@ -562,7 +562,7 @@ run_topic() {
         if [[ "${DRY_RUN:-}" == "1" ]]; then
             info "would deploy: $dir/templates"
         else
-            if ! bash "$HERE/lib/deploy.sh" "$dir/templates" 2>&1 | tee -a "$LOG"; then
+            if ! bash "$HERE/scripts/lib/deploy.sh" "$dir/templates" 2>&1 | tee -a "$LOG"; then
                 fail "$topic templates deploy failed"
                 failed+=("$topic")
                 return 0

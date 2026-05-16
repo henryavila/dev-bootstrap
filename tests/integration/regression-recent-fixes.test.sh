@@ -22,8 +22,8 @@ MAC="$ROOT/topics/60-web-stack/install.mac.sh"
 LANG_MAC="$ROOT/topics/10-languages/install.mac.sh"
 REMOTE_MAC="$ROOT/topics/70-remote-access/install.mac.sh"
 BOOTSTRAP="$ROOT/setup.sh"
-MENU="$ROOT/lib/menu.sh"
-LOG="$ROOT/lib/log.sh"
+MENU="$ROOT/scripts/lib/menu.sh"
+LOG="$ROOT/scripts/lib/log.sh"
 
 # Helper: count matches of an extended regex in a file (works on bash 3.2)
 _count_matches() {
@@ -366,10 +366,10 @@ assert_pattern_present "$MAC" 'grep -qi "managed by dev-bootstrap"' \
 assert_pattern_absent "$MAC" 'grep -q "managed by dev-bootstrap"' \
     "60-web-stack/install.mac.sh — no case-sensitive marker check (would loop-migrate)"
 
-assert_pattern_present "$ROOT/lib/deploy.sh" 'grep -qiF "managed by dev-bootstrap"' \
+assert_pattern_present "$ROOT/scripts/lib/deploy.sh" 'grep -qiF "managed by dev-bootstrap"' \
     "lib/deploy.sh — overwrite-protection marker check is case-insensitive"
 
-assert_pattern_absent "$ROOT/lib/deploy.sh" 'grep -qF "managed by dev-bootstrap"' \
+assert_pattern_absent "$ROOT/scripts/lib/deploy.sh" 'grep -qF "managed by dev-bootstrap"' \
     "lib/deploy.sh — no case-sensitive marker check in overwrite protection"
 
 assert_pattern_present "$WSL" 'grep -qi "managed by dev-bootstrap"' \
@@ -626,13 +626,13 @@ assert_pattern_absent "$TUX_MAC" '\[ -t 0 \] && \[ -t 1 \]' \
 
 # Issue 2 — secrets scaffold. setup.sh must source lib/secrets.sh
 # and call secrets_load AFTER log.sh, BEFORE the menu runs.
-SECRETS_LIB="$ROOT/lib/secrets.sh"
+SECRETS_LIB="$ROOT/scripts/lib/secrets.sh"
 
 assert_file_exists "$SECRETS_LIB" \
     "lib/secrets.sh — new helper in place"
 
-assert_pattern_present "$BOOTSTRAP" 'source "\$HERE/lib/secrets.sh"' \
-    "setup.sh — sources lib/secrets.sh"
+assert_pattern_present "$BOOTSTRAP" 'source "\$HERE/scripts/lib/secrets.sh"' \
+    "setup.sh — sources scripts/lib/secrets.sh"
 
 assert_pattern_present "$BOOTSTRAP" 'secrets_load' \
     "setup.sh — calls secrets_load"
@@ -640,7 +640,7 @@ assert_pattern_present "$BOOTSTRAP" 'secrets_load' \
 # Order check: secrets must be loaded before menu is sourced/run so the
 # menu's secrets_has NGROK_AUTHTOKEN gate behaves correctly.
 secrets_line=$(grep -n 'secrets_load' "$BOOTSTRAP" | head -1 | cut -d: -f1)
-menu_line=$(grep -n 'source "\$HERE/lib/menu.sh"' "$BOOTSTRAP" | head -1 | cut -d: -f1)
+menu_line=$(grep -n 'source "\$HERE/scripts/lib/menu.sh"' "$BOOTSTRAP" | head -1 | cut -d: -f1)
 if [[ -n "$secrets_line" && -n "$menu_line" ]] && [[ "$secrets_line" -lt "$menu_line" ]]; then
     pass "setup.sh — secrets_load runs before menu is sourced (line $secrets_line < $menu_line)"
 else
@@ -679,7 +679,7 @@ echo "═══ 2026-04-23 : WSL PECL per-version build via PHP_PEAR_PHP_BIN ═
 # install.wsl.sh + install-mssql-driver.sh share the same hardened
 # implementation. These asserts inspect the lib directly.
 LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
-PECL_LIB="$ROOT/lib/pecl-install.sh"
+PECL_LIB="$ROOT/scripts/lib/pecl-install.sh"
 MSSQL="$ROOT/topics/60-web-stack/scripts/install-mssql-driver.sh"
 
 assert_file_exists "$PECL_LIB" \
