@@ -90,7 +90,7 @@ prepare_interactive_menu_dependencies() {
     [[ -n "${BREW_BIN:-}" ]] && return 0
 
     local root installer detect_out
-    root="${DEV_BOOTSTRAP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+    root="${DEV_BOOTSTRAP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
     installer="$root/topics/00-core/install.mac.sh"
 
     if [[ ! -x "$installer" ]]; then
@@ -104,7 +104,7 @@ prepare_interactive_menu_dependencies() {
         return 1
     fi
 
-    if detect_out="$(bash "$root/lib/detect-brew.sh" 2>/dev/null)"; then
+    if detect_out="$(bash "$root/scripts/lib/detect-brew.sh" 2>/dev/null)"; then
         eval "$detect_out"
         export BREW_BIN BREW_PREFIX
         return 0
@@ -678,7 +678,7 @@ Same URL on both platforms — https://<name>.localhost." \
         # Label carries the install state so users can tell at a glance
         # what's on disk vs. what they're about to add.
         local versions_file
-        versions_file="$(dirname "${BASH_SOURCE[0]}")/../topics/10-languages/data/php-versions.conf"
+        versions_file="$(dirname "${BASH_SOURCE[0]}")/../../topics/10-languages/data/php-versions.conf"
         local -a php_checklist_items=()
         if [[ -f "$versions_file" ]]; then
             while IFS= read -r ver; do
