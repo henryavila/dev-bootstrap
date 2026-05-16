@@ -4,12 +4,12 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 
 if [[ -z "${BREW_BIN:-}" ]]; then
     # scripts/runners/auto-update.sh runs changed topic installers directly,
     # outside setup.sh, so recover the brew path for incremental updates.
-    if detect_out="$(bash "$HERE/../../lib/detect-brew.sh" 2>/dev/null)"; then
+    if detect_out="$(bash "$HERE/../../scripts/lib/detect-brew.sh" 2>/dev/null)"; then
         eval "$detect_out"
         export BREW_BIN BREW_PREFIX
     fi

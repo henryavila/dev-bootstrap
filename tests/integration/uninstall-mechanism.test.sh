@@ -33,15 +33,15 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-LIB="$ROOT/lib/uninstall.sh"
+LIB="$ROOT/scripts/lib/topic-cleanup.sh"
 
 echo
 echo "═══ uninstall-mechanism (drift management for installed artifacts) ═══"
 
 # ─── 1. lib exists and exposes the public entry point ───────────────
-assert_file_exists "$LIB" "lib/uninstall.sh exists"
+assert_file_exists "$LIB" "scripts/lib/topic-cleanup.sh exists (renamed from uninstall.sh per spec reconciliation)"
 assert_pattern_present "$LIB" '^uninstall_apply\(\)' \
-    "lib/uninstall.sh defines uninstall_apply()"
+    "scripts/lib/topic-cleanup.sh defines uninstall_apply()"
 
 # ─── 2. Each verb has a handler ─────────────────────────────────────
 for verb_handler in \
@@ -126,7 +126,7 @@ else
         any_wired=0
         for script in "${consumers[@]}"; do
             [[ -f "$script" ]] || continue
-            if grep -q 'lib/uninstall.sh' "$script" \
+            if grep -q 'scripts/lib/topic-cleanup.sh' "$script" \
                && grep -q 'uninstall_apply' "$script"; then
                 pass "$topic_name/$(basename "$script") sources lib + calls uninstall_apply"
                 any_wired=1

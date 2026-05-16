@@ -16,7 +16,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 source "$HERE/../lib/assert.sh"
 
 # Extract allowlist from lib/deploy.sh (single source of truth)
-allowlist_raw="$(grep '^ENVSUBST_ALLOWLIST=' "$REPO_ROOT/lib/deploy.sh" | head -1 | sed "s/.*='\(.*\)'/\1/")"
+allowlist_raw="$(grep '^ENVSUBST_ALLOWLIST=' "$REPO_ROOT/scripts/lib/deploy.sh" | head -1 | sed "s/.*='\(.*\)'/\1/")"
 
 if [[ -z "$allowlist_raw" ]]; then
     fail "could not parse ENVSUBST_ALLOWLIST from lib/deploy.sh"

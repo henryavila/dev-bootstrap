@@ -39,7 +39,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$ROOT/tests/lib/assert.sh"
 
 WEB_MAC="$ROOT/topics/60-web-stack/install.mac.sh"
-DETECT="$ROOT/lib/detect-brew.sh"
+DETECT="$ROOT/scripts/lib/detect-brew.sh"
 
 assert_pattern_present() {
     local file="$1" pattern="$2" msg="$3"

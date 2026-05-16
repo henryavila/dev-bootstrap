@@ -10,7 +10,7 @@ source "$ROOT/tests/lib/assert.sh"
 
 INSTALL="$ROOT/topics/85-code-server/install.mac.sh"
 VERIFY="$ROOT/topics/85-code-server/verify.sh"
-MENU="$ROOT/lib/menu.sh"
+MENU="$ROOT/scripts/lib/menu.sh"
 BOOTSTRAP="$ROOT/setup.sh"
 
 echo
@@ -108,7 +108,7 @@ assert_pattern_absent "$INSTALL" '<key>EnvironmentVariables</key>' \
 echo
 echo "═══ service wrapper + external brew PATH ═══"
 
-assert_pattern_present "$INSTALL" 'bash "\$HERE/\.\./\.\./lib/detect-brew\.sh"' \
+assert_pattern_present "$INSTALL" 'bash "\$HERE/\.\./\.\./scripts/lib/detect-brew\.sh"' \
     "installer calls detect-brew.sh as a subprocess"
 assert_pattern_present "$INSTALL" 'BREW_BIN=\*\).*BREW_BIN=' \
     "installer parses only BREW_BIN lines from detect-brew output"

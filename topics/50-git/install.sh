@@ -4,7 +4,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 
 if ! command -v git >/dev/null 2>&1; then
     fail "git not found (topic 00-core should have installed it)"

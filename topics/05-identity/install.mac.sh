@@ -5,7 +5,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 
 : "${BREW_BIN:?BREW_BIN not set — run through setup.sh}"
 

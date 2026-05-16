@@ -5,7 +5,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 
 # ─── Install gh CLI + wslu (if on WSL) ─────────────────────────────
 # Ubuntu 24.04+ ships gh in the default apt repo (2.88+).

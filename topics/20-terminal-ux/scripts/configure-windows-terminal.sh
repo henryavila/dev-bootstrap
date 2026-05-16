@@ -16,7 +16,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../../lib/log.sh"
+source "$HERE/../../../scripts/lib/log.sh"
 
 # ─── Only run on WSL ────────────────────────────────────────────────
 if ! grep -qi microsoft /proc/version 2>/dev/null; then

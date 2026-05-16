@@ -8,7 +8,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 
 # ---------- docker.io + compose plugin + buildx ----------
 # docker-buildx-plugin ships the modern BuildKit builder. Without it, every

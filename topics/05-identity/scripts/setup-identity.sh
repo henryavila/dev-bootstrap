@@ -8,7 +8,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../../lib/log.sh"
+source "$HERE/../../../scripts/lib/log.sh"
 
 # ─── 1. Authenticate gh ─────────────────────────────────────────────
 # OAuth device flow via browser — 1 token per machine, revokable

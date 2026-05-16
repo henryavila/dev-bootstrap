@@ -14,11 +14,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # Source log helpers before assert.sh so assert.sh owns pass/fail counters.
 # shellcheck source=/dev/null
-source "$REPO_ROOT/lib/log.sh"
+source "$REPO_ROOT/scripts/lib/log.sh"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-MENU="$REPO_ROOT/lib/menu.sh"
+MENU="$REPO_ROOT/scripts/lib/menu.sh"
 AI_TOPIC="$REPO_ROOT/topics/82-ai-tools/install.sh"
 DOTFILES_TOPIC="$REPO_ROOT/topics/95-dotfiles-personal/install.sh"
 BOOTSTRAP="$REPO_ROOT/setup.sh"
@@ -184,7 +184,7 @@ EOF
 
     cat > "$tmp/run-menu.sh" <<'BASH'
 set -uo pipefail
-source "$REPO_ROOT/lib/log.sh"
+source "$REPO_ROOT/scripts/lib/log.sh"
 OS="wsl"
 HOME="$TMP_ROOT/home"
 BOOTSTRAP_STATE_CONFIG="$TMP_ROOT/config.env"

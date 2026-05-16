@@ -20,7 +20,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-LIB="$ROOT/lib/launch-wrapper.sh"
+LIB="$ROOT/scripts/lib/launch-wrapper.sh"
 TOPIC="$ROOT/topics/80-claude-code/install.mac.sh"
 
 # ---------------------------------------------------------------------

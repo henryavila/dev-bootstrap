@@ -4,7 +4,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 
 : "${CODE_SERVER_PORT:=8080}"
 : "${CODE_SERVER_LABEL:=com.${USER}.code-server}"
@@ -185,7 +185,7 @@ detect_code_server_env() {
 
     if [[ -z "${BREW_PREFIX:-}" ]]; then
         local detect_out line
-        if detect_out="$(bash "$HERE/../../lib/detect-brew.sh" 2>/dev/null)"; then
+        if detect_out="$(bash "$HERE/../../scripts/lib/detect-brew.sh" 2>/dev/null)"; then
             while IFS= read -r line; do
                 case "$line" in
                     BREW_BIN=*) BREW_BIN="$(decode_detect_brew_value "${line#BREW_BIN=}")" ;;

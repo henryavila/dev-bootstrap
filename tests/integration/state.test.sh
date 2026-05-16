@@ -13,7 +13,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-LIB="$ROOT/lib/state.sh"
+LIB="$ROOT/scripts/lib/state.sh"
 assert_file_exists "$LIB" "lib/state.sh exists"
 
 # ---------- Isolated tempdir + sourcing ----------

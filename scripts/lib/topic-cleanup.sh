@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# lib/uninstall.sh — drift cleanup library for installed artifacts.
+# scripts/lib/topic-cleanup.sh — TOPIC-LEVEL drift cleanup for installed artifacts.
+#
+# RENAMED 2026-05-16 from scripts/lib/uninstall.sh to communicate scope:
+# this is a TOPIC UTILITY (allowed to define uninstall_* handlers), NOT the
+# engine. Lint L8 (no-uninstall) forbids uninstall_* in install-engine.sh
+# and scripts/lib/installers/*.sh; this file is outside that scope.
+# Per spec §D-B3: engine invariants forbid uninstall — topic cleanup is
+# orthogonal and remains supported.
 #
 # Source this file from a topic's install.<suffix>.sh, then call
 # uninstall_apply with the path to a manifest. The manifest lists
 # artifacts the topic used to install but no longer does — every run
 # of install.<suffix>.sh re-applies removals so machines already
-# provisioned converge to the new desired state on the next bootstrap
+# provisioned converge to the new desired state on the next setup
 # (or auto-update, which re-runs the affected install scripts).
 #
 # Why a generic library: install steps span 9 distinct verbs (apt, brew,
@@ -21,8 +28,8 @@
 #
 # Usage:
 #   HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-#   source "$HERE/../../lib/log.sh"
-#   source "$HERE/../../lib/uninstall.sh"
+#   source "$HERE/../../scripts/lib/log.sh"
+#   source "$HERE/../../scripts/lib/topic-cleanup.sh"
 #   …topic install logic…
 #   uninstall_apply "$HERE/data/uninstall.list"
 #
@@ -77,7 +84,7 @@ uninstall_apply() {
         # Split verb:arg on the FIRST colon (args may legitimately contain
         # slashes, e.g. `zinit:owner/repo`). Refuse lines without a colon.
         if [[ "$line" != *:* ]]; then
-            warn "uninstall.sh: malformed line (no verb:arg) — '$line'"
+            warn "topic-cleanup: malformed line (no verb:arg) — '$line'"
             continue
         fi
         verb="${line%%:*}"
@@ -88,7 +95,7 @@ uninstall_apply() {
         arg="${arg#"${arg%%[![:space:]]*}"}";    arg="${arg%"${arg##*[![:space:]]}"}"
 
         if [[ -z "$verb" ]] || [[ -z "$arg" ]]; then
-            warn "uninstall.sh: empty verb or arg — '$line'"
+            warn "topic-cleanup: empty verb or arg — '$line'"
             continue
         fi
 
@@ -101,7 +108,7 @@ uninstall_apply() {
             zinit)      _uninstall_zinit      "$arg" ;;
             user-bin)   _uninstall_user_bin   "$arg" ;;
             sys-bin)    _uninstall_sys_bin    "$arg" ;;
-            *)          warn "uninstall.sh: unknown verb '$verb' (line: '$line')" ;;
+            *)          warn "topic-cleanup: unknown verb '$verb' (line: '$line')" ;;
         esac
     done < "$manifest"
 }
@@ -159,7 +166,7 @@ _sandbox_name() {
     # (absolute paths) — shellcheck SC2221/SC2222 flagged the redundancy.
     case "$arg" in
         */*|*..*|"")
-            warn "uninstall.sh: $verb:$arg rejected by sandbox (no slashes, no '..')"
+            warn "topic-cleanup: $verb:$arg rejected by sandbox (no slashes, no '..')"
             return 1 ;;
     esac
     return 0
@@ -181,12 +188,12 @@ _uninstall_zinit() {
     case "$spec" in
         */*) ;;
         *)
-            warn "uninstall.sh: zinit:$spec malformed (expected owner/repo)"
+            warn "topic-cleanup: zinit:$spec malformed (expected owner/repo)"
             return 0 ;;
     esac
     case "$spec" in
         *..*|*//*|/*)
-            warn "uninstall.sh: zinit:$spec rejected by sandbox"
+            warn "topic-cleanup: zinit:$spec rejected by sandbox"
             return 0 ;;
     esac
     # zinit cache layout: ~/.local/share/zinit/plugins/<owner>---<repo>

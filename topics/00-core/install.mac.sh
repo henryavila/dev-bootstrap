@@ -24,9 +24,9 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/state.sh"
+source "$HERE/../../scripts/lib/state.sh"
 
 # ----------------------------------------------------------------------
 # Helpers — prefix decision + custom install
@@ -146,7 +146,7 @@ install_brew_at_custom_prefix() {
 decide_brew_prefix() {
     # 1. Already installed on disk — detect-brew.sh wins.
     local detect_out
-    if detect_out="$(bash "$HERE/../../lib/detect-brew.sh" 2>/dev/null)"; then
+    if detect_out="$(bash "$HERE/../../scripts/lib/detect-brew.sh" 2>/dev/null)"; then
         # Pass through BREW_BIN= and BREW_PREFIX= unchanged so the caller
         # eval populates them — same contract as lib/detect-brew.sh.
         printf '%s\n' "$detect_out"
@@ -257,7 +257,7 @@ elif [[ "$BREW_DECISION_METHOD" == "state_replay" ]]; then
         install_brew_at_custom_prefix "$chosen_prefix"
     fi
     # Re-detect after install
-    if out=$(bash "$HERE/../../lib/detect-brew.sh"); then
+    if out=$(bash "$HERE/../../scripts/lib/detect-brew.sh"); then
         eval "$out"
     else
         fail "brew install completed but detect-brew.sh still cannot find it"
@@ -267,7 +267,7 @@ elif [[ "$BREW_DECISION_METHOD" == "state_replay" ]]; then
 elif [[ "$is_canonical" == "1" ]]; then
     info "installing Homebrew at $chosen_prefix (canonical — official installer)"
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    if out=$(bash "$HERE/../../lib/detect-brew.sh"); then
+    if out=$(bash "$HERE/../../scripts/lib/detect-brew.sh"); then
         eval "$out"
     else
         fail "brew install completed but detect-brew.sh still cannot find it"

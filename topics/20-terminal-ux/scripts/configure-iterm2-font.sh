@@ -25,7 +25,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../../lib/log.sh"
+source "$HERE/../../../scripts/lib/log.sh"
 
 # ─── PostScript name of CaskaydiaCove Nerd Font (monospace variant). ───
 # Verified on a machine with the brew cask installed — the .ttf files ship

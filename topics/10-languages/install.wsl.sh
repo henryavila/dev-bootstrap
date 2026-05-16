@@ -19,9 +19,9 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/pecl-install.sh"
+source "$HERE/../../scripts/lib/pecl-install.sh"
 
 # ─── fnm + Node ────────────────────────────────────────────────────────
 if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then

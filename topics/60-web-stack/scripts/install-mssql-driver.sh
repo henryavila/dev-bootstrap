@@ -23,9 +23,9 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../../lib/log.sh"
+source "$HERE/../../../scripts/lib/log.sh"
 # shellcheck disable=SC1091
-source "$HERE/../../../lib/pecl-install.sh"
+source "$HERE/../../../scripts/lib/pecl-install.sh"
 
 # ─── OS check ─────────────────────────────────────────────────────────
 if ! grep -qiE 'ubuntu|debian' /etc/os-release 2>/dev/null; then

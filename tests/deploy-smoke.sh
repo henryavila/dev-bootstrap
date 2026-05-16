@@ -23,7 +23,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-DEPLOY_SH="$REPO_ROOT/lib/deploy.sh"
+DEPLOY_SH="$REPO_ROOT/scripts/lib/deploy.sh"
 
 if [[ ! -f "$DEPLOY_SH" ]]; then
     echo "FAIL: deploy.sh not found at $DEPLOY_SH" >&2

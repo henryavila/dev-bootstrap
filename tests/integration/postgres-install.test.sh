@@ -37,7 +37,7 @@ source "$ROOT/tests/lib/assert.sh"
 PG_SCRIPT="$ROOT/topics/60-web-stack/scripts/install-postgres.sh"
 MAC_INSTALL="$ROOT/topics/60-web-stack/install.mac.sh"
 WSL_INSTALL="$ROOT/topics/60-web-stack/install.wsl.sh"
-MENU="$ROOT/lib/menu.sh"
+MENU="$ROOT/scripts/lib/menu.sh"
 PG_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/postgres-install-test.XXXXXX")"
 trap 'rm -rf "$PG_TEST_ROOT"' EXIT INT TERM
 
@@ -641,7 +641,7 @@ _test_persist_menu_state() {
         warn() { :; }
         fail() { :; }
         # shellcheck disable=SC1091
-        source '$ROOT/lib/menu.sh' 2>/dev/null || true
+        source '$ROOT/scripts/lib/menu.sh' 2>/dev/null || true
         _persist_menu_state
         cat \"\$BOOTSTRAP_STATE_CONFIG\" 2>/dev/null
         rm -rf \"\$TMP\"

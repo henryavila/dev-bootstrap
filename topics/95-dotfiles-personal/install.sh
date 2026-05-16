@@ -5,11 +5,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/dotfiles-repo.sh"
+source "$HERE/../../scripts/lib/dotfiles-repo.sh"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/uninstall.sh"
+source "$HERE/../../scripts/lib/topic-cleanup.sh"
 
 : "${DOTFILES_REPO:?DOTFILES_REPO not set (setup.sh should have skipped this topic)}"
 : "${DOTFILES_DIR:=$HOME/dotfiles}"

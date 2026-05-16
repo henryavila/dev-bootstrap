@@ -3,7 +3,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../lib/log.sh"
+source "$HERE/../../scripts/lib/log.sh"
 
 # fnm may not be in PATH in a fresh shell during CI; try known locations.
 for p in "$HOME/.local/share/fnm" "/opt/homebrew/bin" "/usr/local/bin"; do

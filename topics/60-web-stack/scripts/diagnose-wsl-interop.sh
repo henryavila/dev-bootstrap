@@ -11,7 +11,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../../lib/log.sh" 2>/dev/null || {
+source "$HERE/../../../scripts/lib/log.sh" 2>/dev/null || {
     ok()   { printf "✓ %s\n" "$*"; }
     info() { printf "→ %s\n" "$*"; }
     warn() { printf "! %s\n" "$*" >&2; }

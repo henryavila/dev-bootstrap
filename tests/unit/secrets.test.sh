@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-SECRETS_SH="$REPO_ROOT/lib/secrets.sh"
+SECRETS_SH="$REPO_ROOT/scripts/lib/secrets.sh"
 assert_file_exists "$SECRETS_SH" "lib/secrets.sh present"
 
 # Each test gets a fresh state dir. mktemp -d works the same way on

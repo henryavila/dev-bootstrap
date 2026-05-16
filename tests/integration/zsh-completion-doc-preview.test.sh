@@ -117,7 +117,7 @@ fi
 deploy_home="$TESTROOT/deploy-home"
 mkdir -p "$deploy_home"
 HOME="$deploy_home" BREW_PREFIX="" \
-    bash "$REPO_ROOT/lib/deploy.sh" "$REPO_ROOT/topics/20-terminal-ux/templates" >/dev/null
+    bash "$REPO_ROOT/scripts/lib/deploy.sh" "$REPO_ROOT/topics/20-terminal-ux/templates" >/dev/null
 
 assert_file_contains "$deploy_home/.local/share/zsh/site-functions/_mesh" "run:run a mesh subcommand" \
     "20-terminal-ux deploys mesh completion into zsh site-functions"
