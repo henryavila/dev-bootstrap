@@ -17,9 +17,9 @@
 #   1  drift / missing files detected
 #
 # Usage:
-#   bash scripts/doctor.sh            # human-readable report
-#   bash scripts/doctor.sh --quiet    # only drift/missing lines
-#   bash scripts/doctor.sh --json     # structured output (for automation)
+#   bash scripts/runners/doctor.sh            # human-readable report
+#   bash scripts/runners/doctor.sh --quiet    # only drift/missing lines
+#   bash scripts/runners/doctor.sh --json     # structured output (for automation)
 #
 # Override knobs (forks using a non-dev-bootstrap installer):
 #   DOCTOR_MARKER_FILES   space-separated list of files to check for the

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# scripts/auto-update.sh — propagate dev-bootstrap + dotfiles changes across machines.
+# scripts/runners/auto-update.sh — propagate dev-bootstrap + dotfiles changes across machines.
 #
 # Spec: docs/2026-04-25-auto-update-spec.md
 #
 # Usage:
-#   bash scripts/auto-update.sh                     manual run, all repos, incremental
-#   bash scripts/auto-update.sh --from-shell-start  hook invocation (allows auto-exec)
-#   bash scripts/auto-update.sh -o|--only NAME      restrict to repo NAME (dev-bootstrap | dotfiles)
-#   bash scripts/auto-update.sh -f|--full           force full apply: bash bootstrap.sh / install.sh
+#   bash scripts/runners/auto-update.sh                     manual run, all repos, incremental
+#   bash scripts/runners/auto-update.sh --from-shell-start  hook invocation (allows auto-exec)
+#   bash scripts/runners/auto-update.sh -o|--only NAME      restrict to repo NAME (dev-bootstrap | dotfiles)
+#   bash scripts/runners/auto-update.sh -f|--full           force full apply: bash bootstrap.sh / install.sh
 #                                                   ignoring last-applied diff
-#   bash scripts/auto-update.sh -i|--interactive    in --full + dev-bootstrap, run bootstrap.sh
+#   bash scripts/runners/auto-update.sh -i|--interactive    in --full + dev-bootstrap, run bootstrap.sh
 #                                                   WITHOUT --non-interactive (i.e. show the menu).
 #                                                   Silently ignored for dotfiles or incremental runs.
-#   bash scripts/auto-update.sh --reset-auth        clear auth-failed-* flags and exit
-#   bash scripts/auto-update.sh -h|--help           this help
+#   bash scripts/runners/auto-update.sh --reset-auth        clear auth-failed-* flags and exit
+#   bash scripts/runners/auto-update.sh -h|--help           this help
 #
 # Exit codes:
 #   0  no work, or successful apply across all repos
@@ -35,7 +35,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   2. $HOME/.config/dotfiles/auto-update.conf      — fork-de-template layout
 #                                                     (template install.sh deploys
 #                                                     auto-update.conf.example here in `once` mode)
-#   3. $HERE/auto-update.conf                       — in-tree (private dotfiles repo layout)
+#   3. $HERE/../auto-update.conf                    — in-tree (workstation layout, conf in scripts/)
 # Both real-world layouts therefore work without manual env wiring.
 # STATE_DIR overridable via env for test fixtures (see tests/auto-update.test.sh).
 CONF="${AUTO_UPDATE_CONF:-}"
@@ -43,7 +43,7 @@ if [[ -z "$CONF" ]]; then
     if [[ -r "$HOME/.config/dotfiles/auto-update.conf" ]]; then
         CONF="$HOME/.config/dotfiles/auto-update.conf"
     else
-        CONF="$HERE/auto-update.conf"
+        CONF="$HERE/../auto-update.conf"
     fi
 fi
 STATE_DIR="${AUTO_UPDATE_STATE_DIR:-$HOME/.local/state/dev-bootstrap}"
@@ -336,9 +336,9 @@ process_repo() {
             fi
             # Capture doctor output so the warn is actionable — silent
             # `>/dev/null 2>&1` previously made the user re-run by hand.
-            if [[ -f "$repo/scripts/doctor.sh" ]]; then
+            if [[ -f "$repo/scripts/runners/doctor.sh" ]]; then
                 local doctor_out doctor_rc=0
-                doctor_out="$(bash "$repo/scripts/doctor.sh" --quiet 2>&1)" || doctor_rc=$?
+                doctor_out="$(bash "$repo/scripts/runners/doctor.sh" --quiet 2>&1)" || doctor_rc=$?
                 if (( doctor_rc != 0 )); then
                     warn "$name: doctor.sh reporta drift residual após --full"
                     [[ -n "$doctor_out" ]] && printf '%s\n' "$doctor_out" | sed 's/^/    /' >&2
@@ -479,9 +479,9 @@ process_repo() {
     fi
 
     # ─── Validador (apenas dotfiles no MVP) ─────────────────────────
-    if (( ! skip_install )) && [[ "$name" == "dotfiles" ]] && [[ -f "$repo/scripts/doctor.sh" ]]; then
-        if ! bash "$repo/scripts/doctor.sh" --quiet >/dev/null 2>&1; then
-            warn "$name: doctor.sh reporta drift residual — rode \`bash $repo/scripts/doctor.sh\` para detalhes"
+    if (( ! skip_install )) && [[ "$name" == "dotfiles" ]] && [[ -f "$repo/scripts/runners/doctor.sh" ]]; then
+        if ! bash "$repo/scripts/runners/doctor.sh" --quiet >/dev/null 2>&1; then
+            warn "$name: doctor.sh reporta drift residual — rode \`bash $repo/scripts/runners/doctor.sh\` para detalhes"
         fi
     fi
 
@@ -503,7 +503,7 @@ process_repo() {
     # bash 3.2 quirk: under `set -u`, "${AUTO_UPDATE_RELOAD[@]}" aborts when
     # the array is empty (e.g. test fixtures with a minimal conf). The
     # ${arr[@]+...} substitution checks set-ness before expansion. Same
-    # pattern as scripts/doctor.sh; see feedback_bash32_compat_macos.md.
+    # pattern as scripts/runners/doctor.sh; see feedback_bash32_compat_macos.md.
     local entry glob cmd path
     for entry in "${AUTO_UPDATE_RELOAD[@]+"${AUTO_UPDATE_RELOAD[@]}"}"; do
         glob="${entry%%:*}"

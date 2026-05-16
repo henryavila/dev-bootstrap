@@ -7,7 +7,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../../lib/log.sh"
 
 if [[ -z "${BREW_BIN:-}" ]]; then
-    # dotfiles/scripts/auto-update.sh runs changed topic installers directly,
+    # scripts/runners/auto-update.sh runs changed topic installers directly,
     # outside bootstrap.sh, so recover the brew path for incremental updates.
     if detect_out="$(bash "$HERE/../../lib/detect-brew.sh" 2>/dev/null)"; then
         eval "$detect_out"

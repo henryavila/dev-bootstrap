@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/integration/tmux-mac-standalone-brew.test.sh
 #
-# Regression guard for incremental updates: dotfiles/scripts/auto-update.sh
+# Regression guard for incremental updates: scripts/runners/auto-update.sh
 # runs changed topic installers directly, outside bootstrap.sh. Mac topic
 # installers that need Homebrew must therefore recover BREW_BIN themselves
 # instead of assuming bootstrap.sh exported it.
