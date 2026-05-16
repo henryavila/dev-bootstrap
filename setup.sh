@@ -69,6 +69,14 @@ export HOME="${HOME:-$(getent passwd "$USER" | cut -d: -f6)}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# C13.5: ensure bin/mesh is discoverable on PATH via ~/.local/bin/ symlink.
+# Idempotent — only touches the link if absent or pointing elsewhere.
+mkdir -p "$HOME/.local/bin"
+if [[ ! -L "$HOME/.local/bin/mesh" ]] || \
+   [[ "$(readlink "$HOME/.local/bin/mesh")" != "$HERE/bin/mesh" ]]; then
+    ln -sf "$HERE/bin/mesh" "$HOME/.local/bin/mesh"
+fi
+
 collect_topics() {
     # Portable across bash 3.2 (macOS default) and bash 4+: no `mapfile`, no
     # GNU find `-printf`. Parameter expansion `${p##*/}` does basename without
