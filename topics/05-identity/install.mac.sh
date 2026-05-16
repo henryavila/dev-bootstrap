@@ -7,7 +7,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
 
-: "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
+: "${BREW_BIN:?BREW_BIN not set — run through setup.sh}"
 
 if "$BREW_BIN" list --formula gh >/dev/null 2>&1; then
     ok "gh already installed ($(gh --version | head -1))"

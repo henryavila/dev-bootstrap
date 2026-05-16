@@ -116,7 +116,7 @@ if [[ "${GPG_SIGN:-0}" == "1" ]]; then
             warn "GPG_SIGN=1 but no secret key found — generate one with:"
             warn "    gpg --full-generate-key        # RSA 4096, your git email"
             warn "    gpg --list-secret-keys --keyid-format=long"
-            warn "  then re-run with GPG_KEY_ID=<id> bash bootstrap.sh"
+            warn "  then re-run with GPG_KEY_ID=<id> bash setup.sh"
         else
             info "enabling commit + tag signing with key $signing_key"
             git config --global user.signingkey "$signing_key"

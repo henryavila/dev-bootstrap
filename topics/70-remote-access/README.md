@@ -1,10 +1,10 @@
 # 70-remote-access (opt-in)
 
-Enabled via `INCLUDE_REMOTE=1 bash bootstrap.sh`.
+Enabled via `INCLUDE_REMOTE=1 bash setup.sh`.
 
 **Installs:** `openssh-server` + `mosh` + `tailscale`. Activates sshd, enables systemd on WSL (`/etc/wsl.conf`).
 
-**Legacy NOPASSWD removal** (since v2026-04-22): earlier versions of this topic created `/etc/sudoers.d/10-${USER}-nopasswd` with `NOPASSWD: ALL` as a convenience during bootstrap. That was unnecessary permanent attack surface — the main `bootstrap.sh` now runs `sudo -v` at startup (cache warmup, ~5–15 min), covering the whole bootstrap duration with a single prompt. Forks that already had the file: this topic removes it automatically on the next run.
+**Legacy NOPASSWD removal** (since v2026-04-22): earlier versions of this topic created `/etc/sudoers.d/10-${USER}-nopasswd` with `NOPASSWD: ALL` as a convenience during bootstrap. That was unnecessary permanent attack surface — the main `setup.sh` now runs `sudo -v` at startup (cache warmup, ~5–15 min), covering the whole bootstrap duration with a single prompt. Forks that already had the file: this topic removes it automatically on the next run.
 
 **Applies (WSL):** systemd drop-in to fix the tailscale0 MTU — see the "Tailscale MTU gotcha" section below.
 
@@ -134,5 +134,5 @@ If you don't use Tailscale or mosh:
 
 ```bash
 # don't set INCLUDE_REMOTE=1 (default skip)
-bash bootstrap.sh
+bash setup.sh
 ```

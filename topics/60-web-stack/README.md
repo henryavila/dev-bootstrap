@@ -1,6 +1,6 @@
 # 60-web-stack (opt-in)
 
-Enabled via `INCLUDE_WEBSTACK=1 bash bootstrap.sh` (or by checking it in the interactive menu).
+Enabled via `INCLUDE_WEBSTACK=1 bash setup.sh` (or by checking it in the interactive menu).
 
 ## What you get
 
@@ -50,7 +50,7 @@ php-use --list # show installed versions + current default
 
 ```bash
 PHP_VERSIONS="8.4 8.5" PHP_DEFAULT=8.5 \
-  INCLUDE_WEBSTACK=1 bash bootstrap.sh --non-interactive
+  INCLUDE_WEBSTACK=1 bash setup.sh --non-interactive
 ```
 
 ## Extensions
@@ -119,7 +119,7 @@ sudo ln -s /etc/nginx/sites-available/my-thing.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Re-running `bash bootstrap.sh` is safe — `my-thing.conf` stays put.
+Re-running `bash setup.sh` is safe — `my-thing.conf` stays put.
 
 ## Optional extras
 
@@ -194,9 +194,9 @@ Oracle MySQL DMG: if `/usr/local/mysql/bin/mysql` exists, the installer **skips*
 By default, the topic detects an existing healthy Valet (config dir at `~/.config/valet` plus successful `valet --version`) and skips `valet install` to save 10-30s of redundant nginx/dnsmasq/mkcert work. To bypass that detection — useful after a macOS upgrade that rotated dnsmasq config, or when recovering from a corrupted Valet state:
 
 ```bash
-FORCE_VALET_INSTALL=1 bash bootstrap.sh --non-interactive
+FORCE_VALET_INSTALL=1 bash setup.sh --non-interactive
 # or scoped to just this topic:
-FORCE_VALET_INSTALL=1 ONLY_TOPICS="60-web-stack" bash bootstrap.sh --non-interactive
+FORCE_VALET_INSTALL=1 ONLY_TOPICS="60-web-stack" bash setup.sh --non-interactive
 ```
 
 The flag is one-shot — it does not persist in the bootstrap state file. Subsequent runs without the var go back to the skip-when-healthy default.
@@ -235,4 +235,4 @@ link-project --list
 | Firefox keeps showing cert error | Firefox ignores Windows store by default | Set `security.enterprise_roots.enabled = true` in `about:config` |
 | `php -m` doesn't show sqlsrv after MSSQL install | PECL build hit a missing `php{VER}-dev` header | `sudo apt install php{VER}-dev && sudo pecl install -f sqlsrv` |
 | `*.localhost` works in browser but `curl foo.localhost` fails | curl linked against a libc that doesn't follow RFC 6761 (rare) | Add `127.0.0.1 foo.localhost` to `/etc/hosts` manually (only for that edge case) |
-| nginx reload says `host not found in upstream` | `dev-bootstrap-maps.conf` missing from `conf.d/` | Re-run `bash bootstrap.sh` — `deploy.sh` will put it back |
+| nginx reload says `host not found in upstream` | `dev-bootstrap-maps.conf` missing from `conf.d/` | Re-run `bash setup.sh` — `deploy.sh` will put it back |

@@ -45,13 +45,13 @@ If no secret key exists, the installer prints the commands to generate one and l
 gpg --full-generate-key
 
 # Then enable signing on this machine:
-GPG_SIGN=1 bash bootstrap.sh                           # auto-picks first key
-GPG_SIGN=1 GPG_KEY_ID=ABCD1234EFGH5678 bash bootstrap.sh
+GPG_SIGN=1 bash setup.sh                           # auto-picks first key
+GPG_SIGN=1 GPG_KEY_ID=ABCD1234EFGH5678 bash setup.sh
 ```
 
 Disable later: `git config --global --unset commit.gpgsign` + `--unset tag.gpgsign`.
 
 ## Adding/removing configs
 
-- **Global git config:** edit `data/gitconfig.keys` and run `ONLY_TOPICS=50-git bash bootstrap.sh`.
+- **Global git config:** edit `data/gitconfig.keys` and run `ONLY_TOPICS=50-git bash setup.sh`.
 - **Shell aliases:** edit `templates/bashrc.d-50-git.sh` (and the zsh equivalent), then rerun the bootstrap. To override locally without editing the bootstrap, use `~/.bashrc.d/99-personal-aliases.sh` in your personal dotfiles (loaded later).

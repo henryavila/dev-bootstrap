@@ -7,9 +7,9 @@
 #   bash scripts/runners/auto-update.sh                     manual run, all repos, incremental
 #   bash scripts/runners/auto-update.sh --from-shell-start  hook invocation (allows auto-exec)
 #   bash scripts/runners/auto-update.sh -o|--only NAME      restrict to repo NAME (dev-bootstrap | dotfiles)
-#   bash scripts/runners/auto-update.sh -f|--full           force full apply: bash bootstrap.sh / install.sh
+#   bash scripts/runners/auto-update.sh -f|--full           force full apply: bash setup.sh / install.sh
 #                                                   ignoring last-applied diff
-#   bash scripts/runners/auto-update.sh -i|--interactive    in --full + dev-bootstrap, run bootstrap.sh
+#   bash scripts/runners/auto-update.sh -i|--interactive    in --full + dev-bootstrap, run setup.sh
 #                                                   WITHOUT --non-interactive (i.e. show the menu).
 #                                                   Silently ignored for dotfiles or incremental runs.
 #   bash scripts/runners/auto-update.sh --reset-auth        clear auth-failed-* flags and exit
@@ -279,17 +279,17 @@ process_repo() {
         return 0
     fi
 
-    # ─── --full path: force bootstrap.sh / install.sh, ignore diff ──
+    # ─── --full path: force setup.sh / install.sh, ignore diff ──
     # Skips last-applied/diff/pending-sudo logic and runs the orchestrator
     # in full. Used by `bup --full` (rebootstrap dev-bootstrap from scratch)
     # and `dotup --full` (re-deploy dotfiles). Bumps last-applied on success
     # so the next incremental run sees a fresh baseline.
     if (( FULL )); then
         notice "atualizando $name (--full)"
-        # Pre-emptive sudo for dev-bootstrap (bootstrap.sh runs apt/brew/services).
+        # Pre-emptive sudo for dev-bootstrap (setup.sh runs apt/brew/services).
         # dotfiles install.sh is HOME-only — no sudo needed.
         if [[ "$name" == "dev-bootstrap" ]]; then
-            notice "$name: --full requer sudo (bootstrap.sh roda apt/brew/services)"
+            notice "$name: --full requer sudo (setup.sh roda apt/brew/services)"
             if ! sudo -v 2>/dev/null; then
                 warn "$name: sudo cancelado — abortando --full"
                 return 1
@@ -307,7 +307,7 @@ process_repo() {
             return 1
         fi
         if [[ "$name" == "dev-bootstrap" ]]; then
-            # -i/--interactive drops --non-interactive so bootstrap.sh shows
+            # -i/--interactive drops --non-interactive so setup.sh shows
             # its whiptail menu (used to validate new opt-ins like postgres
             # without committing config.env tweaks first). Default stays
             # automated so the shell-start hook never blocks on a prompt.
@@ -320,13 +320,13 @@ process_repo() {
             # uniform.
             local bootstrap_rc=0
             if (( INTERACTIVE )); then
-                notice "$name: --interactive — bootstrap.sh roda com menu (output direto pro TTY, sem prefix)"
-                bash "$repo/bootstrap.sh" || bootstrap_rc=$?
+                notice "$name: --interactive — setup.sh roda com menu (output direto pro TTY, sem prefix)"
+                bash "$repo/setup.sh" || bootstrap_rc=$?
             else
-                bash "$repo/bootstrap.sh" --non-interactive 2>&1 | sed 's/^/    /' || bootstrap_rc=$?
+                bash "$repo/setup.sh" --non-interactive 2>&1 | sed 's/^/    /' || bootstrap_rc=$?
             fi
             if (( bootstrap_rc != 0 )); then
-                warn "$name: bootstrap.sh --full falhou — last-applied NÃO bumped"
+                warn "$name: setup.sh --full falhou — last-applied NÃO bumped"
                 return 1
             fi
         elif [[ "$name" == "dotfiles" ]]; then
@@ -558,7 +558,7 @@ process_repo() {
 #
 # EXIT_RC is the script's overall outcome:
 #   0  no work, or all per-repo work succeeded
-#   1  any process_repo returned non-zero (e.g. --full bootstrap.sh failed),
+#   1  any process_repo returned non-zero (e.g. --full setup.sh failed),
 #      or -o/--only NAME did not match anything, or no repos configured.
 # Honest exit codes matter for piped composition — without this
 # the user's `&&` composition would silently mask first-stage failures.

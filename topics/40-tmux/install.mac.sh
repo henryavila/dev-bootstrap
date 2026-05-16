@@ -8,14 +8,14 @@ source "$HERE/../../lib/log.sh"
 
 if [[ -z "${BREW_BIN:-}" ]]; then
     # scripts/runners/auto-update.sh runs changed topic installers directly,
-    # outside bootstrap.sh, so recover the brew path for incremental updates.
+    # outside setup.sh, so recover the brew path for incremental updates.
     if detect_out="$(bash "$HERE/../../lib/detect-brew.sh" 2>/dev/null)"; then
         eval "$detect_out"
         export BREW_BIN BREW_PREFIX
     fi
 fi
 
-: "${BREW_BIN:?BREW_BIN not found — run bootstrap.sh once to install Homebrew}"
+: "${BREW_BIN:?BREW_BIN not found — run setup.sh once to install Homebrew}"
 
 if "$BREW_BIN" list --formula tmux >/dev/null 2>&1; then
     ok "tmux already installed"

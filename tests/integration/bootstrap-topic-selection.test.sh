@@ -14,7 +14,7 @@ trap 'rm -rf "$TESTROOT"' EXIT INT TERM
 echo
 echo "═══ bootstrap topic selection ═══"
 
-list_out="$(HOME="$TESTROOT/home-list" bash "$REPO_ROOT/bootstrap.sh" --list-topics 2>&1)"
+list_out="$(HOME="$TESTROOT/home-list" bash "$REPO_ROOT/setup.sh" --list-topics 2>&1)"
 assert_contains "$list_out" "20  20-terminal-ux" \
     "bootstrap --list-topics lists topic numbers from topics/"
 assert_contains "$list_out" "60  60-web-stack" \
@@ -34,7 +34,7 @@ dry_out="$(
     ONLY_TOPICS="20 30" \
     DRY_RUN=1 \
     NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/bootstrap.sh" --non-interactive 2>&1
+        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
 )"
 assert_contains "$dry_out" "topic :: 20-terminal-ux" \
     "ONLY_TOPICS accepts short numeric selector 20"
@@ -48,7 +48,7 @@ single_digit_out="$(
     ONLY_TOPICS="5" \
     DRY_RUN=1 \
     NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/bootstrap.sh" --non-interactive 2>&1
+        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
 )"
 assert_contains "$single_digit_out" "topic :: 05-identity" \
     "ONLY_TOPICS accepts single-digit selector 5 for 05-identity"
@@ -58,7 +58,7 @@ bad_out="$(
     ONLY_TOPICS="25" \
     DRY_RUN=1 \
     NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/bootstrap.sh" --non-interactive 2>&1
+        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
 )"
 bad_rc=$?
 if (( bad_rc != 0 )) && [[ "$bad_out" == *"unknown topic selector '25'"* ]]; then
@@ -75,7 +75,7 @@ strict_out="$(
     DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS=1 \
     DRY_RUN=1 \
     NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/bootstrap.sh" --non-interactive 2>&1
+        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
 )"
 strict_rc=$?
 if (( strict_rc != 0 )) && [[ "$strict_out" == *"60-web-stack is opt-in; set INCLUDE_WEBSTACK=1"* ]]; then
@@ -92,7 +92,7 @@ ai_only_out="$(
     DOTFILES_REPO=file://"$REPO_ROOT" \
     DRY_RUN=1 \
     NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/bootstrap.sh" --non-interactive 2>&1
+        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
 )"
 assert_contains "$ai_only_out" "topic :: 82-ai-tools" \
     "AI tools run as topic 82 when explicitly enabled"
@@ -104,7 +104,7 @@ legacy_dotfiles_out="$(
     DOTFILES_REPO=file://"$REPO_ROOT" \
     DRY_RUN=1 \
     NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/bootstrap.sh" --non-interactive 2>&1
+        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
 )"
 assert_contains "$legacy_dotfiles_out" "topic :: 95-dotfiles-personal" \
     "DOTFILES_REPO alone still enables 95-dotfiles-personal for backward compatibility"

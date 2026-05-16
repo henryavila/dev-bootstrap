@@ -21,7 +21,7 @@ WSL="$ROOT/topics/60-web-stack/install.wsl.sh"
 MAC="$ROOT/topics/60-web-stack/install.mac.sh"
 LANG_MAC="$ROOT/topics/10-languages/install.mac.sh"
 REMOTE_MAC="$ROOT/topics/70-remote-access/install.mac.sh"
-BOOTSTRAP="$ROOT/bootstrap.sh"
+BOOTSTRAP="$ROOT/setup.sh"
 MENU="$ROOT/lib/menu.sh"
 LOG="$ROOT/lib/log.sh"
 
@@ -480,7 +480,7 @@ echo
 echo "═══ INCLUDE_LARAVEL → INCLUDE_WEBSTACK back-compat alias ═══"
 
 assert_pattern_present "$BOOTSTRAP" 'INCLUDE_LARAVEL.*INCLUDE_WEBSTACK' \
-    "bootstrap.sh — legacy INCLUDE_LARAVEL aliases to INCLUDE_WEBSTACK"
+    "setup.sh — legacy INCLUDE_LARAVEL aliases to INCLUDE_WEBSTACK"
 
 # The alias check must happen BEFORE export INCLUDE_WEBSTACK, otherwise
 # the alias would set after the canonical default already initialized to 0.
@@ -584,7 +584,7 @@ assert_pattern_present "$TUX_WSL" 'atuin login </dev/tty' \
     "20-terminal-ux/install.wsl.sh — runs 'atuin login' inline via /dev/tty"
 
 # The upstream setup.atuin.sh script now has its own import/register/setup
-# prompts. `mesh run update -f` calls bootstrap.sh with --non-interactive
+# prompts. `mesh run update -f` calls setup.sh with --non-interactive
 # but still allocates ssh -tt, so upstream sees /dev/tty unless we pass
 # its explicit flag. Regression: crc appeared stuck after "Atuin installed
 # successfully!" and each ENTER answered one hidden upstream prompt.
@@ -601,7 +601,7 @@ assert_pattern_present "$TUX_MAC" 'atuin login </dev/tty' \
     "20-terminal-ux/install.mac.sh — runs 'atuin login' inline via /dev/tty"
 
 # TTY gate must test for controlling terminal via /dev/tty, NOT via
-# `-t 1`. bootstrap.sh pipes each installer's stdout to `tee -a LOG`,
+# `-t 1`. setup.sh pipes each installer's stdout to `tee -a LOG`,
 # which makes `-t 1` always false even when the human is still at the
 # terminal. This silently disabled every interactive fallback (chsh
 # prompt + atuin login) in actual runs. /dev/tty is the canonical ctty
@@ -624,7 +624,7 @@ assert_pattern_present "$TUX_MAC" ': </dev/tty >/dev/null 2>&1' \
 assert_pattern_absent "$TUX_MAC" '\[ -t 0 \] && \[ -t 1 \]' \
     "20-terminal-ux/install.mac.sh — no longer gates on '-t 1' (broken under 'tee' pipe)"
 
-# Issue 2 — secrets scaffold. bootstrap.sh must source lib/secrets.sh
+# Issue 2 — secrets scaffold. setup.sh must source lib/secrets.sh
 # and call secrets_load AFTER log.sh, BEFORE the menu runs.
 SECRETS_LIB="$ROOT/lib/secrets.sh"
 
@@ -632,19 +632,19 @@ assert_file_exists "$SECRETS_LIB" \
     "lib/secrets.sh — new helper in place"
 
 assert_pattern_present "$BOOTSTRAP" 'source "\$HERE/lib/secrets.sh"' \
-    "bootstrap.sh — sources lib/secrets.sh"
+    "setup.sh — sources lib/secrets.sh"
 
 assert_pattern_present "$BOOTSTRAP" 'secrets_load' \
-    "bootstrap.sh — calls secrets_load"
+    "setup.sh — calls secrets_load"
 
 # Order check: secrets must be loaded before menu is sourced/run so the
 # menu's secrets_has NGROK_AUTHTOKEN gate behaves correctly.
 secrets_line=$(grep -n 'secrets_load' "$BOOTSTRAP" | head -1 | cut -d: -f1)
 menu_line=$(grep -n 'source "\$HERE/lib/menu.sh"' "$BOOTSTRAP" | head -1 | cut -d: -f1)
 if [[ -n "$secrets_line" && -n "$menu_line" ]] && [[ "$secrets_line" -lt "$menu_line" ]]; then
-    pass "bootstrap.sh — secrets_load runs before menu is sourced (line $secrets_line < $menu_line)"
+    pass "setup.sh — secrets_load runs before menu is sourced (line $secrets_line < $menu_line)"
 else
-    fail "bootstrap.sh — secrets_load must run before menu (secrets=$secrets_line, menu=$menu_line)"
+    fail "setup.sh — secrets_load must run before menu (secrets=$secrets_line, menu=$menu_line)"
 fi
 
 # Menu: prompts for ngrok token only when selected and not already known.

@@ -37,11 +37,11 @@ Native-Linux users outside WSL: no terminal emulator config runs. Use whatever t
 
 `30-shell` adds `~/.local/share/zsh/site-functions` to `fpath` before
 `compinit`; this topic owns the completion files deployed into that directory.
-If `mesh <TAB>` falls back to files, re-run `ONLY_TOPICS=20 bash bootstrap.sh`
+If `mesh <TAB>` falls back to files, re-run `ONLY_TOPICS=20 bash setup.sh`
 or `mesh topic 20` from an installed dotfiles layer, then open a new shell.
 
 ## Customization
 
-- **Theme change:** edit `templates/starship.toml` (bash prompt) or your personal `~/.p10k.zsh` (zsh prompt) and re-run `ONLY_TOPICS=20-terminal-ux bash bootstrap.sh`.
+- **Theme change:** edit `templates/starship.toml` (bash prompt) or your personal `~/.p10k.zsh` (zsh prompt) and re-run `ONLY_TOPICS=20-terminal-ux bash setup.sh`.
 - **Different font:** override `NF_PS_NAME` in `configure-iterm2-font.sh` / adjust the `font.face` in `scripts/wt-settings-fragment.json`.
 - **Skip terminal auto-config:** the two scripts are each gated by `-x` checks in `install.*.sh`; remove the corresponding block if you prefer to manage the emulator by hand.

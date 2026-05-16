@@ -199,7 +199,7 @@ assert_not_contains "$mesh_topic_completion_out" "FILE_FALLBACK" \
     "mesh topic completion does not fall back to file listing"
 
 mkdir -p "$TESTROOT/fake-dev-bootstrap"
-cat > "$TESTROOT/fake-dev-bootstrap/bootstrap.sh" <<'BOOTSTRAP'
+cat > "$TESTROOT/fake-dev-bootstrap/setup.sh" <<'BOOTSTRAP'
 #!/usr/bin/env bash
 if [ "$1" = "--list-topics" ]; then
     printf '%s\n' \
@@ -211,7 +211,7 @@ if [ "$1" = "--list-topics" ]; then
 fi
 exit 1
 BOOTSTRAP
-chmod +x "$TESTROOT/fake-dev-bootstrap/bootstrap.sh"
+chmod +x "$TESTROOT/fake-dev-bootstrap/setup.sh"
 
 mesh_topic_repo_fallback_out="$(
     PATH="/usr/bin:/bin" HOME="$deploy_home" DEV_BOOTSTRAP_ROOT="$TESTROOT/fake-dev-bootstrap" zsh -fic "

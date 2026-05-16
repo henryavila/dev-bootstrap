@@ -64,5 +64,5 @@ This topic installs **tools** (CLI + daemon + hook wrapper). The *content* (what
 If you don't use Claude Code or prefer to handle syncthing outside the bootstrap:
 
 ```bash
-SKIP_TOPICS="80-claude-code" bash bootstrap.sh
+SKIP_TOPICS="80-claude-code" bash setup.sh
 ```

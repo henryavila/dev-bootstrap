@@ -38,14 +38,14 @@ Restart, open the freshly-installed Ubuntu, and follow the WSL instructions belo
 | Platform | One-time prereq |
 |---|---|
 | WSL2 / native Linux (fresh install) | `sudo apt-get update && sudo apt-get install -y git curl ca-certificates` |
-| macOS (fresh install) | Nothing — Xcode Command Line Tools install on demand the first time `bootstrap.sh` invokes `git` |
+| macOS (fresh install) | Nothing — Xcode Command Line Tools install on demand the first time `setup.sh` invokes `git` |
 
 **Interactive mode (default):**
 
 ```bash
 git clone https://github.com/henryavila/dev-bootstrap ~/dev-bootstrap
 cd ~/dev-bootstrap
-bash bootstrap.sh
+bash setup.sh
 ```
 
 Running without any control env var opens a `whiptail` menu that asks:
@@ -62,30 +62,30 @@ If `whiptail` isn't installed, the bootstrap installs it first (`apt install whi
 
 ```bash
 # preview the plan without executing
-bash bootstrap.sh --dry-run
+bash setup.sh --dry-run
 
 # skip the menu even on a TTY
-NON_INTERACTIVE=1 bash bootstrap.sh
-bash bootstrap.sh --non-interactive
+NON_INTERACTIVE=1 bash setup.sh
+bash setup.sh --non-interactive
 
 # run specific topics only
-ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
-ONLY_TOPICS="20 30" bash bootstrap.sh
+ONLY_TOPICS="00-core 10-languages" bash setup.sh
+ONLY_TOPICS="20 30" bash setup.sh
 
 # list official topic numbers
-bash bootstrap.sh --list-topics
+bash setup.sh --list-topics
 
 # enable opt-in topics
-INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash bootstrap.sh
+INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash setup.sh
 
 # pull personal dotfiles at the end
-DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
+DOTFILES_REPO=git@github.com:you/dotfiles.git bash setup.sh
 
 # also configure npm globals under ~/.npm-global and persist PATH via dotfiles
-DOTFILES_REPO=git@github.com:you/dotfiles.git DOTFILES_NPM_GLOBAL=1 bash bootstrap.sh
+DOTFILES_REPO=git@github.com:you/dotfiles.git DOTFILES_NPM_GLOBAL=1 bash setup.sh
 
 # install AI tools from the dotfiles manifest without applying personal dotfiles
-INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
+INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:you/dotfiles.git bash setup.sh
 ```
 
 The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `DOTFILES_REPO`, `DOTFILES_NPM_GLOBAL`, `DOTFILES_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
@@ -176,7 +176,7 @@ Full output of every run is written to `/tmp/dev-bootstrap-<os>-<timestamp>.log`
 
 ```
 dev-bootstrap/
-├── bootstrap.sh              # runner — OS detection, interactive menu, sudo warmup, topic orchestration
+├── setup.sh              # runner — OS detection, interactive menu, sudo warmup, topic orchestration
 ├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh, menu.sh
 ├── topics/NN-<name>/         # idempotent installation units
 │   ├── install.$OS.sh        # WSL or Mac
@@ -206,7 +206,7 @@ dev-bootstrap/
 
 ### Release discipline
 
-Structural changes (new topic, changes in `lib/`, `install.sh`, `bootstrap.sh`) go through:
+Structural changes (new topic, changes in `lib/`, `install.sh`, `setup.sh`) go through:
 
 1. Commit with a **migration note** in the body — *forks that already ran X should Y*. Estimated time, affected files, command to apply.
 2. Dated tag: `git tag -a v2026-MM-DD -m "summary"`.
@@ -217,12 +217,12 @@ Hotfixes with no structural change (template bug, README typo) use regular commi
 ## CI
 
 - `.github/workflows/lint.yml` (Tier 1) — shellcheck `-S warning` + `bash -n` on every push/PR. Fast (<20s).
-- `.github/workflows/smoke-test.yml` (Tier 2) — green on `ubuntu-24.04` as of 2026-04-23. Builds a Docker image that mimics a fresh WSL Ubuntu, runs `bootstrap.sh` non-interactively with `PHP_VERSIONS="8.4 8.5"` (two-version matrix to exercise the per-version ABI isolation without overshooting the 600s timeout — the full 4-version matrix stays for Tier 3). Uploads the run log as artifact on failure.
+- `.github/workflows/smoke-test.yml` (Tier 2) — green on `ubuntu-24.04` as of 2026-04-23. Builds a Docker image that mimics a fresh WSL Ubuntu, runs `setup.sh` non-interactively with `PHP_VERSIONS="8.4 8.5"` (two-version matrix to exercise the per-version ABI isolation without overshooting the 600s timeout — the full 4-version matrix stays for Tier 3). Uploads the run log as artifact on failure.
 - Tier 3 E2E (planned, v1.1) — daily matrix across `ubuntu-22.04` / `ubuntu-24.04` / `macos-latest` with full PHP version set + idempotency check (2nd run = noop) + each topic's `verify.sh`.
 
 ## Personal dotfiles
 
-This repo **never** versions personal configs (SSH, git identity, project-specific aliases). For that, use [dotfiles-template](https://github.com/henryavila/dotfiles-template): click *Use this template* on GitHub, mark the new repo **private**, and either let the interactive menu collect `DOTFILES_REPO` or set the env var before running `bootstrap.sh`.
+This repo **never** versions personal configs (SSH, git identity, project-specific aliases). For that, use [dotfiles-template](https://github.com/henryavila/dotfiles-template): click *Use this template* on GitHub, mark the new repo **private**, and either let the interactive menu collect `DOTFILES_REPO` or set the env var before running `setup.sh`.
 
 ## Contributing
 

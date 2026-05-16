@@ -15,7 +15,7 @@ source "$HERE/../../../lib/log.sh"
 # independently.
 #
 # CRITICAL: `gh auth login` MUST run against a real TTY. Our parent
-# (bootstrap.sh:276) invokes topics via `bash installer 2>&1 | tee
+# (setup.sh:276) invokes topics via `bash installer 2>&1 | tee
 # -a LOG` — the `| tee` makes stdout/stderr non-TTY. When gh detects
 # non-TTY, it SKIPS the "Press Enter to continue" pause built into
 # its interactive flow and starts polling GitHub's OAuth endpoint
@@ -171,7 +171,7 @@ else
         warn "    open https://github.com/settings/ssh/new  and paste the key"
         warn "Or grant the scope + re-run this topic:"
         warn "    gh auth refresh -s admin:public_key"
-        warn "    bash ~/dev-bootstrap/bootstrap.sh"
+        warn "    bash ~/dev-bootstrap/setup.sh"
     fi
 fi
 

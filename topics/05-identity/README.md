@@ -36,7 +36,7 @@ can be cloned without manual SSH key management.
 - **`--git-protocol https`** (not `ssh`): prevents `gh auth login` from
   offering to auto-generate a second SSH key. Our script manages the
   key explicitly.
-- **`</dev/tty >/dev/tty 2>&1`** redirect: bootstrap.sh invokes topics
+- **`</dev/tty >/dev/tty 2>&1`** redirect: setup.sh invokes topics
   via `tee` pipe, which kills TTY detection in `gh`. The redirect
   bypasses the pipe for the auth command specifically, so `gh` sees a
   real terminal and behaves interactively (with "Press Enter to open
@@ -57,7 +57,7 @@ Each machine gets its own OAuth token + its own SSH key. Advantages:
 Trade-off: ~30 seconds of browser interaction on each new machine (click
 approve + paste code). Alternative is a pre-created PAT stored in a
 password manager — the `GITHUB_TOKEN` env var enables that path for CI
-(`NON_INTERACTIVE=1 GITHUB_TOKEN=ghp_... bash bootstrap.sh`).
+(`NON_INTERACTIVE=1 GITHUB_TOKEN=ghp_... bash setup.sh`).
 
 ## Ordering
 
@@ -96,7 +96,7 @@ For CI / headless setups, set `GITHUB_TOKEN` to a PAT with
 `admin:public_key,repo` scopes:
 
 ```bash
-NON_INTERACTIVE=1 GITHUB_TOKEN=ghp_... bash bootstrap.sh
+NON_INTERACTIVE=1 GITHUB_TOKEN=ghp_... bash setup.sh
 ```
 
 The topic detects both vars and uses `gh auth login --with-token`

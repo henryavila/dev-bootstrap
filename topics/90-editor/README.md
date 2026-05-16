@@ -1,6 +1,6 @@
 # 90-editor (opt-in)
 
-Enabled via `INCLUDE_EDITOR=1 bash bootstrap.sh` (or by checking it in the interactive menu).
+Enabled via `INCLUDE_EDITOR=1 bash setup.sh` (or by checking it in the interactive menu).
 
 **Installs two CLI wrappers** that open `.md` files in **Typora** (GUI) from the terminal:
 

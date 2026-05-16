@@ -617,7 +617,7 @@ assert_pattern_present "$MENU" '\-n "\$\{POSTGRES_VERSION:-\}" \]\] *&& return 1
 echo
 echo "═══ Layer 4b — _persist_menu_state round-trips INCLUDE_POSTGRES + POSTGRES_VERSION ═══"
 
-# Without persistence, every `mesh update --full` (which calls bootstrap.sh
+# Without persistence, every `mesh update --full` (which calls setup.sh
 # --non-interactive) silently runs with INCLUDE_POSTGRES=0 + the default
 # version 17, even when the user previously checked the box and typed 16
 # in the interactive menu. Persisting closes that gap.

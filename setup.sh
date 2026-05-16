@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bootstrap.sh — run every topic in order on this machine.
+# setup.sh — run every topic in order on this machine.
 #
 # Interactive by default: prompts for opt-in topics and identity via whiptail.
 # Skip the menu by passing --non-interactive or pre-seeding any control var.
@@ -57,7 +57,7 @@
 #                       recovering from a corrupted Valet state.
 #   NO_COLOR=1          disable colored output (auto if not a TTY)
 #
-# Usage: bash bootstrap.sh [--help] [--non-interactive] [--dry-run] [--list-topics]
+# Usage: bash setup.sh [--help] [--non-interactive] [--dry-run] [--list-topics]
 
 set -euo pipefail
 
@@ -229,14 +229,14 @@ usage() {
 dev-bootstrap — set up a development machine
 
 Interactive mode (default):
-  bash bootstrap.sh                 prompts for opt-ins + identity, then runs
+  bash setup.sh                 prompts for opt-ins + identity, then runs
 
 Automation / CI mode:
-  NON_INTERACTIVE=1 bash bootstrap.sh       skip menu even on a TTY
-  bash bootstrap.sh --non-interactive       same, flag form
-  DRY_RUN=1 bash bootstrap.sh               print actions without executing
-  bash bootstrap.sh --dry-run               same, flag form
-  bash bootstrap.sh --list-topics           list topic numbers and names
+  NON_INTERACTIVE=1 bash setup.sh       skip menu even on a TTY
+  bash setup.sh --non-interactive       same, flag form
+  DRY_RUN=1 bash setup.sh               print actions without executing
+  bash setup.sh --dry-run               same, flag form
+  bash setup.sh --list-topics           list topic numbers and names
   SKIP_TOPICS="NN-x" ...                    skip specific topics
   ONLY_TOPICS="NN-x NN-y" ...               run only these topics
   ONLY_TOPICS="20 30" ...                   numeric shorthand is accepted

@@ -21,11 +21,11 @@ source "$HERE/../lib/assert.sh"
 MENU="$REPO_ROOT/lib/menu.sh"
 AI_TOPIC="$REPO_ROOT/topics/82-ai-tools/install.sh"
 DOTFILES_TOPIC="$REPO_ROOT/topics/95-dotfiles-personal/install.sh"
-BOOTSTRAP="$REPO_ROOT/bootstrap.sh"
+BOOTSTRAP="$REPO_ROOT/setup.sh"
 assert_file_exists "$MENU" "lib/menu.sh present"
 assert_file_exists "$AI_TOPIC" "82-ai-tools install.sh present"
 assert_file_exists "$DOTFILES_TOPIC" "95-dotfiles-personal install.sh present"
-assert_file_exists "$BOOTSTRAP" "bootstrap.sh present"
+assert_file_exists "$BOOTSTRAP" "setup.sh present"
 
 # Source menu.sh in isolation. Needs OS + log.sh helpers first.
 # shellcheck disable=SC2034 # consumed by lib/menu.sh after source

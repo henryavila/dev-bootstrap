@@ -53,7 +53,7 @@ if [[ "$(uname -s)" == "Linux" ]]; then
             fi
         fi
     else
-        echo "  ! tailscale MTU drop-in ABSENT — SSH via Tailscale may hang. Re-run: ONLY_TOPICS=70-remote-access bash bootstrap.sh"
+        echo "  ! tailscale MTU drop-in ABSENT — SSH via Tailscale may hang. Re-run: ONLY_TOPICS=70-remote-access bash setup.sh"
     fi
 fi
 

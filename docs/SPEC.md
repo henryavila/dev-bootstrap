@@ -42,10 +42,10 @@ Public `dev-bootstrap` repo that:
 │ 0. git clone https://github.com/henryavila/dev-bootstrap
 │    (Windows: in %USERPROFILE%; WSL/Mac: in ~)
 │ 1. Dev on Windows → windows\install-wsl.ps1
-│ 2. Dev on WSL/Mac → bash bootstrap.sh
+│ 2. Dev on WSL/Mac → bash setup.sh
 │ 3. (optional) Dev creates their own dotfiles from
 │    the public `dotfiles-template`
-│ 4. DOTFILES_REPO=... bash bootstrap.sh applies the
+│ 4. DOTFILES_REPO=... bash setup.sh applies the
 │    personal configs at the end
 └─────────────────────────────────────────────────────┘
 ```
@@ -98,16 +98,16 @@ Every `verify.sh` MUST:
 1. Return exit 0 if all OK, exit 1 if something is missing
 2. Print one line per checked item: `  ✓ xxx` or `  ✗ xxx MISSING`
 
-## 4. Runner — `bootstrap.sh`
+## 4. Runner — `setup.sh`
 
 ### Interface
 
 ```bash
-bash bootstrap.sh                          # all topics in order
-SKIP_TOPICS="60-web-stack" bash bootstrap.sh
-ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
-DRY_RUN=1 bash bootstrap.sh                # print what would run without executing
-bash bootstrap.sh --help                   # list topics + env vars
+bash setup.sh                          # all topics in order
+SKIP_TOPICS="60-web-stack" bash setup.sh
+ONLY_TOPICS="00-core 10-languages" bash setup.sh
+DRY_RUN=1 bash setup.sh                # print what would run without executing
+bash setup.sh --help                   # list topics + env vars
 ```
 
 ### Recognized env vars
@@ -338,7 +338,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 **Purpose:** Docker Engine for containerised dev workflows — dev containers, local smoke tests, experiment isolation.
 
-**Activation:** `INCLUDE_DOCKER=1 bash bootstrap.sh` (or tick "docker" in the interactive menu).
+**Activation:** `INCLUDE_DOCKER=1 bash setup.sh` (or tick "docker" in the interactive menu).
 
 **Contents:**
 - WSL: `apt install docker.io docker-compose-v2`, add `$USER` to the `docker` group, enable `docker.service` via systemd (when available — falls through on non-systemd WSL).
@@ -365,7 +365,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 **Purpose:** local Web + DB stack for Laravel-style dev — MySQL, Redis, Nginx with a `*.localhost` catch-all, PHP-FPM, mkcert. PostgreSQL as opt-in sub-flag.
 
-**Activation:** `INCLUDE_WEBSTACK=1 bash bootstrap.sh`
+**Activation:** `INCLUDE_WEBSTACK=1 bash setup.sh`
 
 **Contents:**
 - WSL: `apt install mysql-server redis-server nginx php8.4-fpm`, `curl | bash` mkcert
@@ -391,7 +391,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 **Purpose:** remote access via SSH + Tailscale + mosh + tmux, sudoers NOPASSWD.
 
-**Activation:** `INCLUDE_REMOTE=1 bash bootstrap.sh`
+**Activation:** `INCLUDE_REMOTE=1 bash setup.sh`
 
 **Contents:**
 - WSL: enable sshd, install Tailscale, mosh, configure `.wslconfig` with systemd, sudoers NOPASSWD
@@ -414,7 +414,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 **Purpose:** `typora-wait` wrapper to use Typora as `$EDITOR` (Henry's preference, documented in memory).
 
-**Activation:** `INCLUDE_EDITOR=1 bash bootstrap.sh`
+**Activation:** `INCLUDE_EDITOR=1 bash setup.sh`
 
 **Contents:** no install (Typora is a GUI, installed separately by the user).
 
@@ -425,7 +425,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 **Purpose:** apply the dev's personal dotfiles (opt-in via env var).
 
-**Activation:** `DOTFILES_REPO=git@github.com:user/dotfiles.git bash bootstrap.sh`
+**Activation:** `DOTFILES_REPO=git@github.com:user/dotfiles.git bash setup.sh`
 
 Optional npm-global activation: add `DOTFILES_NPM_GLOBAL=1` or tick `npm-global` in the interactive menu. This delegates prefix/PATH persistence to the dotfiles installer.
 
@@ -542,11 +542,11 @@ jobs:
       - name: bootstrap (safe topics)
         run: |
           ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash bootstrap.sh
+            bash setup.sh
       - name: idempotency check (2nd run)
         run: |
           ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash bootstrap.sh
+            bash setup.sh
       - name: verify
         run: for t in topics/{00-core,10-languages,20-terminal-ux,30-shell,40-tmux,50-git,80-claude-code}; do
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
@@ -558,11 +558,11 @@ jobs:
       - name: bootstrap
         run: |
           ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash bootstrap.sh
+            bash setup.sh
       - name: idempotency check
         run: |
           ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash bootstrap.sh
+            bash setup.sh
       - name: verify
         run: for t in topics/{00-core,10-languages,20-terminal-ux,30-shell,40-tmux,50-git,80-claude-code}; do
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
@@ -618,7 +618,7 @@ fi
 
 ## 11. Error handling
 
-- A single-topic failure **does not abort** `bootstrap.sh` — it continues with the rest
+- A single-topic failure **does not abort** `setup.sh` — it continues with the rest
 - The final summary lists failures
 - Final exit code: 0 if everything OK, 1 if any failed
 - `run_cmd()` helper for sudo with retry: if `sudo` fails due to timeout, retry once after refreshing the cache (`sudo -v`)
@@ -627,10 +627,10 @@ fi
 
 MVP accepted when:
 
-- [ ] `dev-bootstrap` contains 12 topics + `bootstrap.sh` + `lib/` + README
+- [ ] `dev-bootstrap` contains 12 topics + `setup.sh` + `lib/` + README
 - [ ] `dotfiles-template` contains a working skeleton + self-contained `install.sh` + marked as template on GitHub
 - [ ] `henryavila/dotfiles` private repo created from the template, containing the current `ssh/config` migrated
-- [ ] Running `bash bootstrap.sh` on the current (already configured) WSL returns "all topics skipped" or an equivalent (idempotency)
+- [ ] Running `bash setup.sh` on the current (already configured) WSL returns "all topics skipped" or an equivalent (idempotency)
 - [ ] CI Tier 1 (lint) passes on both repos
 - [ ] CI Tier 2 (integration) passes on ubuntu-22.04, ubuntu-24.04, macos-latest
 - [ ] README explains the full flow (Windows → WSL → bootstrap → dotfiles-template → dotfiles)

@@ -3,7 +3,7 @@
 #
 # Behavioral regression for the TTY-detection bug that silenced every
 # interactive fallback shipped on 2026-04-23 (chsh `sudo` prompt, atuin
-# inline login). Root cause: bootstrap.sh:371 wraps each installer as
+# inline login). Root cause: setup.sh:371 wraps each installer as
 #
 #     bash "$installer" 2>&1 | tee -a "$LOG"
 #
@@ -56,9 +56,9 @@ _has_ctty_def='_has_ctty() { : </dev/tty >/dev/null 2>&1; }'
 echo
 echo "═══ [ -t 1 ] is false under bootstrap's 'tee' pipe (document the bug) ═══"
 
-# Mimic bootstrap.sh:371 — child's stdout is piped to tee, which then
+# Mimic setup.sh:371 — child's stdout is piped to tee, which then
 # writes to /dev/null AND its own stdout (captured here by `$(...)`).
-# `2>&1 | tee ...` is the exact incantation bootstrap.sh uses.
+# `2>&1 | tee ...` is the exact incantation setup.sh uses.
 wrap_out="$(
     bash -c '
         if [ -t 1 ]; then echo STDOUT_IS_TTY; else echo STDOUT_NOT_TTY; fi

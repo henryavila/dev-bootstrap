@@ -16,7 +16,7 @@
 #   PHP_VERSIONS, PHP_DEFAULT, POSTGRES_VERSION
 #   DOTFILES_REPO, DOTFILES_NPM_GLOBAL, DOTFILES_AI_PACKAGES, GIT_NAME, GIT_EMAIL
 #
-# Depends on: $OS (from bootstrap.sh), $BREW_BIN (mac only), log.sh helpers.
+# Depends on: $OS (from setup.sh), $BREW_BIN (mac only), log.sh helpers.
 
 should_show_menu() {
     # Explicit opt-out beats everything.
@@ -435,7 +435,7 @@ Unchecked packages are skipped for this run." \
 
 run_menu() {
     banner "interactive setup"
-    info "you can skip this menu anytime with: NON_INTERACTIVE=1 bash bootstrap.sh"
+    info "you can skip this menu anytime with: NON_INTERACTIVE=1 bash setup.sh"
     info "or pre-seed via env vars (INCLUDE_WEBSTACK=1, DOTFILES_REPO=..., etc)"
     echo
 
@@ -908,7 +908,7 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
 }
 
 _persist_menu_state() {
-    # Only if bootstrap.sh set up the path. When menu is sourced in a
+    # Only if setup.sh set up the path. When menu is sourced in a
     # different context (tests, manual invocation), this is a no-op.
     [[ -z "${BOOTSTRAP_STATE_CONFIG:-}" ]] && return 0
     mkdir -p "$(dirname "$BOOTSTRAP_STATE_CONFIG")"
@@ -949,7 +949,7 @@ _persist_menu_state() {
         # POSTGRES_VERSION coupled to INCLUDE_POSTGRES — only meaningful when
         # the opt-in is on. Persisting the version separately would let it
         # leak into a future toggle-on without the user's intent. Both keys
-        # round-trip together so `bash bootstrap.sh --non-interactive` (and
+        # round-trip together so `bash setup.sh --non-interactive` (and
         # therefore `mesh update --full`) restore the user's last menu choice.
         [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && echo 'export INCLUDE_POSTGRES=1'
         [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && [[ -n "${POSTGRES_VERSION:-}" ]] \

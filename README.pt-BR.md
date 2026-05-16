@@ -38,7 +38,7 @@ Reinicie, abra o Ubuntu recém-instalado e siga as instruções WSL abaixo.
 ```bash
 git clone https://github.com/henryavila/dev-bootstrap ~/dev-bootstrap
 cd ~/dev-bootstrap
-bash bootstrap.sh
+bash setup.sh
 ```
 
 Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
@@ -55,23 +55,23 @@ Se `whiptail` não estiver instalado, o bootstrap instala antes (`apt install wh
 
 ```bash
 # ver plano sem executar
-bash bootstrap.sh --dry-run
+bash setup.sh --dry-run
 
 # pular menu mesmo em TTY
-NON_INTERACTIVE=1 bash bootstrap.sh
-bash bootstrap.sh --non-interactive
+NON_INTERACTIVE=1 bash setup.sh
+bash setup.sh --non-interactive
 
 # rodar só alguns topics
-ONLY_TOPICS="00-core 10-languages" bash bootstrap.sh
+ONLY_TOPICS="00-core 10-languages" bash setup.sh
 
 # ativar topics opt-in
-INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash bootstrap.sh
+INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash setup.sh
 
 # aplicar dotfiles pessoais no fim
-DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
+DOTFILES_REPO=git@github.com:you/dotfiles.git bash setup.sh
 
 # instalar ferramentas de IA pelo manifesto dos dotfiles, sem aplicar dados pessoais
-INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:you/dotfiles.git bash bootstrap.sh
+INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:you/dotfiles.git bash setup.sh
 ```
 
 O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) qualquer var de controle (`INCLUDE_*`, `DOTFILES_REPO`, `DOTFILES_NPM_GLOBAL`, `DOTFILES_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) já vem do env; (c) stdin/stdout não é TTY (pipe, cron, CI).
@@ -129,7 +129,7 @@ Saída completa de cada execução vai pra `/tmp/dev-bootstrap-<os>-<timestamp>.
 
 ```
 dev-bootstrap/
-├── bootstrap.sh              # runner — detecção de OS, menu interativo, sudo warmup, orquestra topics
+├── setup.sh              # runner — detecção de OS, menu interativo, sudo warmup, orquestra topics
 ├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh, menu.sh
 ├── topics/NN-<nome>/         # unidades idempotentes de instalação
 │   ├── install.$OS.sh        # WSL ou Mac
@@ -152,7 +152,7 @@ dev-bootstrap/
 
 ### Disciplina de release
 
-Mudanças estruturais (novo topic, mudança em `lib/`, `install.sh`, `bootstrap.sh`) passam por:
+Mudanças estruturais (novo topic, mudança em `lib/`, `install.sh`, `setup.sh`) passam por:
 
 1. Commit com **migration note** no corpo — *forks existentes que já rodaram X devem Y*. Tempo estimado, arquivos afetados, comando para aplicar.
 2. Tag datada: `git tag -a v2026-MM-DD -m "resumo"`.
@@ -163,11 +163,11 @@ Hotfixes sem mudança estrutural (bug em template, typo em README) usam commit n
 ## CI
 
 - `.github/workflows/lint.yml` (Tier 1) — shellcheck + `bash -n` em todo push/PR.
-- `.github/workflows/integration.yml` (Tier 2, previsto em v1.1) — roda `bootstrap.sh` em matrix `ubuntu-22.04`, `ubuntu-24.04`, `macos-latest`, valida idempotência (2º run = noop) e executa `verify.sh` de cada topic.
+- `.github/workflows/integration.yml` (Tier 2, previsto em v1.1) — roda `setup.sh` em matrix `ubuntu-22.04`, `ubuntu-24.04`, `macos-latest`, valida idempotência (2º run = noop) e executa `verify.sh` de cada topic.
 
 ## Dotfiles pessoais
 
-Este repo **nunca** versiona configs pessoais (SSH, identidade git, aliases project-specific). Para isso, use [dotfiles-template](https://github.com/henryavila/dotfiles-template): clique *Use this template* no GitHub, marque o repo novo como **privado**, e deixe o menu interativo coletar `DOTFILES_REPO` ou seta via env var antes de rodar `bootstrap.sh`.
+Este repo **nunca** versiona configs pessoais (SSH, identidade git, aliases project-specific). Para isso, use [dotfiles-template](https://github.com/henryavila/dotfiles-template): clique *Use this template* no GitHub, marque o repo novo como **privado**, e deixe o menu interativo coletar `DOTFILES_REPO` ou seta via env var antes de rodar `setup.sh`.
 
 ## Contribuir
 

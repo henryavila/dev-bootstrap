@@ -30,7 +30,7 @@ fail()   { printf '%s✗%s %s\n' "$_C_RED" "$_C_RST" "$*" >&2; }
 banner() { printf '\n%s== %s ==%s\n' "$_C_BLD" "$*" "$_C_RST"; }
 
 # followup — record a post-bootstrap action that needs human attention.
-# Writes one line per entry to $BOOTSTRAP_FOLLOWUP_FILE (bootstrap.sh
+# Writes one line per entry to $BOOTSTRAP_FOLLOWUP_FILE (setup.sh
 # creates this file at start and prints a consolidated summary at the
 # end). Each entry has a severity that shapes how the summary renders.
 #
@@ -60,7 +60,7 @@ followup() {
         *)        warn "$msg" ;;
     esac
 
-    # Persist to the follow-up file if bootstrap.sh set one up. Topics
+    # Persist to the follow-up file if setup.sh set one up. Topics
     # invoked directly (ONLY_TOPICS) or outside the runner get the
     # inline output but no consolidated summary — that's fine.
     if [[ -n "${BOOTSTRAP_FOLLOWUP_FILE:-}" ]]; then
@@ -71,7 +71,7 @@ followup() {
 }
 
 # render_followup_summary — read $BOOTSTRAP_FOLLOWUP_FILE and print
-# a grouped, human-readable summary. Called by bootstrap.sh right
+# a grouped, human-readable summary. Called by setup.sh right
 # before exit so the user sees all pending actions in one place,
 # not scattered across topic output.
 render_followup_summary() {

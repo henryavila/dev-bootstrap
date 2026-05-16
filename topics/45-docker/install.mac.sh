@@ -13,7 +13,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
 
-: "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
+: "${BREW_BIN:?BREW_BIN not set — run through setup.sh}"
 
 for pkg in colima docker docker-compose; do
     if "$BREW_BIN" list --formula "$pkg" >/dev/null 2>&1; then

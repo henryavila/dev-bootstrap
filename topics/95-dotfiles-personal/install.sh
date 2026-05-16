@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 95-dotfiles-personal: apply personal dotfiles from $DOTFILES_REPO.
-# Gated by bootstrap.sh: skipped unless INCLUDE_DOTFILES_PERSONAL=1.
+# Gated by setup.sh: skipped unless INCLUDE_DOTFILES_PERSONAL=1.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +11,7 @@ source "$HERE/../../lib/dotfiles-repo.sh"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/uninstall.sh"
 
-: "${DOTFILES_REPO:?DOTFILES_REPO not set (bootstrap.sh should have skipped this topic)}"
+: "${DOTFILES_REPO:?DOTFILES_REPO not set (setup.sh should have skipped this topic)}"
 : "${DOTFILES_DIR:=$HOME/dotfiles}"
 
 dotfiles_ensure_repo "$DOTFILES_REPO" "$DOTFILES_DIR"

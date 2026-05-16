@@ -1,6 +1,6 @@
 # ALIASES — universal (installed by dev-bootstrap)
 
-Compact list of the aliases **every dev who ran `bootstrap.sh`** receives, regardless of personal dotfiles. Personal dotfiles can add or override (via `~/.bashrc.d/99-personal-aliases.sh` / `~/.zshrc.d/99-personal-aliases.sh` — the `99-` prefix loads them last). For a consolidated inventory including personal ones, see the `docs/ALIASES.md` in that dev's dotfiles repo.
+Compact list of the aliases **every dev who ran `setup.sh`** receives, regardless of personal dotfiles. Personal dotfiles can add or override (via `~/.bashrc.d/99-personal-aliases.sh` / `~/.zshrc.d/99-personal-aliases.sh` — the `99-` prefix loads them last). For a consolidated inventory including personal ones, see the `docs/ALIASES.md` in that dev's dotfiles repo.
 
 ## Sources in this repo
 

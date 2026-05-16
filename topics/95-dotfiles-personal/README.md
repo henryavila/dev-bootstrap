@@ -10,7 +10,7 @@ package-level AI tool installation.
 
 ## Path A — interactive menu (recommended for first-time setup)
 
-When `bash bootstrap.sh` shows the menu (no `NON_INTERACTIVE=1`), opting into 95-dotfiles-personal triggers a 4-screen flow:
+When `bash setup.sh` shows the menu (no `NON_INTERACTIVE=1`), opting into 95-dotfiles-personal triggers a 4-screen flow:
 
 1. **Source choice** — "Create your dotfiles repo NOW from a GitHub template?" (Yes / No)
 2. **If Yes:**
@@ -28,7 +28,7 @@ Skip the menu entirely by setting variables upfront:
 
 ```bash
 # Existing repo:
-INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=git@github.com:youruser/dotfiles.git bash bootstrap.sh
+INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=git@github.com:youruser/dotfiles.git bash setup.sh
 
 # Or create from template non-interactively:
 CREATE_DOTFILES_FROM_TEMPLATE=1 \
@@ -38,7 +38,7 @@ DOTFILES_NEW_REPO_OWNER=youruser \
 DOTFILES_NEW_REPO_NAME=dotfiles \
 DOTFILES_NEW_REPO_PRIVATE=1 \
 NON_INTERACTIVE=1 \
-bash bootstrap.sh
+bash setup.sh
 ```
 
 `DOTFILES_REPO` is auto-derived from `git@github.com:$OWNER/$NAME.git` in the create-from-template path; you can override it explicitly if you want a different remote URL after creation.

@@ -48,8 +48,8 @@ while IFS= read -r -d '' f; do
 done < <(find "$REPO_ROOT/topics" "$REPO_ROOT/lib" "$REPO_ROOT/ci" \
              -type f \( -name '*.sh' -o -name '*.template' \) -print0 2>/dev/null)
 
-# bootstrap.sh + tests themselves
-for f in "$REPO_ROOT/bootstrap.sh" \
+# setup.sh + tests themselves
+for f in "$REPO_ROOT/setup.sh" \
          "$HERE/../run-all.sh" \
          "$HERE/../lib/assert.sh"; do
     ASSERT_MSG="$(relpath "$f")"
@@ -100,7 +100,7 @@ mac_reachable=(
     "$REPO_ROOT/topics"/*/install.sh
     "$REPO_ROOT/topics"/*/scripts/*.sh
     "$REPO_ROOT/lib"/*.sh
-    "$REPO_ROOT/bootstrap.sh"
+    "$REPO_ROOT/setup.sh"
 )
 for script in "${mac_reachable[@]}"; do
     [[ ! -f "$script" ]] && continue

@@ -7,7 +7,7 @@ The topic needs `DOTFILES_REPO` because the package manifest and installer live
 in the dotfiles repo, but it does not run `$DOTFILES_DIR/install.sh`.
 
 ```bash
-INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:youruser/dotfiles.git bash bootstrap.sh
+INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:youruser/dotfiles.git bash setup.sh
 ```
 
 In interactive mode, selecting `82-ai-tools` opens a package selector before the

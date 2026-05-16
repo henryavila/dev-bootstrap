@@ -18,7 +18,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/log.sh"
 
-: "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
+: "${BREW_BIN:?BREW_BIN not set — run through setup.sh}"
 : "${BREW_PREFIX:?BREW_PREFIX not set}"
 
 # Tracks formulas that brew_install_if_missing could not install. Read

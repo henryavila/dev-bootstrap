@@ -12,8 +12,8 @@ source "$HERE/../../lib/log.sh"
 # shellcheck disable=SC1091
 source "$HERE/../../lib/launch-wrapper.sh"
 
-: "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
-: "${BREW_PREFIX:?BREW_PREFIX not set — run through bootstrap.sh}"
+: "${BREW_BIN:?BREW_BIN not set — run through setup.sh}"
+: "${BREW_PREFIX:?BREW_PREFIX not set — run through setup.sh}"
 
 # ---------- Bun runtime ----------
 # Required by claude-mem plugin (worker service managed by Bun on port 37777).

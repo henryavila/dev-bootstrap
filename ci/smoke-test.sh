@@ -2,7 +2,7 @@
 # ci/smoke-test.sh — end-to-end smoke test for dev-bootstrap on Ubuntu 24.04.
 #
 # Builds a hermetic Docker image (see ci/Dockerfile.ubuntu-24.04) that mimics a
-# fresh WSL Ubuntu install, then runs bootstrap.sh inside it non-interactively
+# fresh WSL Ubuntu install, then runs setup.sh inside it non-interactively
 # with a curated SKIP_TOPICS list. Prints SMOKE TEST PASSED / FAILED, writes
 # the full run log to ci/last-run.log, and exits with the bootstrap's own
 # exit code (or 124 on timeout).
@@ -32,7 +32,7 @@ TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
 #
 # 60-web-stack / 70-remote-access / 90-editor are NOT in this list —
 # they auto-skip because their INCLUDE_* opt-in vars default to 0. Letting
-# bootstrap.sh's own gate handle them keeps that path exercised too.
+# setup.sh's own gate handle them keeps that path exercised too.
 DEFAULT_SKIP="05-identity 95-dotfiles-personal"
 SKIP_TOPICS="${DEFAULT_SKIP}${EXTRA_SKIP:+ $EXTRA_SKIP}"
 
@@ -50,7 +50,7 @@ done
 if ! command -v docker >/dev/null 2>&1; then
     echo >&2 "error: docker CLI not found on PATH."
     echo >&2 "       install via the bootstrap's opt-in topic:"
-    echo >&2 "         INCLUDE_DOCKER=1 bash ~/dev-bootstrap/bootstrap.sh"
+    echo >&2 "         INCLUDE_DOCKER=1 bash ~/dev-bootstrap/setup.sh"
     echo >&2 "       (or tick 'docker' in the interactive menu)"
     exit 127
 fi
@@ -76,7 +76,7 @@ if ! docker info >/dev/null 2>&1; then
     fi
     echo >&2 "error: docker daemon unreachable and $USER is not in the docker group."
     echo >&2 "       fix via the bootstrap's opt-in topic:"
-    echo >&2 "         INCLUDE_DOCKER=1 bash ~/dev-bootstrap/bootstrap.sh"
+    echo >&2 "         INCLUDE_DOCKER=1 bash ~/dev-bootstrap/setup.sh"
     exit 126
 fi
 
@@ -106,7 +106,7 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
     "$SKIP_TOPICS" "$TIMEOUT_SECS"
 
 # Invocation mirrors the spec exactly: `bash -c "SKIP_TOPICS='…' NON_INTERACTIVE=1
-# bash ~/dev-bootstrap/bootstrap.sh"`. We pass env vars inline (not via -e)
+# bash ~/dev-bootstrap/setup.sh"`. We pass env vars inline (not via -e)
 # so the shell inside the container sees them as a single-command prefix —
 # same contract as a developer running the bootstrap by hand from a shell.
 #
@@ -118,7 +118,7 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 # the second version fails and CI catches it. Full 4-version matrix
 # belongs to a deferred Tier 3 E2E (SPEC §14).
 : "${CI_PHP_VERSIONS:=8.4 8.5}"
-RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' NON_INTERACTIVE=1 bash ~/dev-bootstrap/bootstrap.sh"
+RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' NON_INTERACTIVE=1 bash ~/dev-bootstrap/setup.sh"
 
 start=$(date +%s)
 # We write both stdout and stderr to the logfile AND to the terminal via tee.

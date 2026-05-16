@@ -9,7 +9,7 @@ source "$HERE/../../lib/log.sh"
 source "$HERE/../../lib/uninstall.sh"
 
 # _has_ctty — 0 iff the running process has a usable controlling TTY.
-# Why not use stdout-is-tty tests: bootstrap.sh wraps each installer
+# Why not use stdout-is-tty tests: setup.sh wraps each installer
 # in `bash <installer> 2>&1 | tee -a $LOG`. The pipe makes stdout a
 # pipe (not a TTY) while the human is still at the terminal, so any
 # interactive fallback gated on stdout-fd checks would be silently
@@ -20,7 +20,7 @@ _has_ctty() {
     : </dev/tty >/dev/null 2>&1
 }
 
-: "${BREW_BIN:?BREW_BIN not set — run through bootstrap.sh}"
+: "${BREW_BIN:?BREW_BIN not set — run through setup.sh}"
 
 # Extra zsh UX parity with ble.sh on Linux bash. Installation here; the
 # sourcing/ordering/bindkey plumbing lives in dotfiles/shell/zshrc.local.
@@ -137,10 +137,10 @@ fi
 # actually runs.
 #
 # Default: attempt `sudo chsh` using the cached sudo ticket from
-# bootstrap.sh's upfront `sudo -v`. Mac has no `usermod`; chsh is the
+# setup.sh's upfront `sudo -v`. Mac has no `usermod`; chsh is the
 # only path, but it normally accepts the sudo cache without prompting.
 #
-# Override: CHSH_AUTO=0 bash bootstrap.sh  to skip the auto attempt.
+# Override: CHSH_AUTO=0 bash setup.sh  to skip the auto attempt.
 if command -v zsh >/dev/null 2>&1; then
     zsh_bin="$(command -v zsh)"
     current_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
@@ -196,7 +196,7 @@ Try:  chsh -s \"$zsh_bin\"   (prompts for your login password)"
             followup manual \
 "could not set default shell automatically (sudo chsh refused).
 Run manually:  chsh -s \"$zsh_bin\"   (prompts for your login password)
-Skip the auto-attempt next time:  CHSH_AUTO=0 bash bootstrap.sh"
+Skip the auto-attempt next time:  CHSH_AUTO=0 bash setup.sh"
         fi
     else
         followup manual \
@@ -254,7 +254,7 @@ fi
 # ~/.local/share/atuin/session file (credential moved to daemon/SQLite),
 # so filesystem-based detection gave a permanent false-negative.
 #
-# Override: ATUIN_LOGIN_AUTO=0 bash bootstrap.sh  to skip the login
+# Override: ATUIN_LOGIN_AUTO=0 bash setup.sh  to skip the login
 # attempt and only print the advisory. NON_INTERACTIVE=1 also disables
 # the inline login so CI/automation never stalls for OAuth.
 if command -v atuin >/dev/null 2>&1; then
@@ -272,7 +272,7 @@ if command -v atuin >/dev/null 2>&1; then
 "atuin login did not complete (user cancelled or OAuth failed).
 Run manually:  atuin login
   (opens a browser → atuin.sh OAuth; no password or key needed)
-Skip the auto-attempt next time:  ATUIN_LOGIN_AUTO=0 bash bootstrap.sh"
+Skip the auto-attempt next time:  ATUIN_LOGIN_AUTO=0 bash setup.sh"
         fi
     else
         followup manual \

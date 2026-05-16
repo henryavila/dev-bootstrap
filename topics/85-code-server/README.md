@@ -6,7 +6,7 @@ Opt-in macOS topic that installs `code-server` as a standalone build under
 Enable it with:
 
 ```bash
-INCLUDE_CODE_SERVER=1 bash bootstrap.sh
+INCLUDE_CODE_SERVER=1 bash setup.sh
 ```
 
 Useful knobs:
@@ -35,7 +35,7 @@ version exists, adds a final follow-up with the version and an explicit command
 to upgrade. To upgrade intentionally:
 
 ```bash
-INCLUDE_CODE_SERVER=1 CODE_SERVER_UPGRADE=1 ONLY_TOPICS=85 bash bootstrap.sh --non-interactive
+INCLUDE_CODE_SERVER=1 CODE_SERVER_UPGRADE=1 ONLY_TOPICS=85 bash setup.sh --non-interactive
 ```
 
 Pin a specific release with `CODE_SERVER_VERSION=X.Y.Z` on the same command.

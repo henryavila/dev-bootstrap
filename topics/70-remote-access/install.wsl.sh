@@ -83,7 +83,7 @@ else
     ok "tailscaled MTU drop-in already correct"
 fi
 
-# Note: legacy NOPASSWD cleanup moved to bootstrap.sh (unconditional)
+# Note: legacy NOPASSWD cleanup moved to setup.sh (unconditional)
 # since v2026-04-22 hotfix — see there for context.
 
 ok "70-remote-access (wsl) done"

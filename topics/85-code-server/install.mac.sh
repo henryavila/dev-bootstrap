@@ -149,7 +149,7 @@ maybe_report_code_server_update() {
     fi
 
     if semver_gt "$latest" "$current"; then
-        bootstrap_path="$(cd "$HERE/../.." && pwd -P)/bootstrap.sh"
+        bootstrap_path="$(cd "$HERE/../.." && pwd -P)/setup.sh"
         command="INCLUDE_CODE_SERVER=1 CODE_SERVER_UPGRADE=1 CODE_SERVER_VERSION=$latest ONLY_TOPICS=85 bash \"$bootstrap_path\" --non-interactive"
         record_code_server_final_info "code-server update available: $current -> $latest
 

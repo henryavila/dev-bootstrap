@@ -13,7 +13,7 @@
 # because they prefer dev tooling on a separate volume), that decision
 # needs to survive every subsequent `bash install.sh` without re-prompting.
 #
-# Source from a topic or bootstrap.sh; do not execute directly.
+# Source from a topic or setup.sh; do not execute directly.
 #
 # Bash-only: this file uses bash 3.2 idioms (printf-driven escaping, parameter
 # expansion patterns) that don't always parse cleanly when sourced from zsh.

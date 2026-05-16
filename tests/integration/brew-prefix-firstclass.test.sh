@@ -25,7 +25,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$ROOT/tests/lib/assert.sh"
 
 TOPIC="$ROOT/topics/00-core/install.mac.sh"
-BOOT="$ROOT/bootstrap.sh"
+BOOT="$ROOT/setup.sh"
 
 assert_file_exists "$TOPIC" "topics/00-core/install.mac.sh exists"
 
@@ -142,15 +142,15 @@ assert_pattern_absent "$TOPIC" '^[[:space:]]*emit_custom_prefix_warning[[:space:
     'emit_custom_prefix_warning is always called inside if/|| (return value matters)'
 
 # ---------------------------------------------------------------------
-# bootstrap.sh sources state.sh and calls state_load
+# setup.sh sources state.sh and calls state_load
 # ---------------------------------------------------------------------
 echo
-echo "═══ bootstrap.sh — state.sh wiring ═══"
+echo "═══ setup.sh — state.sh wiring ═══"
 
 assert_pattern_present "$BOOT" 'source.*lib/state\.sh' \
-    "bootstrap.sh sources lib/state.sh"
+    "setup.sh sources lib/state.sh"
 assert_pattern_present "$BOOT" 'state_load' \
-    "bootstrap.sh calls state_load before topics run"
+    "setup.sh calls state_load before topics run"
 
 # state_load must come BEFORE the first run_topic invocation (so 00-core
 # sees previously-persisted BREW_PREFIX)
@@ -163,7 +163,7 @@ if [[ -n "$state_load_line" ]] && [[ -n "$first_run_topic_line" ]]; then
         fail "state_load must come before run_topic (got state_load=$state_load_line, run_topic=$first_run_topic_line)"
     fi
 else
-    fail "could not locate both state_load and run_topic in bootstrap.sh"
+    fail "could not locate both state_load and run_topic in setup.sh"
 fi
 
 # ---------------------------------------------------------------------

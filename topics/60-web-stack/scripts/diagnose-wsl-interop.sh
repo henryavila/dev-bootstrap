@@ -170,7 +170,7 @@ case "$FIRST_FAIL" in
     "")
         ok "All checks passed — interop looks healthy. If the bootstrap still"
         ok "refuses to do the Windows CA import, re-run:"
-        ok "  ONLY_TOPICS=60-web-stack bash ~/dev-bootstrap/bootstrap.sh"
+        ok "  ONLY_TOPICS=60-web-stack bash ~/dev-bootstrap/setup.sh"
         ;;
     "mnt-c-9p-broken"|"mnt-c-unavailable")
         fail "  /mnt/c 9P mount is broken in this WSL session."

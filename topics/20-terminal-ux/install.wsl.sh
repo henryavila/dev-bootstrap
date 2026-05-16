@@ -20,7 +20,7 @@ source "$HERE/../../lib/log.sh"
 source "$HERE/../../lib/uninstall.sh"
 
 # _has_ctty — 0 iff the running process has a usable controlling TTY.
-# Why not use stdout-is-tty tests: bootstrap.sh wraps each installer
+# Why not use stdout-is-tty tests: setup.sh wraps each installer
 # in `bash <installer> 2>&1 | tee -a $LOG`. The pipe makes stdout a
 # pipe (not a TTY) while the human is still at the terminal, so any
 # interactive fallback gated on stdout-fd checks would be silently
@@ -292,14 +292,14 @@ fi
 # canonical path to migrate bash → zsh, not just a first-time installer.
 #
 # Default: attempt `sudo chsh` (and `sudo usermod -s` as fallback) using
-# the cached sudo ticket from bootstrap.sh's upfront `sudo -v`. Many
+# the cached sudo ticket from setup.sh's upfront `sudo -v`. Many
 # single-user Ubuntu/Debian/WSL setups succeed here silently. Anything
 # refusing — LDAP/SSSD-managed accounts on corporate laptops (M4 = crc),
 # a restricted PAM policy, or a dropped sudo cache — falls through to
 # the existing `followup manual` advisory. User is never worse off than
 # the pre-auto behavior.
 #
-# Override: CHSH_AUTO=0 bash bootstrap.sh  to skip the auto attempt.
+# Override: CHSH_AUTO=0 bash setup.sh  to skip the auto attempt.
 if command -v zsh >/dev/null 2>&1; then
     zsh_bin="$(command -v zsh)"
     current_shell="$(getent passwd "$USER" 2>/dev/null | cut -d: -f7)"
@@ -323,7 +323,7 @@ if command -v zsh >/dev/null 2>&1; then
         # need sudo.
         #
         # Sudo strategy:
-        #   1. `-n` (silent) — fast-path when bootstrap.sh's upfront
+        #   1. `-n` (silent) — fast-path when setup.sh's upfront
         #      `sudo -v` ticket is still valid. Covers most non-corp
         #      runs that finish under timestamp_timeout (~15min).
         #   2. Interactive fallback — 20-terminal-ux runs after many
@@ -366,7 +366,7 @@ Then:   log out / log back in (or 'exec zsh' to try it first)"
 "could not set default shell automatically (sudo chsh + usermod refused).
 Run manually:   chsh -s \"\$(command -v zsh)\"   (prompts for password)
 Then:           log out / log back in (or 'exec zsh' to try it first)
-Skip the auto-attempt next time:  CHSH_AUTO=0 bash bootstrap.sh"
+Skip the auto-attempt next time:  CHSH_AUTO=0 bash setup.sh"
         fi
     else
         followup manual \
@@ -447,7 +447,7 @@ fi
 # (credential moved into daemon/SQLite), so filesystem-based detection
 # gave a permanent false-negative advisory.
 #
-# Override: ATUIN_LOGIN_AUTO=0 bash bootstrap.sh  to skip the login
+# Override: ATUIN_LOGIN_AUTO=0 bash setup.sh  to skip the login
 # attempt and only print the advisory. NON_INTERACTIVE=1 also disables
 # the inline login so CI/automation never stalls for OAuth.
 if command -v atuin >/dev/null 2>&1; then
@@ -465,7 +465,7 @@ if command -v atuin >/dev/null 2>&1; then
 "atuin login did not complete (user cancelled or OAuth failed).
 Run manually:  atuin login
   (opens a browser → atuin.sh OAuth; no password or key needed)
-Skip the auto-attempt next time:  ATUIN_LOGIN_AUTO=0 bash bootstrap.sh"
+Skip the auto-attempt next time:  ATUIN_LOGIN_AUTO=0 bash setup.sh"
         fi
     else
         followup manual \

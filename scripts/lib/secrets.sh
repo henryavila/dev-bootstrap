@@ -88,7 +88,7 @@ secrets_init() {
     if [[ ! -f "$file" ]]; then
         cat > "$file" <<'EOF'
 # dev-bootstrap — local secrets file (mode 0600).
-# Sourced by bootstrap.sh BEFORE any topic runs, so installers
+# Sourced by setup.sh BEFORE any topic runs, so installers
 # see these vars in their env.
 #
 # Format: one `export KEY=value` per line (printf %q-quoted).
@@ -164,7 +164,7 @@ secrets_has() {
     local key="$1"
     [[ -z "$key" ]] && return 1
     # Already-exported env wins — user's invocation `NGROK_AUTHTOKEN=x
-    # bash bootstrap.sh` counts as "have it".
+    # bash setup.sh` counts as "have it".
     if [[ -n "${!key:-}" ]]; then
         return 0
     fi

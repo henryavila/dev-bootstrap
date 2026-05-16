@@ -11,7 +11,7 @@ source "$ROOT/tests/lib/assert.sh"
 INSTALL="$ROOT/topics/85-code-server/install.mac.sh"
 VERIFY="$ROOT/topics/85-code-server/verify.sh"
 MENU="$ROOT/lib/menu.sh"
-BOOTSTRAP="$ROOT/bootstrap.sh"
+BOOTSTRAP="$ROOT/setup.sh"
 
 echo
 echo "═══ 85-code-server topic wiring ═══"
