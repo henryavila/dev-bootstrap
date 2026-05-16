@@ -35,5 +35,16 @@ assert "MESH_IDENTITY_DIR honored from env" "/tmp/mid" "$out"
 out=$(unset DOTFILES_DIR; MESH_IDENTITY_DIR=/tmp/mid bash -c ". '$WS/scripts/lib/env.sh'; echo \$DOTFILES_DIR")
 assert "DOTFILES_DIR aliased to MESH_IDENTITY_DIR" "/tmp/mid" "$out"
 
+# Test 6: pre-set MESH_WORKSTATION_DIR is NOT overwritten by config.env when MESH_IDENTITY_DIR is also unset (i.e., both must be unset before config.env loads)
+FAKE6=/tmp/fakehome-cfg-mixed-$$
+mkdir -p "$FAKE6/.config/mesh"
+cat > "$FAKE6/.config/mesh/config.env" <<EOF
+MESH_WORKSTATION_DIR=/from-config
+MESH_IDENTITY_DIR=/from-config-id
+EOF
+out=$(unset MESH_IDENTITY_DIR; MESH_WORKSTATION_DIR=/preset HOME=$FAKE6 bash -c ". '$WS/scripts/lib/env.sh'; echo \$MESH_WORKSTATION_DIR")
+assert "pre-set workstation NOT overwritten by config.env when identity is unset" "/preset" "$out"
+rm -rf "$FAKE6"
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]

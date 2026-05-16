@@ -13,7 +13,7 @@ _mesh_env_load_config() {
     . "$cfg"
 }
 
-if [[ -z "${MESH_WORKSTATION_DIR:-}" || -z "${MESH_IDENTITY_DIR:-}" ]]; then
+if [[ -z "${MESH_WORKSTATION_DIR:-}" && -z "${MESH_IDENTITY_DIR:-}" ]]; then
     _mesh_env_load_config
 fi
 : "${MESH_WORKSTATION_DIR:=${HOME}/mesh-workstation}"
