@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/mesh — unified dispatcher for the dotfiles ecosystem.
+# bin/mesh — unified dispatcher for the dotfiles ecosystem.
 #
 # Replaces the older quartet `bup` / `dotup` / `mesh-snap` / `mesh-status`
 # with a single command. Subcommands delegate to the underlying motors:
@@ -21,14 +21,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ─── Companion resolution ──────────────────────────────────────────
 # 3-tier lookup for the lib + motor scripts that this dispatcher
-# delegates to. Solves the deploy-time path puzzle: when install.sh
-# copies `scripts/mesh` to `~/.local/bin/mesh`, $HERE points at the
-# bin dir which has no companions. We fall back to $HOME/dotfiles/.
+# delegates to. Solves the deploy-time path puzzle: $HERE = .../bin/
+# which has no companions; companions live in ../scripts/.
 #
 # Tier order:
 #   1. $MESH_HOME (env override; test fixtures, manual relocation)
-#   2. $HERE/<target> (development tree; template before deploy)
-#   3. $HOME/dotfiles/scripts/<target> (deployed default)
+#   2. $HERE/../scripts/<target> (development tree; bin/mesh sibling)
+#   3. $HOME/dotfiles/scripts/<target> (legacy deployed default)
 #
 # Returns absolute path on stdout; empty on miss.
 _resolve_companion() {
@@ -37,8 +36,9 @@ _resolve_companion() {
         echo "$MESH_HOME/$target"
         return
     fi
-    if [[ -d "$HERE/$target" ]] || [[ -f "$HERE/$target" ]]; then
-        echo "$HERE/$target"
+    local dev_target="$HERE/../scripts/$target"
+    if [[ -d "$dev_target" ]] || [[ -f "$dev_target" ]]; then
+        echo "$dev_target"
         return
     fi
     local home_target="$HOME/dotfiles/scripts/$target"
@@ -180,8 +180,8 @@ _resolve_auto_update_conf() {
         printf '%s\n' "$HOME/.config/dotfiles/auto-update.conf"
         return
     fi
-    if [[ -r "$HERE/auto-update.conf" ]]; then
-        printf '%s\n' "$HERE/auto-update.conf"
+    if [[ -r "$HERE/../scripts/auto-update.conf" ]]; then
+        printf '%s\n' "$HERE/../scripts/auto-update.conf"
         return
     fi
     if [[ -r "$HOME/dotfiles/scripts/auto-update.conf" ]]; then
