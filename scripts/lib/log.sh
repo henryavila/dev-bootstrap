@@ -1,6 +1,16 @@
-#!/usr/bin/env bash
-# lib/log.sh — output helpers. Source this file; do not execute.
-# Respects NO_COLOR env var and non-TTY stdout.
+# scripts/lib/log.sh — central logger. Source-only (no top-level execution).
+# Functions: log_info / log_warn / log_error / log_debug.
+# All write to stderr (so stdout is reserved for data piped between commands).
+# log_debug is suppressed unless MESH_DEBUG=1 in the environment.
+
+log_info()  { printf '[INFO] %s\n'  "$*" >&2; }
+log_warn()  { printf '[WARN] %s\n'  "$*" >&2; }
+log_error() { printf '[ERROR] %s\n' "$*" >&2; }
+log_debug() { [[ "${MESH_DEBUG:-0}" == "1" ]] && printf '[DEBUG] %s\n' "$*" >&2 || true; }
+
+# ─── Compat block — legacy symbols used by callers pre-C19 refactor ──────────
+# These are preserved so existing scripts/topics continue to work unchanged.
+# Do NOT add new callers; migrate to log_info/log_warn/log_error/log_debug.
 
 if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
     _C_RED=$'\033[31m'
