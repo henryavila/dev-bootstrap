@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/mesh-status — viewer for the mesh-snap-produced snapshots.
+# scripts/internal/mesh-status — viewer for the mesh-snap-produced snapshots.
 #
 # Reads $MESH_SYNC_DIR/*.json (replicated cross-host via Syncthing), computes
 # the mesh consensus per repo (which host has the freshest origin/main fetch),

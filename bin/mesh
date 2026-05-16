@@ -4,8 +4,8 @@
 # Replaces the older quartet `bup` / `dotup` / `mesh-snap` / `mesh-status`
 # with a single command. Subcommands delegate to the underlying motors:
 #
-#   mesh status [<alias>] [flags]            →  scripts/lib/mesh-status (positional → --detail)
-#   mesh snap   [flags]                      →  scripts/lib/mesh-snap   (passthrough)
+#   mesh status [<alias>] [flags]            →  scripts/internal/mesh-status (positional → --detail)
+#   mesh snap   [flags]                      →  scripts/internal/mesh-snap   (passthrough)
 #   mesh update [-o NAME] [-f] [-i] [flags]  →  scripts/auto-update.sh  (--only / --full / --interactive)
 #   mesh topic list|<numbers...>             →  dev-bootstrap topic list / topic-only apply
 #   mesh run [flags] <subcommand> [args]     →  selected hosts, sequential over SSH
@@ -138,8 +138,8 @@ EOF
 
 sub_status() {
     local lib
-    lib="$(_resolve_companion "lib/mesh-status")"
-    [[ -n "$lib" ]] || _die "lib/mesh-status not found (set \$MESH_HOME or check installation)"
+    lib="$(_resolve_companion "internal/mesh-status")"
+    [[ -n "$lib" ]] || _die "internal/mesh-status not found (set \$MESH_HOME or check installation)"
 
     # First non-flag arg becomes positional alias → translates to --detail.
     # If first arg is a flag (or no args), pass through as-is.
@@ -158,8 +158,8 @@ sub_status() {
 
 sub_snap() {
     local lib
-    lib="$(_resolve_companion "lib/mesh-snap")"
-    [[ -n "$lib" ]] || _die "lib/mesh-snap not found (set \$MESH_HOME or check installation)"
+    lib="$(_resolve_companion "internal/mesh-snap")"
+    [[ -n "$lib" ]] || _die "internal/mesh-snap not found (set \$MESH_HOME or check installation)"
     exec "$lib" "$@"
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/mesh-snap — collector for mesh-status v1.
+# scripts/internal/mesh-snap — collector for mesh-status v1.
 #
 # Captures the local host's view of the dotfiles ecosystem (host metadata,
 # repo SHAs / fetch state, drift via doctor.sh, advisories, tailscale state)
