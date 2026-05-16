@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# lib/deploy.sh — deploy files from a topic's templates/ directory.
+# scripts/lib/deploy.sh — dual-mode deploy library.
 #
-# Usage:
-#     bash lib/deploy.sh <templates-dir>
+# STANDALONE (executed):  bash lib/deploy.sh <templates-dir>
+#   Deploys files from a topic's templates/ directory (old DEPLOY-file / auto-map system).
 #
-# Behavior:
+# SOURCE (sourced by install-engine):  . lib/deploy.sh
+#   Provides C6 deploy_one() dispatcher for the MAPPINGS-based install engine.
+#   Entry format: "src-rel|dst-abs|mode|perms"  (mode: overwrite | once | managed_block)
+#
+# Standalone behavior:
 #   - If <dir>/DEPLOY exists, reads explicit mappings from it.
 #   - Else, uses automatic name-convention mapping.
 #   - Files with .template suffix pass through envsubst (requires gettext).
@@ -15,7 +19,57 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_LIB_DIR="${DEPLOY_LIB_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+# shellcheck disable=SC1091
+. "$DEPLOY_LIB_DIR/managed-block.sh"
+# shellcheck disable=SC1091
+. "$DEPLOY_LIB_DIR/perms.sh"
+
+# ---------- C6 source-only API (used when sourced by install-engine) ----------
+# deploy_one <entry> <src_base>
+#   entry format: "src-rel|dst-abs|mode|perms"  (perms optional, defaults to 0644)
+#   mode: overwrite | once | managed_block
+deploy_one() {
+    local entry="$1" src_base="$2"
+    local src dst mode perms
+    IFS='|' read -r src dst mode perms <<< "$entry"
+    : "${mode:=overwrite}"
+    : "${perms:=0644}"
+    local src_path="$src_base/$src"
+    [[ -r "$src_path" ]] || { echo "[deploy] missing source: $src_path" >&2; return 1; }
+
+    mkdir -p "$(dirname "$dst")"
+    case "$mode" in
+        overwrite)
+            cp "$src_path" "$dst"
+            apply_perms "$dst" "$perms"
+            ;;
+        once)
+            if [[ -f "$dst" ]]; then
+                echo "[deploy] $dst exists; skipping (mode=once)"
+            else
+                cp "$src_path" "$dst"
+                apply_perms "$dst" "$perms"
+            fi
+            ;;
+        managed_block)
+            local slot
+            slot=$(basename "$src" | sed 's/\.[^.]*$//')
+            managed_block_apply "$dst" "$slot" < "$src_path"
+            apply_perms "$dst" "$perms"
+            ;;
+        *)
+            echo "[deploy] unknown mode: $mode" >&2; return 64
+            ;;
+    esac
+}
+
+# Return when sourced — do not execute standalone script logic.
+[[ "${BASH_SOURCE[0]}" != "${0}" ]] && return 0
+
+# ---------- Standalone script mode (executed directly) ----------
+
+SCRIPT_DIR="$DEPLOY_LIB_DIR"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/log.sh"
 
