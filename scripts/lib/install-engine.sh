@@ -56,8 +56,17 @@ while :; do
     spec="${!spec_var:-}"
     [[ -n "$type" ]] || { log_error "item $name missing required 'type' field"; exit 64; }
 
+    # Resolve dispatch argument: custom items use script: field, others use spec:
+    if [[ "$type" == "custom" ]]; then
+        script_var="ITEM_${i}_SCRIPT"
+        arg="${!script_var:-}"
+        [[ -n "$arg" ]] || { log_error "item $name: type=custom missing required 'script' field"; exit 64; }
+    else
+        arg="$spec"
+    fi
+
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        log_info "[dry-run] would process: $name ($type) spec=$spec"
+        log_info "[dry-run] would process: $name ($type) arg=$arg"
         i=$((i+1))
         continue
     fi
@@ -71,25 +80,24 @@ while :; do
         # shellcheck disable=SC1090
         . "$driver"
         prefix="${type//-/_}"   # brew-formula → brew_formula
-        if "${prefix}_check" "$spec" 2>/dev/null; then
+        if "${prefix}_check" "$arg" 2>/dev/null; then
             log_info "$name: already present, skipping"
             exit 0
         fi
         log_info "$name: installing"
-        "${prefix}_install" "$spec"
+        "${prefix}_install" "$arg"
         if declare -f "${prefix}_verify" >/dev/null 2>&1; then
-            "${prefix}_verify" "$spec" || {
+            "${prefix}_verify" "$arg" || {
                 log_warn "$name: verify failed; calling rollback if present"
-                declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$spec"
+                declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
                 exit 67
             }
         else
-            "${prefix}_check" "$spec" 2>/dev/null || {
+            "${prefix}_check" "$arg" 2>/dev/null || {
                 log_warn "$name: post-install check failed"
                 exit 68
             }
         fi
-        # TODO(Task 1.7/82-ai-tools): type:custom must pass ITEM_N_SCRIPT not $spec; yaml-parse emits it.
     ) || { _rc=$?; log_error "$name: failed (rc=$_rc)"; exit $_rc; }
     i=$((i+1))
 done

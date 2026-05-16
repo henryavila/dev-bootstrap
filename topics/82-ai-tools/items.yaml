@@ -1,0 +1,20 @@
+- name: mdprobe
+  type: npm-global
+  spec: "@henryavila/mdprobe"
+  check: "command -v mdprobe"
+  desc: "Markdown preview server"
+  platforms: [mac, wsl]
+
+- name: atomic-skills
+  type: npx
+  spec: "@henryavila/atomic-skills@1.7.0"
+  check: "true"
+  desc: "Atomic skills installer (npx wrapper)"
+  platforms: [mac, wsl]
+
+- name: rtk
+  type: custom
+  script: "./install-rtk.sh"
+  check: "command -v rtk"
+  desc: "Rust Token Killer (token-optimized CLI proxy)"
+  platforms: [mac, wsl]
