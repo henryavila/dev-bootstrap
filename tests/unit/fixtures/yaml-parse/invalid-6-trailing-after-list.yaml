@@ -1,0 +1,4 @@
+- name: foo
+  type: brew
+  spec: foo
+  platforms: [mac, linux] garbage

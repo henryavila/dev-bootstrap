@@ -1,0 +1,11 @@
+- name: mdprobe
+  type: npm-global
+  spec: "@henryavila/mdprobe"
+  desc: Markdown review UI
+  check: command -v mdprobe
+  post:
+    - mdprobe setup --yes
+    - mdprobe verify
+  requires:
+    - node
+  platforms: [mac, linux]

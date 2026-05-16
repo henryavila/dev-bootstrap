@@ -1,0 +1,10 @@
+# C-2 fixture: parser emits ITEM_0_* + ITEM_1_NAME successfully, then errors on
+# the anchor in the second item's `type` field. This validates that the consumer's
+# sentinel check (__YAML_PARSE_OK=1) is essential — without it, the partial output
+# would eval as if the parse had succeeded.
+- name: ok-item
+  type: brew
+  spec: ripgrep
+- name: bad-item
+  type: &anchor-here brew
+  spec: x

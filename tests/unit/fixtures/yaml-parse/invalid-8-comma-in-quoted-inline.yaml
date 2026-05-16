@@ -1,0 +1,6 @@
+# CX-M3 (checkpoint-3): comma inside quoted inline-list item must be rejected.
+# Previously parsed as 3 corrupted items: ["echo alpha, beta", "echo done"].
+- name: example
+  type: brew
+  spec: example
+  post: ["echo alpha,beta", "echo done"]

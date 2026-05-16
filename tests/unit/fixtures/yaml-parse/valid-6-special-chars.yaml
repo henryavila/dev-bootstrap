@@ -1,0 +1,9 @@
+# Special chars in values — exercises shell_escape (C4 from review).
+# Tests $, backtick, \, " in double-quoted + single-quoted + unquoted contexts.
+
+- name: shell-injection-test
+  type: brew
+  spec: 'literal-$HOME-and-`backticks`-and-\backslash'
+  desc: "double-quoted with \\ backslash and \"escaped\" quote"
+  check: command -v test-$HOME-marker
+  post: 'echo $PWD && true'

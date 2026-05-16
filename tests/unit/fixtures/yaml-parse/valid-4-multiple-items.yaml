@@ -1,0 +1,15 @@
+# Multiple items with cross-references
+- name: node
+  type: brew
+  spec: node
+  platforms: [mac]
+
+- name: mdprobe
+  type: npm-global
+  spec: '@henryavila/mdprobe'
+  requires: [node]
+
+- name: rtk
+  type: custom
+  script: scripts/install-rtk.sh
+  desc: Token saver
