@@ -17,8 +17,6 @@
 #   - Keeps the 5 most recent backups per destination, pruning older ones.
 #   - Destinations outside $HOME trigger sudo (confirmed once at start).
 
-set -euo pipefail
-
 DEPLOY_LIB_DIR="${DEPLOY_LIB_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 # shellcheck disable=SC1091
 . "$DEPLOY_LIB_DIR/managed-block.sh"
@@ -68,6 +66,7 @@ deploy_one() {
 [[ "${BASH_SOURCE[0]}" != "${0}" ]] && return 0
 
 # ---------- Standalone script mode (executed directly) ----------
+set -euo pipefail
 
 SCRIPT_DIR="$DEPLOY_LIB_DIR"
 # shellcheck disable=SC1091

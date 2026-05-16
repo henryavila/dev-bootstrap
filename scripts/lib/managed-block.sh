@@ -34,7 +34,7 @@ pattern = re.compile(
     re.IGNORECASE | re.MULTILINE | re.DOTALL
 )
 if pattern.search(text):
-    new_text = pattern.sub(new_block, text)
+    new_text = pattern.sub(lambda m: new_block, text)
 else:
     # Ensure existing content ends with exactly one newline before appending
     new_text = text.rstrip('\n') + '\n' + new_block + '\n' if text.strip() else new_block + '\n'

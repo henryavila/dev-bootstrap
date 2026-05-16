@@ -55,5 +55,20 @@ EOF
 got=$(grep -c 'mesh-managed: legacy' "$TMP/legacy-target")
 assert "legacy marker upgraded to mesh-managed" "2" "$got"
 
+# Test 5: block content with backslash characters is preserved verbatim (regression for re.sub backslash interp)
+echo "" > "$TMP/backslash-target"
+managed_block_apply "$TMP/backslash-target" "env" <<'EOF'
+export PATH="$HOME/.local/bin:$PATH"
+export PROMPT="\$ "
+group_test=\1\2
+EOF
+got=$(cat "$TMP/backslash-target")
+# Must contain the literal backslash sequences without re.error or corruption
+if echo "$got" | grep -q 'group_test=\\1\\2'; then
+    passed=$((passed+1)); echo "  ✓ backslash content preserved"
+else
+    failed=$((failed+1)); echo "  ✗ backslash content mangled or crash" >&2
+fi
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]
