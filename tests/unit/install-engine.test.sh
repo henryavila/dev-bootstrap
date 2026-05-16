@@ -47,5 +47,27 @@ echo "$out" | grep -q 'htop' && \
     { passed=$((passed+1)); echo "  ✓ dry-run: plan mentions htop"; } || \
     { failed=$((failed+1)); echo "  ✗ dry-run: plan did not mention htop" >&2; }
 
+# Test 3: failed item propagates correct exit code (regression for fix of $?)
+# A mock driver that always fails install.
+cat > "$TMP/installers/failing-driver.sh" <<'SH'
+failing_driver_check()   { return 1; }
+failing_driver_install() { echo "this fails on purpose"; return 67; }
+SH
+cat > "$TMP/items-fail.yaml" <<'YAML'
+- name: failing-item
+  type: failing-driver
+  spec: anything
+YAML
+set +e
+bash "$ENGINE" --manifest "$TMP/items-fail.yaml" --installers-dir "$TMP/installers" 2>/dev/null
+rc=$?
+set -e
+# Expect non-zero exit; specifically should be 67 (from the driver) or some non-zero
+if [[ $rc -ne 0 ]]; then
+    passed=$((passed+1)); echo "  ✓ failed item exits non-zero (rc=$rc)"
+else
+    failed=$((failed+1)); echo "  ✗ failed item exited 0 (bug)" >&2
+fi
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]

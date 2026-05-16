@@ -52,8 +52,9 @@ while :; do
     type_var="ITEM_${i}_TYPE"
     spec_var="ITEM_${i}_SPEC"
     name="${!name_var}"
-    type="${!type_var}"
-    spec="${!spec_var}"
+    type="${!type_var:-}"
+    spec="${!spec_var:-}"
+    [[ -n "$type" ]] || { log_error "item $name missing required 'type' field"; exit 64; }
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
         log_info "[dry-run] would process: $name ($type) spec=$spec"
@@ -88,7 +89,8 @@ while :; do
                 exit 68
             }
         fi
-    ) || { log_error "$name: failed (rc=$?)"; exit $?; }
+        # TODO(Task 1.7/82-ai-tools): type:custom must pass ITEM_N_SCRIPT not $spec; yaml-parse emits it.
+    ) || { _rc=$?; log_error "$name: failed (rc=$_rc)"; exit $_rc; }
     i=$((i+1))
 done
 
