@@ -203,6 +203,22 @@ _run_with_timeout() {
     fi
 }
 
+# Run setup.sh interactively in a sanitized subshell so the menu actually
+# renders. Inherited automation exports (NON_INTERACTIVE, CI, ONLY_TOPICS,
+# INCLUDE_*, etc.) are pre-seeds that should_show_menu reads as "skip the
+# menu" — leaking them into the child defeats `-i/--interactive`. The
+# subshell scopes the unsets so the parent env stays untouched.
+run_setup_interactive() {
+    local repo="$1"
+    (
+        unset NON_INTERACTIVE CI ONLY_TOPICS
+        unset INCLUDE_DOCKER INCLUDE_WEBSTACK INCLUDE_LARAVEL INCLUDE_REMOTE INCLUDE_EDITOR
+        unset INCLUDE_MAILPIT INCLUDE_NGROK INCLUDE_MSSQL INCLUDE_FRONTEND_PROXY
+        unset INCLUDE_POSTGRES PHP_VERSIONS POSTGRES_VERSION DOTFILES_REPO
+        bash "$repo/setup.sh"
+    )
+}
+
 # ─── Accumulators ───────────────────────────────────────────────────
 SHELL_RC_CHANGED=0
 FOLLOWUPS=()
@@ -295,16 +311,29 @@ process_repo() {
                 return 1
             fi
         fi
+        # Capture HEAD before pull so we can summarize what moved (and bump
+        # last-applied to the actual post-pull SHA, not the upstream snapshot
+        # we sampled earlier — they normally match, but a stale upstream
+        # cache or a parallel writer could diverge them).
+        local old_head old_short pull_err new_head new_short
+        old_head="$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo '')"
+        old_short="$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo '')"
         # Pull and ABORT on failure — `--full` against a stale tree would then
         # bump last-applied to upstream HEAD even though the working tree
         # never received those commits, creating invisible state divergence.
         # Pre-flights above guarantee FF-safe; capture stderr to surface why
         # if a hook / lock / FS error breaks pull anyway.
-        local pull_err
         if ! pull_err="$(git -C "$repo" pull --ff-only --quiet 2>&1)"; then
             err "$name: git pull --ff-only falhou em --full — abortando sem rebootstrap"
             [[ -n "$pull_err" ]] && printf '    %s\n' "$pull_err" >&2
             return 1
+        fi
+        new_head="$(git -C "$repo" rev-parse HEAD 2>/dev/null || echo '')"
+        new_short="$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo '')"
+        if [[ -n "$old_head" && -n "$new_head" && "$old_head" != "$new_head" ]]; then
+            ok "$name: pulled $old_short..$new_short"
+        else
+            ok "$name: already at $new_short"
         fi
         if [[ "$name" == "dev-bootstrap" ]]; then
             # -i/--interactive drops --non-interactive so setup.sh shows
@@ -321,7 +350,7 @@ process_repo() {
             local bootstrap_rc=0
             if (( INTERACTIVE )); then
                 notice "$name: --interactive — setup.sh roda com menu (output direto pro TTY, sem prefix)"
-                bash "$repo/setup.sh" || bootstrap_rc=$?
+                run_setup_interactive "$repo" || bootstrap_rc=$?
             else
                 bash "$repo/setup.sh" --non-interactive 2>&1 | sed 's/^/    /' || bootstrap_rc=$?
             fi
@@ -345,11 +374,12 @@ process_repo() {
                 fi
             fi
         fi
-        # Defense in depth: never write empty last-applied. head_remote was
-        # validated non-empty above, but a future refactor might move the
-        # FULL branch — keep this guard so the worst case is a no-op.
-        if [[ -n "$head_remote" ]]; then
-            echo "$head_remote" > "$STATE_DIR/last-applied-$name"
+        # Defense in depth: never write empty last-applied. new_head is the
+        # actual post-pull SHA; head_remote was the upstream snapshot at
+        # pre-flight time (normally same, but a stale upstream cache or
+        # parallel writer could disagree). Prefer the post-pull truth.
+        if [[ -n "$new_head" ]]; then
+            echo "$new_head" > "$STATE_DIR/last-applied-$name"
         fi
         rm -f "$STATE_DIR/pending-sudo-$name"
         ok "$name reaplicado em modo --full"
