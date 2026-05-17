@@ -32,8 +32,14 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "$HERE/.." && pwd)"
-INSTALL="$REPO/install.sh"
+# Workstation root: $HERE = scripts/runners/, so two levels up.
+REPO="$(cd "$HERE/../.." && pwd)"
+# MAPPINGS live in identity's install.sh (post-restructure: workstation
+# has no top-level install.sh; mappings remain identity-owned data per
+# spec D-B3 / §C18). Resolve identity via MESH_IDENTITY_DIR with the
+# usual fallback chain.
+IDENTITY="${MESH_IDENTITY_DIR:-${DOTFILES_DIR:-$HOME/dotfiles}}"
+INSTALL="$IDENTITY/install.sh"
 
 QUIET=0
 JSON=0
@@ -63,6 +69,9 @@ drift_items=() missing_items=() marker_miss_items=()
 # Pulls lines between `MAPPINGS=(` and the closing `)`, strips quotes,
 # expands $HOME, feeds each `src|dst[|mode]` triple through the checker.
 parse_mappings() {
+    # Silent when INSTALL is absent (clean install or identity not deployed);
+    # downstream loop sees zero rows, exits at the JSON/text rendering step.
+    [[ -f "$INSTALL" ]] || return 0
     awk '
         /^MAPPINGS=\(/ { inside=1; next }
         inside && /^\)/ { inside=0; next }
@@ -140,7 +149,7 @@ check_mapping() {
     mode="${mode:-overwrite}"
     # Expand $HOME literally (install.sh does the same)
     dst="${dst//\$HOME/$HOME}"
-    local src_abs="$REPO/$src"
+    local src_abs="$IDENTITY/$src"
 
     # Skip entries whose src is a placeholder we haven't filled in
     [[ ! -f "$src_abs" ]] && return 0
@@ -236,22 +245,29 @@ if [[ "$JSON" == 1 ]]; then
         "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss"
     printf '"drift_items":['
     sep=""
-    for d in "${drift_items[@]}"; do
-        printf '%s"%s"' "$sep" "${d//\"/\\\"}"
-        sep=","
-    done
+    # bash 3.2 + set -u: empty `"${arr[@]}"` is unbound; guard with size.
+    if (( ${#drift_items[@]} > 0 )); then
+        for d in "${drift_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
     printf '],"missing_items":['
     sep=""
-    for d in "${missing_items[@]}"; do
-        printf '%s"%s"' "$sep" "${d//\"/\\\"}"
-        sep=","
-    done
+    if (( ${#missing_items[@]} > 0 )); then
+        for d in "${missing_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
     printf '],"marker_miss_items":['
     sep=""
-    for d in "${marker_miss_items[@]}"; do
-        printf '%s"%s"' "$sep" "${d//\"/\\\"}"
-        sep=","
-    done
+    if (( ${#marker_miss_items[@]} > 0 )); then
+        for d in "${marker_miss_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
     printf ']}\n'
 else
     if [[ "$QUIET" == 0 ]]; then
@@ -262,6 +278,9 @@ else
         echo "  ${C_WARN}!${C_RESET} marker miss : $count_marker_miss"
     fi
 
+    # The `(( count_* > 0 ))` guards already imply array non-empty (only the
+    # JSON branch needed the explicit size check because it iterates even
+    # when count==0 to emit `[]`). Keep these blocks unchanged.
     if (( count_missing > 0 )); then
         echo
         echo "${C_WARN}Missing (install.sh never ran, or user deleted):${C_RESET}"
