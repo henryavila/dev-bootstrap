@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # tests/integration/uninstall-mechanism.test.sh
 #
-# Regression: ensure lib/uninstall.sh + per-topic data/uninstall.list
-# manifest mechanism stays wired correctly.
+# Regression: ensure scripts/lib/topic-cleanup.sh + per-topic
+# data/uninstall.list manifest mechanism stays wired correctly.
+# (Lib renamed from uninstall.sh to topic-cleanup.sh in 237e34d to
+# disambiguate from engine-scoped uninstall logic; the verb name
+# `uninstall_apply` and manifest filename were intentionally preserved.)
 #
 # Why this exists: removing artifacts is one of the easiest things to
 # silently break — a topic's install.<suffix>.sh stops sourcing the lib,
@@ -15,7 +18,7 @@
 # same reliability concern).
 #
 # What this checks:
-#   1. lib/uninstall.sh exists and exposes uninstall_apply
+#   1. scripts/lib/topic-cleanup.sh exists and exposes uninstall_apply
 #   2. Every supported verb has a handler with the right OS guard
 #      (apt → Linux only, brew/brew-cask → Darwin only)
 #   3. The 3 sandboxed verbs (clone, user-bin, sys-bin) reject `..` and `/`
