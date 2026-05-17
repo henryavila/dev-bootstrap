@@ -45,6 +45,7 @@ should_show_menu() {
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && return 1
+        [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]] && return 1
         [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && return 1
         [[ "${DOTFILES_AI_PACKAGES:-0}" == "1" ]] && return 1
         [[ -n "${PHP_VERSIONS:-}" ]]          && return 1
@@ -459,7 +460,7 @@ run_menu() {
         "ai-tools" "82-ai-tools: AI review prompts + token-saving CLI tools" "$(_topic_default_state ai-tools)" \
         "code-server" "85-code-server: VS Code in browser via Tailscale" "$(_topic_default_state code-server)" \
         "editor"   "90-editor: typora-wait (open .md from CLI)"       "$(_topic_default_state editor)" \
-        "npm-global" "95-dotfiles-personal: npm globals under ~/.npm-global" "$(_topic_default_state npm-global)" \
+        "npm-global" "10-languages: npm globals under ~/.npm-global (PATH + npmrc prefix)" "$(_topic_default_state npm-global)" \
         "dotfiles" "95-dotfiles-personal: your private dotfiles"      "$(_topic_default_state dotfiles)" \
         3>&1 1>&2 2>&3) || _menu_cancel
 
@@ -478,7 +479,7 @@ run_menu() {
             remote)   export INCLUDE_REMOTE=1 ;;
             code-server) export INCLUDE_CODE_SERVER=1 ;;
             editor)   export INCLUDE_EDITOR=1 ;;
-            npm-global) export DOTFILES_NPM_GLOBAL=1; export INCLUDE_DOTFILES_PERSONAL=1; need_dotfiles_repo=1 ;;
+            npm-global) export INCLUDE_NPM_GLOBAL=1; export DOTFILES_NPM_GLOBAL=1 ;;
             ai-tools) export INCLUDE_AI_TOOLS=1; export DOTFILES_AI_PACKAGES=1; need_dotfiles_repo=1 ;;
             dotfiles) export INCLUDE_DOTFILES_PERSONAL=1; need_dotfiles_repo=1 ;;
         esac
@@ -872,7 +873,7 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
     [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && summary+="    ✓ 85-code-server\n"
     [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && summary+="    ✓ 90-editor\n"
     [[ "${INCLUDE_DOTFILES_PERSONAL:-0}" == "1" ]] && summary+="    ✓ 95-dotfiles-personal\n"
-    [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    ✓ npm globals in ~/.npm-global\n"
+    [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" || "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    ✓ npm globals in ~/.npm-global\n"
     [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && summary+="    ✓ AI packages from dotfiles manifest\n"
     if [[ "${INCLUDE_DOCKER:-0}"  != "1" && "${INCLUDE_WEBSTACK:-0}" != "1" \
        && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_AI_TOOLS:-0}" != "1" \
@@ -942,6 +943,7 @@ _persist_menu_state() {
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]] && echo 'export INCLUDE_NGROK=1'
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]] && echo 'export INCLUDE_MSSQL=1'
         [[ "${INCLUDE_FRONTEND_PROXY:-0}" == "1" ]] && echo 'export INCLUDE_FRONTEND_PROXY=1'
+        [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]] && echo 'export INCLUDE_NPM_GLOBAL=1'
         [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && echo 'export DOTFILES_NPM_GLOBAL=1'
         [[ "${DOTFILES_AI_PACKAGES:-0}" == "1" ]] && echo 'export DOTFILES_AI_PACKAGES=1'
         [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && [[ -n "${DOTFILES_AI_PACKAGE_SELECTION:-}" ]] \

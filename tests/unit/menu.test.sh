@@ -76,14 +76,14 @@ _test_gates "CI=true"
 echo
 echo "dotfiles-backed opt-ins are first-class in the interactive menu"
 
-assert_pattern_present "$MENU" '^[[:space:]]*"npm-global"[[:space:]]+"95-dotfiles-personal: npm globals under ~/.npm-global"' \
-    "menu checklist shows npm-global opt-in"
+assert_pattern_present "$MENU" '^[[:space:]]*"npm-global"[[:space:]]+"10-languages: npm globals under ~/.npm-global' \
+    "menu checklist shows npm-global opt-in (label points at topic 10-languages, the new owner per C7)"
 
 assert_pattern_present "$MENU" '^[[:space:]]*"ai-tools"[[:space:]]+"82-ai-tools: AI review prompts [+] token-saving CLI tools"' \
     "menu checklist shows AI tools opt-in under topic 82"
 
-assert_pattern_present "$MENU" 'npm-global\) export DOTFILES_NPM_GLOBAL=1' \
-    "menu selection exports DOTFILES_NPM_GLOBAL"
+assert_pattern_present "$MENU" 'npm-global\) export INCLUDE_NPM_GLOBAL=1; export DOTFILES_NPM_GLOBAL=1' \
+    "menu selection exports INCLUDE_NPM_GLOBAL (new, workstation gate) + DOTFILES_NPM_GLOBAL (legacy, identity gate; both set during transition)"
 
 assert_pattern_present "$MENU" 'ai-tools\) export INCLUDE_AI_TOOLS=1; export DOTFILES_AI_PACKAGES=1' \
     "menu selection exports AI tools flags"

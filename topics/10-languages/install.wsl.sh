@@ -46,6 +46,72 @@ if command -v fnm >/dev/null 2>&1; then
     fi
 fi
 
+# ─── NPM global setup (opt-in: INCLUDE_NPM_GLOBAL=1) ───────────────────
+# C7 (mesh-restructure): NPM-global moved from identity dotfiles to this
+# topic. Configures ~/.npmrc prefix=$HOME/.npm-global + bash/zsh PATH
+# fragments so `npm install -g foo` lands in the user's home tree (not in
+# the fnm-managed Node version dirs, which get recreated on `fnm install`).
+# Gate: menu opt-in or explicit env (INCLUDE_NPM_GLOBAL=1). Idempotent.
+if [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]]; then
+    NPM_GLOBAL_BIN="$HOME/.npm-global/bin"
+    NPM_GLOBAL_PREFIX_NPMRC='prefix=${HOME}/.npm-global'
+    NPM_GLOBAL_FRAGMENT_NAME="20-npm-global.sh"
+
+    _npm_global_path_fragment() {
+        local dst="$1" tmp
+        mkdir -p "$(dirname "$dst")"
+        tmp=$(mktemp "${dst}.npm.XXXXXX") || { warn "npm-global: mktemp failed for $dst"; return 1; }
+        chmod 0644 "$tmp"
+        cat > "$tmp" <<'FRAG_EOF'
+# Managed by topic 10-languages: optional npm global prefix.
+npm_global_bin="$HOME/.npm-global/bin"
+case ":$PATH:" in
+    *":$npm_global_bin:"*) ;;
+    *) [ -d "$npm_global_bin" ] && export PATH="$npm_global_bin:$PATH" ;;
+esac
+unset npm_global_bin
+FRAG_EOF
+        if [[ -f "$dst" ]] && cmp -s "$tmp" "$dst"; then
+            rm -f "$tmp"
+            return 0
+        fi
+        mv "$tmp" "$dst"
+        ok "configured npm-global PATH fragment: $dst"
+    }
+
+    _npm_global_ensure_npmrc() {
+        local npmrc="$HOME/.npmrc" tmp
+        if [[ -f "$npmrc" ]] && grep -qxF "$NPM_GLOBAL_PREFIX_NPMRC" "$npmrc"; then
+            ok "npm-global prefix already set in $npmrc"
+            return 0
+        fi
+        tmp=$(mktemp "${npmrc}.npm.XXXXXX") || { warn "npm-global: mktemp failed for $npmrc"; return 1; }
+        chmod 0600 "$tmp"
+        if [[ -f "$npmrc" ]]; then
+            awk '/^[[:space:]]*prefix[[:space:]]*=/ { next } { print }' "$npmrc" > "$tmp"
+        fi
+        if [[ -s "$tmp" ]] && [[ -n "$(tail -c1 "$tmp")" ]]; then
+            printf '\n' >> "$tmp"
+        fi
+        printf '%s\n' "$NPM_GLOBAL_PREFIX_NPMRC" >> "$tmp"
+        if [[ -f "$npmrc" ]] && cmp -s "$tmp" "$npmrc"; then
+            rm -f "$tmp"
+            return 0
+        fi
+        if [[ -f "$npmrc" ]]; then
+            cp -p "$npmrc" "${npmrc}.bak-$(date +%Y%m%d-%H%M%S)"
+        fi
+        mv "$tmp" "$npmrc"
+        ok "configured npm-global prefix in $npmrc"
+    }
+
+    info "npm-global: configuring (INCLUDE_NPM_GLOBAL=1)"
+    mkdir -p "$NPM_GLOBAL_BIN"
+    _npm_global_ensure_npmrc
+    _npm_global_path_fragment "$HOME/.bashrc.d/$NPM_GLOBAL_FRAGMENT_NAME"
+    _npm_global_path_fragment "$HOME/.zshrc.d/$NPM_GLOBAL_FRAGMENT_NAME"
+fi
+
 # ─── PHP versions (multi) ──────────────────────────────────────────────
 # PHP_VERSIONS can come from env (menu or automation). If unset, install all
 # supported versions from data/php-versions.conf.
