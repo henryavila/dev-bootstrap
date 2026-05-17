@@ -69,6 +69,7 @@ Usage:
   mesh topic <NN...>                Re-apply dev-bootstrap topics by number
   mesh run [flags] <subcommand>     Run mesh subcommands on selected hosts
   mesh lint                         Run repo invariant lints (scripts/lib/lints/L*.sh)
+  mesh catalog generate             Regenerate .catalog/ derived listings
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -1035,6 +1036,36 @@ sub_lint() {
     exec bash "$lib" "$@"
 }
 
+sub_catalog() {
+    local action="${1:-}"
+    case "$action" in
+        generate)
+            shift
+            local lib
+            lib="$(_resolve_companion "lib/catalog.sh")"
+            [[ -n "$lib" ]] || _die "lib/catalog.sh not found (set \$MESH_HOME or check installation)"
+            exec bash "$lib" "$@"
+            ;;
+        ""|-h|--help)
+            cat <<'EOF'
+Usage: mesh catalog generate
+
+Regenerates .catalog/ with 4 derived files + index:
+  resources.txt   files under topics/*/resources/
+  opt-ins.txt     INCLUDE_* env-var toggles
+  cli.txt         mesh subcommands (parsed from bin/mesh)
+  drivers.txt     installer drivers in scripts/lib/installers/
+  README.md       index + pointer to docs/catalog/behaviors.md
+
+Output is byte-stable; CI can diff two runs to detect drift.
+EOF
+            ;;
+        *)
+            _die "catalog: unknown action '$action' (try: mesh catalog generate)"
+            ;;
+    esac
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
@@ -1069,6 +1100,10 @@ case "${1:-status}" in
     lint)
         shift
         sub_lint "$@"
+        ;;
+    catalog)
+        shift
+        sub_catalog "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.

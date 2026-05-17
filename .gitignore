@@ -12,3 +12,6 @@ Thumbs.db
 
 # Backups from lib/deploy.sh (never committed)
 *.bak-*
+
+# Derived catalog (regenerate via `mesh catalog generate`)
+/.catalog/
