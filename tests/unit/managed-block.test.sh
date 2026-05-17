@@ -70,5 +70,93 @@ else
     failed=$((failed+1)); echo "  ✗ backslash content mangled or crash" >&2
 fi
 
+# ─── managed_block_in_sync (C12/D49) ────────────────────────────────
+# These tests cover the helper that doctor.sh uses to detect drift in
+# managed_block mappings. Uses literal dotfiles-managed: markers (matches
+# install.sh's current writer) — see lib header for the case-insensitive
+# follow-up note.
+
+# Test 6: in_sync when dst contains the exact reconstructed block at EOF.
+# managed_block protocol is append-only: install.sh always puts the block at
+# the end of the file, so drift detection requires the block to be the last
+# section. Header lines before the block are preserved untouched.
+mkdir -p "$TMP/sync"
+printf 'ssh-rsa AAAA user@host\n' > "$TMP/sync/src"
+{
+    printf '# header line\n'
+    printf '# >>> BEGIN dotfiles-managed: ssh-keys >>>\n'
+    printf 'ssh-rsa AAAA user@host\n'
+    printf '# <<< END dotfiles-managed: ssh-keys <<<\n'
+} > "$TMP/sync/dst"
+if managed_block_in_sync "$TMP/sync/src" "$TMP/sync/dst" "ssh-keys"; then
+    passed=$((passed+1)); echo "  ✓ in_sync: matching block returns 0"
+else
+    failed=$((failed+1)); echo "  ✗ in_sync should return 0 for matching block" >&2
+fi
+
+# Test 7: drift detected when dst block differs from src
+printf 'ssh-rsa BBBB different@host\n' > "$TMP/sync/dst-drift-src"
+{
+    printf '# >>> BEGIN dotfiles-managed: ssh-keys >>>\n'
+    printf 'ssh-rsa AAAA user@host\n'
+    printf '# <<< END dotfiles-managed: ssh-keys <<<\n'
+} > "$TMP/sync/dst-drift"
+if managed_block_in_sync "$TMP/sync/dst-drift-src" "$TMP/sync/dst-drift" "ssh-keys"; then
+    failed=$((failed+1)); echo "  ✗ in_sync should detect drift" >&2
+else
+    passed=$((passed+1)); echo "  ✓ in_sync: content mismatch returns 1"
+fi
+
+# Test 8: markers absent → return 1 (block never deployed)
+printf 'no markers here\n' > "$TMP/sync/dst-no-markers"
+if managed_block_in_sync "$TMP/sync/src" "$TMP/sync/dst-no-markers" "ssh-keys"; then
+    failed=$((failed+1)); echo "  ✗ in_sync should return 1 when markers absent" >&2
+else
+    passed=$((passed+1)); echo "  ✓ in_sync: absent markers returns 1"
+fi
+
+# Test 9: header lines BEFORE the block are preserved across the check.
+# Drift detection treats them as user-owned content outside the managed region.
+{
+    printf 'before line 1\n'
+    printf 'before line 2\n'
+    printf '# >>> BEGIN dotfiles-managed: env >>>\n'
+    printf 'PATH=/usr/bin\n'
+    printf '# <<< END dotfiles-managed: env <<<\n'
+} > "$TMP/sync/dst-with-header"
+printf 'PATH=/usr/bin\n' > "$TMP/sync/src-env"
+if managed_block_in_sync "$TMP/sync/src-env" "$TMP/sync/dst-with-header" "env"; then
+    passed=$((passed+1)); echo "  ✓ in_sync: header context preserved"
+else
+    failed=$((failed+1)); echo "  ✗ in_sync should tolerate header lines" >&2
+fi
+
+# Test 9b: trailing lines AFTER the block ARE drift — install.sh appends, so
+# any non-block content past the END marker would be moved by a re-deploy.
+{
+    printf '# >>> BEGIN dotfiles-managed: env >>>\n'
+    printf 'PATH=/usr/bin\n'
+    printf '# <<< END dotfiles-managed: env <<<\n'
+    printf 'rogue trailing line\n'
+} > "$TMP/sync/dst-with-trailing"
+if managed_block_in_sync "$TMP/sync/src-env" "$TMP/sync/dst-with-trailing" "env"; then
+    failed=$((failed+1)); echo "  ✗ in_sync should flag trailing content as drift" >&2
+else
+    passed=$((passed+1)); echo "  ✓ in_sync: trailing content after block is drift"
+fi
+
+# Test 10: src with no trailing newline still matches (print_with_eol mirror)
+printf 'one-liner-no-newline' > "$TMP/sync/src-noeol"
+{
+    printf '# >>> BEGIN dotfiles-managed: liner >>>\n'
+    printf 'one-liner-no-newline\n'
+    printf '# <<< END dotfiles-managed: liner <<<\n'
+} > "$TMP/sync/dst-liner"
+if managed_block_in_sync "$TMP/sync/src-noeol" "$TMP/sync/dst-liner" "liner"; then
+    passed=$((passed+1)); echo "  ✓ in_sync: src without trailing newline matches"
+else
+    failed=$((failed+1)); echo "  ✗ in_sync should append newline for non-EOL src" >&2
+fi
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]
