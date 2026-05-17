@@ -69,13 +69,11 @@ export HOME="${HOME:-$(getent passwd "$USER" | cut -d: -f6)}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# C13.5: ensure bin/mesh is discoverable on PATH via ~/.local/bin/ symlink.
-# Idempotent — only touches the link if absent or pointing elsewhere.
-mkdir -p "$HOME/.local/bin"
-if [[ ! -L "$HOME/.local/bin/mesh" ]] || \
-   [[ "$(readlink "$HOME/.local/bin/mesh")" != "$HERE/bin/mesh" ]]; then
-    ln -sf "$HERE/bin/mesh" "$HOME/.local/bin/mesh"
-fi
+# C13.5 mesh-symlink prelude lives below, after `--help` and `--list-topics`
+# early-exits, so introspection flags don't have filesystem side effects
+# (Review B finding B6). The actual install is in install_mesh_symlink(),
+# invoked further down once we know the user is running setup, not
+# inspecting.
 
 collect_topics() {
     # Portable across bash 3.2 (macOS default) and bash 4+: no `mapfile`, no
@@ -286,6 +284,29 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+# C13.5: ensure bin/mesh is discoverable on PATH via ~/.local/bin/ symlink.
+# Idempotent — only touches the link if absent or pointing elsewhere.
+# Moved below --help / --list-topics handling so introspection has no FS
+# side effects (Review B finding B6).
+install_mesh_symlink() {
+    local dst="$HOME/.local/bin/mesh"
+    local target="$HERE/bin/mesh"
+    mkdir -p "$HOME/.local/bin"
+    # Already correct → no-op.
+    if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$target" ]]; then
+        return 0
+    fi
+    # Regular file at the destination: don't silently clobber a binary
+    # the user (or another package manager) put there. Warn and skip;
+    # the user can move it and re-run setup.sh if they want our link.
+    if [[ -e "$dst" ]] && ! [[ -L "$dst" ]]; then
+        warn "$dst is a regular file (not a symlink) — leaving alone; mv it aside to install the bin/mesh shim"
+        return 0
+    fi
+    ln -sf "$target" "$dst"
+}
+install_mesh_symlink
 
 # ---------- Detect OS ----------
 OS="$(bash "$HERE/scripts/lib/detect-os.sh")"
