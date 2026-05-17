@@ -51,8 +51,8 @@ _mesh_topic_specs_from_bootstrap() {
 
     local root out
     for root in "${(@f)$(_mesh_dev_bootstrap_roots)}"; do
-        [[ -n "$root" && -x "$root/bootstrap.sh" ]] || continue
-        out="$(bash "$root/bootstrap.sh" --list-topics 2>/dev/null | _mesh_topic_specs_from_lines)"
+        [[ -n "$root" && -x "$root/setup.sh" ]] || continue
+        out="$(bash "$root/setup.sh" --list-topics 2>/dev/null | _mesh_topic_specs_from_lines)"
         if [[ -n "$out" ]]; then
             print -r -- "$out"
             return 0
