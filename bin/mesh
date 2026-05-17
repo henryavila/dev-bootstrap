@@ -68,6 +68,7 @@ Usage:
   mesh topic list                   List dev-bootstrap topics
   mesh topic <NN...>                Re-apply dev-bootstrap topics by number
   mesh run [flags] <subcommand>     Run mesh subcommands on selected hosts
+  mesh lint                         Run repo invariant lints (scripts/lib/lints/L*.sh)
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -109,6 +110,12 @@ Subcommands:
            Supported remote subcommands: status, snap, update.
            `mesh run update ... -i` is intentionally rejected; interactive
            update menus belong on one host at a time.
+
+  lint     Run the repo invariant lint suite (scripts/lib/lints/L*.sh).
+           Each lint checks one architectural rule (no hardcoded paths,
+           bash 3.2 compat, marker case-insensitivity, etc.). Exit code
+           equals the number of failing lints. Run on a clean tree before
+           pushing; CI runs the same suite.
 
 Examples:
   mesh                              Open the panel
@@ -1021,6 +1028,13 @@ sub_run() {
     return "$failed"
 }
 
+sub_lint() {
+    local lib
+    lib="$(_resolve_companion "lib/lint.sh")"
+    [[ -n "$lib" ]] || _die "lib/lint.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$lib" "$@"
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
@@ -1051,6 +1065,10 @@ case "${1:-status}" in
     run)
         shift
         sub_run "$@"
+        ;;
+    lint)
+        shift
+        sub_lint "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.
