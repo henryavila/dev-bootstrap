@@ -1,0 +1,26 @@
+# shell/zinit-uninstall.list — zinit plugins this dotfiles repo used to load
+# but no longer does. Read every run by install.sh; each entry is an
+# `owner/repo` spec (the same form passed to `zinit light`).
+#
+# Why this exists: removing a `zinit light X` line from shell/zshrc.local
+# stops loading the plugin into the next zsh session, but does NOT clean up
+# zinit's plugin cache at ~/.local/share/zinit/plugins/<owner>---<repo>/.
+# Adding the spec here makes install.sh do `rm -rf` on the cache the next
+# time it runs (idempotent — silent when already absent).
+#
+# Companion mechanism: dev-bootstrap's lib/uninstall.sh handles the
+# brew/apt/clone/binary side of the same retirement (see
+# topics/20-terminal-ux/data/uninstall.list). Together they produce a
+# clean machine even when both layers had installed the same product.
+#
+# Format: one `owner/repo` per line. Comments (#) and blank lines ignored.
+# Sandbox: entries containing `..` or starting/ending with `/` are rejected.
+#
+# When deprecating a plugin: ALSO remove the `zinit light` line from
+# shell/zshrc.local in the SAME commit. Without the dual edit the plugin
+# keeps loading forever on machines already provisioned.
+
+# Removed 2026-04-30: alias-tips already covers the same use case
+# (one concise reminder per command), and YSU produced a redundant
+# second message per command. Vide PROJECT_STATUS D37.
+MichaelAquilina/zsh-you-should-use

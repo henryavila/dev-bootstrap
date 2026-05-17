@@ -1,0 +1,87 @@
+# ~/.config/eza/theme.yml — managed by dotfiles/config/eza/theme.yml
+#
+# Catppuccin Mocha palette for eza. Loaded automatically by eza from
+# $XDG_CONFIG_HOME/eza/theme.yml (no env var needed).
+# Palette reference: https://catppuccin.com/palette
+
+colourful: true
+
+filekinds:
+  normal:        { foreground: '#cdd6f4' }  # text
+  directory:     { foreground: '#89b4fa', is_bold: true }  # blue
+  symlink:       { foreground: '#89dceb' }  # sky
+  pipe:          { foreground: '#f5c2e7' }  # pink
+  block_device:  { foreground: '#eba0ac' }  # maroon
+  char_device:   { foreground: '#eba0ac' }
+  socket:        { foreground: '#f38ba8' }  # red
+  special:       { foreground: '#cba6f7' }  # mauve
+  executable:    { foreground: '#a6e3a1' }  # green
+  mount_point:   { foreground: '#94e2d5' }  # teal
+
+perms:
+  user_read:            { foreground: '#cdd6f4' }
+  user_write:           { foreground: '#f9e2af' }  # yellow
+  user_execute_file:    { foreground: '#a6e3a1' }
+  user_execute_other:   { foreground: '#a6e3a1' }
+  group_read:           { foreground: '#bac2de' }  # subtext1
+  group_write:          { foreground: '#f9e2af' }
+  group_execute:        { foreground: '#a6e3a1' }
+  other_read:           { foreground: '#a6adc8' }  # subtext0
+  other_write:          { foreground: '#f9e2af' }
+  other_execute:        { foreground: '#a6e3a1' }
+  special_user_file:    { foreground: '#cba6f7' }
+  special_other:        { foreground: '#cba6f7' }
+  attribute:            { foreground: '#cdd6f4' }
+
+size:
+  major:         { foreground: '#fab387' }  # peach
+  minor:         { foreground: '#94e2d5' }
+  number_byte:   { foreground: '#cdd6f4' }
+  number_kilo:   { foreground: '#cdd6f4' }
+  number_mega:   { foreground: '#89b4fa' }
+  number_giga:   { foreground: '#cba6f7' }
+  number_huge:   { foreground: '#f38ba8' }
+  unit_byte:     { foreground: '#bac2de' }
+  unit_kilo:     { foreground: '#89b4fa' }
+  unit_mega:     { foreground: '#cba6f7' }
+  unit_giga:     { foreground: '#cba6f7' }
+  unit_huge:     { foreground: '#f38ba8' }
+
+users:
+  user_you:      { foreground: '#cdd6f4' }
+  user_root:     { foreground: '#f38ba8', is_bold: true }
+  user_other:    { foreground: '#a6adc8' }
+  group_yours:   { foreground: '#cdd6f4' }
+  group_other:   { foreground: '#a6adc8' }
+  group_root:    { foreground: '#f38ba8', is_bold: true }
+
+links:
+  normal:           { foreground: '#89dceb' }
+  multi_link_file:  { foreground: '#f9e2af' }
+
+git:
+  new:          { foreground: '#a6e3a1' }
+  modified:     { foreground: '#f9e2af' }
+  deleted:      { foreground: '#f38ba8' }
+  renamed:      { foreground: '#89b4fa' }
+  typechange:   { foreground: '#fab387' }
+  ignored:      { foreground: '#6c7086' }  # overlay0
+  conflicted:   { foreground: '#eba0ac' }
+
+git_repo:
+  branch_main:  { foreground: '#a6e3a1' }
+  branch_other: { foreground: '#cba6f7' }
+  git_clean:    { foreground: '#a6e3a1' }
+  git_dirty:    { foreground: '#f9e2af' }
+
+punctuation:   { foreground: '#6c7086' }
+date:          { foreground: '#cba6f7' }
+inode:         { foreground: '#bac2de' }
+blocks:        { foreground: '#f9e2af' }
+header:        { foreground: '#89b4fa', is_bold: true }
+octal:         { foreground: '#cdd6f4' }
+flags:         { foreground: '#cdd6f4' }
+symlink_path:  { foreground: '#89dceb' }
+control_char:  { foreground: '#f38ba8' }
+broken_symlink: { foreground: '#f38ba8' }
+broken_path_overlay: { foreground: '#f38ba8' }
