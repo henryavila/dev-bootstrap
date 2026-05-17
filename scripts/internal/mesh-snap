@@ -435,18 +435,23 @@ collect_drift() {
     local doctor=""
     # Locate doctor.sh in this priority order:
     #   1. $MESH_DOCTOR (env override — used by tests + custom layouts)
-    #   2. $HOME/dotfiles/scripts/doctor.sh (deployed layout, primary)
-    #   3. dirname($0)/doctor.sh (sibling — dev checkout, last resort)
-    # The dev-checkout fallback is intentionally last so production runs
-    # against the user's HOME repo, not whatever copy ships in PATH.
+    #   2. $self_dir/../runners/doctor.sh (workstation sibling — canonical
+    #      post-Phase 2; runners and internal are peers under scripts/)
+    #   3. $HOME/dotfiles/scripts/doctor.sh (legacy identity layout —
+    #      kept during the identity-cleanup transition; will become a
+    #      no-op once identity drops its copy in Phase 7)
+    # Tier 2 was previously `$self_dir/doctor.sh` (assumed sibling); after
+    # the 4-way split (commit 25ea628), doctor.sh moved into runners/ but
+    # this resolver wasn't updated — masked at runtime by tier 3 silently
+    # consuming the stale identity copy. See Review A finding A7.
     local self_dir
     self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if [[ -n "${MESH_DOCTOR:-}" && -x "$MESH_DOCTOR" ]]; then
         doctor="$MESH_DOCTOR"
+    elif [[ -x "$self_dir/../runners/doctor.sh" ]]; then
+        doctor="$self_dir/../runners/doctor.sh"
     elif [[ -x "$HOME/dotfiles/scripts/doctor.sh" ]]; then
         doctor="$HOME/dotfiles/scripts/doctor.sh"
-    elif [[ -x "$self_dir/doctor.sh" ]]; then
-        doctor="$self_dir/doctor.sh"
     fi
 
     if [[ -z "$doctor" ]]; then
