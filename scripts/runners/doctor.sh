@@ -63,7 +63,9 @@ fi
 
 # ─── Accumulators ──────────────────────────────────────────────────
 count_ok=0 count_drift=0 count_missing=0 count_marker_miss=0
+count_launchd_phantom=0 count_composer_phar=0
 drift_items=() missing_items=() marker_miss_items=()
+launchd_phantom_items=() composer_phar_items=()
 
 # ─── Parse MAPPINGS from install.sh ────────────────────────────────
 # Pulls lines between `MAPPINGS=(` and the closing `)`, strips quotes,
@@ -215,6 +217,58 @@ check_markers() {
     done
 }
 
+# ─── LaunchDaemon volume-path check (Mac only) ─────────────────────
+# Detects `homebrew.mxcl.*.plist` files in /Library/LaunchDaemons/ that
+# have Standard{Error,Out}Path inside /Volumes/* — these create a phantom
+# `mkdir -p` of the parent path on rootfs at boot if launchd loads the
+# daemon before the external volume mounts. The phantom collides with
+# the real mount point, causing diskarbitrationd to disambiguate the
+# mount path (e.g. `/Volumes/External 1`), breaking everything on the
+# external volume. See feedback_launchdaemon_phantom_volumes_mkdir_race.md.
+#
+# Plists in /Library/LaunchDaemons/ are mode 0644 (world-readable), so
+# this check needs no sudo. We use grep -A1 to find the key + adjacent
+# string-line, then assert no /Volumes/ in the value.
+#
+# DOCTOR_LAUNCHD_DIR env override exists for tests — production uses the
+# system path. No effect outside Darwin.
+check_launchd_volume_paths() {
+    [[ "$(uname -s)" != "Darwin" ]] && return 0
+    local launchd_dir="${DOCTOR_LAUNCHD_DIR:-/Library/LaunchDaemons}"
+    [[ ! -d "$launchd_dir" ]] && return 0
+    local plist
+    for plist in "$launchd_dir"/homebrew.mxcl.*.plist; do
+        [[ -f "$plist" ]] || continue
+        if grep -A1 -E '<key>(StandardErrorPath|StandardOutPath)</key>' "$plist" 2>/dev/null \
+            | grep -qE '<string>/Volumes/'; then
+            count_launchd_phantom=$((count_launchd_phantom + 1))
+            launchd_phantom_items+=("$plist")
+        fi
+    done
+}
+
+# ─── Composer PHAR integrity check ─────────────────────────────────
+# Homebrew bottle relocation can rewrite `/usr/local` bytes inside
+# Composer's PHAR when Homebrew lives under a non-default prefix such as
+# /Volumes/External/homebrew. That invalidates the embedded SHA512 PHAR
+# signature and leaves `composer` installed but unusable.
+check_composer_phar() {
+    local composer_bin out
+    composer_bin="$(command -v composer 2>/dev/null || true)"
+    [[ -n "$composer_bin" ]] || return 0
+
+    if out="$("$composer_bin" --version 2>&1)"; then
+        return 0
+    fi
+
+    case "$out" in
+        *"SHA512 signature could not be verified: broken signature"*|*"PharException"*broken*signature*)
+            count_composer_phar=$((count_composer_phar + 1))
+            composer_phar_items+=("$composer_bin")
+            ;;
+    esac
+}
+
 # ─── Fragments listing ─────────────────────────────────────────────
 list_fragments() {
     local dir label
@@ -237,12 +291,14 @@ while IFS= read -r line; do
 done < <(parse_mappings)
 
 check_markers
+check_launchd_volume_paths
+check_composer_phar
 
 # ─── Output ────────────────────────────────────────────────────────
 if [[ "$JSON" == 1 ]]; then
     # Minimal JSON without jq (so the script has no runtime deps)
-    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,' \
-        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss"
+    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,' \
+        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar"
     printf '"drift_items":['
     sep=""
     # bash 3.2 + set -u: empty `"${arr[@]}"` is unbound; guard with size.
@@ -268,14 +324,32 @@ if [[ "$JSON" == 1 ]]; then
             sep=","
         done
     fi
+    printf '],"launchd_phantom_items":['
+    sep=""
+    if (( ${#launchd_phantom_items[@]} > 0 )); then
+        for d in "${launchd_phantom_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
+    printf '],"composer_phar_items":['
+    sep=""
+    if (( ${#composer_phar_items[@]} > 0 )); then
+        for d in "${composer_phar_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
     printf ']}\n'
 else
     if [[ "$QUIET" == 0 ]]; then
         echo "${C_DIM}dotfiles doctor :: $REPO${C_RESET}"
-        echo "  ${C_OK}✓${C_RESET} up-to-date  : $count_ok"
-        echo "  ${C_WARN}!${C_RESET} missing     : $count_missing"
-        echo "  ${C_ERR}✗${C_RESET} drift       : $count_drift"
-        echo "  ${C_WARN}!${C_RESET} marker miss : $count_marker_miss"
+        echo "  ${C_OK}✓${C_RESET} up-to-date     : $count_ok"
+        echo "  ${C_WARN}!${C_RESET} missing        : $count_missing"
+        echo "  ${C_ERR}✗${C_RESET} drift          : $count_drift"
+        echo "  ${C_WARN}!${C_RESET} marker miss    : $count_marker_miss"
+        echo "  ${C_ERR}✗${C_RESET} launchd phantom: $count_launchd_phantom"
+        echo "  ${C_ERR}✗${C_RESET} composer PHAR  : $count_composer_phar"
     fi
 
     # The `(( count_* > 0 ))` guards already imply array non-empty (only the
@@ -296,12 +370,25 @@ else
         echo "${C_WARN}Missing '$DOCTOR_MARKER_STRING' marker (hand-edited? not from your installer?):${C_RESET}"
         for m in "${marker_miss_items[@]}"; do echo "  ! $m"; done
     fi
+    if (( count_launchd_phantom > 0 )); then
+        echo
+        echo "${C_ERR}LaunchDaemon Standard*Path inside /Volumes/* — phantoms on next boot:${C_RESET}"
+        for p in "${launchd_phantom_items[@]}"; do echo "  ✗ $p"; done
+        echo "  ${C_DIM}fix: re-run setup.sh (60-web-stack hardens the plists), or${C_RESET}"
+        echo "  ${C_DIM}     manually rewrite Standard*Path → /var/log/homebrew/<svc>.log${C_RESET}"
+    fi
+    if (( count_composer_phar > 0 )); then
+        echo
+        echo "${C_ERR}Composer PHAR has a broken signature:${C_RESET}"
+        for p in "${composer_phar_items[@]}"; do echo "  ✗ $p"; done
+        echo "  ${C_DIM}fix: brew reinstall --build-from-source composer${C_RESET}"
+    fi
 
     list_fragments
 fi
 
-# Exit code: 0 iff no drift/missing
-if (( count_drift > 0 || count_missing > 0 )); then
+# Exit code: 0 iff no drift/missing/phantom
+if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 )); then
     exit 1
 fi
 exit 0
