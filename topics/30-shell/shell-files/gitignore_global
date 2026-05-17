@@ -1,0 +1,37 @@
+# Global git ignore (~/.config/git/ignore).
+# Managed by dotfiles-template → dev-bootstrap/50-git includes this path globally.
+# Patterns here apply to every git repo on this machine without needing per-repo .gitignore.
+
+# ---------- Per-project local state written by Claude Code ----------
+**/.claude/settings.local.json
+# ScheduleWakeup lock (per-session pid + sessionId — ephemeral tool state)
+**/.claude/scheduled_tasks.lock
+
+# ---------- Nexus (code-scanner tool) per-project config ----------
+# Auto-generated locally; not intended for repo commit.
+nexus.yaml
+
+# ---------- Codex CLI local workspace state ----------
+.codex
+.codex/
+
+# ---------- CodeGuard local workspace state ----------
+.codeguard/
+
+# ---------- CCG (claude-code-guide) local workspace state ----------
+.ccg/
+
+# ---------- Other AI tool local workspace state ----------
+.agents/
+.cursor/
+.gemini/
+.opencode/
+
+# ---------- Test tooling output ----------
+test-results/
+playwright-report/
+.nyc_output/
+coverage/
+
+# ---------- Windows download metadata (WSL) ----------
+**/*:Zone.Identifier
