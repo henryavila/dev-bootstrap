@@ -96,6 +96,24 @@ printf '==========================================\n'
 printf ' dev-bootstrap smoke test (Ubuntu 24.04)\n'
 printf '==========================================\n\n'
 
+# Preflight: assert the Dockerfile's target paths exist in the build
+# context before invoking docker build. Saves ~30s of layered build
+# noise when a path move silently invalidates the image (see Review A
+# finding A3, where lib/detect-os.sh and bootstrap.sh slipped past
+# review because docker build still appeared to "work").
+preflight_paths=(
+    scripts/lib/detect-os.sh
+    setup.sh
+)
+for p in "${preflight_paths[@]}"; do
+    if [[ ! -e "$ROOT/$p" ]]; then
+        printf >&2 'preflight failed: %s missing in build context\n' "$p"
+        printf >&2 '  (ci/Dockerfile.ubuntu-24.04 references it; refusing to build)\n'
+        exit 2
+    fi
+done
+printf '>>> preflight ok (%d Dockerfile targets exist)\n' "${#preflight_paths[@]}"
+
 printf '>>> building %s\n' "$IMAGE"
 docker build "${BUILD_ARGS[@]}" \
     -t "$IMAGE" \
