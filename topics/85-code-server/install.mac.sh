@@ -648,6 +648,39 @@ maybe_configure_tailscale_serve() {
     fi
 }
 
+deploy_user_settings_from_identity() {
+    # C9 / D-B10 (mesh-restructure): identity OWNS the settings.json file;
+    # workstation provides the deploy helper. Reads from identity's
+    # ${MESH_IDENTITY_DIR}/code-server/settings.json (current location) and
+    # writes to the code-server User dir with backup-if-different semantics.
+    # No-op when source absent (user hasn't customized settings).
+    local identity_dir="${MESH_IDENTITY_DIR:-$HOME/dotfiles}"
+    local src="$identity_dir/code-server/settings.json"
+    local user_dir="$HOME/.local/share/code-server/User"
+    local dst="$user_dir/settings.json"
+
+    [[ -f "$src" ]] || { dbg "code-server settings: no source at $src (skipping)"; return 0; }
+
+    if [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+        ok "code-server settings already up to date: $dst"
+        return 0
+    fi
+
+    mkdir -p "$user_dir"
+    chmod 0700 "$(dirname "$user_dir")" "$user_dir" 2>/dev/null || true
+
+    if [[ -e "$dst" ]]; then
+        local backup
+        backup="${dst}.bak-$(date +%Y%m%d-%H%M%S)"
+        cp -p "$dst" "$backup"
+        info "backed up previous $dst → $backup"
+    fi
+
+    cp "$src" "$dst"
+    chmod 0644 "$dst"
+    ok "deployed code-server settings from identity: $src → $dst"
+}
+
 require_macos
 detect_code_server_env
 install_code_server_standalone
@@ -658,6 +691,7 @@ write_launchagent_plist
 bootstrap_launchagent
 wait_for_healthz
 verify_local_only_listener
+deploy_user_settings_from_identity
 maybe_configure_tailscale_serve
 
 ok "85-code-server done"
