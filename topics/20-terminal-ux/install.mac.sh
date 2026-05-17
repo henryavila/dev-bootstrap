@@ -294,24 +294,12 @@ uninstall_apply "$HERE/data/uninstall.list"
 # MAPPINGS) win on conflict — setup.sh runs 95-dotfiles-personal AFTER
 # this topic, so identity's deploy_one() overwrites any of these that
 # the user has personalized.
-_link_default_config() {
-    local src="$1" dst="$2"
-    [[ -f "$src" ]] || { warn "C15: source missing: $src"; return 0; }
-    mkdir -p "$(dirname "$dst")"
-    if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$src" ]]; then
-        return 0
-    fi
-    if [[ -e "$dst" ]] && ! [[ -L "$dst" ]]; then
-        # Existing real file: leave it (user-managed or identity-deployed).
-        return 0
-    fi
-    ln -sf "$src" "$dst"
-    ok "C15 default linked: $dst → $src"
-}
-_link_default_config "$HERE/configs/p10k.zsh"                          "$HOME/.p10k.zsh"
-_link_default_config "$HERE/configs/btop/btop.conf"                    "$HOME/.config/btop/btop.conf"
-_link_default_config "$HERE/configs/btop/themes/catppuccin_mocha.theme" "$HOME/.config/btop/themes/catppuccin_mocha.theme"
-_link_default_config "$HERE/configs/eza/theme.yml"                     "$HOME/.config/eza/theme.yml"
-_link_default_config "$HERE/configs/htoprc"                            "$HOME/.config/htop/htoprc"
+# shellcheck disable=SC1091
+source "$HERE/../../scripts/lib/topic-configs.sh"
+link_default_config "$HERE/configs/p10k.zsh"                          "$HOME/.p10k.zsh"
+link_default_config "$HERE/configs/btop/btop.conf"                    "$HOME/.config/btop/btop.conf"
+link_default_config "$HERE/configs/btop/themes/catppuccin_mocha.theme" "$HOME/.config/btop/themes/catppuccin_mocha.theme"
+link_default_config "$HERE/configs/eza/theme.yml"                     "$HOME/.config/eza/theme.yml"
+link_default_config "$HERE/configs/htoprc"                            "$HOME/.config/htop/htoprc"
 
 ok "20-terminal-ux done"

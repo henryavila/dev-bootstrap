@@ -138,19 +138,8 @@ fi
 # ─── C15: shipped default configs ──────────────────────────────────────
 # lazygit default config. Identity (95-dotfiles-personal MAPPINGS) wins
 # on conflict — runs AFTER this topic.
-_link_default_config() {
-    local src="$1" dst="$2"
-    [[ -f "$src" ]] || { warn "C15: source missing: $src"; return 0; }
-    mkdir -p "$(dirname "$dst")"
-    if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$src" ]]; then
-        return 0
-    fi
-    if [[ -e "$dst" ]] && ! [[ -L "$dst" ]]; then
-        return 0
-    fi
-    ln -sf "$src" "$dst"
-    ok "C15 default linked: $dst → $src"
-}
-_link_default_config "$HERE/configs/lazygit/config.yml" "$HOME/.config/lazygit/config.yml"
+# shellcheck disable=SC1091
+source "$HERE/../../scripts/lib/topic-configs.sh"
+link_default_config "$HERE/configs/lazygit/config.yml" "$HOME/.config/lazygit/config.yml"
 
 ok "50-git done"

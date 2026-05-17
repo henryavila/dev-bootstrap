@@ -490,4 +490,19 @@ fi
 # header of data/uninstall.list for syntax.
 uninstall_apply "$HERE/data/uninstall.list"
 
+# ─── C15: shipped default configs (WSL parity with install.mac.sh) ────
+# Same 5 defaults the Mac path ships. btop / eza / htop are all apt-
+# installed above (btop in the modern CLI block, htop/eza available
+# system-wide); p10k.zsh is consumed by zsh regardless of platform.
+# Identity overrides win on conflict — 95-dotfiles-personal MAPPINGS
+# run after this topic and use cp (real files), which the helper's
+# semantics respects via the "destination exists → no-op" tier.
+# shellcheck disable=SC1091
+source "$HERE/../../scripts/lib/topic-configs.sh"
+link_default_config "$HERE/configs/p10k.zsh"                          "$HOME/.p10k.zsh"
+link_default_config "$HERE/configs/btop/btop.conf"                    "$HOME/.config/btop/btop.conf"
+link_default_config "$HERE/configs/btop/themes/catppuccin_mocha.theme" "$HOME/.config/btop/themes/catppuccin_mocha.theme"
+link_default_config "$HERE/configs/eza/theme.yml"                     "$HOME/.config/eza/theme.yml"
+link_default_config "$HERE/configs/htoprc"                            "$HOME/.config/htop/htoprc"
+
 ok "20-terminal-ux done"
