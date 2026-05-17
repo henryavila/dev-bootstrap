@@ -47,3 +47,47 @@ if command -v git >/dev/null 2>&1; then
 fi
 
 ok "30-shell directories prepared + shell hooks deployed"
+
+# ─── C14b: zinit drift cleanup ─────────────────────────────────────────
+# Ported from identity install.sh (Review B finding B1: data/zinit-
+# uninstall.list was shipped to workstation in commit f7dad21 but the
+# consumer logic stayed in identity). Reads each `owner/repo` spec
+# from data/zinit-uninstall.list and removes the corresponding plugin
+# cache under $HOME/.local/share/zinit/plugins/<owner---repo>/.
+# Idempotent: silent when the cache dir is already absent.
+#
+# Sandboxing matches the identity-side original — spec MUST look like
+# owner/repo, no path traversal, no leading/trailing slash.
+#
+# DRY_RUN respected (setup.sh exports it from --dry-run / env).
+zinit_uninstall_file="$HERE/data/zinit-uninstall.list"
+if [[ -f "$zinit_uninstall_file" ]]; then
+    zinit_plugins_dir="$HOME/.local/share/zinit/plugins"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ -z "${line// }" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        spec="${line#"${line%%[![:space:]]*}"}"
+        spec="${spec%"${spec##*[![:space:]]}"}"
+        case "$spec" in
+            */*) ;;
+            *)   warn "zinit-uninstall: '$spec' malformed (expected owner/repo) — skipping"
+                 continue ;;
+        esac
+        case "$spec" in
+            *..*|*//*|/*|*/)
+                warn "zinit-uninstall: '$spec' rejected by sandbox — skipping"
+                continue ;;
+        esac
+        mangled="${spec//\//---}"
+        target="$zinit_plugins_dir/$mangled"
+        if [[ -d "$target" ]]; then
+            if [[ "${DRY_RUN:-0}" == "1" ]]; then
+                info "would rm -rf $target (zinit-uninstall: $spec)"
+            else
+                info "zinit-uninstall: removing $spec ($target)"
+                rm -rf "$target"
+            fi
+        fi
+    done < "$zinit_uninstall_file"
+fi
