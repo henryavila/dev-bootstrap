@@ -20,7 +20,22 @@ jobs:
       - name: bash syntax
         run: |
           set -e
-          mapfile -t scripts < <(find bootstrap.sh lib topics -type f \( -name '*.sh' -o -name 'bootstrap.sh' \) | sort -u)
+          # Scan every surface that the Phase 1/2 restructure introduced:
+          #   - bin/                 (mesh CLI dispatcher)
+          #   - scripts/lib/         (engine libs, drivers, installers)
+          #   - scripts/runners/     (auto-update, doctor)
+          #   - scripts/internal/    (mesh-snap, mesh-status)
+          #   - topics/              (per-topic install scripts + helpers)
+          #   - setup.sh             (entry point; renamed from bootstrap.sh)
+          # Older scopes (lib/ root, bootstrap.sh) no longer exist; do not
+          # reintroduce them here.
+          mapfile -t scripts < <(
+            find bin scripts/lib scripts/runners scripts/internal topics -type f -name '*.sh'
+            echo setup.sh
+            [ -f bin/mesh ] && echo bin/mesh
+          )
+          IFS=$'\n' scripts=($(printf '%s\n' "${scripts[@]}" | sort -u))
+          unset IFS
           for f in "${scripts[@]}"; do
             printf '→ bash -n %s\n' "$f"
             bash -n "$f"

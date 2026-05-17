@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-echo "bash -n on every *.sh + *.template in topics/ and lib/"
+echo "bash -n on every *.sh + *.template in topics/, scripts/, bin/, ci/"
 
 relpath() {
     local path="$1"
@@ -45,13 +45,20 @@ while IFS= read -r -d '' f; do
     is_shell_template "$f" || continue
     ASSERT_MSG="$(relpath "$f")"
     assert_true "bash -n '$f'"
-done < <(find "$REPO_ROOT/topics" "$REPO_ROOT/lib" "$REPO_ROOT/ci" \
+done < <(find "$REPO_ROOT/topics" \
+             "$REPO_ROOT/scripts/lib" \
+             "$REPO_ROOT/scripts/runners" \
+             "$REPO_ROOT/scripts/internal" \
+             "$REPO_ROOT/ci" \
              -type f \( -name '*.sh' -o -name '*.template' \) -print0 2>/dev/null)
 
-# setup.sh + tests themselves
+# setup.sh + bin/mesh CLI + tests themselves. bin/mesh has no .sh suffix
+# so the find sweep above misses it; check explicitly.
 for f in "$REPO_ROOT/setup.sh" \
+         "$REPO_ROOT/bin/mesh" \
          "$HERE/../run-all.sh" \
          "$HERE/../lib/assert.sh"; do
+    [[ -f "$f" ]] || continue
     ASSERT_MSG="$(relpath "$f")"
     assert_true "bash -n '$f'"
 done
@@ -99,7 +106,10 @@ mac_reachable=(
     "$REPO_ROOT/topics"/*/install.mac.sh
     "$REPO_ROOT/topics"/*/install.sh
     "$REPO_ROOT/topics"/*/scripts/*.sh
-    "$REPO_ROOT/lib"/*.sh
+    "$REPO_ROOT/scripts/lib"/*.sh
+    "$REPO_ROOT/scripts/runners"/*.sh
+    "$REPO_ROOT/scripts/internal"/*
+    "$REPO_ROOT/bin/mesh"
     "$REPO_ROOT/setup.sh"
 )
 for script in "${mac_reachable[@]}"; do
