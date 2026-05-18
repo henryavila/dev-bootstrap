@@ -40,10 +40,25 @@ _cleanup() {
 trap _cleanup EXIT
 
 # ─── Clean-tree orchestrator pass ──────────────────────────────────
+# Advisory lints (rc=0 + non-empty stdout, e.g. L17) are tolerated; only
+# real-failure output (lines matching `L<NN>: ...` without `(advisory)`)
+# fails the clean-tree contract.
 echo "Orchestrator on clean tree"
 out=$(bash "$ORCH" 2>&1); rc=$?
 assert_eq "$rc" "0" "scripts/lib/lint.sh rc=0 on clean tree"
-assert_eq "$out" "" "scripts/lib/lint.sh emits no output on clean tree"
+non_advisory=$(printf '%s' "$out" | grep -vE '^(L[0-9]+ \(advisory\):|$|lint: 0 lint)' || true)
+assert_eq "$non_advisory" "" "scripts/lib/lint.sh emits only advisory lines on clean tree"
+
+# ─── Advisory lint contract (L17) ──────────────────────────────────
+# L17 detects the inline-script-call migration backlog. Today's tree
+# has known candidates (60-web-stack), so L17 MUST emit at least one
+# advisory line and STILL exit 0.
+echo
+echo "L17 advisory: surfaces migration backlog but doesn't fail"
+out=$(bash "$LINTS_DIR/L17-inline-script-call.sh" 2>&1); rc=$?
+assert_eq "$rc" "0" "L17 advisory exits 0"
+assert_contains "$out" "L17 (advisory):" "L17 emits at least one advisory line"
+assert_contains "$out" "type:custom" "L17 advisory points at the items.yaml migration target"
 
 # ─── Per-lint injection harness ─────────────────────────────────────
 mkdir -p "$REPO_ROOT/topics/__lint-injection__"
