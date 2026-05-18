@@ -1,116 +1,21 @@
 #!/usr/bin/env bash
-# 10-languages (WSL): Node (fnm), PHP multi-version (ondrej PPA), Composer, Python.
-#
-# Multi-PHP flow:
-#   1. Read PHP_VERSIONS env var (set by the menu or pre-seeded). Default: all
-#      versions listed in data/php-versions.conf.
-#   2. For each version, apt-install: php<V>, php<V>-fpm + every extension
-#      listed in data/php-extensions-apt.txt (as `php<V>-<name>`).
-#   3. For each version, PECL-install every extension in data/php-extensions-pecl.txt
-#      using that version's phpize/pecl so each PHP has its own ABI-matched .so.
-#   4. PHP default (update-alternatives) = last sort -V of PHP_VERSIONS, so
-#      adding a new version to data/php-versions.conf auto-promotes it when
-#      the menu picks it up. Composer is installed once, bound to the default.
-#
-# To add a new version (e.g. 8.6 when released):
-#   - Add "8.6" to data/php-versions.conf.
-#   - Nothing else: every install.*.sh, nginx template, and menu reads the file.
-set -euo pipefail
+# Custom: PHP multi-version + PECL extensions + Composer + Python (wsl).
+# Bundles ~200 LOC of the original install.wsl.sh verbatim, wrapped in
+# the engine contract.
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/log.sh"
-# shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/pecl-install.sh"
+check() {
+    command -v php >/dev/null 2>&1 \
+        && command -v composer >/dev/null 2>&1 \
+        && command -v python3 >/dev/null 2>&1
+}
 
-# ─── fnm + Node ────────────────────────────────────────────────────────
-if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then
-    info "installing fnm"
-    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
-else
-    ok "fnm already installed"
-fi
-
-if [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
-    export PATH="$HOME/.local/share/fnm:$PATH"
-fi
-if command -v fnm >/dev/null 2>&1; then
-    eval "$(fnm env)"
-    if fnm list 2>/dev/null | grep -qE '\bv[0-9]+\.[0-9]+\.[0-9]+'; then
-        ok "Node already installed via fnm ($(fnm current 2>/dev/null || echo '?'))"
-    else
-        info "installing Node LTS via fnm"
-        fnm install --lts
-        latest="$(fnm list | awk '/^\s*v[0-9]/ {print $NF}' | tail -1)"
-        [[ -n "$latest" ]] && fnm default "$latest" || true
-    fi
-fi
-
-# ─── NPM global setup (opt-in: INCLUDE_NPM_GLOBAL=1) ───────────────────
-# C7 (mesh-restructure): NPM-global moved from identity dotfiles to this
-# topic. Configures ~/.npmrc prefix=$HOME/.npm-global + bash/zsh PATH
-# fragments so `npm install -g foo` lands in the user's home tree (not in
-# the fnm-managed Node version dirs, which get recreated on `fnm install`).
-# Gate: menu opt-in or explicit env (INCLUDE_NPM_GLOBAL=1). Idempotent.
-if [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]]; then
-    NPM_GLOBAL_BIN="$HOME/.npm-global/bin"
-    NPM_GLOBAL_PREFIX_NPMRC='prefix=${HOME}/.npm-global'
-    NPM_GLOBAL_FRAGMENT_NAME="20-npm-global.sh"
-
-    _npm_global_path_fragment() {
-        local dst="$1" tmp
-        mkdir -p "$(dirname "$dst")"
-        tmp=$(mktemp "${dst}.npm.XXXXXX") || { warn "npm-global: mktemp failed for $dst"; return 1; }
-        chmod 0644 "$tmp"
-        cat > "$tmp" <<'FRAG_EOF'
-# Managed by topic 10-languages: optional npm global prefix.
-npm_global_bin="$HOME/.npm-global/bin"
-case ":$PATH:" in
-    *":$npm_global_bin:"*) ;;
-    *) [ -d "$npm_global_bin" ] && export PATH="$npm_global_bin:$PATH" ;;
-esac
-unset npm_global_bin
-FRAG_EOF
-        if [[ -f "$dst" ]] && cmp -s "$tmp" "$dst"; then
-            rm -f "$tmp"
-            return 0
-        fi
-        mv "$tmp" "$dst"
-        ok "configured npm-global PATH fragment: $dst"
-    }
-
-    _npm_global_ensure_npmrc() {
-        local npmrc="$HOME/.npmrc" tmp
-        if [[ -f "$npmrc" ]] && grep -qxF "$NPM_GLOBAL_PREFIX_NPMRC" "$npmrc"; then
-            ok "npm-global prefix already set in $npmrc"
-            return 0
-        fi
-        tmp=$(mktemp "${npmrc}.npm.XXXXXX") || { warn "npm-global: mktemp failed for $npmrc"; return 1; }
-        chmod 0600 "$tmp"
-        if [[ -f "$npmrc" ]]; then
-            awk '/^[[:space:]]*prefix[[:space:]]*=/ { next } { print }' "$npmrc" > "$tmp"
-        fi
-        if [[ -s "$tmp" ]] && [[ -n "$(tail -c1 "$tmp")" ]]; then
-            printf '\n' >> "$tmp"
-        fi
-        printf '%s\n' "$NPM_GLOBAL_PREFIX_NPMRC" >> "$tmp"
-        if [[ -f "$npmrc" ]] && cmp -s "$tmp" "$npmrc"; then
-            rm -f "$tmp"
-            return 0
-        fi
-        if [[ -f "$npmrc" ]]; then
-            cp -p "$npmrc" "${npmrc}.bak-$(date +%Y%m%d-%H%M%S)"
-        fi
-        mv "$tmp" "$npmrc"
-        ok "configured npm-global prefix in $npmrc"
-    }
-
-    info "npm-global: configuring (INCLUDE_NPM_GLOBAL=1)"
-    mkdir -p "$NPM_GLOBAL_BIN"
-    _npm_global_ensure_npmrc
-    _npm_global_path_fragment "$HOME/.bashrc.d/$NPM_GLOBAL_FRAGMENT_NAME"
-    _npm_global_path_fragment "$HOME/.zshrc.d/$NPM_GLOBAL_FRAGMENT_NAME"
-fi
+install() {
+    local HERE
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    HERE="$HERE/.."
+    # shellcheck disable=SC1091
+    . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/log.sh"
+    export DEBIAN_FRONTEND=noninteractive
 
 # ─── PHP versions (multi) ──────────────────────────────────────────────
 # PHP_VERSIONS can come from env (menu or automation). If unset, install all
@@ -320,3 +225,12 @@ else
 fi
 
 ok "10-languages done — PHP default: $PHP_DEFAULT"
+}
+
+verify() {
+    command -v php >/dev/null 2>&1 && command -v composer >/dev/null 2>&1
+}
+
+rollback() {
+    :
+}

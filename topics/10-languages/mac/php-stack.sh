@@ -1,31 +1,25 @@
 #!/usr/bin/env bash
-# 10-languages (mac): Node via fnm (brew), PHP multi-version (brew), Composer, Python.
-#
-# Mac multi-PHP specifics:
-#   - brew's `php@X.Y` formulas are keg-only (don't auto-link). We install
-#     every version in PHP_VERSIONS, then `brew link --force --overwrite`
-#     ONLY for PHP_DEFAULT so `php` on PATH resolves to the default. Other
-#     versions stay invokable as `php8.X` via their full keg path.
-#   - Built-in extensions in the brew formula cover most of the apt baseline
-#     (gd, intl, curl, etc. — no per-extension formula). We still run the
-#     PECL loop to install extras that aren't bundled (igbinary, imagick,
-#     mongodb, redis).
-#   - Composer lives as a separate formula; it picks up whichever `php` is
-#     currently linked — i.e. our default.
-set -euo pipefail
+# Custom: PHP multi-version + PECL extensions + Composer + Python (mac).
+# Bundles ~500 LOC of the original install.mac.sh verbatim, wrapped in
+# the engine contract.
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/log.sh"
+check() {
+    command -v php >/dev/null 2>&1 \
+        && command -v composer >/dev/null 2>&1 \
+        && command -v python3 >/dev/null 2>&1
+}
 
-: "${BREW_BIN:?BREW_BIN not set — run through setup.sh}"
-: "${BREW_PREFIX:?BREW_PREFIX not set}"
+install() {
+    : "${BREW_BIN:?BREW_BIN not set — run through setup.sh}"
+    : "${BREW_PREFIX:?BREW_PREFIX not set}"
+    local HERE
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    HERE="$HERE/.."
+    # shellcheck disable=SC1091
+    . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/log.sh"
 
-# Tracks formulas that brew_install_if_missing could not install. Read
-# downstream (PECL loop) to skip extensions whose build deps are missing,
-# and surfaced as a followup at run end so the user sees exactly what
-# needs manual attention.
-BREW_INSTALL_FAILED=()
+    BREW_INSTALL_FAILED=()
+
 
 brew_install_if_missing() {
     local pkg="$1"
@@ -178,86 +172,6 @@ install_composer() {
         fail "composer install completed but composer --version still fails"
     fi
 }
-
-# ─── fnm + Node ────────────────────────────────────────────────────────
-brew_install_if_missing fnm
-
-eval "$("$BREW_PREFIX/bin/fnm" env)"
-if "$BREW_PREFIX/bin/fnm" list 2>/dev/null | grep -qE '\bv[0-9]+\.[0-9]+\.[0-9]+'; then
-    ok "Node already installed via fnm ($("$BREW_PREFIX/bin/fnm" current 2>/dev/null || echo '?'))"
-else
-    info "fnm install --lts"
-    "$BREW_PREFIX/bin/fnm" install --lts
-    default_ver="$("$BREW_PREFIX/bin/fnm" list | awk '/^\s*v[0-9]/ {print $NF}' | tail -1 || true)"
-    [[ -n "$default_ver" ]] && "$BREW_PREFIX/bin/fnm" default "$default_ver" || true
-fi
-
-# ─── NPM global setup (opt-in: INCLUDE_NPM_GLOBAL=1) ───────────────────
-# C7 (mesh-restructure): NPM-global moved from identity dotfiles to this
-# topic. Configures ~/.npmrc prefix=$HOME/.npm-global + bash/zsh PATH
-# fragments so `npm install -g foo` lands in the user's home tree (not in
-# the brew-managed Node prefix, which gets clobbered on Node upgrade).
-# Gate: menu opt-in or explicit env (INCLUDE_NPM_GLOBAL=1). Idempotent.
-if [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]]; then
-    NPM_GLOBAL_BIN="$HOME/.npm-global/bin"
-    NPM_GLOBAL_PREFIX_NPMRC='prefix=${HOME}/.npm-global'
-    NPM_GLOBAL_FRAGMENT_NAME="20-npm-global.sh"
-
-    _npm_global_path_fragment() {
-        local dst="$1" tmp
-        mkdir -p "$(dirname "$dst")"
-        tmp=$(mktemp "${dst}.npm.XXXXXX") || { warn "npm-global: mktemp failed for $dst"; return 1; }
-        chmod 0644 "$tmp"
-        cat > "$tmp" <<'FRAG_EOF'
-# Managed by topic 10-languages: optional npm global prefix.
-npm_global_bin="$HOME/.npm-global/bin"
-case ":$PATH:" in
-    *":$npm_global_bin:"*) ;;
-    *) [ -d "$npm_global_bin" ] && export PATH="$npm_global_bin:$PATH" ;;
-esac
-unset npm_global_bin
-FRAG_EOF
-        if [[ -f "$dst" ]] && cmp -s "$tmp" "$dst"; then
-            rm -f "$tmp"
-            return 0
-        fi
-        mv "$tmp" "$dst"
-        ok "configured npm-global PATH fragment: $dst"
-    }
-
-    _npm_global_ensure_npmrc() {
-        local npmrc="$HOME/.npmrc" tmp
-        if [[ -f "$npmrc" ]] && grep -qxF "$NPM_GLOBAL_PREFIX_NPMRC" "$npmrc"; then
-            ok "npm-global prefix already set in $npmrc"
-            return 0
-        fi
-        tmp=$(mktemp "${npmrc}.npm.XXXXXX") || { warn "npm-global: mktemp failed for $npmrc"; return 1; }
-        chmod 0600 "$tmp"
-        if [[ -f "$npmrc" ]]; then
-            awk '/^[[:space:]]*prefix[[:space:]]*=/ { next } { print }' "$npmrc" > "$tmp"
-        fi
-        if [[ -s "$tmp" ]] && [[ -n "$(tail -c1 "$tmp")" ]]; then
-            printf '\n' >> "$tmp"
-        fi
-        printf '%s\n' "$NPM_GLOBAL_PREFIX_NPMRC" >> "$tmp"
-        if [[ -f "$npmrc" ]] && cmp -s "$tmp" "$npmrc"; then
-            rm -f "$tmp"
-            return 0
-        fi
-        if [[ -f "$npmrc" ]]; then
-            cp -p "$npmrc" "${npmrc}.bak-$(date +%Y%m%d-%H%M%S)"
-        fi
-        mv "$tmp" "$npmrc"
-        ok "configured npm-global prefix in $npmrc"
-    }
-
-    info "npm-global: configuring (INCLUDE_NPM_GLOBAL=1)"
-    mkdir -p "$NPM_GLOBAL_BIN"
-    _npm_global_ensure_npmrc
-    _npm_global_path_fragment "$HOME/.bashrc.d/$NPM_GLOBAL_FRAGMENT_NAME"
-    _npm_global_path_fragment "$HOME/.zshrc.d/$NPM_GLOBAL_FRAGMENT_NAME"
-fi
-
 # ─── PHP versions (multi) ──────────────────────────────────────────────
 PHP_VERSIONS_FILE="$HERE/data/php-versions.conf"
 if [[ -z "${PHP_VERSIONS:-}" ]]; then
@@ -510,66 +424,6 @@ pecl_install_for_mac() {
     return 0
 }
 
-# ─── Migration: clean up orphan inis from old wrong-path bug ────────
-# Previous versions of pecl_install_for_mac wrote conf.d ini files
-# under $BREW_PREFIX/opt/php@X.Y/etc/php/X.Y/conf.d/ — a path PHP
-# never scans (etc/ is outside the cellar/opt symlink in brew). The
-# files are harmless (ignored by PHP) but leave dead bytes on disk
-# and confuse anyone inspecting the install. Sweep them on first run
-# with the corrected path.
-for ver in $PHP_VERSIONS; do
-    orphan_dir="$BREW_PREFIX/opt/php@${ver}/etc/php/${ver}/conf.d"
-    if [[ -d "$orphan_dir" ]]; then
-        for orphan in "$orphan_dir"/ext-*.ini; do
-            [[ -f "$orphan" ]] || continue
-            info "removing orphan ini from old wrong path: $orphan"
-            rm -f "$orphan"
-        done
-        # Try removing the now-empty dir tree (rmdir bails if non-empty,
-        # which is correct — leaves anything we did not author intact).
-        rmdir "$orphan_dir" 2>/dev/null || true
-        rmdir "$BREW_PREFIX/opt/php@${ver}/etc/php/${ver}" 2>/dev/null || true
-        rmdir "$BREW_PREFIX/opt/php@${ver}/etc/php" 2>/dev/null || true
-        rmdir "$BREW_PREFIX/opt/php@${ver}/etc" 2>/dev/null || true
-    fi
-done
-
-for line in "${PECL_LINES[@]}"; do
-    IFS=':' read -r ext _ mac_deps_line <<< "$line"
-
-    # If any Mac build dep for this extension failed to install earlier,
-    # skip the whole extension (every PHP version would fail the same way)
-    # and surface a single followup instead of N per-version errors.
-    skip_ext=""
-    if [[ -n "${mac_deps_line:-}" ]]; then
-        # shellcheck disable=SC2206
-        _deps=($mac_deps_line)
-        for dep in "${_deps[@]}"; do
-            if _is_brew_missing "$dep"; then
-                skip_ext="$dep"
-                break
-            fi
-        done
-    fi
-    if [[ -n "$skip_ext" ]]; then
-        followup manual \
-"php extension '$ext' skipped — build dependency '$skip_ext' could
-  not be installed via brew (likely a bottle/source-build issue on a
-  non-standard HOMEBREW_PREFIX such as /Volumes/External).
-
-  To finish manually:
-    brew update
-    brew install --build-from-source $skip_ext     # or move brew to /opt/homebrew
-  Then for each PHP version (${PHP_VERSIONS}):
-    printf '\n' | \$(brew --prefix)/opt/php@<VER>/bin/pecl install -f $ext"
-        continue
-    fi
-
-    for ver in $PHP_VERSIONS; do
-        pecl_install_for_mac "$ver" "$ext"
-    done
-done
-
 # ─── Composer + Python ───────────────────────────────────────────────
 install_composer
 brew_install_if_missing python@3.13
@@ -658,3 +512,12 @@ if [[ "${#BREW_INSTALL_FAILED[@]}" -gt 0 ]]; then
 fi
 
 ok "10-languages done — PHP default: $PHP_DEFAULT"
+}
+
+verify() {
+    command -v php >/dev/null 2>&1 && command -v composer >/dev/null 2>&1
+}
+
+rollback() {
+    :
+}
