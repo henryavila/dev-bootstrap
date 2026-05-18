@@ -3,6 +3,24 @@
 Opt-in topic. Disabled by default. Enable with `INCLUDE_DOCKER=1` or the
 interactive menu checkbox.
 
+## Structure (engine-driven, pilot for topic-engine-migration)
+
+First topic migrated to the `items.yaml` + install-engine model beyond
+82-ai-tools. Each installable is a discrete entry so the future
+fine-grained menu can toggle them per item.
+
+```
+45-docker/
+├── items.yaml          declarative manifest (7 items, platform-tagged)
+├── install.sh          thin dispatcher → scripts/lib/install-engine.sh
+├── post-setup-wsl.sh   type:custom — WSL group + systemd post-install
+├── verify.sh           topic verify (called from doctor checks)
+└── README.md           this file
+```
+
+The engine's `platforms:` filter picks 3 brew items on mac (colima, docker,
+docker-compose) and 4 items on wsl (3 apt + 1 custom for post-setup).
+
 ## What installs
 
 ### WSL / Linux

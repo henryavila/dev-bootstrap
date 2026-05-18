@@ -1,0 +1,53 @@
+# 45-docker — Docker Engine (opt-in via INCLUDE_DOCKER=1).
+#
+# Mac uses Colima (headless VM via lima) + docker CLI + standalone compose.
+# WSL uses Ubuntu's docker.io + compose-v2 plugin + buildx, then post-setup
+# adds $USER to the docker group and enables the systemd service.
+#
+# Each installable is a discrete item so the future fine-grained menu can
+# expose per-item toggles (e.g. "install Colima but not docker-compose").
+
+# ─── macOS ─────────────────────────────────────────────────────────
+- name: colima
+  type: brew-formula
+  spec: colima
+  platforms: [mac]
+  desc: "Headless Linux VM for Docker on macOS (no Docker Desktop)"
+
+- name: docker
+  type: brew-formula
+  spec: docker
+  platforms: [mac]
+  desc: "Docker CLI (mac, talks to Colima socket)"
+
+- name: docker-compose
+  type: brew-formula
+  spec: docker-compose
+  platforms: [mac]
+  desc: "Standalone Docker Compose v2 binary (works with Colima)"
+
+# ─── WSL ───────────────────────────────────────────────────────────
+- name: docker-engine
+  type: apt
+  spec: docker.io
+  platforms: [wsl]
+  desc: "Ubuntu's docker.io package (boring choice; no extra apt repo)"
+
+- name: docker-compose-v2
+  type: apt
+  spec: docker-compose-v2
+  platforms: [wsl]
+  desc: "Docker Compose plugin (`docker compose ...` syntax)"
+
+- name: docker-buildx
+  type: apt
+  spec: docker-buildx
+  platforms: [wsl]
+  desc: "BuildKit builder plugin (removes legacy-builder DEPRECATED banner)"
+
+- name: docker-post-setup
+  type: custom
+  script: "./post-setup-wsl.sh"
+  platforms: [wsl]
+  requires: [docker-engine]
+  desc: "Add $USER to docker group + enable systemd service (WSL only)"
