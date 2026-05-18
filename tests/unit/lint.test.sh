@@ -163,5 +163,67 @@ _inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
 _run_lint_expect_fail "L16-marker-case-insensitive.sh" "L16:"
 rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
 
+# L01 — hardcoded $HOME/dotfiles without envar fallback
+echo
+echo "L01 injection: bare \$HOME/dotfiles path"
+_inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
+    $'#!/usr/bin/env bash\ncd $HOME/dotfiles || exit 1'
+_run_lint_expect_fail "L01-no-hardcoded-dotfiles-path.sh" "L01:"
+rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
+
+# L01 — allowlist contract: ${VAR:-$HOME/dotfiles} must NOT trigger
+echo
+echo "L01 allowlist contract: \${VAR:-\$HOME/dotfiles} accepted"
+_inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
+    $'#!/usr/bin/env bash\ndir="${DOTFILES_DIR:-$HOME/dotfiles}"'
+out=$(bash "$LINTS_DIR/L01-no-hardcoded-dotfiles-path.sh" 2>&1); rc=$?
+assert_eq "$rc" "0" "L01 accepts \${VAR:-\$HOME/dotfiles} fallback"
+rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
+
+# L05 — rm -rf of literal path (no trap, no allowlisted var)
+echo
+echo "L05 injection: bare 'rm -rf /tmp/foo' literal"
+_inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
+    $'#!/usr/bin/env bash\nrm -rf /tmp/foo'
+_run_lint_expect_fail "L05-no-unguarded-rm-rf.sh" "L05:"
+rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
+
+# L05 — allowlist contract: trap 'rm -rf …' is accepted
+echo
+echo "L05 allowlist contract: trap 'rm -rf' accepted"
+_inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
+    $'#!/usr/bin/env bash\ntrap \'rm -rf "$tmp"\' EXIT'
+out=$(bash "$LINTS_DIR/L05-no-unguarded-rm-rf.sh" 2>&1); rc=$?
+assert_eq "$rc" "0" "L05 accepts trap cleanup pattern"
+rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
+
+# L08 — bare uninstall.sh reference (post Phase 2 rename)
+echo
+echo "L08 injection: uninstall.sh reference"
+_inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
+    $'#!/usr/bin/env bash\nbash scripts/lib/uninstall.sh'
+_run_lint_expect_fail "L08-no-uninstall-sh.sh" "L08:"
+rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
+
+# L12 — workstation code references identity-only path
+echo
+echo "L12 injection: CLAUDE.md reference in workstation code"
+_inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
+    $'#!/usr/bin/env bash\ncat "$HOME/CLAUDE.md"'
+_run_lint_expect_fail "L12-no-identity-paths.sh" "L12:"
+rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
+
+# L09 — custom-script missing required function
+echo
+echo "L09 injection: custom-script missing verify() and rollback()"
+mkdir -p "$REPO_ROOT/topics/__lint-injection__"
+_inject "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
+    $'- name: bad-custom\n  type: custom\n  script: "./bad-custom.sh"\n  check: "true"\n  desc: "missing verify+rollback"\n  platforms: [mac]'
+_inject "$REPO_ROOT/topics/__lint-injection__/bad-custom.sh" \
+    $'#!/usr/bin/env bash\ncheck() { :; }\ninstall() { :; }'
+_run_lint_expect_fail "L09-custom-script-contract.sh" "L09:"
+rm -f "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
+      "$REPO_ROOT/topics/__lint-injection__/bad-custom.sh"
+
 echo
 summary
