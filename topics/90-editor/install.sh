@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
-# 90-editor: installs the typora-wait wrapper so `EDITOR=typora-wait` works.
-# No actual app install (Typora is a GUI installed separately).
+# Topic 90-editor — thin engine dispatcher.
+# The typora wrappers under templates/bin/ are deployed by setup.sh's
+# templates/ pass; this script wires the engine to link the nvim default
+# config (the only item that needs scripted logic).
 set -euo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/log.sh"
+WS_DIR="${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}"
+WS_LIB="$(cd "$HERE/../../scripts/lib" 2>/dev/null && pwd)" || WS_LIB="$WS_DIR/scripts/lib"
 
-mkdir -p "$HOME/.local/bin"
-ok "90-editor: typora-wait wrapper will be deployed from templates/"
-
-# ─── C15: shipped default configs ──────────────────────────────────────
-# Neovim init.lua default. Identity overrides win on conflict.
-# shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/topic-configs.sh"
-link_default_config "$HERE/configs/nvim/init.lua" "$HOME/.config/nvim/init.lua"
+( cd "$HERE" && bash "$WS_LIB/install-engine.sh" \
+    --manifest "$HERE/items.yaml" \
+    --installers-dir "$WS_LIB/installers" )
