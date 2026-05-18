@@ -70,6 +70,7 @@ Usage:
   mesh run [flags] <subcommand>     Run mesh subcommands on selected hosts
   mesh lint                         Run repo invariant lints (scripts/lib/lints/L*.sh)
   mesh catalog generate             Regenerate .catalog/ derived listings
+  mesh init [MODE | FLAGS]          Bootstrap identity (adopt-url/create-new/skip/interactive)
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -118,6 +119,14 @@ Subcommands:
            equals the number of failing lints. Run on a clean tree before
            pushing; CI runs the same suite.
 
+  init     Bootstrap identity on a fresh machine. 4 modes (C13.2):
+             adopt-url <URL> | --identity-repo <URL>   clone existing identity
+             create-new      | --create-identity      scaffold from template/
+             skip            | --no-identity          workstation only
+             interactive     | (no arg, TTY)          whiptail prompt menu
+           Idempotent: existing $MESH_IDENTITY_DIR ⇒ no-op exit 0.
+           Run `mesh init -h` for the full flag list.
+
 Examples:
   mesh                              Open the panel
   mesh status crc                   Drill-down on host 'crc'
@@ -133,6 +142,8 @@ Examples:
   mesh run update -f                Select hosts, then run mesh update -f
   mesh run --hosts mac,crc update -f
   mesh run --online snap --quiet
+  mesh init --create-identity      Scaffold new mesh-identity from template/
+  mesh init --identity-repo URL    Adopt existing identity by URL
 
 Configuration:
   ~/.config/dotfiles/mesh-status.conf   (alias map, run hosts, repos tracked, retention)
@@ -1029,6 +1040,13 @@ sub_run() {
     return "$failed"
 }
 
+sub_init() {
+    local lib
+    lib="$(_resolve_companion "lib/init.sh")"
+    [[ -n "$lib" ]] || _die "lib/init.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$lib" "$@"
+}
+
 sub_lint() {
     local lib
     lib="$(_resolve_companion "lib/lint.sh")"
@@ -1096,6 +1114,10 @@ case "${1:-status}" in
     run)
         shift
         sub_run "$@"
+        ;;
+    init)
+        shift
+        sub_init "$@"
         ;;
     lint)
         shift
