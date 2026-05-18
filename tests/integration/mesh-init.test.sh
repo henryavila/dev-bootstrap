@@ -148,6 +148,15 @@ notty_dir="$SANDBOX/notty-test"
 MESH_IDENTITY_DIR="$notty_dir" bash "$INIT_SH" </dev/null >/dev/null 2>&1; rc=$?
 assert_eq "$rc" "2" "no flag + non-TTY rc=2"
 
+# ─── Test 8a (regression for F-001): bad clone URL → rc=2 ──────────
+echo
+echo "Test 8a: adopt-url with unreachable URL → rc=2"
+bad_id="$SANDBOX/bad-clone"
+out=$(MESH_IDENTITY_DIR="$bad_id" bash "$INIT_SH" \
+    --identity-repo "file:///nonexistent-$$/no-such-repo" </dev/null 2>&1); rc=$?
+assert_eq "$rc" "2" "bad clone URL surfaces rc=2 (not 0)"
+assert_contains "$out" "git clone failed" "error message names git clone failure"
+
 # ─── Test 8: bin/mesh dispatch end-to-end ───────────────────────────
 echo
 echo "Test 8: bin/mesh init dispatch"

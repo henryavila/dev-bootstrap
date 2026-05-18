@@ -67,8 +67,9 @@ _install_hook() {
     local hook="$hook_dir/pre-commit"
     [[ -d "$IDENTITY_DIR/.git" ]] \
         || _die "$IDENTITY_DIR is not a git repo (no .git/) — init it first"
-    mkdir -p "$hook_dir"
-    cat > "$hook" <<'HOOK'
+    mkdir -p "$hook_dir" \
+        || _die "mkdir $hook_dir failed"
+    cat > "$hook" <<'HOOK' || _die "write $hook failed"
 #!/usr/bin/env bash
 # Auto-installed by `mesh template-check --install-hook` (C16.1).
 # Blocks commits that break mesh-identity ↔ mesh-workstation/template/ parity.
@@ -80,7 +81,8 @@ if ! mesh template-check --quiet 2>/dev/null; then
     exit 1
 fi
 HOOK
-    chmod +x "$hook"
+    chmod +x "$hook" \
+        || _die "chmod +x $hook failed"
     _info "hook installed at $hook"
 }
 

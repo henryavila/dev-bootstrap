@@ -64,10 +64,12 @@ EOF
 _run_identity_install() {
     if [[ -x "$IDENTITY_DIR/install.sh" ]]; then
         _info "running identity install.sh"
-        bash "$IDENTITY_DIR/install.sh"
+        bash "$IDENTITY_DIR/install.sh" \
+            || _die "identity install.sh failed (exit $?)"
     elif [[ -f "$IDENTITY_DIR/install.sh" ]]; then
         _info "identity install.sh exists but not executable — running via bash"
-        bash "$IDENTITY_DIR/install.sh"
+        bash "$IDENTITY_DIR/install.sh" \
+            || _die "identity install.sh failed (exit $?)"
     else
         _info "no install.sh in identity — skipping deploy step"
     fi
@@ -78,7 +80,8 @@ _adopt_url() {
     [[ -n "$url" ]] || _die "adopt-url requires URL"
     command -v git >/dev/null 2>&1 || _die "git not in PATH"
     _info "cloning $url → $IDENTITY_DIR"
-    git clone "$url" "$IDENTITY_DIR"
+    git clone "$url" "$IDENTITY_DIR" \
+        || _die "git clone failed: $url"
     _info "identity ready at $IDENTITY_DIR"
     _run_identity_install
 }
@@ -98,8 +101,10 @@ _create_new() {
         || _die "create-new needs name/email/gh_user (set GIT_NAME/GIT_EMAIL/MESH_INIT_GH_USER for non-interactive)"
 
     _info "scaffolding identity from $TEMPLATE_DIR → $IDENTITY_DIR"
-    mkdir -p "$(dirname "$IDENTITY_DIR")"
-    cp -R "$TEMPLATE_DIR" "$IDENTITY_DIR"
+    mkdir -p "$(dirname "$IDENTITY_DIR")" \
+        || _die "mkdir parent of $IDENTITY_DIR failed"
+    cp -R "$TEMPLATE_DIR" "$IDENTITY_DIR" \
+        || _die "cp -R template to $IDENTITY_DIR failed"
 
     # Drop template-meta files (README*, .keep) — they're for workstation
     # developers, not identity owners. L11 lint allowlists these in template/;
@@ -109,7 +114,8 @@ _create_new() {
 
     # Strip .example suffix on every remaining file.
     while IFS= read -r -d '' f; do
-        mv "$f" "${f%.example}"
+        mv "$f" "${f%.example}" \
+            || _die "strip-example mv failed: $f"
     done < <(find "$IDENTITY_DIR" -type f -name '*.example' -print0)
 
     # Substitute the 3 placeholders across text files only (skip binary).
@@ -119,7 +125,8 @@ _create_new() {
                 -e "s|__USER_NAME__|$user_name|g" \
                 -e "s|__USER_EMAIL__|$user_email|g" \
                 -e "s|__GH_USERNAME__|$gh_user|g" \
-                "$f"
+                "$f" \
+                || _die "sed substitute failed: $f"
             rm -f "$f.bak"
         fi
     done < <(find "$IDENTITY_DIR" -type f -print0)
@@ -132,13 +139,14 @@ _create_new() {
         read -rp "Create private repo gh:$gh_user/${MESH_INIT_REPO_NAME:-mesh-identity}? (y/N) " yn
         if [[ "$yn" =~ ^[yY]$ ]]; then
             (
-                cd "$IDENTITY_DIR"
-                git init -q
-                git add -A
-                git commit -q -m "init: bootstrapped from mesh-workstation template"
-            )
+                cd "$IDENTITY_DIR" \
+                    && git init -q \
+                    && git add -A \
+                    && git commit -q -m "init: bootstrapped from mesh-workstation template"
+            ) || _die "local git init/commit in $IDENTITY_DIR failed"
             gh repo create "$gh_user/${MESH_INIT_REPO_NAME:-mesh-identity}" \
-                --private --source "$IDENTITY_DIR" --push
+                --private --source "$IDENTITY_DIR" --push \
+                || _die "gh repo create $gh_user/${MESH_INIT_REPO_NAME:-mesh-identity} failed"
         fi
     fi
 

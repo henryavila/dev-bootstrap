@@ -142,6 +142,22 @@ out=$(MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
 assert_eq "$rc" "2" "--install-hook rc=2 on non-git"
 assert_contains "$out" "not a git repo" "error message mentions 'not a git repo'"
 
+# ─── Test 8b (regression for F-003): hook write blocked → rc=2 ─────
+echo
+echo "Test 8b: --install-hook with unwritable hook dir → rc=2"
+pair="$SANDBOX/hook-blocked"
+_build_pair "$pair"
+( cd "$pair/identity" && git init -q )
+# Make .git/hooks a regular file so `mkdir -p` cannot create it as a dir.
+rm -rf "$pair/identity/.git/hooks"
+echo "blocker" > "$pair/identity/.git/hooks"
+out=$(MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
+    bash "$TC" --install-hook 2>&1); rc=$?
+assert_eq "$rc" "2" "unwritable hook dir surfaces rc=2 (not 0)"
+assert_contains "$out" "mkdir" "error names mkdir failure"
+# Cleanup: restore so subsequent tests see no leftover regular file.
+rm -f "$pair/identity/.git/hooks"
+
 # ─── Test 9: --install-hook idempotent ──────────────────────────────
 echo
 echo "Test 9: --install-hook idempotent"
