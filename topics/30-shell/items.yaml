@@ -1,0 +1,17 @@
+# 30-shell — bashrc/zshrc loader directories + generic shell hooks +
+# global gitignore + zinit drift cleanup.
+#
+# All items are type:custom — none fit brew/apt/git-clone drivers because
+# they deploy files from the workstation tree into $HOME. The templates/
+# dir is deployed automatically by setup.sh's templates/ pass (separate
+# from this manifest).
+
+- name: shell-bootstrap
+  type: custom
+  script: "./shell-bootstrap.sh"
+  desc: "rcrc.d dirs + auto-update.zsh + mesh-guard.zsh symlinks + gitignore_global"
+
+- name: zinit-drift-cleanup
+  type: custom
+  script: "./zinit-drift-cleanup.sh"
+  desc: "Remove zinit plugin caches listed in data/zinit-uninstall.list"
