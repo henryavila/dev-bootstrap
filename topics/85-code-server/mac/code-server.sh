@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
-# 85-code-server (mac): standalone code-server + LaunchAgent wrapper.
-set -euo pipefail
+# Custom: code-server (mac) — bundles the original 697-LOC install.mac.sh
+# verbatim under the engine contract.
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/log.sh"
+check() {
+    command -v code-server >/dev/null 2>&1 \
+        || [[ -x "${HOME}/.local/bin/code-server" ]] \
+        || [[ -x "${HOME}/.local/lib/code-server/bin/code-server" ]]
+}
 
-: "${CODE_SERVER_PORT:=8080}"
-: "${CODE_SERVER_LABEL:=com.${USER}.code-server}"
-: "${CODE_SERVER_TAILSCALE_SERVE:=1}"
-: "${CODE_SERVER_INSTALL_PREFIX:=$HOME/.local}"
-: "${CODE_SERVER_INSTALL_METHOD:=standalone}"
-: "${CODE_SERVER_UPGRADE:=0}"
-: "${CODE_SERVER_CHECK_UPDATES:=1}"
+install() {
+    local HERE
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    HERE="$HERE/.."
+    # shellcheck disable=SC1091
+    . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/log.sh"
+    # shellcheck disable=SC1091
+    . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/launch-wrapper.sh"
 
 CODE_SERVER_BIN=""
 CODE_SERVER_SERVICE_WRAPPER=""
@@ -695,3 +698,9 @@ deploy_user_settings_from_identity
 maybe_configure_tailscale_serve
 
 ok "85-code-server done"
+}
+
+verify() { check; }
+rollback() {
+    :   # code-server carries user state (workspace settings); no auto-uninstall
+}
