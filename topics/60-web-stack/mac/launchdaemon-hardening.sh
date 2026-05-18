@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Custom: harden LaunchDaemons (Standard*Path) against phantom-volume mkdir
+# at boot when BREW_PREFIX is on a noowners volume (/Volumes/External/...).
+#
+# Original incident: 2026-05-02. See dotfiles auto-memory
+# feedback_launchdaemon_phantom_volumes_mkdir_race.md for forensics.
+
+_is_custom_prefix() {
+    case "${BREW_PREFIX:-}" in
+        /opt/homebrew|/usr/local|"") return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+_target_log_for() { printf '%s\n' "/var/log/homebrew/$1.log"; }
+
+check() {
+    _is_custom_prefix || return 0
+    local svc plist current target
+    for svc in php nginx dnsmasq; do
+        plist="/Library/LaunchDaemons/homebrew.mxcl.${svc}.plist"
+        sudo test -f "$plist" || continue
+        target="$(_target_log_for "$svc")"
+        current="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null || echo "")"
+        [[ "$current" == "$target" ]] || return 1
+    done
+    return 0
+}
+
+install() {
+    _is_custom_prefix || { echo "[launchdaemon-hardening] standard brew prefix — no-op"; return 0; }
+    sudo mkdir -p /var/log/homebrew
+    local svc plist target current_err current_out changed=0 found=0
+    for svc in php nginx dnsmasq; do
+        plist="/Library/LaunchDaemons/homebrew.mxcl.${svc}.plist"
+        sudo test -f "$plist" || continue
+        found=1
+        target="$(_target_log_for "$svc")"
+        current_err="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null || echo "")"
+        current_out="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardOutPath"   "$plist" 2>/dev/null || echo "")"
+        if [[ "$current_err" != "$target" ]]; then
+            sudo /usr/libexec/PlistBuddy -c "Set :StandardErrorPath $target" "$plist" 2>/dev/null \
+                || sudo /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string $target" "$plist"
+            changed=1
+        fi
+        if [[ -n "$current_out" && "$current_out" != "$target" ]]; then
+            sudo /usr/libexec/PlistBuddy -c "Set :StandardOutPath $target" "$plist"
+            changed=1
+        fi
+    done
+    if (( changed == 1 )); then
+        for svc in php nginx dnsmasq; do
+            plist="/Library/LaunchDaemons/homebrew.mxcl.${svc}.plist"
+            sudo test -f "$plist" || continue
+            sudo launchctl bootout "system/homebrew.mxcl.${svc}" >/dev/null 2>&1 || true
+            sudo launchctl bootstrap system "$plist" >/dev/null 2>&1 \
+                || echo "[launchdaemon-hardening] bootstrap of $svc failed (TCC sandbox + external noowners volume; pre-existing)" >&2
+        done
+    fi
+    return 0
+}
+
+verify() {
+    check
+}
+
+rollback() {
+    # Hardening is purely defensive — leave it in place.
+    :
+}

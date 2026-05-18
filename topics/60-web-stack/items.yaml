@@ -1,0 +1,82 @@
+# 60-web-stack — MySQL + Redis + nginx/Valet + mkcert + opt-in extras.
+#
+# Mac uses Valet (handles nginx + dnsmasq + HTTPS); WSL hand-rolls nginx.
+# 4 opt-in extras (mailpit / ngrok / postgres / mssql) become discrete items
+# wrapping the existing scripts/install-*.sh (preserves their internal logic
+# while making them engine-toggleable). L17 advisory will drop to 0 for this
+# topic once these wrappers land.
+
+# ─── macOS base stack ──────────────────────────────────────────────
+- name: mysql-mac
+  type: custom
+  script: "./mac/mysql.sh"
+  platforms: [mac]
+  desc: "MySQL 8 — brew formula with Oracle DMG fallback (skip if /usr/local/mysql)"
+
+- name: redis-mac
+  type: custom
+  script: "./mac/redis.sh"
+  platforms: [mac]
+  desc: "Redis — brew formula + service launch (launch-wrapper for custom prefix)"
+
+- name: mkcert-mac
+  type: brew-formula
+  spec: mkcert
+  platforms: [mac]
+  desc: "mkcert — Valet calls mkcert -install itself; we just need the binary"
+
+- name: valet
+  type: custom
+  script: "./mac/valet.sh"
+  platforms: [mac]
+  requires: [mysql-mac, redis-mac, mkcert-mac]
+  desc: "Laravel Valet — composer global + valet install + tld localhost + park CODE_DIR"
+
+- name: valet-launchdaemon-hardening
+  type: custom
+  script: "./mac/launchdaemon-hardening.sh"
+  platforms: [mac]
+  requires: [valet]
+  desc: "Rewrite Standard*Path in homebrew LaunchDaemons to rootfs (prevents phantom volume mkdir)"
+
+# ─── WSL base stack ────────────────────────────────────────────────
+- name: web-stack-wsl-packages
+  type: custom
+  script: "./wsl/packages.sh"
+  platforms: [wsl]
+  desc: "apt install: mysql-server-8.0, redis-server, nginx, php-fpm + meta packages"
+
+- name: web-stack-wsl-mkcert
+  type: custom
+  script: "./wsl/mkcert.sh"
+  platforms: [wsl]
+  desc: "mkcert + wildcard cert + rootCA import to Windows trust store"
+
+- name: web-stack-wsl-nginx-sites
+  type: custom
+  script: "./wsl/nginx-sites.sh"
+  platforms: [wsl]
+  requires: [web-stack-wsl-packages, web-stack-wsl-mkcert]
+  desc: "nginx sites-available + symlinks + port conflict check + apache2 cleanup"
+
+# ─── Cross-platform opt-ins (gated by INCLUDE_* env vars) ──────────
+- name: mailpit
+  type: custom
+  script: "./extras/mailpit.sh"
+  desc: "Local SMTP catcher — gated by INCLUDE_MAILPIT=1"
+
+- name: ngrok
+  type: custom
+  script: "./extras/ngrok.sh"
+  desc: "Public tunneling agent — gated by INCLUDE_NGROK=1"
+
+- name: postgres
+  type: custom
+  script: "./extras/postgres.sh"
+  desc: "PostgreSQL server + role/db — gated by INCLUDE_POSTGRES=1"
+
+- name: mssql-driver
+  type: custom
+  script: "./extras/mssql-driver.sh"
+  platforms: [wsl]
+  desc: "MS SQL Server ODBC driver + PHP sqlsrv extensions — gated by INCLUDE_MSSQL=1 (WSL only)"
