@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# scripts/lib/template-check.sh — verify mesh-workstation/template/ ↔
+# mesh-identity structural parity (spec §C16.1).
+#
+# Walks both trees; reports paths present in one without the other. Files
+# under "skip namespaces" (personal/host-specific) are exempt in BOTH
+# directions: parity is a structural contract, not a content contract.
+#
+# Skip namespaces (superset of §2.4 hard-pins + per-host data files):
+#   PREFIXES: .git/, tests/, docs/, .ai/memory/, claude/, .claude/, npm/
+#   EXACT:    codex/config.toml, git/gitconfig.local,
+#             ssh/authorized_keys, ssh/config
+#
+# Exit codes:
+#   0   parity (or hook installed successfully)
+#   1   drift detected
+#   2   usage error / missing repo
+#
+# Subcommands:
+#   (no flag)        verify parity, print drift to stderr
+#   --quiet          exit code only; no output
+#   --install-hook   install $MESH_IDENTITY_DIR/.git/hooks/pre-commit
+#
+# Spec: §C16.1. Phase 6 Task 6.4.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS_ROOT="$(cd "$HERE/../.." && pwd)"
+TEMPLATE_DIR="${MESH_TEMPLATE_DIR:-$WS_ROOT/template}"
+IDENTITY_DIR="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
+
+_die()  { printf 'template-check: %s\n' "$*" >&2; exit 2; }
+_info() { printf '==> %s\n' "$*"; }
+
+QUIET=0
+
+SKIP_PREFIXES=(
+    ".git/"
+    "tests/"
+    "docs/"
+    ".ai/memory/"
+    "claude/"
+    ".claude/"
+    "npm/"
+)
+SKIP_EXACT=(
+    "codex/config.toml"
+    "git/gitconfig.local"
+    "ssh/authorized_keys"
+    "ssh/config"
+)
+
+_is_skipped() {
+    local rel="$1" p
+    for p in "${SKIP_PREFIXES[@]}"; do
+        [[ "$rel" == "$p"* ]] && return 0
+    done
+    for p in "${SKIP_EXACT[@]}"; do
+        [[ "$rel" == "$p" ]] && return 0
+    done
+    return 1
+}
+
+_install_hook() {
+    local hook_dir="$IDENTITY_DIR/.git/hooks"
+    local hook="$hook_dir/pre-commit"
+    [[ -d "$IDENTITY_DIR/.git" ]] \
+        || _die "$IDENTITY_DIR is not a git repo (no .git/) — init it first"
+    mkdir -p "$hook_dir"
+    cat > "$hook" <<'HOOK'
+#!/usr/bin/env bash
+# Auto-installed by `mesh template-check --install-hook` (C16.1).
+# Blocks commits that break mesh-identity ↔ mesh-workstation/template/ parity.
+if ! mesh template-check --quiet 2>/dev/null; then
+    echo "ERROR: structural drift between mesh-identity and mesh-workstation/template/" >&2
+    echo "" >&2
+    echo "Run: mesh template-check" >&2
+    echo "Then update \$MESH_WORKSTATION_DIR/template/ to match + commit there." >&2
+    exit 1
+fi
+HOOK
+    chmod +x "$hook"
+    _info "hook installed at $hook"
+}
+
+_print_help() {
+    cat <<'EOF'
+Usage: mesh template-check [--quiet] [--install-hook]
+
+  (no flag)         Verify template/ ↔ identity structural parity.
+                    Reports drift to stderr; exits 0 on parity, 1 on drift.
+  --quiet           Exit code only; no output (used by the pre-commit hook).
+  --install-hook    Install $MESH_IDENTITY_DIR/.git/hooks/pre-commit
+                    invoking `mesh template-check --quiet`.
+
+Env:
+  MESH_TEMPLATE_DIR   template source (default $WS_ROOT/template)
+  MESH_IDENTITY_DIR   identity dir    (default $HOME/mesh-identity)
+
+Skip namespaces (no parity required, both directions):
+  prefixes: .git/, tests/, docs/, .ai/memory/, claude/, .claude/, npm/
+  exact:    codex/config.toml, git/gitconfig.local,
+            ssh/authorized_keys, ssh/config
+EOF
+}
+
+# ─── Parse args ──────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --quiet)         QUIET=1; shift ;;
+        --install-hook)  _install_hook; exit 0 ;;
+        -h|--help)       _print_help; exit 0 ;;
+        *)               _die "unknown arg '$1' (try -h)" ;;
+    esac
+done
+
+# ─── Verify dirs ─────────────────────────────────────────────────
+[[ -d "$TEMPLATE_DIR" ]] || _die "template/ missing at $TEMPLATE_DIR"
+[[ -d "$IDENTITY_DIR" ]] || _die "identity dir missing at $IDENTITY_DIR (set MESH_IDENTITY_DIR)"
+
+# ─── Parity check ────────────────────────────────────────────────
+drift=0
+findings=()
+
+# Forward: every identity file in non-skip paths must have <path>.example in template
+while IFS= read -r -d '' f; do
+    rel="${f#"$IDENTITY_DIR/"}"
+    _is_skipped "$rel" && continue
+    if [[ ! -f "$TEMPLATE_DIR/$rel.example" ]]; then
+        findings+=("missing in template: $rel.example (identity has $rel)")
+        drift=1
+    fi
+done < <(find "$IDENTITY_DIR" -type f -print0 2>/dev/null)
+
+# Reverse: every .example in template must have counterpart in identity.
+# README* and .keep are template-meta — never expected in identity.
+while IFS= read -r -d '' ex; do
+    rel="${ex#"$TEMPLATE_DIR/"}"
+    rel_no_ex="${rel%.example}"
+    _is_skipped "$rel_no_ex" && continue
+    if [[ ! -f "$IDENTITY_DIR/$rel_no_ex" ]]; then
+        findings+=("missing in identity: $rel_no_ex (template has $rel)")
+        drift=1
+    fi
+done < <(find "$TEMPLATE_DIR" -type f -name '*.example' -print0 2>/dev/null)
+
+if (( drift == 1 )) && (( QUIET == 0 )); then
+    printf 'template-check: %s\n' "${findings[@]}" >&2
+fi
+exit "$drift"

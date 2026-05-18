@@ -71,6 +71,7 @@ Usage:
   mesh lint                         Run repo invariant lints (scripts/lib/lints/L*.sh)
   mesh catalog generate             Regenerate .catalog/ derived listings
   mesh init [MODE | FLAGS]          Bootstrap identity (adopt-url/create-new/skip/interactive)
+  mesh template-check [flags]       Verify template/ ↔ identity parity (C16.1)
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -127,6 +128,15 @@ Subcommands:
            Idempotent: existing $MESH_IDENTITY_DIR ⇒ no-op exit 0.
            Run `mesh init -h` for the full flag list.
 
+  template-check  Verify mesh-workstation/template/ ↔ mesh-identity structural
+           parity (C16.1). Exit 0 = parity, 1 = drift. Flags:
+             --quiet         exit code only; no output (used by pre-commit hook)
+             --install-hook  write $MESH_IDENTITY_DIR/.git/hooks/pre-commit
+           Skip namespaces (no parity required, both directions):
+             .git/, tests/, docs/, .ai/memory/, claude/, .claude/, npm/
+             codex/config.toml, git/gitconfig.local,
+             ssh/authorized_keys, ssh/config
+
 Examples:
   mesh                              Open the panel
   mesh status crc                   Drill-down on host 'crc'
@@ -144,6 +154,9 @@ Examples:
   mesh run --online snap --quiet
   mesh init --create-identity      Scaffold new mesh-identity from template/
   mesh init --identity-repo URL    Adopt existing identity by URL
+  mesh template-check              Check template/ ↔ identity parity
+  mesh template-check --install-hook
+                                   Install pre-commit hook in mesh-identity
 
 Configuration:
   ~/.config/dotfiles/mesh-status.conf   (alias map, run hosts, repos tracked, retention)
@@ -1047,6 +1060,13 @@ sub_init() {
     exec bash "$lib" "$@"
 }
 
+sub_template_check() {
+    local lib
+    lib="$(_resolve_companion "lib/template-check.sh")"
+    [[ -n "$lib" ]] || _die "lib/template-check.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$lib" "$@"
+}
+
 sub_lint() {
     local lib
     lib="$(_resolve_companion "lib/lint.sh")"
@@ -1118,6 +1138,10 @@ case "${1:-status}" in
     init)
         shift
         sub_init "$@"
+        ;;
+    template-check)
+        shift
+        sub_template_check "$@"
         ;;
     lint)
         shift
