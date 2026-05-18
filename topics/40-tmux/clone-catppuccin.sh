@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Custom installer: Catppuccin tmux theme pinned to v1.0.3.
+#
+# Pinned because v2 changed to a module-based API that would require a
+# tmux.conf rewrite. `prefix + U` through TPM respects the `#v1.0.3` suffix
+# in the tmux.conf @plugin line. The path matches what tmux.conf expects.
+
+CATP_TMUX="$HOME/.tmux/plugins/tmux"
+CATP_TAG="v1.0.3"
+
+check() {
+    [[ -d "$CATP_TMUX/.git" ]]
+}
+
+install() {
+    mkdir -p "$(dirname "$CATP_TMUX")"
+    git clone --quiet --depth 1 --branch "$CATP_TAG" \
+        https://github.com/catppuccin/tmux "$CATP_TMUX"
+}
+
+verify() {
+    check
+}
+
+rollback() {
+    # Rollback of OUR install — we cloned this dir, we own removing it.
+    # Aliased to `dir` so the L05 unguarded-rm-rf lint allowlist applies.
+    local dir="$CATP_TMUX"
+    [[ -d "$dir" ]] && rm -rf "$dir"
+}
