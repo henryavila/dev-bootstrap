@@ -1,0 +1,43 @@
+# 80-claude-code — Claude Code CLI + Bun (for claude-mem plugin) + Syncthing
+# (to converge curated parts of ~/.claude across personal machines).
+#
+# Bun + Claude CLI use curl-pipe installers (universal). Syncthing splits
+# per platform: brew formula + service launch on mac (with launch-wrapper
+# TCC workaround for non-standard brew prefixes), apt + user systemd service
+# on WSL.
+
+- name: bun
+  type: custom
+  script: "./install-bun.sh"
+  desc: "Bun runtime (curl-pipe https://bun.sh/install) — required by claude-mem plugin"
+
+- name: claude-code-cli
+  type: custom
+  script: "./install-claude.sh"
+  desc: "Claude Code CLI (curl-pipe https://claude.ai/install.sh)"
+
+- name: syncthing-mac
+  type: brew-formula
+  spec: syncthing
+  platforms: [mac]
+  desc: "Syncthing (P2P file sync) via Homebrew"
+
+- name: syncthing-mac-service
+  type: custom
+  script: "./syncthing-service-mac.sh"
+  platforms: [mac]
+  requires: [syncthing-mac]
+  desc: "Launch syncthing via brew services OR launch-wrapper (TCC for custom brew prefix)"
+
+- name: syncthing-wsl
+  type: apt
+  spec: syncthing
+  platforms: [wsl]
+  desc: "Syncthing (P2P file sync) via apt"
+
+- name: syncthing-wsl-service
+  type: custom
+  script: "./syncthing-service-wsl.sh"
+  platforms: [wsl]
+  requires: [syncthing-wsl]
+  desc: "Enable syncthing user service + linger (so it survives logout)"
