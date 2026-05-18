@@ -101,7 +101,13 @@ _create_new() {
     mkdir -p "$(dirname "$IDENTITY_DIR")"
     cp -R "$TEMPLATE_DIR" "$IDENTITY_DIR"
 
-    # Strip .example suffix on every copied file.
+    # Drop template-meta files (README*, .keep) — they're for workstation
+    # developers, not identity owners. L11 lint allowlists these in template/;
+    # we mirror that exclusion on copy.
+    find "$IDENTITY_DIR" -type f \
+        \( -iname 'README*' -o -name '.keep' \) -delete 2>/dev/null || true
+
+    # Strip .example suffix on every remaining file.
     while IFS= read -r -d '' f; do
         mv "$f" "${f%.example}"
     done < <(find "$IDENTITY_DIR" -type f -name '*.example' -print0)

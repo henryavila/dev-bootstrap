@@ -49,6 +49,13 @@ EOF
     cat > "$tdir/.ai/memory/MEMORY.md.example" <<'EOF'
 # Memory index for __USER_NAME__
 EOF
+
+    # Template-meta files (L11 allows in template/, but must NOT
+    # land in identity — _create_new drops them on copy).
+    cat > "$tdir/README.md" <<'EOF'
+# template/ — workstation-side documentation, not for identity.
+EOF
+    touch "$tdir/.ai/memory/.keep"
 }
 
 # ─── Test 1: --help ─────────────────────────────────────────────────
@@ -122,6 +129,10 @@ assert_file_contains "$created_identity/install.sh"          "testuser"         
 # No .bak files leaked from sed -i.bak
 bak_count=$(find "$created_identity" -name '*.bak' 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "$bak_count" "0" "no .bak sed-cleanup leftovers"
+
+# Template-meta files (README, .keep) must NOT land in identity
+assert_false "test -e '$created_identity/README.md'"             "template README.md not copied to identity"
+assert_false "test -e '$created_identity/.ai/memory/.keep'"      "template .keep not copied to identity"
 
 # ─── Test 6: adopt-url without URL → rc=2 ───────────────────────────
 echo

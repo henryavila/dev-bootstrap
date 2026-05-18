@@ -1,0 +1,10 @@
+# MEMORY index for __USER_NAME__
+
+This is the entry point Claude Code loads as auto-memory. Keep it under
+~200 lines / 25 KB — anything past line 200 gets truncated.
+
+Each row points to a per-topic file (`feedback_*.md`, `project_*.md`,
+`user_*.md`, `reference_*.md`) in this directory.
+
+<!-- Append new memories as: -->
+<!-- - [Title](file.md) — one-line hook -->

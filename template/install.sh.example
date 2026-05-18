@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# mesh-identity install.sh — thin deploy script for __USER_NAME__.
+# Repo: github.com/__GH_USERNAME__/mesh-identity
+#
+# Scaffolded from mesh-workstation/template/ on `mesh init --create-identity`.
+# Customize MAPPINGS below to control which identity files land where.
+#
+# Usage:
+#   bash install.sh                 # deploy + install template-check hook
+#   DRY_RUN=1 bash install.sh       # log only, no writes (when supported)
+
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS_LIB="${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib"
+
+# shellcheck source=/dev/null
+. "$WS_LIB/env.sh"
+# shellcheck source=/dev/null
+. "$WS_LIB/log.sh"
+# shellcheck source=/dev/null
+. "$WS_LIB/perms.sh"
+# shellcheck source=/dev/null
+. "$WS_LIB/managed-block.sh"
+# shellcheck source=/dev/null
+. "$WS_LIB/deploy.sh"
+
+# ─── MAPPINGS: "<src>|<dst>|<mode>|<perms>" ───────────────────────
+# Modes: overwrite | once | managed_block
+# Perms default 0644; ssh files use 0600.
+MAPPINGS=(
+    "shell/aliases.sh|$HOME/.zshrc.d/30-aliases.sh|overwrite|0644"
+    "git/gitconfig.local|$HOME/.gitconfig.local|once|0644"
+    "ssh/authorized_keys|$HOME/.ssh/authorized_keys|managed_block|0600"
+)
+
+info "deploying identity for __USER_NAME__ (__USER_EMAIL__)"
+
+for entry in "${MAPPINGS[@]}"; do
+    deploy_one "$entry" "$HERE"
+done
+
+# C16.5: post-deploy, install pre-commit hook enforcing template parity.
+if command -v mesh >/dev/null 2>&1; then
+    mesh template-check --install-hook || warn "template-check --install-hook failed (non-fatal)"
+else
+    warn "mesh CLI not on PATH — skip template-check hook install"
+fi
+
+info "identity install complete"
