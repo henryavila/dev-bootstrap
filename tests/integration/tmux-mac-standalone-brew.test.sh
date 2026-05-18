@@ -48,7 +48,7 @@ if PATH="$STUBBIN:$PATH" \
    FAKE_BREW_PREFIX="$FAKE_PREFIX" \
    BREW_BIN='' \
    BREW_PREFIX='' \
-   bash "$ROOT/topics/40-tmux/install.mac.sh" >"$LOG" 2>&1; then
+   bash "$ROOT/topics/40-tmux/install.sh" >"$LOG" 2>&1; then
     pass "40-tmux/install.mac.sh runs standalone with BREW_BIN unset"
 else
     rc=$?

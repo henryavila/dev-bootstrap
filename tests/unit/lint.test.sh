@@ -50,14 +50,31 @@ non_advisory=$(printf '%s' "$out" | grep -vE '^(L[0-9]+ \(advisory\):|$|lint: 0 
 assert_eq "$non_advisory" "" "scripts/lib/lint.sh emits only advisory lines on clean tree"
 
 # ─── Advisory lint contract (L17) ──────────────────────────────────
-# L17 detects the inline-script-call migration backlog. Today's tree
-# has known candidates (60-web-stack), so L17 MUST emit at least one
-# advisory line and STILL exit 0.
+# L17 detects the inline-script-call migration backlog. After the 11-topic
+# mass migration (commits b871d58..2b83ea9) the backlog is empty: L17 must
+# exit 0 with NO output on the current tree. Inject a synthetic candidate
+# to prove the detection logic still works, then assert the advisory line
+# is emitted when something matches.
 echo
-echo "L17 advisory: surfaces migration backlog but doesn't fail"
+echo "L17 advisory: silent when backlog is empty"
 out=$(bash "$LINTS_DIR/L17-inline-script-call.sh" 2>&1); rc=$?
-assert_eq "$rc" "0" "L17 advisory exits 0"
-assert_contains "$out" "L17 (advisory):" "L17 emits at least one advisory line"
+assert_eq "$rc" "0" "L17 advisory exits 0 on clean tree"
+assert_eq "$out" ""  "L17 emits no output now that the migration backlog is empty"
+
+echo
+echo "L17 detection still active (synthetic candidate)"
+mkdir -p "$REPO_ROOT/topics/__lint-injection__"
+__l17_inject() {
+    local path="$1" content="$2"
+    mkdir -p "$(dirname "$path")"
+    printf '%s\n' "$content" > "$path"
+}
+__l17_inject "$REPO_ROOT/topics/__lint-injection__/install.mac.sh" \
+    $'#!/usr/bin/env bash\nbash "$HERE/scripts/install-something.sh"'
+out=$(bash "$LINTS_DIR/L17-inline-script-call.sh" 2>&1); rc=$?
+rm -f "$REPO_ROOT/topics/__lint-injection__/install.mac.sh"
+assert_eq "$rc" "0" "L17 advisory exits 0 even with finding (advisory mode)"
+assert_contains "$out" "L17 (advisory):" "L17 emits advisory line for synthetic candidate"
 assert_contains "$out" "type:custom" "L17 advisory points at the items.yaml migration target"
 
 # ─── Per-lint injection harness ─────────────────────────────────────

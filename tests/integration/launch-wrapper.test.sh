@@ -9,7 +9,7 @@
 # Two layers of coverage:
 #   (1) lib/launch-wrapper.sh unit-style: exercise public API in DRY_RUN
 #       mode against a tempdir; assert wrapper script + plist content.
-#   (2) topics/80-claude-code/install.mac.sh structural: grep that the
+#   (2) topics/80-claude-code/syncthing-service-mac.sh structural: grep that the
 #       custom-prefix branch wires the wrapper instead of failing with
 #       a `warn` block (regression on the original broken UX).
 
@@ -21,7 +21,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$ROOT/tests/lib/assert.sh"
 
 LIB="$ROOT/scripts/lib/launch-wrapper.sh"
-TOPIC="$ROOT/topics/80-claude-code/install.mac.sh"
+TOPIC="$ROOT/topics/80-claude-code/syncthing-service-mac.sh"
 
 # ---------------------------------------------------------------------
 # Layer 1: lib/launch-wrapper.sh unit behavior
@@ -216,10 +216,10 @@ ASSERT_MSG="install fails when --brew-bin is missing" \
     assert_false "launch_wrapper_install_extbrew --svc x --label com.x.y"
 
 # ---------------------------------------------------------------------
-# Layer 2: topics/80-claude-code/install.mac.sh structural
+# Layer 2: topics/80-claude-code/syncthing-service-mac.sh structural
 # ---------------------------------------------------------------------
 echo
-echo "═══ topics/80-claude-code/install.mac.sh — wrapper integration ═══"
+echo "═══ topics/80-claude-code/syncthing-service-mac.sh — wrapper integration ═══"
 
 assert_pattern_present "$TOPIC" 'source.*lib/launch-wrapper\.sh' \
     "80-claude-code sources lib/launch-wrapper.sh"
@@ -254,9 +254,9 @@ assert_pattern_absent "$TOPIC" 'workaround: create ~/Library/LaunchAgents' \
 # ---------------------------------------------------------------------
 # Layer 3: 60-web-stack (redis) integration
 # ---------------------------------------------------------------------
-WS_TOPIC="$ROOT/topics/60-web-stack/install.mac.sh"
+WS_TOPIC="$ROOT/topics/60-web-stack/mac/redis.sh"
 echo
-echo "═══ topics/60-web-stack/install.mac.sh — redis wrapper integration ═══"
+echo "═══ topics/60-web-stack/mac/redis.sh — redis wrapper integration ═══"
 assert_pattern_present "$WS_TOPIC" 'source.*lib/launch-wrapper\.sh' \
     "60-web-stack sources lib/launch-wrapper.sh"
 assert_pattern_present "$WS_TOPIC" 'use_launch_wrapper=1' \

@@ -30,8 +30,8 @@ source "$ROOT/tests/lib/assert.sh"
 
 # Files that install PHP packages on Linux.
 TARGETS=(
-    "$ROOT/topics/10-languages/install.wsl.sh"
-    "$ROOT/topics/60-web-stack/install.wsl.sh"
+    "$ROOT/topics/10-languages/wsl/php-stack.sh"
+    "$ROOT/topics/60-web-stack/wsl/packages.sh"
     "$ROOT/topics/60-web-stack/scripts/install-mssql-driver.sh"
 )
 
@@ -86,7 +86,7 @@ done
 # present somewhere in 10-languages/install.wsl.sh — this is the kind of
 # subtle apt behaviour future maintainers will want to remove "since the
 # pkgs array is explicit anyway". The comment must explain WHY.
-if grep -qE '(no-install-recommends|libapache2-mod-php)' "$ROOT/topics/10-languages/install.wsl.sh"; then
+if grep -qE '(no-install-recommends|libapache2-mod-php)' "$ROOT/topics/10-languages/wsl/php-stack.sh"; then
     pass "10-languages/install.wsl.sh: justifies --no-install-recommends in a comment"
 else
     fail "10-languages/install.wsl.sh: --no-install-recommends needs a comment naming libapache2-mod-php so future maintainers don't 'clean it up'"

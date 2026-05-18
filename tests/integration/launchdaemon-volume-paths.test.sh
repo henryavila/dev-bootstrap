@@ -19,7 +19,7 @@
 #   - dev-bootstrap recovery (detect-brew hardcoded /Volumes/External/...)
 #
 # Two-pronged defense, both grep-asserted here:
-#   (1) topics/60-web-stack/install.mac.sh — POST-`valet install`,
+#   (1) topics/60-web-stack/mac/launchdaemon-hardening.sh — POST-`valet install`,
 #       rewrite Standard{Error,Out}Path of the 3 brew daemon plists to
 #       /var/log/homebrew/<svc>.log (rootfs path, always writable, no
 #       phantom possible). ProgramArguments stays on external; daemon
@@ -38,7 +38,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-WEB_MAC="$ROOT/topics/60-web-stack/install.mac.sh"
+WEB_MAC="$ROOT/topics/60-web-stack/mac/launchdaemon-hardening.sh"
 DETECT="$ROOT/scripts/lib/detect-brew.sh"
 
 assert_pattern_present() {

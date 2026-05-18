@@ -8,7 +8,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-INSTALL="$ROOT/topics/85-code-server/install.mac.sh"
+INSTALL="$ROOT/topics/85-code-server/mac/code-server.sh"
 VERIFY="$ROOT/topics/85-code-server/verify.sh"
 MENU="$ROOT/scripts/lib/menu.sh"
 BOOTSTRAP="$ROOT/setup.sh"
@@ -16,7 +16,7 @@ BOOTSTRAP="$ROOT/setup.sh"
 echo
 echo "═══ 85-code-server topic wiring ═══"
 
-assert_file_exists "$INSTALL" "install.mac.sh exists"
+assert_file_exists "$INSTALL" "mac/code-server.sh exists"
 assert_file_exists "$VERIFY" "verify.sh exists"
 
 list_out="$(HOME="$(mktemp -d /tmp/code-server-list.XXXXXX)" bash "$BOOTSTRAP" --list-topics 2>&1)"

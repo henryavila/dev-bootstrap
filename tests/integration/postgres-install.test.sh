@@ -35,8 +35,8 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$ROOT/tests/lib/assert.sh"
 
 PG_SCRIPT="$ROOT/topics/60-web-stack/scripts/install-postgres.sh"
-MAC_INSTALL="$ROOT/topics/60-web-stack/install.mac.sh"
-WSL_INSTALL="$ROOT/topics/60-web-stack/install.wsl.sh"
+MAC_INSTALL="$ROOT/topics/60-web-stack/extras/postgres.sh"
+WSL_INSTALL="$ROOT/topics/60-web-stack/extras/postgres.sh"
 MENU="$ROOT/scripts/lib/menu.sh"
 PG_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/postgres-install-test.XXXXXX")"
 trap 'rm -rf "$PG_TEST_ROOT"' EXIT INT TERM
