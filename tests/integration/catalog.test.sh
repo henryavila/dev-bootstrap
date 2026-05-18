@@ -81,20 +81,26 @@ else
     fail "opt-ins.txt not sorted or has duplicates"
 fi
 
-# ─── Test 6: README.md numbers match files ─────────────────────────
+# ─── Test 6: README.md counts mapped to correct rows ───────────────
 echo
-echo "README.md line counts match derived files"
+echo "README.md line counts match derived files on their own rows"
 res_n=$(wc -l < "$OUT/resources.txt" | tr -d ' ')
 opt_n=$(wc -l < "$OUT/opt-ins.txt"   | tr -d ' ')
 cli_n=$(wc -l < "$OUT/cli.txt"       | tr -d ' ')
 drv_n=$(wc -l < "$OUT/drivers.txt"   | tr -d ' ')
-for n in "$res_n" "$opt_n" "$cli_n" "$drv_n"; do
-    if grep -qE "\| $n \|" "$OUT/README.md"; then
-        pass "README.md references count $n"
+
+_check_readme_row() {
+    local label="$1" count="$2"
+    if grep -qF "| [$label]($label) | $count |" "$OUT/README.md"; then
+        pass "README.md row for $label references $count"
     else
-        fail "README.md missing count $n"
+        fail "README.md row for $label missing count $count"
     fi
-done
+}
+_check_readme_row "resources.txt" "$res_n"
+_check_readme_row "opt-ins.txt"   "$opt_n"
+_check_readme_row "cli.txt"       "$cli_n"
+_check_readme_row "drivers.txt"   "$drv_n"
 
 echo
 summary

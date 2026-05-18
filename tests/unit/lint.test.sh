@@ -70,6 +70,17 @@ _run_lint_expect_fail() {
     pass "$lint flags $tag (rc=$rc)"
 }
 
+# ─── Multi-failure exit-code contract ───────────────────────────────
+# Orchestrator contract: rc = number of failing lints (capped 125).
+# Inject one file that violates exactly L03 (set +e) and L04 (eval $()).
+echo
+echo "Orchestrator on tree with 2 lint violations"
+_inject "$REPO_ROOT/topics/__lint-injection__/multi.sh" \
+    $'#!/usr/bin/env bash\nset +e\neval $(echo unsafe)'
+out=$(bash "$ORCH" 2>&1); rc=$?
+assert_eq "$rc" "2" "scripts/lib/lint.sh rc=N for N=2 failing lints"
+rm -f "$REPO_ROOT/topics/__lint-injection__/multi.sh"
+
 # L03 — set +e
 echo
 echo "L03 injection: set +e"
