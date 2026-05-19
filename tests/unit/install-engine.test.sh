@@ -69,5 +69,32 @@ else
     failed=$((failed+1)); echo "  ✗ failed item exited 0 (bug)" >&2
 fi
 
+# Test 4: install() failure routes through rollback (regression for Codex
+# review A-F003 / F-F005, 2026-05-19). Previously `set -euo pipefail`
+# exited the item subshell on install() failure BEFORE rollback could fire,
+# leaving partial state behind.
+mkdir -p "$TMP/installers"
+cat > "$TMP/installers/rollback-driver.sh" <<SH
+rollback_driver_check()    { return 1; }                    # force install
+rollback_driver_install()  { echo install-ran > "$TMP/install-marker"; return 42; }
+rollback_driver_rollback() { touch "$TMP/rollback-sentinel"; }
+SH
+cat > "$TMP/items-rollback.yaml" <<'YAML'
+- name: rollback-item
+  type: rollback-driver
+  spec: anything
+YAML
+rm -f "$TMP/rollback-sentinel" "$TMP/install-marker"
+set +e
+bash "$ENGINE" --manifest "$TMP/items-rollback.yaml" --installers-dir "$TMP/installers" 2>/dev/null
+rc=$?
+set -e
+[[ -f "$TMP/install-marker" ]]  && { passed=$((passed+1)); echo "  ✓ install ran before failing"; } \
+                                || { failed=$((failed+1)); echo "  ✗ install never ran" >&2; }
+[[ -f "$TMP/rollback-sentinel" ]] && { passed=$((passed+1)); echo "  ✓ rollback fired after install() failure (A-F003)"; } \
+                                  || { failed=$((failed+1)); echo "  ✗ rollback was bypassed (A-F003 regression)" >&2; }
+[[ "$rc" -eq 42 ]] && { passed=$((passed+1)); echo "  ✓ engine exited with install rc (42)"; } \
+                  || { failed=$((failed+1)); echo "  ✗ engine rc=$rc, expected 42 from install" >&2; }
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]

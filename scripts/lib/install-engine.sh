@@ -129,7 +129,18 @@ while :; do
             exit 0
         fi
         log_info "$name: installing"
-        "${prefix}_install" "$arg"
+        # Capture install rc explicitly. Codex review 2026-05-19 (A-F003 / F-F005):
+        # `set -euo pipefail` was exiting the subshell on install() failure
+        # BEFORE rollback could fire — leaving partial state behind. The
+        # `cmd || rc=$?` form both (a) suppresses `set -e` on install failure
+        # and (b) captures the actual rc (`if ! cmd; then $?` zeros it).
+        _install_rc=0
+        "${prefix}_install" "$arg" || _install_rc=$?
+        if [[ "$_install_rc" -ne 0 ]]; then
+            log_warn "$name: install failed (rc=$_install_rc); calling rollback if present"
+            declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+            exit "$_install_rc"
+        fi
         if declare -f "${prefix}_verify" >/dev/null 2>&1; then
             "${prefix}_verify" "$arg" || {
                 log_warn "$name: verify failed; calling rollback if present"
