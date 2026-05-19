@@ -108,6 +108,15 @@ while :; do
         [[ -n "$arg" ]] || { log_error "item $name: type=custom missing required 'script' field"; exit 64; }
     else
         arg="$spec"
+        # CP4 A2-F-002: refuse leading-dash specs for non-custom drivers.
+        # Most package managers parse a leading `-` as an option flag, so
+        # a malicious or malformed manifest could pass `--remove` or
+        # `-rf /` through. Drivers add `--` separators where supported,
+        # but defense-in-depth: reject at the dispatch layer.
+        if [[ "$arg" == -* ]]; then
+            log_error "item $name: spec begins with '-' which would be parsed as a CLI option by the $type driver (refused for safety)"
+            exit 64
+        fi
     fi
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
