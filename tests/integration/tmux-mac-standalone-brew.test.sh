@@ -63,7 +63,7 @@ else
     pass "standalone topic install does not emit BREW_BIN not set"
 fi
 
-assert_file_contains "$LOG" "tmux already installed" \
-    "40-tmux/install.mac.sh used detected fake brew"
+assert_file_contains "$LOG" "tmux-mac: already present" \
+    "40-tmux/install.sh used detected fake brew via engine"
 
 summary

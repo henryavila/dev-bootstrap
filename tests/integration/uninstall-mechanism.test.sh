@@ -123,18 +123,21 @@ else
         topic_dir="$(dirname "$(dirname "$manifest")")"
         topic_name="$(basename "$topic_dir")"
 
-        # Each manifest must have at least one consumer install script.
-        # Scripts may be install.sh, install.mac.sh, or install.wsl.sh.
-        consumers=("$topic_dir"/install.sh "$topic_dir"/install.mac.sh "$topic_dir"/install.wsl.sh)
+        # Each manifest must have at least one consumer script that sources
+        # lib/topic-cleanup.sh AND calls uninstall_apply. Post-migration the
+        # consumer may live as a type:custom .sh anywhere under the topic
+        # dir (e.g. 20-terminal-ux/drift-cleanup.sh). Search all .sh files
+        # in the topic dir + subdirs (max 3 levels: topic/, topic/mac/,
+        # topic/wsl/, topic/extras/).
         any_wired=0
-        for script in "${consumers[@]}"; do
+        while IFS= read -r script; do
             [[ -f "$script" ]] || continue
             if grep -q 'scripts/lib/topic-cleanup.sh' "$script" \
                && grep -q 'uninstall_apply' "$script"; then
                 pass "$topic_name/$(basename "$script") sources lib + calls uninstall_apply"
                 any_wired=1
             fi
-        done
+        done < <(find "$topic_dir" -maxdepth 3 -name '*.sh' -type f 2>/dev/null)
         if [[ "$any_wired" -eq 0 ]]; then
             fail "$topic_name has data/uninstall.list but no install script wires it"
         fi

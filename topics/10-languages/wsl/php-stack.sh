@@ -140,6 +140,8 @@ done
 # pecl_install_for_version_linux is provided by lib/pecl-install.sh —
 # single source of truth for the 4-env-var PECL fix. See its header
 # for the 5-commit bug saga and each env var's role.
+# shellcheck disable=SC1091
+source "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/pecl-install.sh"
 
 for line in "${PECL_LINES[@]}"; do
     IFS=':' read -r ext _ _ <<< "$line"

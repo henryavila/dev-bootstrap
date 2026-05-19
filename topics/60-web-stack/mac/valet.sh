@@ -26,6 +26,8 @@ install() {
         "$VALET_BIN" install || true
     elif [[ ! -d "$HOME/.config/valet" ]] || ! "$VALET_BIN" --version >/dev/null 2>&1; then
         "$VALET_BIN" install || true
+    else
+        echo "[valet] skipping valet install (already configured — set FORCE_VALET_INSTALL=1 to re-run)"
     fi
 
     # Refresh sudo cache (`valet tld` and `valet park` will sudo).

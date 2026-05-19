@@ -39,6 +39,12 @@
   requires: [valet]
   desc: "Rewrite Standard*Path in homebrew LaunchDaemons to rootfs (prevents phantom volume mkdir)"
 
+- name: migrate-legacy-nginx
+  type: custom
+  script: "./mac/migrate-legacy-nginx.sh"
+  platforms: [mac]
+  desc: "Pre-migrate legacy unmarked nginx files (LEGACY_FILES allowlist; .pre-bootstrap-bak-<ts>)"
+
 # ─── WSL base stack ────────────────────────────────────────────────
 - name: web-stack-wsl-packages
   type: custom

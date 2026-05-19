@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Custom: remove orphan PECL .ini files from the old wrong-path bug (mac).
+# Custom: sweep orphan ini from old wrong path (PECL extension .ini files
+# pointing at non-existent .so files on macOS, residue of pre-fix behavior
+# that wrote inis to $BREW_PREFIX/opt/php@X.Y/etc/ instead of
+# $BREW_PREFIX/etc/php/X.Y/conf.d/).
 
 check() {
     # Treat as needs-run; the inner loop is silent when nothing matches.

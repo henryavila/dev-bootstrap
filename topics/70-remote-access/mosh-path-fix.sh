@@ -43,6 +43,7 @@ install() {
     sudo mkdir -p /usr/local/bin
     if [[ -x "$BREW_PREFIX/bin/mosh-server" ]]; then
         sudo ln -sf "$BREW_PREFIX/bin/mosh-server" /usr/local/bin/mosh-server
+        echo "[mosh-path-fix] symlinked mosh-server → /usr/local/bin/mosh-server (belt-and-suspenders for sshd-exec PATH)"
     fi
 }
 

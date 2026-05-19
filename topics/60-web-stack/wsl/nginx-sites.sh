@@ -53,14 +53,19 @@ install() {
         sudo apt-get autoremove -y -q || true
     fi
 
-    # Port :80 conflict check
+    # Port :80 conflict check — uses `followup critical` (not just warn) so
+    # the consolidated end-of-bootstrap summary catches it.
     local port_conflict="" owner port80
     if command -v ss >/dev/null 2>&1; then
         port80="$(sudo ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print $NF}' | head -1)"
         if [[ -n "$port80" ]] && [[ "$port80" != *'"nginx"'* ]]; then
             owner="$(printf '%s' "$port80" | sed -nE 's/.*\(\("([^"]+)".*/\1/p')"
             port_conflict=1
-            echo "[nginx-sites] port :80 owned by '${owner:-unknown}' — stop it ('sudo systemctl disable --now ${owner:-...}') and 'sudo systemctl restart nginx'" >&2
+            # shellcheck disable=SC1091
+            . "${MESH_WORKSTATION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}/scripts/lib/log.sh"
+            followup critical "port :80 owned by '${owner:-unknown}' (not nginx) — disable it and restart nginx:
+        sudo systemctl disable --now ${owner:-...}
+        sudo systemctl restart nginx"
         fi
     fi
 

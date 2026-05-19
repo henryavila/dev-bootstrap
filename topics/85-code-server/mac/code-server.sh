@@ -17,6 +17,15 @@ install() {
     # shellcheck disable=SC1091
     . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/launch-wrapper.sh"
 
+    # Env defaults (preserved from original install.mac.sh header)
+    : "${CODE_SERVER_PORT:=8080}"
+    : "${CODE_SERVER_LABEL:=com.${USER}.code-server}"
+    : "${CODE_SERVER_TAILSCALE_SERVE:=1}"
+    : "${CODE_SERVER_INSTALL_PREFIX:=$HOME/.local}"
+    : "${CODE_SERVER_INSTALL_METHOD:=standalone}"
+    : "${CODE_SERVER_UPGRADE:=0}"
+    : "${CODE_SERVER_CHECK_UPDATES:=1}"
+
 CODE_SERVER_BIN=""
 CODE_SERVER_SERVICE_WRAPPER=""
 CODE_SERVER_CONFIG_DIR=""

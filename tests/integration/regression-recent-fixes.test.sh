@@ -17,13 +17,41 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-WSL="$ROOT/topics/60-web-stack/wsl/packages.sh"
-MAC="$ROOT/topics/60-web-stack/mac/redis.sh"
-LANG_MAC="$ROOT/topics/10-languages/mac/php-stack.sh"
-REMOTE_MAC="$ROOT/topics/70-remote-access/mosh-path-fix.sh"
 BOOTSTRAP="$ROOT/setup.sh"
 MENU="$ROOT/scripts/lib/menu.sh"
 LOG="$ROOT/scripts/lib/log.sh"
+
+# Post-migration each topic's logic is split across multiple custom .sh files
+# under mac/, wsl/, and extras/. We bundle each topic's customs into a single
+# temp file so the existing pattern-based assertions still grep against the
+# topic's complete install logic (the *invariants* are file-location-agnostic).
+_bundle_dir="$(mktemp -d -t dev-bootstrap-test-bundle.XXXXXX)"
+trap 'rm -rf "$_bundle_dir"' EXIT
+
+_make_bundle() {
+    local out="$1"; shift
+    local dir f
+    : > "$out"
+    for dir in "$@"; do
+        [[ -d "$dir" ]] || continue
+        while IFS= read -r f; do
+            printf '\n# === BUNDLE: %s ===\n' "$f" >> "$out"
+            cat "$f" >> "$out"
+        done < <(find "$dir" -maxdepth 2 -name '*.sh' -type f 2>/dev/null | LC_ALL=C sort)
+    done
+}
+
+WSL="$_bundle_dir/60-web-stack-wsl.bundle.sh"
+MAC="$_bundle_dir/60-web-stack-mac.bundle.sh"
+LANG_MAC="$_bundle_dir/10-languages-mac.bundle.sh"
+LANG_WSL="$_bundle_dir/10-languages-wsl.bundle.sh"
+REMOTE_MAC="$_bundle_dir/70-remote-access-mac.bundle.sh"
+
+_make_bundle "$WSL"      "$ROOT/topics/60-web-stack/wsl"   "$ROOT/topics/60-web-stack/extras"
+_make_bundle "$MAC"      "$ROOT/topics/60-web-stack/mac"   "$ROOT/topics/60-web-stack/extras"
+_make_bundle "$LANG_MAC" "$ROOT/topics/10-languages/mac"   "$ROOT/topics/10-languages"
+_make_bundle "$LANG_WSL" "$ROOT/topics/10-languages/wsl"   "$ROOT/topics/10-languages"
+_make_bundle "$REMOTE_MAC" "$ROOT/topics/70-remote-access"
 
 # Helper: count matches of an extended regex in a file (works on bash 3.2)
 _count_matches() {
@@ -433,7 +461,6 @@ assert_pattern_absent "$LANG_MAC" 'exec "\$\{_php_bin\}" "\$\{_composer_bin\}"' 
     "10-languages/install.mac.sh — does NOT bake \$BREW_PREFIX/bin/composer into wrapper"
 
 # WSL: wrapper uses /usr/bin/php<ver> + runtime-resolved composer
-LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
 
 assert_pattern_present "$LANG_WSL" 'composer\$\{ver\}' \
     "10-languages/install.wsl.sh — declares composer\${ver} wrapper path"
@@ -513,8 +540,8 @@ echo "═══ 2026-04-23 : auto-chsh + secrets.env scaffold ═══"
 
 # Issue 1 — zsh auto-chsh. Bootstrap must try sudo chsh/usermod before
 # falling through to the advisory, default-on, CHSH_AUTO=0 opts out.
-TUX_WSL="$ROOT/topics/20-terminal-ux/install.wsl.sh"
-TUX_MAC="$ROOT/topics/20-terminal-ux/install.mac.sh"
+TUX_WSL="$_bundle_dir/20-terminal-ux-wsl.bundle.sh"; _make_bundle "$TUX_WSL" "$ROOT/topics/20-terminal-ux/wsl" "$ROOT/topics/20-terminal-ux"
+TUX_MAC="$_bundle_dir/20-terminal-ux-mac.bundle.sh"; _make_bundle "$TUX_MAC" "$ROOT/topics/20-terminal-ux/mac" "$ROOT/topics/20-terminal-ux"
 
 assert_pattern_present "$TUX_WSL" 'CHSH_AUTO:-1' \
     "20-terminal-ux/install.wsl.sh — CHSH_AUTO defaults to 1 (auto-on)"
@@ -678,7 +705,6 @@ echo "═══ 2026-04-23 : WSL PECL per-version build via PHP_PEAR_PHP_BIN ═
 # The fix lives in lib/pecl-install.sh (single source of truth) so
 # install.wsl.sh + install-mssql-driver.sh share the same hardened
 # implementation. These asserts inspect the lib directly.
-LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
 PECL_LIB="$ROOT/scripts/lib/pecl-install.sh"
 MSSQL="$ROOT/topics/60-web-stack/scripts/install-mssql-driver.sh"
 

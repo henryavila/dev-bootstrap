@@ -67,11 +67,15 @@ install() {
         if wslpath -w "$rootca" >/dev/null 2>&1; then
             rootca_win="$(wslpath -w "$rootca")"
             ps_win="$(wslpath -w "$here/../scripts/import-mkcert-windows.ps1")"
+            # Wrap in `timeout 45` — interop call can block indefinitely
+            # if binfmt_misc is half-registered, /mnt/c is in I/O-error
+            # state, or a hidden UAC prompt is up on the Windows side.
             # shellcheck disable=SC2016
-            "$pwsh" -NoProfile -ExecutionPolicy Bypass -Command \
+            timeout --kill-after=5 45 \
+                "$pwsh" -NoProfile -ExecutionPolicy Bypass -Command \
                 "\$env:ROOTCA_PATH = '$rootca_win'; & '$ps_win'" 2>&1 \
                 | sed 's/^/    /' \
-                || echo "[mkcert] interop import failed — run scripts/import-mkcert-from-windows.ps1 from Windows" >&2
+                || echo "[mkcert] interop import failed (or hit 45s timeout) — run scripts/import-mkcert-from-windows.ps1 from Windows" >&2
         else
             echo "[mkcert] wslpath -w failed — run scripts/import-mkcert-from-windows.ps1 from Windows side" >&2
         fi

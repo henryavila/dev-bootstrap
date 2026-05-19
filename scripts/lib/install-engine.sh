@@ -49,9 +49,9 @@ if [[ -n "$PLATFORM_OVERRIDE" ]]; then
     PLATFORM="$PLATFORM_OVERRIDE"
 elif [[ -n "${MESH_OS:-}" ]]; then
     PLATFORM="$MESH_OS"
-elif [[ -x "$ENGINE_DIR/../../scripts/lib/detect-os.sh" ]]; then
+elif [[ -r "$ENGINE_DIR/../../scripts/lib/detect-os.sh" ]]; then
     PLATFORM="$(bash "$ENGINE_DIR/../../scripts/lib/detect-os.sh")"
-elif [[ -x "$ENGINE_DIR/detect-os.sh" ]]; then
+elif [[ -r "$ENGINE_DIR/detect-os.sh" ]]; then
     PLATFORM="$(bash "$ENGINE_DIR/detect-os.sh")"
 else
     PLATFORM="unknown"

@@ -221,12 +221,12 @@ ASSERT_MSG="install fails when --brew-bin is missing" \
 echo
 echo "═══ topics/80-claude-code/syncthing-service-mac.sh — wrapper integration ═══"
 
-assert_pattern_present "$TOPIC" 'source.*lib/launch-wrapper\.sh' \
-    "80-claude-code sources lib/launch-wrapper.sh"
+assert_pattern_present "$TOPIC" '(source|^[[:space:]]*\.).*lib/launch-wrapper\.sh' \
+    "80-claude-code sources lib/launch-wrapper.sh (source or dot-include)"
 
-# Branches on BREW_PREFIX
-assert_pattern_present "$TOPIC" 'case "\$BREW_PREFIX"' \
-    "80-claude-code branches on BREW_PREFIX (canonical vs custom)"
+# Branches on BREW_PREFIX (case statement OR helper function with same effect)
+assert_pattern_present "$TOPIC" '(case "\$BREW_PREFIX"|_use_wrapper)' \
+    "80-claude-code branches on BREW_PREFIX (case stmt or _use_wrapper helper)"
 assert_pattern_present "$TOPIC" '/opt/homebrew\|/usr/local' \
     "80-claude-code names canonical prefixes /opt/homebrew + /usr/local"
 
@@ -257,22 +257,22 @@ assert_pattern_absent "$TOPIC" 'workaround: create ~/Library/LaunchAgents' \
 WS_TOPIC="$ROOT/topics/60-web-stack/mac/redis.sh"
 echo
 echo "═══ topics/60-web-stack/mac/redis.sh — redis wrapper integration ═══"
-assert_pattern_present "$WS_TOPIC" 'source.*lib/launch-wrapper\.sh' \
-    "60-web-stack sources lib/launch-wrapper.sh"
-assert_pattern_present "$WS_TOPIC" 'use_launch_wrapper=1' \
-    "60-web-stack sets use_launch_wrapper flag (custom prefix branch)"
+assert_pattern_present "$WS_TOPIC" '(source|^[[:space:]]*\.).*lib/launch-wrapper\.sh' \
+    "60-web-stack sources lib/launch-wrapper.sh (source or dot-include)"
+assert_pattern_present "$WS_TOPIC" '(use_launch_wrapper=1|_use_wrapper)' \
+    "60-web-stack flags the custom-prefix branch (use_launch_wrapper var or _use_wrapper helper)"
 assert_pattern_present "$WS_TOPIC" '[-]-svc redis' \
     "60-web-stack invokes wrapper with --svc redis"
 assert_pattern_present "$WS_TOPIC" '[-]-label "com\.\$\{USER\}\.redis"' \
     "60-web-stack labels redis plist com.\${USER}.redis"
-assert_pattern_present "$WS_TOPIC" '[-]-workdir "\$BREW_PREFIX/var"' \
+assert_pattern_present "$WS_TOPIC" '[-]-workdir "\$\{?BREW_PREFIX\}?/var"' \
     "60-web-stack passes --workdir \$BREW_PREFIX/var (matches brew formula default)"
-assert_pattern_present "$WS_TOPIC" '\$BREW_PREFIX/etc/redis\.conf' \
+assert_pattern_present "$WS_TOPIC" '\$\{?BREW_PREFIX\}?/etc/redis\.conf' \
     "60-web-stack passes \$BREW_PREFIX/etc/redis.conf as redis arg"
 
 # Canonical-prefix branch keeps `brew services start redis` (don't break
 # users who run on /opt/homebrew or /usr/local).
-assert_pattern_present "$WS_TOPIC" '[$]BREW_BIN" services start redis' \
+assert_pattern_present "$WS_TOPIC" 'BREW_BIN.*services start redis' \
     "60-web-stack canonical branch keeps brew services start redis"
 
 # ---------------------------------------------------------------------

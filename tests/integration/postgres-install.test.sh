@@ -573,15 +573,20 @@ echo "═══ Layer 3 — install.{mac,wsl}.sh wiring (anchored, mutation-resi
 # check line AND the bash invocation line, but each independently. So
 # deleting the bash line still passed. Anchor to the gate-then-bash
 # block.
-assert_block_present "$MAC_INSTALL" \
-    'INCLUDE_POSTGRES.*install-postgres\.sh' \
-    'bash .*install-postgres\.sh' \
-    "install.mac.sh: gate line immediately followed by bash invocation"
-
-assert_block_present "$WSL_INSTALL" \
-    'INCLUDE_POSTGRES.*install-postgres\.sh' \
-    'bash .*install-postgres\.sh' \
-    "install.wsl.sh: gate line immediately followed by bash invocation"
+# Post-migration: postgres lives in extras/postgres.sh (type:custom wrapper).
+# The INCLUDE_POSTGRES gate is the first line of check() AND install(); the
+# bash invocation lives further down in install(). Anchor both within the
+# whole file (block-within-5-lines no longer applies since the contract
+# wrapper splits the gate across functions).
+assert_pattern_present "$MAC_INSTALL" 'INCLUDE_POSTGRES' \
+    "extras/postgres.sh: gates on INCLUDE_POSTGRES"
+assert_pattern_present "$MAC_INSTALL" 'bash .*install-postgres\.sh' \
+    "extras/postgres.sh: invokes scripts/install-postgres.sh"
+# Same file is the wrapper for both platforms (engine-driven; no .mac/.wsl split)
+assert_pattern_present "$WSL_INSTALL" 'INCLUDE_POSTGRES' \
+    "extras/postgres.sh: gates on INCLUDE_POSTGRES (same file, both platforms)"
+assert_pattern_present "$WSL_INSTALL" 'bash .*install-postgres\.sh' \
+    "extras/postgres.sh: invokes scripts/install-postgres.sh (same file, both platforms)"
 
 echo
 echo "═══ Layer 4 — lib/menu.sh (anchored against fixture pitfalls) ═══"
