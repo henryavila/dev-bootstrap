@@ -159,5 +159,53 @@ assert "F-003 manifest check provides post-install verify" "0" "$rc"
 [[ -f "$TMP/post-install-marker" ]] && { passed=$((passed+1)); echo "  ✓ F-003 install ran + post-check via manifest passed"; } \
                                     || { failed=$((failed+1)); echo "  ✗ F-003 post-check via manifest failed" >&2; }
 
+# Test 8 (CP4 A1-F-001): rollback fires on post-install MANIFEST CHECK failure
+# (previously only driver _verify failure triggered rollback).
+cat > "$TMP/installers/rollback-manifest-driver.sh" <<SH
+rollback_manifest_driver_check()    { return 1; }   # force install
+rollback_manifest_driver_install()  { touch "$TMP/manifest-rollback-install"; }
+rollback_manifest_driver_rollback() { touch "$TMP/manifest-rollback-fired"; }
+# Note: NO _verify function, so manifest_check path is used post-install.
+SH
+cat > "$TMP/items-manifest-rollback.yaml" <<'YAML'
+- name: manifest-rollback-item
+  type: rollback-manifest-driver
+  spec: anything
+  check: "false"
+YAML
+rm -f "$TMP/manifest-rollback-install" "$TMP/manifest-rollback-fired"
+set +e
+STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-manifest-rollback.yaml" --installers-dir "$TMP/installers" 2>/dev/null
+rc=$?
+set -e
+[[ -f "$TMP/manifest-rollback-install" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: install ran"; } \
+                                          || { failed=$((failed+1)); echo "  ✗ A1-F-001: install never ran" >&2; }
+[[ -f "$TMP/manifest-rollback-fired" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: rollback fired on manifest check fallback failure"; } \
+                                        || { failed=$((failed+1)); echo "  ✗ A1-F-001: rollback was bypassed (only _verify path called it before)" >&2; }
+[[ "$rc" -eq 67 ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: engine exits rc=67 (unified verify-failure path)"; } \
+                  || { failed=$((failed+1)); echo "  ✗ A1-F-001: engine rc=$rc, expected 67" >&2; }
+
+# Test 9 (CP4 A1-F-001): rollback fires on post-install DRIVER CHECK fallback failure
+cat > "$TMP/installers/rollback-driver-check.sh" <<SH
+rollback_driver_check_check()    { test -f "$TMP/never-created"; }   # always fails
+rollback_driver_check_install()  { touch "$TMP/drv-rollback-install"; }
+rollback_driver_check_rollback() { touch "$TMP/drv-rollback-fired"; }
+# No _verify, no manifest check → engine falls through to driver _check
+SH
+cat > "$TMP/items-driver-rollback.yaml" <<'YAML'
+- name: driver-rollback-item
+  type: rollback-driver-check
+  spec: anything
+YAML
+rm -f "$TMP/drv-rollback-install" "$TMP/drv-rollback-fired"
+set +e
+STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-driver-rollback.yaml" --installers-dir "$TMP/installers" 2>/dev/null
+rc=$?
+set -e
+[[ -f "$TMP/drv-rollback-install" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: driver-check path — install ran"; } \
+                                     || { failed=$((failed+1)); echo "  ✗ A1-F-001: driver-check path — install never ran" >&2; }
+[[ -f "$TMP/drv-rollback-fired" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: driver-check path — rollback fired"; } \
+                                   || { failed=$((failed+1)); echo "  ✗ A1-F-001: driver-check path — rollback was bypassed" >&2; }
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]

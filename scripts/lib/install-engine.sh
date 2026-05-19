@@ -155,22 +155,21 @@ while :; do
         # Post-install verify. Priority: driver verify > manifest check > driver check.
         # Manifest check used as verify fallback closes the contract symmetry
         # with pre-install (CP4 F-003).
+        # CP4 A1-F-001: all 3 failure paths now route through rollback for
+        # symmetry — previously only driver _verify failure called rollback,
+        # leaving partial state for manifest-check/driver-check failures.
+        _post_check_ok=0
         if declare -f "${prefix}_verify" >/dev/null 2>&1; then
-            "${prefix}_verify" "$arg" || {
-                log_warn "$name: verify failed; calling rollback if present"
-                declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
-                exit 67
-            }
+            "${prefix}_verify" "$arg" && _post_check_ok=1
         elif [[ -n "$manifest_check" ]]; then
-            bash -c "$manifest_check" >/dev/null 2>&1 || {
-                log_warn "$name: post-install manifest check failed"
-                exit 68
-            }
+            bash -c "$manifest_check" >/dev/null 2>&1 && _post_check_ok=1
         else
-            "${prefix}_check" "$arg" 2>/dev/null || {
-                log_warn "$name: post-install check failed"
-                exit 68
-            }
+            "${prefix}_check" "$arg" 2>/dev/null && _post_check_ok=1
+        fi
+        if (( _post_check_ok == 0 )); then
+            log_warn "$name: post-install verification failed; calling rollback if present"
+            declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+            exit 67
         fi
     ) || { _rc=$?; log_error "$name: failed (rc=$_rc)"; exit $_rc; }
     processed=$((processed+1))
