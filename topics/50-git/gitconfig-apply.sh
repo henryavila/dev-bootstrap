@@ -80,13 +80,34 @@ install() {
 }
 
 verify() {
-    # Verify a sentinel key from data/gitconfig.keys made it through.
-    # We use init.defaultBranch as a stand-in (commonly set in the file).
-    local here sentinel
+    # Codex review 2026-05-19 (B-F003): the previous verify only checked
+    # that the sentinel KEY existed, not that its value matched what
+    # data/gitconfig.keys declared. A partial apply (e.g. one line failed
+    # to apply because a value contained chars confusing `git config`)
+    # would still report success.
+    # Now: pick the first non-comment, non-skipped (user.*/credential.*)
+    # line, parse key=value, and assert `git config --global --get` returns
+    # the declared value exactly.
+    local here keys_file line key value current
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    sentinel="$(grep -E '^[^#]' "$here/data/gitconfig.keys" 2>/dev/null | head -1 | cut -d= -f1)"
-    [[ -z "$sentinel" ]] && return 0
-    git config --global --get "$sentinel" >/dev/null 2>&1
+    keys_file="$here/data/gitconfig.keys"
+    [[ -f "$keys_file" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ -z "${line// }" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        key="${line%%=*}"
+        value="${line#*=}"
+        key="${key#"${key%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"
+        value="${value#"${value%%[![:space:]]*}"}"; value="${value%"${value##*[![:space:]]}"}"
+        case "$key" in
+            user.*|credential.*) continue ;;
+        esac
+        current="$(git config --global --get "$key" 2>/dev/null || true)"
+        [[ "$current" == "$value" ]] || return 1
+        return 0
+    done < "$keys_file"
+    return 0
 }
 
 rollback() {
