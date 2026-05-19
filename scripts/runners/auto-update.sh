@@ -210,11 +210,31 @@ _run_with_timeout() {
 # subshell scopes the unsets so the parent env stays untouched.
 run_setup_interactive() {
     local repo="$1"
+    # CP4 chunk D finding D-F-003: should_show_menu (scripts/lib/menu.sh)
+    # treats ANY pre-set INCLUDE_* / DOTFILES_* / PHP_* / POSTGRES_* /
+    # GIT_NAME/GIT_EMAIL as "automation mode" and suppresses the
+    # interactive menu. Hard-coding the unset list got out of sync —
+    # newer gates (INCLUDE_AI_TOOLS, INCLUDE_CODE_SERVER,
+    # INCLUDE_DOTFILES_PERSONAL, INCLUDE_NPM_GLOBAL, DOTFILES_NPM_GLOBAL,
+    # DOTFILES_AI_PACKAGES) silently leaked through and defeated the
+    # wrapper's whole purpose.
+    #
+    # Defense: unset EVERY menu-owned gate that should_show_menu reads.
+    # If a new gate gets added to menu.sh, update this list too. L18
+    # lint candidate: assert this list ⊇ should_show_menu's gates.
     (
-        unset NON_INTERACTIVE CI ONLY_TOPICS
-        unset INCLUDE_DOCKER INCLUDE_WEBSTACK INCLUDE_LARAVEL INCLUDE_REMOTE INCLUDE_EDITOR
-        unset INCLUDE_MAILPIT INCLUDE_NGROK INCLUDE_MSSQL INCLUDE_FRONTEND_PROXY
-        unset INCLUDE_POSTGRES PHP_VERSIONS POSTGRES_VERSION DOTFILES_REPO
+        unset NON_INTERACTIVE CI ONLY_TOPICS DRY_RUN
+        # All INCLUDE_* gates per should_show_menu (menu.sh:37-49).
+        unset INCLUDE_DOCKER INCLUDE_WEBSTACK INCLUDE_LARAVEL INCLUDE_REMOTE
+        unset INCLUDE_AI_TOOLS INCLUDE_CODE_SERVER INCLUDE_EDITOR
+        unset INCLUDE_DOTFILES_PERSONAL INCLUDE_MAILPIT INCLUDE_NGROK
+        unset INCLUDE_MSSQL INCLUDE_POSTGRES INCLUDE_FRONTEND_PROXY
+        unset INCLUDE_NPM_GLOBAL
+        # DOTFILES_* automation gates (menu.sh:49-50).
+        unset DOTFILES_NPM_GLOBAL DOTFILES_AI_PACKAGES DOTFILES_REPO
+        # PHP / POSTGRES version pins (PHP_VERSIONS triggers automation mode).
+        unset PHP_VERSIONS PHP_DEFAULT POSTGRES_VERSION
+        # Identity overrides (intentionally kept: $HOME, $USER).
         bash "$repo/setup.sh"
     )
 }
@@ -365,9 +385,17 @@ process_repo() {
             fi
             # Capture doctor output so the warn is actionable — silent
             # `>/dev/null 2>&1` previously made the user re-run by hand.
-            if [[ -f "$repo/scripts/runners/doctor.sh" ]]; then
+            #
+            # CP4 chunk D finding D-F-004: post-Phase 7a identity no
+            # longer has scripts/runners/doctor.sh (workstation owns it).
+            # Use the WORKSTATION doctor relative to this auto-update
+            # script ($HERE = scripts/runners/, so doctor.sh is a peer),
+            # passing MESH_IDENTITY_DIR=$repo so MAPPINGS resolve to
+            # the just-applied identity tree.
+            local doctor_path="$HERE/doctor.sh"
+            if [[ -f "$doctor_path" ]]; then
                 local doctor_out doctor_rc=0
-                doctor_out="$(bash "$repo/scripts/runners/doctor.sh" --quiet 2>&1)" || doctor_rc=$?
+                doctor_out="$(MESH_IDENTITY_DIR="$repo" bash "$doctor_path" --quiet 2>&1)" || doctor_rc=$?
                 if (( doctor_rc != 0 )); then
                     warn "$name: doctor.sh reporta drift residual após --full"
                     [[ -n "$doctor_out" ]] && printf '%s\n' "$doctor_out" | sed 's/^/    /' >&2
@@ -509,9 +537,13 @@ process_repo() {
     fi
 
     # ─── Validador (apenas dotfiles no MVP) ─────────────────────────
-    if (( ! skip_install )) && [[ "$name" == "dotfiles" ]] && [[ -f "$repo/scripts/runners/doctor.sh" ]]; then
-        if ! bash "$repo/scripts/runners/doctor.sh" --quiet >/dev/null 2>&1; then
-            warn "$name: doctor.sh reporta drift residual — rode \`bash $repo/scripts/runners/doctor.sh\` para detalhes"
+    # CP4 chunk D finding D-F-004: incremental path uses workstation
+    # doctor.sh (peer to this script post-Phase 7a). Identity no longer
+    # ships scripts/runners/doctor.sh; the previous `[[ -f $repo/... ]]`
+    # check always failed silently.
+    if (( ! skip_install )) && [[ "$name" == "dotfiles" ]] && [[ -f "$HERE/doctor.sh" ]]; then
+        if ! MESH_IDENTITY_DIR="$repo" bash "$HERE/doctor.sh" --quiet >/dev/null 2>&1; then
+            warn "$name: doctor.sh reporta drift residual — rode \`MESH_IDENTITY_DIR=$repo bash $HERE/doctor.sh\` para detalhes"
         fi
     fi
 

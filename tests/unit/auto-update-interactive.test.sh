@@ -48,8 +48,17 @@ cat > "$TMP/repo/setup.sh" <<EOF
     printf 'INCLUDE_FRONTEND_PROXY=%s\n' "\${INCLUDE_FRONTEND_PROXY:-}"
     printf 'INCLUDE_POSTGRES=%s\n' "\${INCLUDE_POSTGRES:-}"
     printf 'PHP_VERSIONS=%s\n' "\${PHP_VERSIONS:-}"
+    printf 'PHP_DEFAULT=%s\n' "\${PHP_DEFAULT:-}"
     printf 'POSTGRES_VERSION=%s\n' "\${POSTGRES_VERSION:-}"
     printf 'DOTFILES_REPO=%s\n' "\${DOTFILES_REPO:-}"
+    # CP4 D-F-003: newer menu-suppressor gates that were silently leaking through.
+    printf 'INCLUDE_AI_TOOLS=%s\n' "\${INCLUDE_AI_TOOLS:-}"
+    printf 'INCLUDE_CODE_SERVER=%s\n' "\${INCLUDE_CODE_SERVER:-}"
+    printf 'INCLUDE_DOTFILES_PERSONAL=%s\n' "\${INCLUDE_DOTFILES_PERSONAL:-}"
+    printf 'INCLUDE_NPM_GLOBAL=%s\n' "\${INCLUDE_NPM_GLOBAL:-}"
+    printf 'DOTFILES_NPM_GLOBAL=%s\n' "\${DOTFILES_NPM_GLOBAL:-}"
+    printf 'DOTFILES_AI_PACKAGES=%s\n' "\${DOTFILES_AI_PACKAGES:-}"
+    printf 'DRY_RUN=%s\n' "\${DRY_RUN:-}"
     printf 'INNOCENT_VAR=%s\n' "\${INNOCENT_VAR:-}"
 } > "$TMP/recorded.env"
 EOF
@@ -57,10 +66,13 @@ chmod +x "$TMP/repo/setup.sh"
 
 # Pre-seed all 14 automation vars + an unrelated INNOCENT_VAR to prove
 # the unset is targeted, not scorched-earth.
-export NON_INTERACTIVE=1 CI=1 ONLY_TOPICS=30-shell
+export NON_INTERACTIVE=1 CI=1 ONLY_TOPICS=30-shell DRY_RUN=1
 export INCLUDE_DOCKER=1 INCLUDE_WEBSTACK=1 INCLUDE_LARAVEL=1 INCLUDE_REMOTE=1 INCLUDE_EDITOR=1
 export INCLUDE_MAILPIT=1 INCLUDE_NGROK=1 INCLUDE_MSSQL=1 INCLUDE_FRONTEND_PROXY=1
-export INCLUDE_POSTGRES=1 PHP_VERSIONS=8.3 POSTGRES_VERSION=16 DOTFILES_REPO=git@github.com:foo/bar
+export INCLUDE_POSTGRES=1 PHP_VERSIONS=8.3 PHP_DEFAULT=8.3 POSTGRES_VERSION=16 DOTFILES_REPO=git@github.com:foo/bar
+# CP4 D-F-003: newer gates that should ALSO be wiped.
+export INCLUDE_AI_TOOLS=1 INCLUDE_CODE_SERVER=1 INCLUDE_DOTFILES_PERSONAL=1 INCLUDE_NPM_GLOBAL=1
+export DOTFILES_NPM_GLOBAL=1 DOTFILES_AI_PACKAGES=1
 export INNOCENT_VAR=keep-me
 
 run_setup_interactive "$TMP/repo"
@@ -71,10 +83,12 @@ read_recorded() {
     grep -E "^$1=" "$TMP/recorded.env" | head -1 | cut -d= -f2-
 }
 
-for v in NON_INTERACTIVE CI ONLY_TOPICS INCLUDE_DOCKER INCLUDE_WEBSTACK \
+for v in NON_INTERACTIVE CI ONLY_TOPICS DRY_RUN INCLUDE_DOCKER INCLUDE_WEBSTACK \
          INCLUDE_LARAVEL INCLUDE_REMOTE INCLUDE_EDITOR INCLUDE_MAILPIT \
          INCLUDE_NGROK INCLUDE_MSSQL INCLUDE_FRONTEND_PROXY INCLUDE_POSTGRES \
-         PHP_VERSIONS POSTGRES_VERSION DOTFILES_REPO; do
+         PHP_VERSIONS PHP_DEFAULT POSTGRES_VERSION DOTFILES_REPO \
+         INCLUDE_AI_TOOLS INCLUDE_CODE_SERVER INCLUDE_DOTFILES_PERSONAL \
+         INCLUDE_NPM_GLOBAL DOTFILES_NPM_GLOBAL DOTFILES_AI_PACKAGES; do
     assert "$v unset in setup.sh subshell" "" "$(read_recorded "$v")"
 done
 
