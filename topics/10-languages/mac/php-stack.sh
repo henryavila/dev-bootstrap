@@ -95,8 +95,15 @@ brew_install_if_missing() {
 
     # Check formula has a HEAD spec before trying — not all do.
     # `brew info --json=v2` reports `urls.head.url` if defined.
-    has_head="$("$BREW_BIN" info --json=v2 "$pkg" 2>/dev/null \
-        | grep -o '"head"' | head -1)"
+    # Codex review 2026-05-19 (E-F004): when the formula has no HEAD spec
+    # `grep -o '"head"'` returns rc=1 with no output, and `set -euo
+    # pipefail` exits the whole script. Now use `if ... grep -q ...` so the
+    # no-HEAD branch is reachable.
+    if "$BREW_BIN" info --json=v2 "$pkg" 2>/dev/null | grep -q '"head"'; then
+        has_head=1
+    else
+        has_head=""
+    fi
     if [[ -n "$has_head" ]]; then
         warn "$pkg Tier 2 failed — Tier 3: --HEAD (bypasses tarball checksum, builds from upstream git)"
         if "$BREW_BIN" install --HEAD "$pkg"; then
