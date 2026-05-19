@@ -3,9 +3,17 @@
 # verbatim under the engine contract.
 
 check() {
-    command -v code-server >/dev/null 2>&1 \
-        || [[ -x "${HOME}/.local/bin/code-server" ]] \
-        || [[ -x "${HOME}/.local/lib/code-server/bin/code-server" ]]
+    # Idempotency requires all 3 pieces present, not just the binary.
+    # Codex review 2026-05-19 (E-F001): the previous check matched any
+    # code-server binary on disk, even with no config/LaunchAgent/listener.
+    local bin="${HOME}/.local/bin/code-server"
+    local alt="${HOME}/.local/lib/code-server/bin/code-server"
+    local label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
+    local plist="${HOME}/Library/LaunchAgents/${label}.plist"
+    local config="${HOME}/.config/code-server/config.yaml"
+    { [[ -x "$bin" ]] || [[ -x "$alt" ]]; } \
+        && [[ -f "$plist" ]] \
+        && [[ -f "$config" ]]
 }
 
 install() {
