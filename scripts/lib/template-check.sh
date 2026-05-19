@@ -65,10 +65,16 @@ _is_skipped() {
 _install_hook() {
     local hook_dir="$IDENTITY_DIR/.git/hooks"
     local hook="$hook_dir/pre-commit"
+    local marker="Auto-installed by \`mesh template-check --install-hook\`"
     [[ -d "$IDENTITY_DIR/.git" ]] \
         || _die "$IDENTITY_DIR is not a git repo (no .git/) — init it first"
     mkdir -p "$hook_dir" \
         || _die "mkdir $hook_dir failed"
+    # If an existing pre-commit hook is NOT one we wrote, refuse rather than
+    # silently overwrite it. User must either back it up or merge intentionally.
+    if [[ -e "$hook" ]] && ! grep -qF "$marker" "$hook" 2>/dev/null; then
+        _die "$hook exists and is not managed by this script. Back it up (mv $hook $hook.bak-\$(date +%s)) then re-run, or merge our hook contents in by hand."
+    fi
     cat > "$hook" <<'HOOK' || _die "write $hook failed"
 #!/usr/bin/env bash
 # Auto-installed by `mesh template-check --install-hook` (C16.1).

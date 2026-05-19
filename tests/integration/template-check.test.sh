@@ -172,6 +172,27 @@ MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
 sha2=$(shasum "$pair/identity/.git/hooks/pre-commit" | awk '{print $1}')
 assert_eq "$sha1" "$sha2" "second --install-hook produces byte-identical file"
 
+# ─── Test 9b (regression for F-004): --install-hook refuses to clobber unmanaged hook ──
+echo
+echo "Test 9b: --install-hook refuses to overwrite unmanaged hook"
+pair="$SANDBOX/clobber-guard"
+_build_pair "$pair"
+( cd "$pair/identity" && git init -q )
+mkdir -p "$pair/identity/.git/hooks"
+cat > "$pair/identity/.git/hooks/pre-commit" <<'PREEX'
+#!/usr/bin/env bash
+# user's own pre-commit (e.g. lint or secret-scan) — should NOT be clobbered
+echo "user hook ran"
+PREEX
+chmod +x "$pair/identity/.git/hooks/pre-commit"
+preex_sha=$(shasum "$pair/identity/.git/hooks/pre-commit" | awk '{print $1}')
+err_out=$(MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
+    bash "$TC" --install-hook 2>&1) && rc=$? || rc=$?
+post_sha=$(shasum "$pair/identity/.git/hooks/pre-commit" | awk '{print $1}')
+assert_eq "$rc" "2" "rc=2 when unmanaged hook exists"
+assert_eq "$preex_sha" "$post_sha" "unmanaged hook is preserved byte-identically"
+assert_contains "$err_out" "not managed by this script" "error message names the safeguard"
+
 # ─── Test 10: bin/mesh dispatch ─────────────────────────────────────
 echo
 echo "Test 10: bin/mesh template-check dispatch"
