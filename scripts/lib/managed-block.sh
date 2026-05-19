@@ -84,14 +84,34 @@ PY
 # install.sh fully migrates to mesh-managed.
 managed_block_in_sync() {
     local src_abs="$1" dst="$2" src_name="$3"
-    local begin="# >>> BEGIN dotfiles-managed: ${src_name} >>>"
-    local end="# <<< END dotfiles-managed: ${src_name} <<<"
+    # CP4 chunk D finding D-F-001: writer (managed_block_apply) emits
+    # canonical `mesh-managed:` markers AND in-place migrates legacy
+    # `dotfiles-managed:` to the canonical form on every run. The
+    # detector must therefore look for EITHER marker style (we resolve
+    # to whichever the dst currently has) and compare against the
+    # canonical writer output. Otherwise the detector reports
+    # perpetual false drift on every block after one writer pass.
+    local begin end begin_legacy end_legacy begin_canon end_canon
+    begin_legacy="# >>> BEGIN dotfiles-managed: ${src_name} >>>"
+    end_legacy="# <<< END dotfiles-managed: ${src_name} <<<"
+    begin_canon="# >>> BEGIN mesh-managed: ${src_name} >>>"
+    end_canon="# <<< END mesh-managed: ${src_name} <<<"
 
-    # Markers absent means the block was never deployed (or was tampered
-    # with destructively); install.sh would write it on the next run, so
-    # reporting drift is the right thing.
-    if ! grep -qF -- "$begin" "$dst" 2>/dev/null \
-       || ! grep -qF -- "$end" "$dst" 2>/dev/null; then
+    # Pick the marker pair that's actually on disk. Canonical first
+    # because that's what the writer leaves after a fresh run.
+    if grep -qF -- "$begin_canon" "$dst" 2>/dev/null \
+       && grep -qF -- "$end_canon" "$dst" 2>/dev/null; then
+        begin="$begin_canon"
+        end="$end_canon"
+    elif grep -qF -- "$begin_legacy" "$dst" 2>/dev/null \
+         && grep -qF -- "$end_legacy" "$dst" 2>/dev/null; then
+        begin="$begin_legacy"
+        end="$end_legacy"
+    else
+        # No matching marker pair → block never deployed (or markers
+        # were tampered with destructively). install.sh would write the
+        # canonical block on the next run, so reporting drift is the
+        # right thing.
         return 1
     fi
 

@@ -218,5 +218,60 @@ else
     failed=$((failed+1)); echo "  ✗ A1-F-002: apply did not refuse mismatched counts (rc=$rc)" >&2
 fi
 
+# Tests 14-16 (CP4 D-F-001): managed_block_in_sync must match BOTH
+# legacy `dotfiles-managed:` and canonical `mesh-managed:` markers
+# because the writer migrates dotfiles → mesh in place on every run.
+mkdir -p "$TMP/dual"
+# 14a: canonical mesh-managed: in dst, src matches → in sync
+cat > "$TMP/dual/src-mesh" <<'SRC'
+content-line-1
+content-line-2
+SRC
+cat > "$TMP/dual/dst-mesh" <<'DST'
+header
+# >>> BEGIN mesh-managed: dual-mesh >>>
+content-line-1
+content-line-2
+# <<< END mesh-managed: dual-mesh <<<
+DST
+if managed_block_in_sync "$TMP/dual/src-mesh" "$TMP/dual/dst-mesh" "dual-mesh"; then
+    passed=$((passed+1)); echo "  ✓ D-F-001: in_sync accepts canonical mesh-managed: markers"
+else
+    failed=$((failed+1)); echo "  ✗ D-F-001: in_sync rejected canonical mesh-managed: markers" >&2
+fi
+
+# 14b: legacy dotfiles-managed: in dst, src matches → in sync
+cat > "$TMP/dual/dst-legacy" <<'DST'
+header
+# >>> BEGIN dotfiles-managed: dual-legacy >>>
+content-line-1
+content-line-2
+# <<< END dotfiles-managed: dual-legacy <<<
+DST
+cat > "$TMP/dual/src-legacy" <<'SRC'
+content-line-1
+content-line-2
+SRC
+if managed_block_in_sync "$TMP/dual/src-legacy" "$TMP/dual/dst-legacy" "dual-legacy"; then
+    passed=$((passed+1)); echo "  ✓ D-F-001: in_sync still accepts legacy dotfiles-managed: markers"
+else
+    failed=$((failed+1)); echo "  ✗ D-F-001: in_sync rejected legacy markers" >&2
+fi
+
+# 14c: dst has the canonical block but src content DIFFERS → drift
+cat > "$TMP/dual/dst-drift-canon" <<'DST'
+# >>> BEGIN mesh-managed: dual-drift >>>
+stale-content
+# <<< END mesh-managed: dual-drift <<<
+DST
+cat > "$TMP/dual/src-drift" <<'SRC'
+fresh-content
+SRC
+if managed_block_in_sync "$TMP/dual/src-drift" "$TMP/dual/dst-drift-canon" "dual-drift"; then
+    failed=$((failed+1)); echo "  ✗ D-F-001: in_sync wrongly accepted drift in canonical block" >&2
+else
+    passed=$((passed+1)); echo "  ✓ D-F-001: in_sync correctly detects drift in canonical block"
+fi
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]
