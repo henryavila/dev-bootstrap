@@ -691,13 +691,38 @@ deploy_user_settings_from_identity() {
 
     if [[ -e "$dst" ]]; then
         local backup
-        backup="${dst}.bak-$(date +%Y%m%d-%H%M%S)"
+        # CP4 chunk C finding C-F-005: previously `.bak-$(date +Y...S)`
+        # silently overwrote the only backup when two reruns landed in
+        # the same second. Counter-suffix on collision keeps each
+        # rerun's backup distinct.
+        local ts
+        ts="$(date +%Y%m%d-%H%M%S)"
+        backup="${dst}.bak-${ts}"
+        local i=1
+        while [[ -e "$backup" ]]; do
+            backup="${dst}.bak-${ts}-${i}"
+            i=$((i + 1))
+            (( i > 9999 )) && backup="${dst}.bak-${ts}-$$.${RANDOM}" && break
+        done
         cp -p "$dst" "$backup"
         info "backed up previous $dst → $backup"
     fi
 
-    cp "$src" "$dst"
-    chmod 0644 "$dst"
+    # CP4 chunk C finding C-F-007: atomic write. `cp $src $dst` writes
+    # in place; an interrupt / disk full / concurrent code-server read
+    # can observe partial JSON. Write to a same-dir temp + mv -f.
+    local tmp
+    tmp="$(mktemp "${dst}.XXXXXX")" || {
+        warn "code-server settings: failed to mktemp under $user_dir"
+        return 1
+    }
+    if ! cp "$src" "$tmp"; then
+        rm -f "$tmp"
+        warn "code-server settings: copy to temp failed"
+        return 1
+    fi
+    chmod 0644 "$tmp"
+    mv -f "$tmp" "$dst"
     ok "deployed code-server settings from identity: $src → $dst"
 }
 

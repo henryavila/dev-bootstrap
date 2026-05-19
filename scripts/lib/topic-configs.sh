@@ -33,6 +33,31 @@
 #
 # Bash 3.2 compatible (macOS default).
 
+# CP4 chunk C finding C-F-005: 1-second timestamp resolution in
+# `.bak-$(date +%Y%m%d-%H%M%S)` is collision-prone — two backups in the
+# same second silently overwrite the only copy of the user's pre-
+# replacement content. Counter-suffix on collision keeps each rerun's
+# backup distinct. Bash 3.2 compatible.
+unique_backup_path() {
+    local base="$1" ts try
+    ts="$(date +%Y%m%d-%H%M%S)"
+    try="${base}.bak-${ts}"
+    if [[ ! -e "$try" ]]; then
+        printf '%s\n' "$try"
+        return 0
+    fi
+    local i=1
+    while [[ -e "${base}.bak-${ts}-${i}" ]]; do
+        i=$((i + 1))
+        # Defense: cap counter to prevent infinite loop on pathological state.
+        if (( i > 9999 )); then
+            printf '%s.bak-%s-%s.%d\n' "$base" "$ts" "$$" "$RANDOM"
+            return 0
+        fi
+    done
+    printf '%s\n' "${base}.bak-${ts}-${i}"
+}
+
 link_default_config() {
     local src="$1" dst="$2"
     [[ -f "$src" ]] || { warn "C15: source missing: $src"; return 0; }

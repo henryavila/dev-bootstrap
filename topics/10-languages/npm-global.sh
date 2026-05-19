@@ -45,7 +45,17 @@ _ensure_npmrc() {
     printf '%s\n' "$NPM_GLOBAL_PREFIX_NPMRC" >> "$tmp"
     if [[ -f "$npmrc" ]] && cmp -s "$tmp" "$npmrc"; then rm -f "$tmp"; return 0; fi
     if [[ -f "$npmrc" ]]; then
-        cp -p "$npmrc" "${npmrc}.bak-$(date +%Y%m%d-%H%M%S)"
+        # CP4 chunk C finding C-F-005: counter-suffix on collision.
+        local ts backup i
+        ts="$(date +%Y%m%d-%H%M%S)"
+        backup="${npmrc}.bak-${ts}"
+        i=1
+        while [[ -e "$backup" ]]; do
+            backup="${npmrc}.bak-${ts}-${i}"
+            i=$((i + 1))
+            (( i > 9999 )) && backup="${npmrc}.bak-${ts}-$$.${RANDOM}" && break
+        done
+        cp -p "$npmrc" "$backup"
     fi
     mv "$tmp" "$npmrc"
 }
