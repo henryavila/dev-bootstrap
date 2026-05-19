@@ -17,6 +17,45 @@
 
 set -euo pipefail
 
+# CP4 chunk A3 findings F-001 (blocker) + F-002 (critical) — fail-closed gate.
+# The body of this script is the Phase 2 P2 prototype (header above): steps
+# 4/6/7/9 SKIP/MOCK any real migration, and step 8 synthesizes the post-
+# migration package snapshot from the pre-migration snapshot (so "no
+# removals verified" is true by construction, not by check). Running this
+# on a real workstation rewrites marker files but does NOT migrate the
+# install layout, and reports success regardless.
+#
+# Tests + sandbox runs set MESH_BRIDGE_V0_OK=1 to acknowledge v0 semantics.
+# Phase 9 users hit the gate and must use the per-machine runbook OR
+# wait for the real §7.4 bridge to be written.
+if [ "${MESH_BRIDGE_V0_OK:-0}" != "1" ] && [ "${MESH_BRIDGE_LIB_ONLY:-0}" != "1" ]; then
+    cat <<'GATE' >&2
+ERROR: scripts/migrate-to-engine.sh is the v0 prototype — not the
+       production Phase 9 bridge.
+
+       The current implementation:
+         - SKIPS git checkout of the refactor branch (step 4)
+         - MOCKS setup.sh --dry-run (step 6) and SKIPS real apply (step 7)
+         - SYNTHESIZES the post-migration package snapshot from the
+           pre-migration snapshot (step 8) — so "no removals verified"
+           is true by construction, not by check
+         - SKIPS doctor.sh validation (step 9)
+
+       Running this on a real workstation will rewrite marker files but
+       will NOT migrate the install layout, and will report success
+       regardless.
+
+       For Phase 9, use the per-machine migration runbook at
+       docs/onboard-new-machine.md until the real §7.4 bridge is written.
+
+       For sandbox/test invocation, set MESH_BRIDGE_V0_OK=1 to ack v0.
+
+       See CP4 A3 findings F-001 + F-002 in the review file:
+       dotfiles/.atomic-skills/reviews/2026-05-19-CP4-mesh-restructure.md
+GATE
+    exit 2
+fi
+
 MESH_STATE_DIR="${MESH_STATE_DIR:-$HOME/.local/state/dev-bootstrap}"
 
 # H5 fix: step 8 logic exposed as function so tests can exercise the abort

@@ -66,9 +66,10 @@ EOF
 REAL_HOME_MTIME=$(stat -f '%m' "$HOME" 2>/dev/null || stat -c '%Y' "$HOME" 2>/dev/null || echo 0)
 
 # Run bridge with sandboxed HOME (pipefail above ensures bridge's rc propagates).
+# CP4 A3 F-001: explicit MESH_BRIDGE_V0_OK=1 acks the v0 prototype gate.
 echo ""
 echo "=== Running bridge v0 with HOME=$FIX/home ==="
-HOME="$FIX/home" MESH_STATE_DIR="$FIX/home/.local/state/dev-bootstrap" \
+MESH_BRIDGE_V0_OK=1 HOME="$FIX/home" MESH_STATE_DIR="$FIX/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" 2>&1 | sed 's/^/  /'
 rc=${PIPESTATUS[0]}
 
@@ -207,11 +208,11 @@ export PS1='\u@\h:\w\$ '
 # dotfiles-managed: 30-shell end
 EOF
 # Run 1
-HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
+MESH_BRIDGE_V0_OK=1 HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >/dev/null 2>&1
 rerun1_rc=$?
 # Run 2 (after lock released on EXIT trap)
-HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
+MESH_BRIDGE_V0_OK=1 HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >/dev/null 2>&1
 rerun2_rc=$?
 assert "C-1: bridge first run succeeds" "[ $rerun1_rc -eq 0 ]"
@@ -248,9 +249,9 @@ cat > "$FIX_MUT/home/.bashrc" <<'EOF'
 # dotfiles-managed: 30-shell start
 # dotfiles-managed: 30-shell end
 EOF
-HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
+MESH_BRIDGE_V0_OK=1 HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE_BROKEN" >/dev/null 2>&1
-HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
+MESH_BRIDGE_V0_OK=1 HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE_BROKEN" >/dev/null 2>&1
 # Backup file must exist (sanity for mutation harness itself).
 assert "C-1 mutation harness: broken bridge still produced backup file" \
@@ -317,9 +318,9 @@ cat > "$FIX_RACE/home/.bashrc" <<'EOF'
 # dotfiles-managed: end
 EOF
 # Launch two slow-bridges concurrently, sharing the same MESH_STATE_DIR (lock target).
-HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-1 2>&1 &
+MESH_BRIDGE_V0_OK=1 HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-1 2>&1 &
 PID1=$!
-HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-2 2>&1 &
+MESH_BRIDGE_V0_OK=1 HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-2 2>&1 &
 PID2=$!
 wait $PID1; race_rc1=$?
 wait $PID2; race_rc2=$?
@@ -369,9 +370,9 @@ cat > "$FIX_RACY/home/.bashrc" <<'EOF'
 # dotfiles-managed: start
 # dotfiles-managed: end
 EOF
-HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-1 2>&1 &
+MESH_BRIDGE_V0_OK=1 HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-1 2>&1 &
 PIDA=$!
-HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-2 2>&1 &
+MESH_BRIDGE_V0_OK=1 HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-2 2>&1 &
 PIDB=$!
 wait $PIDA; racy_rc1=$?
 wait $PIDB; racy_rc2=$?
@@ -427,7 +428,7 @@ else
 # dotfiles-managed: start
 # dotfiles-managed: end
 EOF
-    HOME="$FIX_E99/home" MESH_STATE_DIR="$FIX_E99/state" \
+    MESH_BRIDGE_V0_OK=1 HOME="$FIX_E99/home" MESH_STATE_DIR="$FIX_E99/state" \
         bash "$BRIDGE_E99" 2>&1 | sed 's/^/  /' >/dev/null
     exit99_rc=${PIPESTATUS[0]}
     assert "CX-M1 P2: pipefail + PIPESTATUS[0] surfaces injected exit 99" \
@@ -460,7 +461,7 @@ cat > "$FIX_M2/home/.bashrc" <<EOF
 # dotfiles-managed: start
 # dotfiles-managed: end
 EOF
-PATH="$FIX_M2/fakebin:/usr/bin:/bin" HOME="$FIX_M2/home" \
+MESH_BRIDGE_V0_OK=1 PATH="$FIX_M2/fakebin:/usr/bin:/bin" HOME="$FIX_M2/home" \
     MESH_STATE_DIR="$FIX_M2/state" bash "$BRIDGE" >/dev/null 2>&1
 m2_rc=$?
 SNAP_M2="$FIX_M2/state/snapshots/$(hostname)-pre-migration"
@@ -470,6 +471,25 @@ assert "CX-M2: brew-cask.txt created"    "[ -f '$SNAP_M2/brew-cask.txt' ]"
 assert "CX-M2: apt.txt created"          "[ -f '$SNAP_M2/apt.txt' ]"
 assert "CX-M2: npm-global.txt created"   "[ -f '$SNAP_M2/npm-global.txt' ]"
 rm -rf "$FIX_M2"
+
+# --- CP4 A3 F-001 fail-closed gate regression -------------------------
+# Bridge must refuse to run without MESH_BRIDGE_V0_OK=1 (or LIB_ONLY).
+FIX_GATE="/tmp/mesh-a3-gate-fixture"
+GATE_OUT="/tmp/mesh-a3-gate.out"
+rm -rf "$FIX_GATE" "$GATE_OUT" && mkdir -p "$FIX_GATE/home"
+env -u MESH_BRIDGE_V0_OK -u MESH_BRIDGE_LIB_ONLY HOME="$FIX_GATE/home" \
+    bash "$BRIDGE" >"$GATE_OUT" 2>&1
+gate_rc=$?
+assert "A3 gate: bridge exits 2 when MESH_BRIDGE_V0_OK is unset" "[ $gate_rc -eq 2 ]"
+assert "A3 gate: error message names v0 prototype" \
+    "grep -q 'v0 prototype' '$GATE_OUT'"
+assert "A3 gate: error message names MESH_BRIDGE_V0_OK env var" \
+    "grep -q 'MESH_BRIDGE_V0_OK' '$GATE_OUT'"
+assert "A3 gate: error message points to runbook" \
+    "grep -q 'docs/onboard-new-machine.md' '$GATE_OUT'"
+assert "A3 gate: no snapshot dir created when gate fires" \
+    "[ ! -d '$FIX_GATE/home/.local/state/dev-bootstrap/snapshots' ]"
+rm -rf "$FIX_GATE" "$GATE_OUT"
 
 # --- Report ---
 total=$((pass + fail))
