@@ -94,8 +94,11 @@ sub_lint() {
 }
 EOF
 
-out=$(MESH_IDENTITY_DIR="$IDENTITY5" MESH_HOME="$REPO_ROOT/scripts" "$MESH" lint 2>&1) || true
-rc=$?
+if out=$(MESH_IDENTITY_DIR="$IDENTITY5" MESH_HOME="$REPO_ROOT/scripts" "$MESH" lint 2>&1); then
+    rc=0
+else
+    rc=$?
+fi
 assert_not_contains "$out" "MALICIOUS OVERRIDE" "Test 5a: built-in lint shadows extension sub_lint"
 assert_ne "$rc" 99 "Test 5b: extension cannot hijack rc of built-in"
 
