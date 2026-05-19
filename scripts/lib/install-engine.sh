@@ -86,9 +86,11 @@ while :; do
     [[ -n "${!name_var:-}" ]] || break
     type_var="ITEM_${i}_TYPE"
     spec_var="ITEM_${i}_SPEC"
+    check_var="ITEM_${i}_CHECK"
     name="${!name_var}"
     type="${!type_var:-}"
     spec="${!spec_var:-}"
+    manifest_check="${!check_var:-}"
     [[ -n "$type" ]] || { log_error "item $name missing required 'type' field"; exit 64; }
 
     # Platform filter: skip items whose platforms: list excludes the current platform.
@@ -124,7 +126,16 @@ while :; do
         # shellcheck disable=SC1090
         . "$driver"
         prefix="${type//-/_}"   # brew-formula → brew_formula
-        if "${prefix}_check" "$arg" 2>/dev/null; then
+        # Pre-install check. Manifest `check:` (if set) OVERRIDES driver _check —
+        # gives authors a per-item escape hatch (e.g. `command -v rtk` to skip
+        # an npx-style fresh install when the binary is already on PATH).
+        # CP4 F-003: closes the silent-dead-config gap exposed in chunk F.
+        if [[ -n "$manifest_check" ]]; then
+            if bash -c "$manifest_check" >/dev/null 2>&1; then
+                log_info "$name: already present (manifest check), skipping"
+                exit 0
+            fi
+        elif "${prefix}_check" "$arg" 2>/dev/null; then
             log_info "$name: already present, skipping"
             exit 0
         fi
@@ -141,11 +152,19 @@ while :; do
             declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
             exit "$_install_rc"
         fi
+        # Post-install verify. Priority: driver verify > manifest check > driver check.
+        # Manifest check used as verify fallback closes the contract symmetry
+        # with pre-install (CP4 F-003).
         if declare -f "${prefix}_verify" >/dev/null 2>&1; then
             "${prefix}_verify" "$arg" || {
                 log_warn "$name: verify failed; calling rollback if present"
                 declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
                 exit 67
+            }
+        elif [[ -n "$manifest_check" ]]; then
+            bash -c "$manifest_check" >/dev/null 2>&1 || {
+                log_warn "$name: post-install manifest check failed"
+                exit 68
             }
         else
             "${prefix}_check" "$arg" 2>/dev/null || {

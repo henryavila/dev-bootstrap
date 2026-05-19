@@ -96,5 +96,68 @@ set -e
 [[ "$rc" -eq 42 ]] && { passed=$((passed+1)); echo "  ✓ engine exited with install rc (42)"; } \
                   || { failed=$((failed+1)); echo "  ✗ engine rc=$rc, expected 42 from install" >&2; }
 
+# Test 5 (CP4 F-003): manifest `check:` overrides driver _check on pre-install.
+# Driver _check returns 1 (force install) but manifest check: "true" returns 0 →
+# engine should SKIP install honoring the manifest.
+cat > "$TMP/installers/always-install-driver.sh" <<'SH'
+always_install_driver_check()   { return 1; }   # driver says "not installed"
+always_install_driver_install() { touch "$STATE_DIR/install-marker-f003"; }
+SH
+cat > "$TMP/items-f003-pre.yaml" <<'YAML'
+- name: f003-skipped-by-manifest
+  type: always-install-driver
+  spec: anything
+  check: "true"
+YAML
+rm -f "$TMP/install-marker-f003"
+set +e
+out=$(STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-f003-pre.yaml" --installers-dir "$TMP/installers" 2>&1)
+rc=$?
+set -e
+assert "F-003 manifest check: true overrides driver _check (skip)" "0" "$rc"
+[[ ! -f "$TMP/install-marker-f003" ]] && { passed=$((passed+1)); echo "  ✓ F-003 install was skipped (no marker created)"; } \
+                                       || { failed=$((failed+1)); echo "  ✗ F-003 install ran despite manifest check pass" >&2; }
+echo "$out" | grep -q "manifest check" && { passed=$((passed+1)); echo "  ✓ F-003 log message names manifest check"; } \
+                                       || { failed=$((failed+1)); echo "  ✗ F-003 log did not name manifest check" >&2; }
+
+# Test 6 (CP4 F-003): manifest `check:` that depends on install effect
+# (pre-install: marker absent → check fails → install runs → post-check passes).
+cat > "$TMP/items-f003-pre-fails-post-passes.yaml" <<'YAML'
+- name: f003-install-runs
+  type: always-install-driver
+  spec: anything
+  check: "test -f $STATE_DIR/install-marker-f003"
+YAML
+rm -f "$TMP/install-marker-f003"
+set +e
+STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-f003-pre-fails-post-passes.yaml" --installers-dir "$TMP/installers" 2>/dev/null
+rc=$?
+set -e
+assert "F-003 manifest check fails pre, install runs, manifest passes post" "0" "$rc"
+[[ -f "$TMP/install-marker-f003" ]] && { passed=$((passed+1)); echo "  ✓ F-003 install ran when manifest check failed pre"; } \
+                                    || { failed=$((failed+1)); echo "  ✗ F-003 install was skipped despite check fail" >&2; }
+
+# Test 7 (CP4 F-003): post-install — if no driver _verify, manifest check
+# is used as the success criterion (fallback before driver _check).
+cat > "$TMP/installers/no-verify-driver.sh" <<'SH'
+no_verify_driver_check()   { return 1; }
+no_verify_driver_install() { touch "$STATE_DIR/post-install-marker"; }
+# Deliberately NO _verify function — fallback to manifest_check / driver_check.
+SH
+cat > "$TMP/items-f003-post.yaml" <<'YAML'
+- name: f003-post-via-manifest
+  type: no-verify-driver
+  spec: anything
+  check: "test -f $STATE_DIR/post-install-marker"
+YAML
+rm -f "$TMP/post-install-marker"
+set +e
+STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-f003-post.yaml" --installers-dir "$TMP/installers" 2>/dev/null
+rc=$?
+set -e
+assert "F-003 manifest check provides post-install verify" "0" "$rc"
+[[ -f "$TMP/post-install-marker" ]] && { passed=$((passed+1)); echo "  ✓ F-003 install ran + post-check via manifest passed"; } \
+                                    || { failed=$((failed+1)); echo "  ✗ F-003 post-check via manifest failed" >&2; }
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]

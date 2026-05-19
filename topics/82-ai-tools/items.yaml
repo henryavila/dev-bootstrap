@@ -8,8 +8,7 @@
 - name: atomic-skills
   type: npx
   spec: "@henryavila/atomic-skills@1.7.0"
-  check: "true"
-  desc: "Atomic skills installer (npx wrapper)"
+  desc: "Atomic skills installer (npx wrapper) — runs every time per npx semantics"
   platforms: [mac, wsl]
 
 - name: rtk
