@@ -22,7 +22,22 @@ HOME_DIR="$TESTROOT/home"
 FAKE_PREFIX="$TESTROOT/homebrew"
 LOG="$TESTROOT/run.log"
 mkdir -p "$STUBBIN" "$HOME_DIR/.tmux/plugins/tpm/.git" \
-    "$HOME_DIR/.tmux/plugins/tmux/.git" "$FAKE_PREFIX"
+    "$HOME_DIR/.tmux/plugins/tmux" "$FAKE_PREFIX"
+
+# 40-tmux/clone-catppuccin.sh's check() asserts origin URL + pinned tag
+# (Codex review A-F004, Fix 7 — 2026-05-19). Initialize a minimal real
+# git checkout at the plugin path so the check passes and install() is
+# skipped. Otherwise the engine would re-clone and trip on the existing
+# (non-git) dir.
+(
+    cd "$HOME_DIR/.tmux/plugins/tmux"
+    git init -q
+    git config user.email test@example.com
+    git config user.name test
+    git remote add origin https://github.com/catppuccin/tmux
+    git commit --allow-empty -q -m initial
+    git tag v1.0.3
+)
 
 cat > "$STUBBIN/brew" <<'FAKEBREW'
 #!/usr/bin/env bash
