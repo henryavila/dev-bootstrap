@@ -17,7 +17,28 @@
 
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ─── Symlink canonicalization (bash 3.2 / BSD readlink portable) ───
+# `mesh` is invoked via `~/.local/bin/mesh` (symlink installed by
+# setup.sh). Plain `dirname "${BASH_SOURCE[0]}"` returns the symlink's
+# directory, which makes tier 2 of `_resolve_companion` resolve to
+# `~/.local/scripts/` (does not exist). Canonicalize first so $HERE
+# anchors to the workstation checkout regardless of how mesh was
+# invoked. macOS bash 3.2 has no `realpath`/`readlink -f`, so we
+# resolve symlinks in a loop with BSD `readlink` (single-level).
+_canonicalize() {
+    local p="$1" target
+    while [[ -L "$p" ]]; do
+        target="$(readlink "$p")"
+        if [[ "$target" = /* ]]; then
+            p="$target"
+        else
+            p="$(cd "$(dirname "$p")" && pwd -P)/$target"
+        fi
+    done
+    printf '%s' "$(cd "$(dirname "$p")" && pwd -P)/$(basename "$p")"
+}
+
+HERE="$(cd "$(dirname "$(_canonicalize "${BASH_SOURCE[0]}")")" && pwd -P)"
 
 # ─── Companion resolution ──────────────────────────────────────────
 # 3-tier lookup for the lib + motor scripts that this dispatcher
@@ -250,6 +271,24 @@ _resolve_auto_update_conf() {
 _resolve_dev_bootstrap_repo() {
     if [[ -n "${MESH_DEV_BOOTSTRAP_DIR:-}" && -d "$MESH_DEV_BOOTSTRAP_DIR/topics" ]]; then
         printf '%s\n' "$MESH_DEV_BOOTSTRAP_DIR"
+        return 0
+    fi
+
+    # $HERE-relative fallback: when invoked from the workstation checkout
+    # (either directly via `./bin/mesh` or through the canonicalized
+    # symlink), the repo IS one level up. Prefer this over auto-update
+    # config so a fresh `git clone … && bin/mesh topic list` works
+    # without any prior conf setup.
+    if [[ -d "$HERE/../topics" ]]; then
+        printf '%s\n' "$( cd "$HERE/.." && pwd -P )"
+        return 0
+    fi
+
+    # Honor MESH_WORKSTATION_DIR during transition (today's repo is
+    # named `dev-bootstrap` but the public template renames to
+    # `mesh-workstation`).
+    if [[ -n "${MESH_WORKSTATION_DIR:-}" && -d "$MESH_WORKSTATION_DIR/topics" ]]; then
+        printf '%s\n' "$MESH_WORKSTATION_DIR"
         return 0
     fi
 
