@@ -402,8 +402,17 @@ pecl_install_for_mac() {
 
     # Path 3: genuine install. Capture output for diagnostics.
     info "php@${ver}: pecl install $ext (target: $pecl_cellar_dir/$ext.so)"
-    local pecl_out pecl_rc
-    pecl_out=$(printf '\n' | "$pecl_bin" install "$ext" 2>&1) ; pecl_rc=$?
+    # Codex review 2026-05-19 (E-F003): `cmd ; pecl_rc=$?` lets `set -e`
+    # exit the script on a non-zero pecl install BEFORE the diagnostic
+    # branch runs, killing the entire mac PHP stack for one failing
+    # extension. Use `if cmd; then rc=0; else rc=$?; fi` so the rc is
+    # captured under set -e.
+    local pecl_out pecl_rc=0
+    if pecl_out="$(printf '\n' | "$pecl_bin" install "$ext" 2>&1)"; then
+        pecl_rc=0
+    else
+        pecl_rc=$?
+    fi
 
     # Verify by FILESYSTEM (3-path search), not by exit code alone. pecl
     # can return 0 but leave no .so (defective build), or return 1 with
@@ -424,7 +433,11 @@ pecl_install_for_mac() {
     if printf '%s' "$pecl_out" | grep -qiE "already installed|is already enabled"; then
         warn "php@${ver}: pecl registry has $ext but .so missing — cleaning + retrying"
         "$pecl_bin" uninstall "$ext" >/dev/null 2>&1 || true
-        pecl_out=$(printf '\n' | "$pecl_bin" install "$ext" 2>&1) ; pecl_rc=$?
+        if pecl_out="$(printf '\n' | "$pecl_bin" install "$ext" 2>&1)"; then
+            pecl_rc=0
+        else
+            pecl_rc=$?
+        fi
         if _find_pecl_so "$ext" "$pecl_cellar_dir" >/dev/null; then
             _reconcile_pecl_paths "$ext" "$pecl_cellar_dir" || true
             _ensure_ini
