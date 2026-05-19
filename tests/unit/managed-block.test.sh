@@ -158,5 +158,65 @@ else
     failed=$((failed+1)); echo "  ✗ in_sync should append newline for non-EOL src" >&2
 fi
 
+# Test 11 (CP4 A1-F-002): apply refuses to write when destination has
+# orphan BEGIN marker (no matching END) for the same slot.
+mkdir -p "$TMP/orphan"
+cat > "$TMP/orphan/dst" <<'ORPHAN'
+some-existing-content
+# >>> BEGIN mesh-managed: foo >>>
+old block content
+# (note: NO matching END marker — file is broken)
+more-content-after-orphan
+ORPHAN
+pre_sha=$(shasum "$TMP/orphan/dst" | awk '{print $1}')
+set +e
+err_output=$(echo "new content" | managed_block_apply "$TMP/orphan/dst" "foo" 2>&1)
+rc=$?
+set -e
+post_sha=$(shasum "$TMP/orphan/dst" | awk '{print $1}')
+if [[ "$rc" == "2" ]] && [[ "$pre_sha" == "$post_sha" ]] && [[ "$err_output" == *"malformed markers"* ]]; then
+    passed=$((passed+1)); echo "  ✓ A1-F-002: apply refuses orphan BEGIN (rc=2, no write)"
+else
+    failed=$((failed+1)); echo "  ✗ A1-F-002: apply did not refuse orphan BEGIN (rc=$rc, pre=$pre_sha post=$post_sha)" >&2
+fi
+
+# Test 12 (CP4 A1-F-002): apply refuses orphan END marker too
+cat > "$TMP/orphan/dst-end-only" <<'ORPHAN'
+some-existing-content
+# <<< END mesh-managed: foo <<<
+content-after-orphan-end
+ORPHAN
+pre_sha=$(shasum "$TMP/orphan/dst-end-only" | awk '{print $1}')
+set +e
+err_output=$(echo "new content" | managed_block_apply "$TMP/orphan/dst-end-only" "foo" 2>&1)
+rc=$?
+set -e
+post_sha=$(shasum "$TMP/orphan/dst-end-only" | awk '{print $1}')
+if [[ "$rc" == "2" ]] && [[ "$pre_sha" == "$post_sha" ]] && [[ "$err_output" == *"malformed markers"* ]]; then
+    passed=$((passed+1)); echo "  ✓ A1-F-002: apply refuses orphan END (rc=2, no write)"
+else
+    failed=$((failed+1)); echo "  ✗ A1-F-002: apply did not refuse orphan END (rc=$rc)" >&2
+fi
+
+# Test 13 (CP4 A1-F-002): unmatched counts (2 BEGINs, 1 END) is also refused
+cat > "$TMP/orphan/dst-double-begin" <<'ORPHAN'
+# >>> BEGIN mesh-managed: foo >>>
+content-1
+# >>> BEGIN mesh-managed: foo >>>
+content-2
+# <<< END mesh-managed: foo <<<
+ORPHAN
+pre_sha=$(shasum "$TMP/orphan/dst-double-begin" | awk '{print $1}')
+set +e
+err_output=$(echo "new content" | managed_block_apply "$TMP/orphan/dst-double-begin" "foo" 2>&1)
+rc=$?
+set -e
+post_sha=$(shasum "$TMP/orphan/dst-double-begin" | awk '{print $1}')
+if [[ "$rc" == "2" ]] && [[ "$pre_sha" == "$post_sha" ]] && [[ "$err_output" == *"malformed markers"* ]]; then
+    passed=$((passed+1)); echo "  ✓ A1-F-002: apply refuses mismatched BEGIN/END counts (rc=2, no write)"
+else
+    failed=$((failed+1)); echo "  ✗ A1-F-002: apply did not refuse mismatched counts (rc=$rc)" >&2
+fi
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]

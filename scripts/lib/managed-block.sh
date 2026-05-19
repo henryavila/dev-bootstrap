@@ -35,6 +35,28 @@ $end"
 import re, sys, pathlib
 target, slot, new_block = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 text = target.read_text()
+# CP4 A1-F-002: pre-detect orphan/mismatched markers for this slot. If
+# BEGIN count != END count, the file's managed region is corrupted —
+# replacing would either silently double-append (broken before) or skip
+# the orphan marker entirely. Fail fast with rc=2 so caller can surface
+# the corruption rather than masking it under a fresh block.
+begin_pat = re.compile(
+    r'^# >>> BEGIN (?:dotfiles|mesh)-managed: ' + re.escape(slot) + r' >>>',
+    re.IGNORECASE | re.MULTILINE,
+)
+end_pat = re.compile(
+    r'^# <<< END (?:dotfiles|mesh)-managed: ' + re.escape(slot) + r' <<<',
+    re.IGNORECASE | re.MULTILINE,
+)
+b_count = len(begin_pat.findall(text))
+e_count = len(end_pat.findall(text))
+if b_count != e_count:
+    print(
+        f"managed-block: {target}: malformed markers for slot {slot!r} "
+        f"(BEGIN={b_count}, END={e_count}); refusing to write",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 # Match either dotfiles-managed: or mesh-managed: (case-insensitive), same slot.
 pattern = re.compile(
     r'^# >>> BEGIN (?:dotfiles|mesh)-managed: ' + re.escape(slot) + r' >>>.*?^# <<< END (?:dotfiles|mesh)-managed: ' + re.escape(slot) + r' <<<$',
