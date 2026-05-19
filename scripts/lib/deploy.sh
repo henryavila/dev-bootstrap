@@ -39,8 +39,34 @@ deploy_one() {
     mkdir -p "$(dirname "$dst")"
     case "$mode" in
         overwrite)
-            cp "$src_path" "$dst"
-            apply_perms "$dst" "$perms"
+            # Skip if content already identical — preserves user edits + saves IO.
+            if [[ -f "$dst" ]] && cmp -s "$src_path" "$dst" 2>/dev/null; then
+                return 0
+            fi
+            # Refuse symlink destinations: backup loses the link target and the
+            # atomic mv below would silently replace the link with a regular file.
+            if [[ -L "$dst" ]]; then
+                echo "[deploy] $dst is a symlink; refusing overwrite (remove or repoint first)" >&2
+                return 2
+            fi
+            # Backup if dst exists and differs.
+            if [[ -f "$dst" ]]; then
+                local ts backup
+                ts="$(date +%Y%m%d-%H%M%S)"
+                backup="${dst}.bak-${ts}"
+                cp -p "$dst" "$backup" \
+                    || { echo "[deploy] backup failed: $dst → $backup" >&2; return 1; }
+            fi
+            # Atomic install: write to same-dir temp + rename so concurrent reads
+            # never observe a partial file.
+            local tmp
+            tmp="$(mktemp "$(dirname "$dst")/.deploy.tmp.XXXXXX")" || return 1
+            if ! cp "$src_path" "$tmp"; then
+                rm -f "$tmp"
+                return 1
+            fi
+            apply_perms "$tmp" "$perms"
+            mv "$tmp" "$dst"
             ;;
         once)
             if [[ -f "$dst" ]]; then
@@ -51,6 +77,12 @@ deploy_one() {
             fi
             ;;
         managed_block)
+            # managed_block edits the destination in-place; symlinks would mutate
+            # the target file (often a system file), which is never what's wanted.
+            if [[ -L "$dst" ]]; then
+                echo "[deploy] $dst is a symlink; refusing managed_block edit" >&2
+                return 2
+            fi
             local slot
             slot=$(basename "$src" | sed 's/\.[^.]*$//')
             managed_block_apply "$dst" "$slot" < "$src_path"
