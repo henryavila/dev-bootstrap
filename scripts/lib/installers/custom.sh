@@ -12,8 +12,22 @@ custom_install() {
     ( . "$script"; install )
 }
 custom_verify() {
+    # If the script defines verify(), use ITS return code authoritatively.
+    # Fall back to check() ONLY when verify() is undefined. Codex review
+    # 2026-05-19 (A-F002): the previous `verify || check` allowed a failed
+    # verify to silently succeed when the weaker check() still passed,
+    # masking real verification failures.
     local script="$1"
-    ( . "$script"; declare -f verify >/dev/null && verify || ( . "$script"; declare -f check >/dev/null && check ) )
+    (
+        . "$script"
+        if declare -f verify >/dev/null; then
+            verify
+        elif declare -f check >/dev/null; then
+            check
+        else
+            true
+        fi
+    )
 }
 custom_rollback() {
     local script="$1"
