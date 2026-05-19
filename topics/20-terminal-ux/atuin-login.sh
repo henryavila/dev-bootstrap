@@ -4,6 +4,14 @@
 
 check() {
     command -v atuin >/dev/null 2>&1 || return 0
+    # Codex review 2026-05-19 (D-F001): install() returns 0 (success) on
+    # 3 skip conditions (opt-out, non-interactive, no TTY). check()/verify
+    # must mirror those — otherwise verify falls through to `atuin status`
+    # which still fails, and the engine treats the documented advisory
+    # deferral as install failure.
+    [[ "${ATUIN_LOGIN_AUTO:-1}" == "1" ]] || return 0
+    [[ "${NON_INTERACTIVE:-0}" != "1" ]] || return 0
+    [[ -t 0 ]] || return 0
     atuin status >/dev/null 2>&1
 }
 
