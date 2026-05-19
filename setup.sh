@@ -170,6 +170,17 @@ for arg in "$@"; do
     esac
 done
 
+# Parse --dry-run BEFORE any side effects (BOOTSTRAP_STATE_DIR creation,
+# symlink prelude, topic invocation). The usage text promises dry-run
+# "prints actions without executing"; the previous ordering ran state
+# + symlink mutations before --dry-run was honored.
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) export DRY_RUN=1 ;;
+        --non-interactive) export NON_INTERACTIVE=1 ;;
+    esac
+done
+
 # Collect follow-up actions from every topic into a single file so we
 # can render one consolidated summary at the end (vs. scattering `!`
 # warnings across hundreds of lines of topic output). Topics invoke
@@ -186,7 +197,11 @@ trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
 # editable by hand. Delete the file to reset to defaults.
 export BOOTSTRAP_STATE_DIR="$HOME/.local/state/dev-bootstrap"
 export BOOTSTRAP_STATE_CONFIG="$BOOTSTRAP_STATE_DIR/config.env"
-mkdir -p "$BOOTSTRAP_STATE_DIR"
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    echo "+ mkdir -p $BOOTSTRAP_STATE_DIR  [dry-run, skipped]"
+else
+    mkdir -p "$BOOTSTRAP_STATE_DIR"
+fi
 if [[ -f "$BOOTSTRAP_STATE_CONFIG" ]]; then
     # shellcheck source=/dev/null
     source "$BOOTSTRAP_STATE_CONFIG"
@@ -288,10 +303,23 @@ done
 # C13.5: ensure bin/mesh is discoverable on PATH via ~/.local/bin/ symlink.
 # Idempotent — only touches the link if absent or pointing elsewhere.
 # Moved below --help / --list-topics handling so introspection has no FS
-# side effects (Review B finding B6).
+# side effects (Review B finding B6). Under --dry-run, prints the action
+# without performing it (CP4 chunk B finding B-F-004).
 install_mesh_symlink() {
     local dst="$HOME/.local/bin/mesh"
     local target="$HERE/bin/mesh"
+    # Refuse to symlink a non-directory at ~/.local/bin/ (e.g. if the
+    # user pre-created a regular file there). Warn + skip; remaining
+    # setup proceeds without the convenience symlink.
+    if [[ -e "$HOME/.local/bin" && ! -d "$HOME/.local/bin" ]]; then
+        warn "$HOME/.local/bin is not a directory — skipping mesh symlink install"
+        return 0
+    fi
+    if [[ "${DRY_RUN:-0}" == "1" ]]; then
+        echo "+ mkdir -p $HOME/.local/bin  [dry-run, skipped]"
+        echo "+ ln -sf $target $dst  [dry-run, skipped]"
+        return 0
+    fi
     mkdir -p "$HOME/.local/bin"
     # Already correct → no-op.
     if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$target" ]]; then
