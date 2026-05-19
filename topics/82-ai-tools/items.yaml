@@ -14,6 +14,9 @@
 - name: rtk
   type: custom
   script: "./install-rtk.sh"
-  check: "command -v rtk"
+  # No manifest `check:` — engine `manifest_check` would override the
+  # topic's install-rtk.sh check() function and bypass the `rtk gain`
+  # name-collision guard that distinguishes this rtk (Rust Token Killer)
+  # from reachingforthejack/rtk (Rust Type Kit). CP4 chunk A3 finding F-008.
   desc: "Rust Token Killer (token-optimized CLI proxy)"
   platforms: [mac, wsl]
