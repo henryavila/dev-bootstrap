@@ -43,6 +43,7 @@ SKIP_PREFIXES=(
     "claude/"
     ".claude/"
     "npm/"
+    "extensions/"
 )
 SKIP_EXACT=(
     "codex/config.toml"
@@ -66,8 +67,11 @@ _install_hook() {
     local hook_dir="$IDENTITY_DIR/.git/hooks"
     local hook="$hook_dir/pre-commit"
     local marker="Auto-installed by \`mesh template-check --install-hook\`"
+    local mesh_bin="$WS_ROOT/bin/mesh"
     [[ -d "$IDENTITY_DIR/.git" ]] \
         || _die "$IDENTITY_DIR is not a git repo (no .git/) — init it first"
+    [[ -x "$mesh_bin" ]] \
+        || _die "$mesh_bin not executable; cannot bake into hook"
     mkdir -p "$hook_dir" \
         || _die "mkdir $hook_dir failed"
     # If an existing pre-commit hook is NOT one we wrote, refuse rather than
@@ -75,14 +79,22 @@ _install_hook() {
     if [[ -e "$hook" ]] && ! grep -qF "$marker" "$hook" 2>/dev/null; then
         _die "$hook exists and is not managed by this script. Back it up (mv $hook $hook.bak-\$(date +%s)) then re-run, or merge our hook contents in by hand."
     fi
-    cat > "$hook" <<'HOOK' || _die "write $hook failed"
+    # CP4 F-001: bake absolute mesh binary path + resolve identity dir at
+    # commit-time via `git rev-parse --show-toplevel`. Drops the fragile
+    # PATH/env-default chain that ran whichever `mesh` happened to be on
+    # PATH against env.sh's default $HOME/mesh-identity fallback.
+    cat > "$hook" <<HOOK || _die "write $hook failed"
 #!/usr/bin/env bash
-# Auto-installed by `mesh template-check --install-hook` (C16.1).
+# Auto-installed by \`mesh template-check --install-hook\` (C16.1).
 # Blocks commits that break mesh-identity ↔ mesh-workstation/template/ parity.
-if ! mesh template-check --quiet 2>/dev/null; then
+identity_root="\$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+if [[ -z "\$identity_root" ]]; then
+    exit 0
+fi
+if ! MESH_IDENTITY_DIR="\$identity_root" "${mesh_bin}" template-check --quiet 2>/dev/null; then
     echo "ERROR: structural drift between mesh-identity and mesh-workstation/template/" >&2
     echo "" >&2
-    echo "Run: mesh template-check" >&2
+    echo "Run: ${mesh_bin} template-check" >&2
     echo "Then update \$MESH_WORKSTATION_DIR/template/ to match + commit there." >&2
     exit 1
 fi

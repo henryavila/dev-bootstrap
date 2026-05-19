@@ -129,7 +129,10 @@ MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
     bash "$TC" --install-hook >/dev/null 2>&1; rc=$?
 assert_eq "$rc" "0" "--install-hook rc=0"
 assert_file_exists "$pair/identity/.git/hooks/pre-commit" "hook file exists"
-assert_file_contains "$pair/identity/.git/hooks/pre-commit" "mesh template-check --quiet" "hook invokes mesh template-check --quiet"
+assert_file_contains "$pair/identity/.git/hooks/pre-commit" "template-check --quiet" "hook invokes template-check --quiet"
+# CP4 F-001: hook must bake absolute mesh path + resolve identity dynamically
+assert_file_contains "$pair/identity/.git/hooks/pre-commit" "git rev-parse --show-toplevel" "hook resolves identity_root from git toplevel (F-001)"
+assert_file_contains "$pair/identity/.git/hooks/pre-commit" "MESH_IDENTITY_DIR=" "hook sets MESH_IDENTITY_DIR explicitly (F-001)"
 ASSERT_MSG="hook is executable" assert_true "test -x '$pair/identity/.git/hooks/pre-commit'"
 
 # ─── Test 8: --install-hook on non-git dir ──────────────────────────
