@@ -54,6 +54,26 @@ _die() {
     exit 1
 }
 
+# ─── Extension hook (C3) ───────────────────────────────────────────
+# Source identity-side extensions if present, after sourcing env.sh to
+# populate MESH_IDENTITY_DIR. Extensions may define `sub_<name>`
+# functions that the dispatcher will route to via the case fallthrough
+# below. Non-fatal if either file is absent or unreadable.
+_mesh_load_extensions() {
+    local env_lib ext
+    env_lib="$(_resolve_companion lib/env.sh)"
+    if [[ -n "$env_lib" && -r "$env_lib" ]]; then
+        # shellcheck disable=SC1090
+        . "$env_lib"
+    fi
+    ext="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}/extensions/mesh.sh"
+    if [[ -r "$ext" ]]; then
+        # shellcheck disable=SC1090
+        . "$ext"
+    fi
+}
+_mesh_load_extensions
+
 # ─── Help ──────────────────────────────────────────────────────────
 
 _print_help() {
@@ -1157,6 +1177,16 @@ case "${1:-status}" in
         sub_status "$@"
         ;;
     *)
+        # Try identity-provided extension subcommand (C3).
+        # Sub names may contain hyphens (e.g. mesh code-server) → map to underscores.
+        extension_sub="sub_${1//-/_}"
+        if declare -F "$extension_sub" >/dev/null 2>&1; then
+            cmd_arg="$1"
+            shift
+            "$extension_sub" "$@"
+            exit $?
+        fi
+        unset extension_sub cmd_arg
         printf 'mesh: unknown subcommand %q\n\n' "$1" >&2
         _print_help >&2
         exit 1
