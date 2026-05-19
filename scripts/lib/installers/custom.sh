@@ -8,8 +8,19 @@ custom_check() {
     ( . "$script"; declare -f check >/dev/null && check )
 }
 custom_install() {
+    # CP4 A2-F-007: require the script to define an install() function.
+    # Otherwise `install` resolves through PATH to /usr/bin/install (system
+    # file-copy tool), which is a silent-wrong-program hazard. Hard-fail
+    # the contract instead.
     local script="$1"
-    ( . "$script"; install )
+    (
+        . "$script"
+        if ! declare -f install >/dev/null; then
+            echo "custom: $script does not define install() — contract violation" >&2
+            exit 64
+        fi
+        install
+    )
 }
 custom_verify() {
     # If the script defines verify(), use ITS return code authoritatively.
@@ -17,6 +28,9 @@ custom_verify() {
     # 2026-05-19 (A-F002): the previous `verify || check` allowed a failed
     # verify to silently succeed when the weaker check() still passed,
     # masking real verification failures.
+    # CP4 A2-F-008: require ONE of verify/check — defaulting to success
+    # when neither exists hides custom scripts that forgot to declare a
+    # verifier. Custom scripts MUST opt in to verification.
     local script="$1"
     (
         . "$script"
@@ -25,11 +39,20 @@ custom_verify() {
         elif declare -f check >/dev/null; then
             check
         else
-            true
+            echo "custom: $script defines neither verify() nor check() — cannot validate install" >&2
+            exit 64
         fi
     )
 }
 custom_rollback() {
+    # CP4 A2-F-008: surface rollback failure rather than swallowing it
+    # with `|| true`. If rollback explicitly fails, the caller (engine)
+    # should know — partial state may remain.
     local script="$1"
-    ( . "$script"; declare -f rollback >/dev/null && rollback || true )
+    (
+        . "$script"
+        if declare -f rollback >/dev/null; then
+            rollback
+        fi
+    )
 }

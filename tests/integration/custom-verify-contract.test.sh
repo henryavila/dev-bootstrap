@@ -47,13 +47,33 @@ chmod +x "$TMP/c.sh"
 set +e; custom_verify "$TMP/c.sh"; rc=$?; set -e
 assert "c: no verify, check passes ⇒ rc=0" "0" "$rc"
 
-# Case d: verify absent + check absent ⇒ rc=0 (engine has no contract to test)
+# Case d (CP4 A2-F-008): verify absent + check absent ⇒ rc=64 contract error.
+# Previously defaulted to rc=0 (success), masking custom scripts that forgot
+# to declare a verifier. The new contract hard-fails: a custom item must
+# define at least one of verify() or check() so the engine can validate the
+# post-install state.
 cat > "$TMP/d.sh" <<'SH'
 :
 SH
 chmod +x "$TMP/d.sh"
-set +e; custom_verify "$TMP/d.sh"; rc=$?; set -e
-assert "d: neither verify nor check defined ⇒ rc=0" "0" "$rc"
+set +e; out=$(custom_verify "$TMP/d.sh" 2>&1); rc=$?; set -e
+assert "d (A2-F-008): neither verify nor check defined ⇒ rc=64 contract error" "64" "$rc"
+[[ "$out" == *"defines neither"* ]] && { passed=$((passed+1)); echo "  ✓ d: error message names the contract violation"; } \
+                                    || { failed=$((failed+1)); echo "  ✗ d: error message did not name the violation" >&2; }
+
+# Case f (CP4 A2-F-007 regression): custom_install requires install() function.
+# Without this guard, missing install() would resolve through PATH to
+# /usr/bin/install (system file-copy tool) — silent wrong-program hazard.
+cat > "$TMP/f.sh" <<'SH'
+# Intentionally no install() function defined.
+check()  { return 0; }
+verify() { return 0; }
+SH
+chmod +x "$TMP/f.sh"
+set +e; out=$(custom_install "$TMP/f.sh" 2>&1); rc=$?; set -e
+assert "f (A2-F-007): missing install() ⇒ rc=64 contract error" "64" "$rc"
+[[ "$out" == *"does not define install"* ]] && { passed=$((passed+1)); echo "  ✓ f: error message names the install() violation"; } \
+                                              || { failed=$((failed+1)); echo "  ✗ f: error message did not name the violation" >&2; }
 
 # Case e: verify absent + check fails ⇒ rc!=0
 cat > "$TMP/e.sh" <<'SH'
