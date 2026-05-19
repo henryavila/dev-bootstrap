@@ -4,9 +4,24 @@
 # the engine contract.
 
 check() {
-    command -v php >/dev/null 2>&1 \
-        && command -v composer >/dev/null 2>&1 \
-        && command -v python3 >/dev/null 2>&1
+    command -v composer >/dev/null 2>&1 || return 1
+    command -v python3 >/dev/null 2>&1 || return 1
+    # Codex review 2026-05-19 (E-F002): the previous check only required
+    # ANY php on PATH. That passed on the system php while skipping
+    # multi-PHP install. Now require all declared PHP_VERSIONS installed
+    # via dpkg. Empty PHP_VERSIONS = no version constraint (initial install).
+    local PHP_VERSIONS_FILE
+    PHP_VERSIONS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/php-versions.conf"
+    local versions="${PHP_VERSIONS:-}"
+    if [[ -z "$versions" ]] && [[ -f "$PHP_VERSIONS_FILE" ]]; then
+        versions="$(grep -vE '^\s*(#|$)' "$PHP_VERSIONS_FILE" | xargs)"
+    fi
+    [[ -n "$versions" ]] || return 1
+    local ver
+    for ver in $versions; do
+        dpkg -s "php${ver}-fpm" >/dev/null 2>&1 || return 1
+    done
+    return 0
 }
 
 install() {
