@@ -17,6 +17,31 @@ if [[ ! -d "$SNAP_DIR" ]]; then
     exit 1
 fi
 
+# CP4 chunk A3 finding F-003 (critical): preflight ALL required snapshot
+# files BEFORE mutating .mesh-migrate backups or restoring markers. The
+# previous ordering restored markers + deleted .mesh-migrate, then read
+# git metadata via `cat` under set -e — when git metadata was absent
+# (and the current v0 bridge never writes it), the script aborted with
+# the marker audit trail already gone. Symmetric preflight + fail-loud
+# preserves backups for forensic inspection.
+required=(
+    "$SNAP_DIR/git-branch-before-migration.txt"
+    "$SNAP_DIR/git-head-before-migration.txt"
+)
+missing=()
+for f in "${required[@]}"; do
+    [[ -r "$f" ]] || missing+=("$f")
+done
+if (( ${#missing[@]} > 0 )); then
+    echo "ERROR: rollback aborted — required snapshot file(s) missing:" >&2
+    printf '  %s\n' "${missing[@]}" >&2
+    echo "" >&2
+    echo "(.mesh-migrate marker backups preserved for forensic inspection." >&2
+    echo " Inspect $SNAP_DIR/ to understand what state the bridge captured" >&2
+    echo " before this rollback was attempted.)" >&2
+    exit 2
+fi
+
 # 1. Restore marker files from .mesh-migrate backups
 for f in ~/.ssh/authorized_keys ~/.bashrc ~/.zshrc ~/.tmux.conf ~/.gitconfig; do
     if [[ -f "$f.mesh-migrate" ]]; then
