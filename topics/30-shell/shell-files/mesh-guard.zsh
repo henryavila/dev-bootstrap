@@ -72,12 +72,28 @@ claude() {
     else
         _mesh_load_repos
         if (( ${#_MESH_REPOS[@]} > 0 )); then
-            local repo
+            local repo ans
             for repo in "${_MESH_REPOS[@]}"; do
-                if [[ "$PWD" == "$repo"* ]]; then
+                # CP4 chunk C finding C-F-006: `[[ $PWD == $repo* ]]`
+                # used shell glob/prefix match which falsely matched
+                # sibling paths like `/path/repo-other` against
+                # `/path/repo`. Use exact-or-descendant comparison
+                # instead.
+                if [[ "$PWD" == "$repo" || "$PWD" == "$repo"/* ]]; then
+                    # CP4 chunk C finding C-F-006 (paired): require an
+                    # interactive readable TTY before prompting, and
+                    # treat failed/EOF read as "no" instead of the
+                    # implicit default-yes that empty $ans gave under
+                    # `[[ $ans =~ ^[Nn] ]] || cd ...`. Automation /
+                    # closed-stdin contexts should never cd silently.
+                    if [[ ! -o interactive ]] || \
+                       ! { : </dev/tty; } >/dev/null 2>&1; then
+                        break
+                    fi
                     print -u2 "↻ You are in $(basename "$PWD") — mesh repo without memory."
-                    read -r "ans?Open Claude in $_MESH_DOTFILES_DIR? [Y/n] "
-                    [[ "$ans" =~ ^[Nn] ]] || cd "$_MESH_DOTFILES_DIR"
+                    if read -r "ans?Open Claude in $_MESH_DOTFILES_DIR? [Y/n] "; then
+                        [[ "$ans" =~ ^[Nn] ]] || cd "$_MESH_DOTFILES_DIR"
+                    fi
                     break
                 fi
             done
