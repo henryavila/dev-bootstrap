@@ -9,19 +9,14 @@
 # inherit our $HERE — the script computes it itself via $(dirname "${BASH_SOURCE[0]}").
 
 check() {
-    local here src dst
-    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    src="$here/configs/nvim/init.lua"
+    local dst
     dst="$HOME/.config/nvim/init.lua"
-    # Already linked correctly?
-    if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$src" ]]; then
-        return 0
-    fi
-    # Identity / user has its own real file? Considered idempotent (identity wins).
-    if [[ -f "$dst" ]] && [[ ! -L "$dst" ]]; then
-        return 0
-    fi
-    return 1
+    # Aligned with link_default_config "first-writer-wins": any existing
+    # destination (real file, our symlink, identity-shipped foreign
+    # symlink — stow-style workflows) counts as satisfied.
+    # CP4 chunk C finding C-F-001.
+    [[ -e "$dst" ]] || [[ -L "$dst" ]] || return 1
+    return 0
 }
 
 install() {

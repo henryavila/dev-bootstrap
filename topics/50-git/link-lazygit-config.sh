@@ -10,17 +10,14 @@ _src() {
 }
 
 check() {
-    local src dst
-    src="$(_src)"
+    local dst
     dst="$HOME/.config/lazygit/config.yml"
-    if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$src" ]]; then
-        return 0
-    fi
-    # Identity / user has its own real file → considered idempotent.
-    if [[ -f "$dst" ]] && [[ ! -L "$dst" ]]; then
-        return 0
-    fi
-    return 1
+    # Aligned with link_default_config "first-writer-wins": any existing
+    # destination (real file, our symlink, identity-shipped foreign
+    # symlink — stow-style workflows) counts as satisfied.
+    # CP4 chunk C finding C-F-001.
+    [[ -e "$dst" ]] || [[ -L "$dst" ]] || return 1
+    return 0
 }
 
 install() {

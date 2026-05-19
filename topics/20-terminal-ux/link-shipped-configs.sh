@@ -13,15 +13,16 @@ EOF
 }
 
 check() {
-    local here src dst rel
+    local here dst rel
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     while IFS='|' read -r rel dst; do
         [[ -z "$rel" ]] && continue
-        src="$here/$rel"
         dst="$(eval echo "$dst")"
-        # Either correct symlink, OR identity wins (existing real file)
-        if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$src" ]]; then continue; fi
-        if [[ -f "$dst" ]] && [[ ! -L "$dst" ]]; then continue; fi
+        # Aligned with link_default_config "first-writer-wins": any
+        # existing destination (real file, our symlink, identity-shipped
+        # foreign symlink — stow-style workflows) counts as satisfied.
+        # CP4 chunk C finding C-F-001.
+        if [[ -e "$dst" ]] || [[ -L "$dst" ]]; then continue; fi
         return 1
     done < <(_pairs)
     return 0
