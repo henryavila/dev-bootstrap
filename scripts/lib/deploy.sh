@@ -39,15 +39,26 @@ deploy_one() {
     mkdir -p "$(dirname "$dst")"
     case "$mode" in
         overwrite)
-            # Skip if content already identical — preserves user edits + saves IO.
-            if [[ -f "$dst" ]] && cmp -s "$src_path" "$dst" 2>/dev/null; then
-                return 0
+            # Reject destination types we cannot safely handle BEFORE any
+            # no-op decision (CP4 F-004 + F-005):
+            #   - directory: `mv tmp dst` would move tmp INSIDE dst, leaving
+            #     the intended file uncreated while reporting success.
+            #   - symlink: backup loses the link target and atomic mv would
+            #     silently replace the link with a regular file.
+            #   - exists but not a regular file (FIFO/socket/device): same
+            #     atomic-mv hazard as symlink.
+            if [[ -e "$dst" && ! -L "$dst" && ! -f "$dst" ]]; then
+                echo "[deploy] $dst exists and is not a regular file (likely directory or special); refusing overwrite" >&2
+                return 2
             fi
-            # Refuse symlink destinations: backup loses the link target and the
-            # atomic mv below would silently replace the link with a regular file.
             if [[ -L "$dst" ]]; then
                 echo "[deploy] $dst is a symlink; refusing overwrite (remove or repoint first)" >&2
                 return 2
+            fi
+            # Skip if content already identical — preserves user edits + saves IO.
+            # Safe to run AFTER type checks: $dst is now guaranteed regular-file-or-absent.
+            if [[ -f "$dst" ]] && cmp -s "$src_path" "$dst" 2>/dev/null; then
+                return 0
             fi
             # Backup if dst exists and differs.
             if [[ -f "$dst" ]]; then
@@ -69,6 +80,13 @@ deploy_one() {
             mv "$tmp" "$dst"
             ;;
         once)
+            # CP4 F-005: same dst-type guard as overwrite — `cp src dst` where
+            # dst is a directory copies into the directory instead of creating
+            # the requested file.
+            if [[ -e "$dst" && ! -L "$dst" && ! -f "$dst" ]]; then
+                echo "[deploy] $dst exists and is not a regular file (likely directory or special); refusing once" >&2
+                return 2
+            fi
             if [[ -f "$dst" ]]; then
                 echo "[deploy] $dst exists; skipping (mode=once)"
             else
@@ -77,6 +95,13 @@ deploy_one() {
             fi
             ;;
         managed_block)
+            # CP4 F-005: same dst-type guard. managed_block_apply operates on
+            # a regular file; targeting a directory or special would error in
+            # confusing ways downstream.
+            if [[ -e "$dst" && ! -L "$dst" && ! -f "$dst" ]]; then
+                echo "[deploy] $dst exists and is not a regular file (likely directory or special); refusing managed_block" >&2
+                return 2
+            fi
             # managed_block edits the destination in-place; symlinks would mutate
             # the target file (often a system file), which is never what's wanted.
             if [[ -L "$dst" ]]; then
