@@ -97,7 +97,20 @@ install() {
 }
 
 verify() {
-    check
+    [[ "${CHSH_AUTO:-1}" == "1" ]] || return 0
+    command -v zsh >/dev/null 2>&1 || return 0
+    local zsh_bin current
+    zsh_bin="$(command -v zsh)"
+    current="$(_current_shell_from_dir_service)"
+    if [[ "$current" == "$zsh_bin" ]]; then
+        return 0
+    fi
+    # Codex review 2026-05-19 (D-F005 / F-F001): on a managed-externally
+    # account (LDAP/SSSD on Linux, MDM/directory on Mac), chsh refuses by
+    # design. install() already emits the advisory; verify() must not fail
+    # — that would route the item through engine rollback as a "broken
+    # install" when it's a documented user-action-required state.
+    return 0
 }
 
 rollback() {
