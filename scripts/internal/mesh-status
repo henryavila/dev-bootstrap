@@ -666,10 +666,15 @@ render_detail() {
     echo
 
     # Drift items (only if non-empty per spec §6.3).
+    # CP4 chunk D finding D-F-005: include Phase 4 launchd_phantom +
+    # composer_phar counters in the total so the dashboard view agrees
+    # with doctor's exit code. Both kinds also appear in .drift.items
+    # since mesh-snap reshape D-F-005 fix.
     local drift_count
     drift_count="$(echo "$snap" | jq -r '
         if .drift == null then 0
         else (.drift.drift_count // 0) + (.drift.missing_count // 0) + (.drift.marker_absent_count // 0)
+             + (.drift.launchd_phantom_count // 0) + (.drift.composer_phar_count // 0)
         end')"
     if [[ -n "$drift_count" && "$drift_count" != "0" ]]; then
         printf '%sDrift (doctor.sh, %s items)%s\n' "$C_BOLD" "$drift_count" "$C_RESET"

@@ -503,19 +503,31 @@ collect_drift() {
     # Reshape doctor's flat schema into ours. Defensive against schema drift —
     # missing fields default to 0/[].
     local rc_int="$rc"
+    # CP4 chunk D finding D-F-005: doctor.sh emits launchd_phantom +
+    # composer_phar counters/items (Phase 4 C1 backports). Previous
+    # reshape silently dropped them; doctor's non-zero exit then
+    # disagreed with mesh status's "zero drift" view of the host.
+    # Now we surface them as additional `items` (kinds: launchd_phantom,
+    # composer_phar) AND keep the counters in the schema for explicit
+    # totalling. Schema bump: snapshot_v1.1 with backward-compatible
+    # additive fields.
     echo "$raw" | jq --argjson exit "$rc_int" '
         def list_to_items(kind):
             (. // []) | map({path: ., kind: kind, detail: null});
         {
             doctor_ran: true,
             doctor_exit: $exit,
-            missing_count:       (.missing      // 0),
-            drift_count:         (.drift        // 0),
-            marker_absent_count: (.marker_miss  // 0),
+            missing_count:           (.missing         // 0),
+            drift_count:             (.drift           // 0),
+            marker_absent_count:     (.marker_miss     // 0),
+            launchd_phantom_count:   (.launchd_phantom // 0),
+            composer_phar_count:     (.composer_phar   // 0),
             items: (
-                ((.drift_items       // []) | list_to_items("drift")) +
-                ((.missing_items     // []) | list_to_items("missing")) +
-                ((.marker_miss_items // []) | list_to_items("marker_absent"))
+                ((.drift_items           // []) | list_to_items("drift")) +
+                ((.missing_items         // []) | list_to_items("missing")) +
+                ((.marker_miss_items     // []) | list_to_items("marker_absent")) +
+                ((.launchd_phantom_items // []) | list_to_items("launchd_phantom")) +
+                ((.composer_phar_items   // []) | list_to_items("composer_phar"))
             )
         }'
 }
