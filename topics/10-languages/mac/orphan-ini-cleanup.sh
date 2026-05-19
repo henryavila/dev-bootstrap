@@ -24,7 +24,16 @@ install() {
         for ini in "$php_etc_path"/99-*.ini; do
             [[ -f "$ini" ]] || continue
             path="$(awk -F= '/^extension/{print $2}' "$ini" | tr -d ' "')"
-            if [[ -n "$path" ]] && [[ ! -e "$path" ]]; then
+            # Codex review 2026-05-19 (E-F005): the previous test
+            # `[[ -n "$path" ]] && [[ ! -e "$path" ]]` treated a bare
+            # module name like `extension=imagick.so` (valid PHP syntax;
+            # PHP resolves it against the active extension_dir) as a
+            # filesystem path. That path obviously doesn't exist
+            # relative to cwd, so the ini got moved out — disabling
+            # working PECL extensions. Now we only treat ABSOLUTE .so
+            # paths as orphan candidates. Bare module names are PHP's
+            # responsibility to resolve and we leave them alone.
+            if [[ "$path" == /*.so ]] && [[ ! -e "$path" ]]; then
                 mv "$ini" "$cleanup_dir/" \
                     && echo "[orphan-ini] moved $ini → $cleanup_dir/" >&2
             fi
