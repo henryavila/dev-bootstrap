@@ -35,9 +35,13 @@ assert() {
 }
 
 # Build a minimal fixture workstation git repo at $1 with main + refactor/
-# install-engine branches and a bare-repo origin one level up. The bridge
-# is pointed at $1 via MESH_BRIDGE_REPO_DIR so its `cd $WS_DIR` lands inside
-# this fixture instead of the real workstation checkout.
+# install-engine branches and a bare-repo origin one level up. The refactor
+# branch ships mock setup.sh + scripts/runners/doctor.sh that read MOCK_*_RC
+# env vars from the bridge's parent process — that's how the test drives
+# setup.sh dry-run / apply / doctor success-and-failure modes without
+# touching the real workstation tooling.
+#
+# Both mocks tee a trace line into $HOME so tests can verify each step ran.
 setup_fake_ws_repo() {
     local ws="$1"
     local bare="$ws.origin.bare"
@@ -55,8 +59,29 @@ setup_fake_ws_repo() {
         git commit -q -m "init main"
         git checkout -q -b refactor/install-engine
         echo "refactor-branch-marker" > .ref-marker
-        git add .ref-marker
-        git commit -q -m "refactor commit"
+        cat > setup.sh <<'MOCK'
+#!/usr/bin/env bash
+# mock setup.sh — driven by MOCK_SETUP_DRYRUN_RC + MOCK_SETUP_APPLY_RC.
+mode=apply
+case "${1:-}" in
+    --dry-run) mode=dryrun ;;
+esac
+printf 'setup.sh: mode=%s args=%s\n' "$mode" "$*" >> "${HOME:-/tmp}/.mock-setup-trace"
+if [ "$mode" = "dryrun" ]; then
+    exit "${MOCK_SETUP_DRYRUN_RC:-0}"
+fi
+exit "${MOCK_SETUP_APPLY_RC:-0}"
+MOCK
+        mkdir -p scripts/runners
+        cat > scripts/runners/doctor.sh <<'MOCK'
+#!/usr/bin/env bash
+# mock doctor.sh — driven by MOCK_DOCTOR_RC.
+printf 'doctor.sh: args=%s\n' "$*" >> "${HOME:-/tmp}/.mock-doctor-trace"
+exit "${MOCK_DOCTOR_RC:-0}"
+MOCK
+        chmod +x setup.sh scripts/runners/doctor.sh
+        git add .ref-marker setup.sh scripts/runners/doctor.sh
+        git commit -q -m "refactor: mock setup.sh + doctor.sh"
         git checkout -q main
         git remote add origin "$bare"
         git push -q origin main refactor/install-engine
@@ -95,10 +120,10 @@ EOF
 REAL_HOME_MTIME=$(stat -f '%m' "$HOME" 2>/dev/null || stat -c '%Y' "$HOME" 2>/dev/null || echo 0)
 
 # Run bridge with sandboxed HOME (pipefail above ensures bridge's rc propagates).
-# CP4 A3 F-001: explicit MESH_BRIDGE_V0_OK=1 acks the v0 prototype gate.
+# CP4 A3 F-001: explicit acks the v0 prototype gate.
 echo ""
 echo "=== Running bridge with HOME=$FIX/home + WS=$FIX/ws-fake ==="
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX/ws-fake" \
+MESH_BRIDGE_REPO_DIR="$FIX/ws-fake" \
     HOME="$FIX/home" MESH_STATE_DIR="$FIX/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" 2>&1 | sed 's/^/  /'
 rc=${PIPESTATUS[0]}
@@ -164,7 +189,7 @@ setup_fake_ws_repo "$FIX_DIRTY/ws-fake"
 # Dirty the fixture: stage an uncommitted change.
 echo "drift" > "$FIX_DIRTY/ws-fake/README"
 DIRTY_OUT=$(mktemp -t mesh-p2-dirty-XXXXXX)
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_DIRTY/ws-fake" \
+MESH_BRIDGE_REPO_DIR="$FIX_DIRTY/ws-fake" \
     HOME="$FIX_DIRTY/home" MESH_STATE_DIR="$FIX_DIRTY/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >"$DIRTY_OUT" 2>&1
 dirty_rc=$?
@@ -184,7 +209,7 @@ FIX_NOGIT="/tmp/mesh-p2-fixture-nogit"
 rm -rf "$FIX_NOGIT"
 mkdir -p "$FIX_NOGIT/home" "$FIX_NOGIT/not-a-repo"
 NOGIT_OUT=$(mktemp -t mesh-p2-nogit-XXXXXX)
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_NOGIT/not-a-repo" \
+MESH_BRIDGE_REPO_DIR="$FIX_NOGIT/not-a-repo" \
     HOME="$FIX_NOGIT/home" MESH_STATE_DIR="$FIX_NOGIT/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >"$NOGIT_OUT" 2>&1
 nogit_rc=$?
@@ -205,15 +230,15 @@ setup_fake_ws_repo "$FIX_NOBRANCH/ws-fake"
 git -C "$FIX_NOBRANCH/ws-fake" branch -D refactor/install-engine >/dev/null 2>&1
 git --git-dir="$FIX_NOBRANCH/ws-fake.origin.bare" branch -D refactor/install-engine >/dev/null 2>&1
 NOBRANCH_OUT=$(mktemp -t mesh-p2-nobranch-XXXXXX)
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_NOBRANCH/ws-fake" \
+MESH_BRIDGE_REPO_DIR="$FIX_NOBRANCH/ws-fake" \
     HOME="$FIX_NOBRANCH/home" MESH_STATE_DIR="$FIX_NOBRANCH/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >"$NOBRANCH_OUT" 2>&1
 nobranch_rc=$?
 # git fetch refusing a nonexistent ref or git checkout refusing the missing
 # branch — either way the bridge must not declare success.
 assert "step 4: missing refactor branch → bridge exits non-zero" "[ $nobranch_rc -ne 0 ]"
-assert "step 4: bridge did NOT print '==> v0 bridge completed' on missing branch" \
-    "! grep -q 'bridge completed' '$NOBRANCH_OUT'"
+assert "step 4: bridge did NOT print 'Migration complete' on missing branch" \
+    "! grep -q 'Migration complete' '$NOBRANCH_OUT'"
 rm -rf "$FIX_NOBRANCH" "$FIX_NOBRANCH.origin.bare" "$NOBRANCH_OUT"
 
 # --- H5 fix: removal-abort actually invokes bridge's check_no_removals function ---
@@ -320,12 +345,12 @@ EOF
 setup_fake_ws_repo "$FIX_RERUN/ws-fake-1"
 setup_fake_ws_repo "$FIX_RERUN/ws-fake-2"
 # Run 1
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RERUN/ws-fake-1" \
+MESH_BRIDGE_REPO_DIR="$FIX_RERUN/ws-fake-1" \
     HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >/dev/null 2>&1
 rerun1_rc=$?
 # Run 2 (after lock released on EXIT trap)
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RERUN/ws-fake-2" \
+MESH_BRIDGE_REPO_DIR="$FIX_RERUN/ws-fake-2" \
     HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >/dev/null 2>&1
 rerun2_rc=$?
@@ -367,10 +392,10 @@ EOF
 # on the second run — exact same reasoning as the C-1 re-run test above.
 setup_fake_ws_repo "$FIX_MUT/ws-fake-1"
 setup_fake_ws_repo "$FIX_MUT/ws-fake-2"
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_MUT/ws-fake-1" \
+MESH_BRIDGE_REPO_DIR="$FIX_MUT/ws-fake-1" \
     HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE_BROKEN" >/dev/null 2>&1
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_MUT/ws-fake-2" \
+MESH_BRIDGE_REPO_DIR="$FIX_MUT/ws-fake-2" \
     HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE_BROKEN" >/dev/null 2>&1
 # Backup file must exist (sanity for mutation harness itself).
@@ -443,10 +468,10 @@ EOF
 setup_fake_ws_repo "$FIX_RACE/ws-a"
 setup_fake_ws_repo "$FIX_RACE/ws-b"
 # Launch two slow-bridges concurrently, sharing the same MESH_STATE_DIR (lock target).
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RACE/ws-a" \
+MESH_BRIDGE_REPO_DIR="$FIX_RACE/ws-a" \
     HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-1 2>&1 &
 PID1=$!
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RACE/ws-b" \
+MESH_BRIDGE_REPO_DIR="$FIX_RACE/ws-b" \
     HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-2 2>&1 &
 PID2=$!
 wait $PID1; race_rc1=$?
@@ -499,10 +524,10 @@ cat > "$FIX_RACY/home/.bashrc" <<'EOF'
 EOF
 setup_fake_ws_repo "$FIX_RACY/ws-a"
 setup_fake_ws_repo "$FIX_RACY/ws-b"
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RACY/ws-a" \
+MESH_BRIDGE_REPO_DIR="$FIX_RACY/ws-a" \
     HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-1 2>&1 &
 PIDA=$!
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RACY/ws-b" \
+MESH_BRIDGE_REPO_DIR="$FIX_RACY/ws-b" \
     HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-2 2>&1 &
 PIDB=$!
 wait $PIDA; racy_rc1=$?
@@ -560,7 +585,7 @@ else
 # dotfiles-managed: end
 EOF
     setup_fake_ws_repo "$FIX_E99/ws-fake"
-    MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_E99/ws-fake" \
+    MESH_BRIDGE_REPO_DIR="$FIX_E99/ws-fake" \
         HOME="$FIX_E99/home" MESH_STATE_DIR="$FIX_E99/state" \
         bash "$BRIDGE_E99" 2>&1 | sed 's/^/  /' >/dev/null
     exit99_rc=${PIPESTATUS[0]}
@@ -595,7 +620,7 @@ cat > "$FIX_M2/home/.bashrc" <<EOF
 # dotfiles-managed: end
 EOF
 setup_fake_ws_repo "$FIX_M2/ws-fake"
-MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_M2/ws-fake" \
+MESH_BRIDGE_REPO_DIR="$FIX_M2/ws-fake" \
     PATH="$FIX_M2/fakebin:/usr/bin:/bin" HOME="$FIX_M2/home" \
     MESH_STATE_DIR="$FIX_M2/state" bash "$BRIDGE" >/dev/null 2>&1
 m2_rc=$?
@@ -607,24 +632,140 @@ assert "CX-M2: apt.txt created"          "[ -f '$SNAP_M2/apt.txt' ]"
 assert "CX-M2: npm-global.txt created"   "[ -f '$SNAP_M2/npm-global.txt' ]"
 rm -rf "$FIX_M2"
 
-# --- CP4 A3 F-001 fail-closed gate regression -------------------------
-# Bridge must refuse to run without MESH_BRIDGE_V0_OK=1 (or LIB_ONLY).
-FIX_GATE="/tmp/mesh-a3-gate-fixture"
-GATE_OUT="/tmp/mesh-a3-gate.out"
-rm -rf "$FIX_GATE" "$GATE_OUT" && mkdir -p "$FIX_GATE/home"
-env -u MESH_BRIDGE_V0_OK -u MESH_BRIDGE_LIB_ONLY HOME="$FIX_GATE/home" \
-    bash "$BRIDGE" >"$GATE_OUT" 2>&1
-gate_rc=$?
-assert "A3 gate: bridge exits 2 when MESH_BRIDGE_V0_OK is unset" "[ $gate_rc -eq 2 ]"
-assert "A3 gate: error message names v0 prototype" \
-    "grep -q 'v0 prototype' '$GATE_OUT'"
-assert "A3 gate: error message names MESH_BRIDGE_V0_OK env var" \
-    "grep -q 'MESH_BRIDGE_V0_OK' '$GATE_OUT'"
-assert "A3 gate: error message points to runbook" \
-    "grep -q 'docs/onboard-new-machine.md' '$GATE_OUT'"
-assert "A3 gate: no snapshot dir created when gate fires" \
-    "[ ! -d '$FIX_GATE/home/.local/state/dev-bootstrap/snapshots' ]"
-rm -rf "$FIX_GATE" "$GATE_OUT"
+# --- Step 6 + 7 + 9: setup.sh / doctor.sh wired end-to-end ---
+# Re-check the main fixture: mock setup.sh and doctor.sh on the refactor
+# branch should each have written one trace line into $HOME during the
+# initial bridge run (dry-run + apply + doctor — 3 lines).
+assert "step 6+7: setup.sh ran twice (dry-run + apply) in main fixture" \
+    "[ -f '$FIX/home/.mock-setup-trace' ] && [ \"\$(grep -c '^setup.sh:' '$FIX/home/.mock-setup-trace')\" = '2' ]"
+assert "step 6: setup.sh trace shows mode=dryrun" \
+    "grep -q 'mode=dryrun' '$FIX/home/.mock-setup-trace'"
+assert "step 7: setup.sh trace shows mode=apply" \
+    "grep -q 'mode=apply' '$FIX/home/.mock-setup-trace'"
+assert "step 9: doctor.sh trace exists in main fixture" \
+    "[ -f '$FIX/home/.mock-doctor-trace' ]"
+
+# --- Step 6 negative: setup.sh --dry-run fails ---
+echo ""
+echo "=== Step 6: setup.sh --dry-run failure aborts ==="
+FIX_DRY="/tmp/mesh-p2-fixture-dryfail"
+rm -rf "$FIX_DRY"
+mkdir -p "$FIX_DRY/home"
+setup_fake_ws_repo "$FIX_DRY/ws-fake"
+DRY_OUT=$(mktemp -t mesh-p2-dryfail-XXXXXX)
+MOCK_SETUP_DRYRUN_RC=7 MESH_BRIDGE_REPO_DIR="$FIX_DRY/ws-fake" \
+    HOME="$FIX_DRY/home" MESH_STATE_DIR="$FIX_DRY/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >"$DRY_OUT" 2>&1
+dry_rc=$?
+assert "step 6: dry-run failure → bridge exits non-zero" "[ $dry_rc -ne 0 ]"
+assert "step 6: error names 'setup.sh --dry-run failed'" \
+    "grep -q 'setup.sh --dry-run failed' '$DRY_OUT'"
+assert "step 6: error points at migrate-rollback.sh" \
+    "grep -q 'migrate-rollback.sh' '$DRY_OUT'"
+assert "step 6: apply trace absent when dry-run aborts" \
+    "! grep -q 'mode=apply' '$FIX_DRY/home/.mock-setup-trace'"
+rm -rf "$FIX_DRY" "$FIX_DRY.origin.bare" "$DRY_OUT"
+
+# --- Step 7 negative: setup.sh apply fails ---
+echo ""
+echo "=== Step 7: setup.sh apply failure aborts ==="
+FIX_AP="/tmp/mesh-p2-fixture-applyfail"
+rm -rf "$FIX_AP"
+mkdir -p "$FIX_AP/home"
+setup_fake_ws_repo "$FIX_AP/ws-fake"
+AP_OUT=$(mktemp -t mesh-p2-applyfail-XXXXXX)
+MOCK_SETUP_APPLY_RC=11 MESH_BRIDGE_REPO_DIR="$FIX_AP/ws-fake" \
+    HOME="$FIX_AP/home" MESH_STATE_DIR="$FIX_AP/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >"$AP_OUT" 2>&1
+ap_rc=$?
+assert "step 7: apply failure → bridge exits non-zero" "[ $ap_rc -ne 0 ]"
+assert "step 7: error names 'setup.sh failed'" \
+    "grep -q 'setup.sh failed' '$AP_OUT'"
+assert "step 7: error points at migrate-rollback.sh" \
+    "grep -q 'migrate-rollback.sh' '$AP_OUT'"
+assert "step 7: doctor not invoked when apply fails" \
+    "[ ! -f '$FIX_AP/home/.mock-doctor-trace' ]"
+rm -rf "$FIX_AP" "$FIX_AP.origin.bare" "$AP_OUT"
+
+# --- Step 9 negative: doctor.sh fails ---
+echo ""
+echo "=== Step 9: doctor.sh regression aborts ==="
+FIX_DOC="/tmp/mesh-p2-fixture-docfail"
+rm -rf "$FIX_DOC"
+mkdir -p "$FIX_DOC/home"
+setup_fake_ws_repo "$FIX_DOC/ws-fake"
+DOC_OUT=$(mktemp -t mesh-p2-docfail-XXXXXX)
+MOCK_DOCTOR_RC=5 MESH_BRIDGE_REPO_DIR="$FIX_DOC/ws-fake" \
+    HOME="$FIX_DOC/home" MESH_STATE_DIR="$FIX_DOC/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >"$DOC_OUT" 2>&1
+doc_rc=$?
+assert "step 9: doctor failure → bridge exits non-zero" "[ $doc_rc -ne 0 ]"
+assert "step 9: error mentions 'doctor.sh reported a regression'" \
+    "grep -q 'doctor.sh reported a regression' '$DOC_OUT'"
+assert "step 9: bridge did NOT print 'Migration complete'" \
+    "! grep -q 'Migration complete' '$DOC_OUT'"
+rm -rf "$FIX_DOC" "$FIX_DOC.origin.bare" "$DOC_OUT"
+
+# --- Step 8 real diff: package removal between before/after detected ---
+# fakebin/brew reads its emit list from a state file. Mock setup.sh
+# rewrites that state file to drop 'foo' → after-snapshot is missing 'foo'
+# → check_no_removals must abort with rc=1 and name the missing package.
+echo ""
+echo "=== Step 8: real package-removal diff aborts ==="
+FIX_RM="/tmp/mesh-p2-fixture-realrm"
+rm -rf "$FIX_RM"
+mkdir -p "$FIX_RM/home" "$FIX_RM/fakebin"
+# Stateful brew: reads from $FIX_RM/state/brew-formula.list
+mkdir -p "$FIX_RM/state"
+printf 'foo\nbar\nbaz\n' > "$FIX_RM/state/brew-formula.list"
+cat > "$FIX_RM/fakebin/brew" <<EOF
+#!/usr/bin/env bash
+case "\$2" in
+    --formula) cat "$FIX_RM/state/brew-formula.list" ;;
+    --cask)    : ;;
+    *)         : ;;
+esac
+EOF
+chmod +x "$FIX_RM/fakebin/brew"
+# Build fixture with setup.sh that REMOVES 'foo' on apply
+setup_fake_ws_repo "$FIX_RM/ws-fake"
+# Override the committed setup.sh with one that drops 'foo' from state on apply
+(
+    cd "$FIX_RM/ws-fake"
+    git checkout -q refactor/install-engine
+    cat > setup.sh <<EOF
+#!/usr/bin/env bash
+# mock setup that 'removes' foo from the brew formula list on apply
+mode=apply
+case "\${1:-}" in --dry-run) mode=dryrun ;; esac
+printf 'setup.sh: mode=%s\n' "\$mode" >> "\${HOME:-/tmp}/.mock-setup-trace"
+[ "\$mode" = "apply" ] && printf 'bar\nbaz\n' > "$FIX_RM/state/brew-formula.list"
+exit 0
+EOF
+    chmod +x setup.sh
+    git add setup.sh
+    git -c user.email=t@t -c user.name=t commit -q -m "removing setup.sh"
+    git push -q origin refactor/install-engine
+    git checkout -q main
+)
+RM_OUT=$(mktemp -t mesh-p2-realrm-XXXXXX)
+PATH="$FIX_RM/fakebin:/usr/bin:/bin" MESH_BRIDGE_REPO_DIR="$FIX_RM/ws-fake" \
+    HOME="$FIX_RM/home" MESH_STATE_DIR="$FIX_RM/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >"$RM_OUT" 2>&1
+rm_rc=$?
+assert "step 8: real removal diff → bridge exits non-zero" "[ $rm_rc -ne 0 ]"
+assert "step 8: error names removed package 'foo'" \
+    "grep -q 'foo' '$RM_OUT'"
+assert "step 8: error names brew-formula manager" \
+    "grep -q 'brew-formula' '$RM_OUT'"
+assert "step 8: bridge did NOT print 'Migration complete'" \
+    "! grep -q 'Migration complete' '$RM_OUT'"
+SNAP_RM_REAL="$FIX_RM/home/.local/state/dev-bootstrap/snapshots/$(hostname)-pre-migration"
+assert "step 8: before-snapshot contains 'foo'" \
+    "grep -q '^foo\$' '$SNAP_RM_REAL/brew-formula.txt'"
+assert "step 8: after-snapshot OMITS 'foo' (real diff, not synthesized)" \
+    "[ -f '$SNAP_RM_REAL/brew-formula.after.txt' ] && ! grep -q '^foo\$' '$SNAP_RM_REAL/brew-formula.after.txt'"
+rm -rf "$FIX_RM" "$FIX_RM.origin.bare" "$RM_OUT"
 
 # --- Report ---
 total=$((pass + fail))

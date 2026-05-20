@@ -4,24 +4,17 @@
 # Migrate this machine to the new 2-layer mesh in one transaction:
 # clean-tree gate → atomic lock → pre-snapshot → marker rewrite → branch
 # checkout → setup.sh dry-run → setup.sh apply → post-snapshot diff →
-# doctor validation.
-#
-# Current state (post-Phase-8 increment 1 of 3):
-#   - Steps 0 + 4 are REAL (working-tree check + branch checkout).
-#   - Steps 1-3 (lock, snapshot, marker rewrite) are REAL since v0.
-#   - Steps 6/7/9 (setup.sh --dry-run / apply / doctor) are still MOCK/SKIP.
-#   - Step 8 still synthesizes the after-snapshot from the before-snapshot
-#     (vacuous removal check) — replaced in increment 2 of 3.
+# doctor validation. On failure at step 6/7/8/9 the script prints the
+# rollback command and exits non-zero without proceeding.
 #
 # Sandbox knobs (test/dev only — production omits):
 #   MESH_STATE_DIR        — override $HOME/.local/state/dev-bootstrap
 #   MESH_BRIDGE_REPO_DIR  — override the workstation repo root (default
 #                           $HERE/.. per spec §7.4); fixture tests point
 #                           this at a temp git repo with main + refactor/
-#                           install-engine branches so step 0 + 4 run
-#                           against an isolated tree.
-#   MESH_BRIDGE_V0_OK=1   — acknowledge the partial-real state of steps
-#                           6/7/8/9 until they land. Removed in increment 2.
+#                           install-engine branches and mock setup.sh +
+#                           scripts/runners/doctor.sh so steps 4/6/7/9
+#                           run hermetically.
 #   MESH_BRIDGE_LIB_ONLY=1 — source-only mode for unit-testing
 #                           check_no_removals() in isolation.
 
@@ -30,50 +23,6 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 WS_DIR="${MESH_BRIDGE_REPO_DIR:-$HERE/..}"
-
-# CP4 chunk A3 findings F-001 (blocker) + F-002 (critical) — fail-closed gate.
-# Steps 6/7/9 are still MOCK/SKIP and step 8 synthesizes its own after-snapshot,
-# so on a real workstation the bridge would rewrite markers + check out the
-# refactor branch but would NOT install topics or validate via doctor, and
-# would report success regardless. The gate stays until increment 2 lands.
-#
-# Tests + sandbox runs set MESH_BRIDGE_V0_OK=1 to acknowledge the partial state.
-# Phase 9 users hit the gate and must use the per-machine runbook OR
-# wait for increments 2-3 to land.
-if [ "${MESH_BRIDGE_V0_OK:-0}" != "1" ] && [ "${MESH_BRIDGE_LIB_ONLY:-0}" != "1" ]; then
-    cat <<'GATE' >&2
-ERROR: scripts/migrate-to-engine.sh is still the v0 prototype — increments
-       2 + 3 of the §7.4 production bridge have not landed yet.
-
-       Currently REAL:
-         - step 0: clean working-tree check
-         - step 1: atomic noclobber lock
-         - step 2: pre-migration package snapshot
-         - step 3: case-insensitive marker rewrite
-         - step 4: git fetch + checkout refactor/install-engine
-
-       Still MOCK/SKIP (increment 2):
-         - step 6: setup.sh --dry-run
-         - step 7: setup.sh apply
-         - step 8: after-snapshot synthesized from before-snapshot
-                  (so "no removals verified" is true by construction)
-         - step 9: doctor.sh validation
-
-       Running this on a real workstation rewrites marker files + checks
-       out the refactor branch but does NOT install topics or validate
-       via doctor, and reports success regardless.
-
-       For Phase 9, use the per-machine migration runbook at
-       docs/onboard-new-machine.md until increments 2-3 land.
-
-       For sandbox/test invocation, set MESH_BRIDGE_V0_OK=1 to ack the
-       v0 prototype state.
-
-       See CP4 A3 findings F-001 + F-002 in the review file:
-       dotfiles/.atomic-skills/reviews/2026-05-19-CP4-mesh-restructure.md
-GATE
-    exit 2
-fi
 
 MESH_STATE_DIR="${MESH_STATE_DIR:-$HOME/.local/state/dev-bootstrap}"
 
@@ -221,29 +170,71 @@ echo "[step 4] checked out refactor/install-engine"
 
 # 5. (removed in spec — was dead code per spec comment)
 
-# 6. Dry-run MOCK — pretend setup.sh --dry-run succeeds
-echo "[step 6] setup.sh --dry-run: MOCK"
-echo "         [mock] would install: foo, bar, baz"
-echo "         [mock] would skip: existing-pkg"
-echo "         [mock] dry-run OK"
+# 6. Dry-run setup.sh on the post-restructure branch. Refuse to apply
+#    anything if the engine cannot project what it would do.
+if ! bash setup.sh --dry-run; then
+    cat >&2 <<EOF
+ERROR: setup.sh --dry-run failed — aborting before any system mutation.
+       Repo is on refactor/install-engine; markers are migrated.
+       To recover: bash $WS_DIR/scripts/migrate-rollback.sh
+EOF
+    exit 1
+fi
+echo "[step 6] setup.sh --dry-run OK"
 
-# 7. SKIP — real apply (no setup.sh in v0)
-echo "[step 7] setup.sh apply: SKIP (v0)"
+# 7. Apply.
+if ! bash setup.sh; then
+    cat >&2 <<EOF
+ERROR: setup.sh failed — system may be in a partial state.
+       To recover: bash $WS_DIR/scripts/migrate-rollback.sh
+EOF
+    exit 1
+fi
+echo "[step 7] setup.sh applied"
 
-# 8. Verify packages diff (no removals expected).
-#    Synthesize after-snapshot identical to before for each manager that
-#    produced a before-snapshot. H-2 fix: only manage files that exist
-#    (no longer relying on empty stubs).
-for mgr in $MESH_BRIDGE_MANAGERS; do
-    if [ -f "$SNAP_DIR/$mgr.txt" ]; then
-        cp "$SNAP_DIR/$mgr.txt" "$SNAP_DIR/$mgr.after.txt"
+# 8. After-snapshot via the same manager probes used in step 2; comm vs
+#    the pre-migration list flags any package that disappeared during
+#    setup. Engine F-A5 (additive idempotent) guarantees no removal is
+#    expected; a non-empty diff means setup performed an unintended
+#    uninstall.
+snapshot_manager_after() {
+    # snapshot_manager_after <name> <probe-command> <list-command...>
+    local name="$1"; shift
+    local probe="$1"; shift
+    # Tool absent post-setup — symmetric with snapshot_manager: leave no file.
+    if ! command -v "$probe" >/dev/null 2>&1; then
+        return 0
     fi
-done
-check_no_removals "$SNAP_DIR" || exit 1
+    if ! "$@" > "$SNAP_DIR/$name.after.txt" 2>/dev/null; then
+        printf 'ERROR: after-snapshot for %s failed (tool present but list errored)\n' "$name" >&2
+        return 1
+    fi
+}
+snapshot_manager_after brew-formula brew brew list --formula
+snapshot_manager_after brew-cask    brew brew list --cask
+snapshot_manager_after apt          apt  apt list --installed
+snapshot_manager_after npm-global   npm  npm list -g --depth=0
+if ! check_no_removals "$SNAP_DIR"; then
+    cat >&2 <<EOF
+ERROR: package removals detected — aborting.
+       To recover: bash $WS_DIR/scripts/migrate-rollback.sh
+EOF
+    exit 1
+fi
 echo "[step 8] no package removals — verified"
 
-# 9. SKIP — doctor.sh
-echo "[step 9] doctor.sh: SKIP (v0)"
+# 9. Doctor (post-restructure path).
+if ! bash scripts/runners/doctor.sh; then
+    cat >&2 <<EOF
+ERROR: doctor.sh reported a regression — migration left a measurable
+       defect on this host. Investigate before declaring success.
+       To recover: bash $WS_DIR/scripts/migrate-rollback.sh
+EOF
+    exit 1
+fi
+echo "[step 9] doctor.sh OK"
 
 echo ""
-echo "==> v0 bridge completed without corruption. Snapshot: $SNAP_DIR"
+echo "==> Migration complete. Validate manually before the next machine."
+echo "    Snapshot:        $SNAP_DIR"
+echo "    Marker backups:  ~/.{ssh/authorized_keys,bashrc,zshrc,tmux.conf,gitconfig}.mesh-migrate"
