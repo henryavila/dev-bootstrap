@@ -465,12 +465,18 @@ write_launchagent_plist() {
     mkdir -p "$(dirname "$CODE_SERVER_PLIST")" "$CODE_SERVER_STATE_DIR"
     chmod 0700 "$CODE_SERVER_STATE_DIR"
 
-    local label wrapper workdir stdout_path stderr_path
+    local label wrapper workdir stdout_path stderr_path tmp
     label="$(plist_escape "$CODE_SERVER_LABEL")"
     wrapper="$(plist_escape "$CODE_SERVER_SERVICE_WRAPPER")"
     workdir="$(plist_escape "$CODE_SERVER_WORKDIR")"
     stdout_path="$(plist_escape "$CODE_SERVER_STATE_DIR/launchd.log")"
     stderr_path="$(plist_escape "$CODE_SERVER_STATE_DIR/launchd.err")"
+
+    # CP4 C-F-010: atomic write — partial plist must never be visible to
+    # launchd (which file-watches LaunchAgents) nor to plutil. Write to a
+    # same-dir tmp, lint that tmp, then rename in place.
+    tmp="$(mktemp "$(dirname "$CODE_SERVER_PLIST")/.${CODE_SERVER_LABEL}.plist.XXXXXX")" \
+        || { fail "mktemp failed for LaunchAgent plist"; return 1; }
 
     {
         printf '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -487,9 +493,14 @@ write_launchagent_plist() {
         printf '    <key>StandardOutPath</key>\n    <string>%s</string>\n' "$stdout_path"
         printf '    <key>StandardErrorPath</key>\n    <string>%s</string>\n' "$stderr_path"
         printf '</dict>\n</plist>\n'
-    } > "$CODE_SERVER_PLIST"
+    } > "$tmp"
 
-    /usr/bin/plutil -lint "$CODE_SERVER_PLIST" >/dev/null
+    if ! /usr/bin/plutil -lint "$tmp" >/dev/null; then
+        rm -f "$tmp"
+        fail "plist failed plutil -lint at $tmp"
+        return 1
+    fi
+    mv -f "$tmp" "$CODE_SERVER_PLIST"
     ok "wrote LaunchAgent $CODE_SERVER_PLIST"
 }
 

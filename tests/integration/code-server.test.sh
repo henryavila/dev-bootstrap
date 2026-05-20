@@ -98,8 +98,10 @@ assert_pattern_absent "$INSTALL" 'echo "\$password"' \
 
 assert_pattern_present "$INSTALL" 'CODE_SERVER_LABEL:=com\.\$\{USER\}\.code-server' \
     "installer default label is user-derived"
-assert_pattern_present "$INSTALL" '/usr/bin/plutil -lint "\$CODE_SERVER_PLIST"' \
-    "installer validates plist with plutil"
+assert_pattern_present "$INSTALL" '/usr/bin/plutil -lint "\$tmp"' \
+    "installer validates plist with plutil (on tmp before atomic mv — CP4 C-F-010)"
+assert_pattern_present "$INSTALL" 'mv -f "\$tmp" "\$CODE_SERVER_PLIST"' \
+    "installer atomically renames validated plist into place (CP4 C-F-010)"
 assert_pattern_absent "$INSTALL" '<key>GITHUB_TOKEN</key>' \
     "plist generation does not write GITHUB_TOKEN"
 assert_pattern_absent "$INSTALL" '<key>EnvironmentVariables</key>' \
