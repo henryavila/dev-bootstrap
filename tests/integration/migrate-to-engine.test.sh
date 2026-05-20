@@ -767,6 +767,77 @@ assert "step 8: after-snapshot OMITS 'foo' (real diff, not synthesized)" \
     "[ -f '$SNAP_RM_REAL/brew-formula.after.txt' ] && ! grep -q '^foo\$' '$SNAP_RM_REAL/brew-formula.after.txt'"
 rm -rf "$FIX_RM" "$FIX_RM.origin.bare" "$RM_OUT"
 
+# --- CP4 A3-F-004: atomic snapshot + completion sentinel ---
+# Re-check the main fixture: step 2 wrote a .done sentinel + step 8 wrote
+# .done.after; no `.tmp.*` files remain (atomic mv cleaned them up).
+assert "A3-F-004: .done sentinel exists after pre-snapshot (step 2)" \
+    "[ -f '$SNAP/.done' ]"
+assert "A3-F-004: .done.after sentinel exists after post-snapshot (step 8)" \
+    "[ -f '$SNAP/.done.after' ]"
+assert "A3-F-004: no .tmp.* files leaked into snapshot dir" \
+    "[ \"\$(find '$SNAP' -maxdepth 1 -name '.tmp.*' | wc -l)\" -eq 0 ]"
+
+# A3-F-004: stale tmp files from a prior crashed run are swept on rerun.
+# Build a fixture with a leftover .tmp.* file before any .done existed
+# (simulating a crash mid-step-2) and confirm the next bridge run cleans it.
+echo ""
+echo "=== A3-F-004: stale tmp + partial snapshot files cleaned on rerun ==="
+FIX_STALE="/tmp/mesh-p2-fixture-stale"
+rm -rf "$FIX_STALE"
+mkdir -p "$FIX_STALE/home"
+setup_fake_ws_repo "$FIX_STALE/ws-fake"
+# Plant stale crud as if a prior bridge had crashed mid-snapshot.
+SNAP_STALE="$FIX_STALE/home/.local/state/dev-bootstrap/snapshots/$(hostname)-pre-migration"
+mkdir -p "$SNAP_STALE"
+echo "leftover from a crashed run" > "$SNAP_STALE/.tmp.crashed"
+echo "stale brew output truncated mid-line" > "$SNAP_STALE/brew-formula.txt"
+# No .done sentinel → bridge must sweep before snapshotting.
+MESH_BRIDGE_REPO_DIR="$FIX_STALE/ws-fake" \
+    HOME="$FIX_STALE/home" MESH_STATE_DIR="$FIX_STALE/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >/dev/null 2>&1
+stale_rc=$?
+assert "A3-F-004: bridge succeeds despite stale tmp + partial files" "[ $stale_rc -eq 0 ]"
+assert "A3-F-004: stale .tmp.crashed cleaned during rerun" \
+    "[ ! -f '$SNAP_STALE/.tmp.crashed' ]"
+assert "A3-F-004: stale partial brew-formula.txt overwritten with fresh snapshot" \
+    "! grep -q 'truncated' '$SNAP_STALE/brew-formula.txt'"
+assert "A3-F-004: .done sentinel rewritten" "[ -f '$SNAP_STALE/.done' ]"
+rm -rf "$FIX_STALE" "$FIX_STALE.origin.bare"
+
+# --- CP4 A3-F-006: python3 preflight ---
+# Bridge requires python3 for step 3's case-insensitive marker rewrite.
+# Build a PATH that has every other dependency but not python3 and assert
+# the bridge fails early — before lock acquisition or any marker mutation.
+echo ""
+echo "=== A3-F-006: python3 preflight aborts before any mutation ==="
+FIX_NOPY="/tmp/mesh-p2-fixture-nopy"
+rm -rf "$FIX_NOPY"
+mkdir -p "$FIX_NOPY/home" "$FIX_NOPY/no-py-bin"
+setup_fake_ws_repo "$FIX_NOPY/ws-fake"
+# Symlink every shell + git + coreutils dep into no-py-bin EXCEPT python3.
+for cmd in git mkdir cp mv rm bash sh hostname date sort comm sed grep awk \
+           mktemp ln chmod cat find ls basename dirname touch tr ps kill \
+           head tail cut env diff wc; do
+    src=$(command -v "$cmd" 2>/dev/null) || continue
+    ln -sf "$src" "$FIX_NOPY/no-py-bin/$cmd"
+done
+NOPY_OUT=$(mktemp -t mesh-p2-nopy-XXXXXX)
+PATH="$FIX_NOPY/no-py-bin" MESH_BRIDGE_REPO_DIR="$FIX_NOPY/ws-fake" \
+    HOME="$FIX_NOPY/home" MESH_STATE_DIR="$FIX_NOPY/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >"$NOPY_OUT" 2>&1
+nopy_rc=$?
+assert "A3-F-006: missing python3 → bridge exits non-zero" "[ $nopy_rc -ne 0 ]"
+assert "A3-F-006: error names 'python3'" "grep -q 'python3' '$NOPY_OUT'"
+assert "A3-F-006: error names marker rewrite (step 3)" \
+    "grep -qi 'marker' '$NOPY_OUT'"
+assert "A3-F-006: lock NOT acquired (preflight runs before step 1)" \
+    "[ ! -f '$FIX_NOPY/home/.local/state/dev-bootstrap/migration.lock' ]"
+assert "A3-F-006: snapshot dir NOT created (preflight runs before step 2)" \
+    "[ ! -d '$FIX_NOPY/home/.local/state/dev-bootstrap/snapshots' ]"
+assert "A3-F-006: marker backups NOT created (preflight runs before step 3)" \
+    "[ -z \"\$(find '$FIX_NOPY/home' -name '*.mesh-migrate' 2>/dev/null)\" ]"
+rm -rf "$FIX_NOPY" "$FIX_NOPY.origin.bare" "$NOPY_OUT"
+
 # --- Report ---
 total=$((pass + fail))
 echo ""

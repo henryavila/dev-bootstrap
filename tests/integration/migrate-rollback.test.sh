@@ -110,5 +110,93 @@ else
 fi
 rm -f /tmp/rollback-preflight.out
 
+# --- CP4 A3-F-005: lock-aware rollback ---
+# Bridge step 1 writes pid=$$\nhost=$(hostname)\nstarted=... to the lock
+# file. Rollback must inspect it before deletion: refuse when the lock
+# claims an active bridge on this host, accept the override via
+# --force-stale-lock, and treat any other state (dead pid, different
+# host, no metadata) as stale and clean it up.
+
+# Helper: build a fresh fixture with marker backup + snapshot metadata
+# so the preflight passes and we exercise the lock branch only.
+fixture_with_metadata() {
+    local fake="$1"
+    mkdir -p "$fake/.local/state/dev-bootstrap/snapshots/$(hostname)-pre-migration"
+    local snap="$fake/.local/state/dev-bootstrap/snapshots/$(hostname)-pre-migration"
+    echo "ORIGINAL" > "$fake/.bashrc.mesh-migrate"
+    echo "MUTATED"  > "$fake/.bashrc"
+    echo "main" > "$snap/git-branch-before-migration.txt"
+    # Use the head of the already-built $FAKE/repo (any valid SHA works).
+    git -C "$FAKE/repo" rev-parse HEAD > "$snap/git-head-before-migration.txt"
+}
+
+# Scenario A: lock claims THIS host but pid is dead → treated as stale.
+FAKE_DEADPID=$TMP/home-deadpid
+fixture_with_metadata "$FAKE_DEADPID"
+# pid 1 on a developer machine is launchd (mac) / systemd (linux), which
+# *is* alive. Use a guaranteed-dead pid by spawning a true that exits.
+( true ) &
+dead_pid=$!
+wait $dead_pid
+printf 'pid=%s\nhost=%s\nstarted=2026-05-20T00:00:00Z\n' "$dead_pid" "$(hostname)" \
+    > "$FAKE_DEADPID/.local/state/dev-bootstrap/migration.lock"
+HOME=$FAKE_DEADPID bash "$FAKE/repo/scripts/migrate-rollback.sh" > /tmp/rollback-deadpid.out 2>&1
+deadpid_rc=$?
+if [[ $deadpid_rc -eq 0 ]] && [[ ! -f "$FAKE_DEADPID/.local/state/dev-bootstrap/migration.lock" ]]; then
+    passed=$((passed+1)); echo "  ✓ F-005: dead pid → lock cleared, rollback succeeds"
+else
+    failed=$((failed+1)); echo "  ✗ F-005: dead pid scenario (rc=$deadpid_rc, lock present=$([ -f "$FAKE_DEADPID/.local/state/dev-bootstrap/migration.lock" ] && echo yes || echo no))" >&2
+fi
+if grep -q 'stale lock' /tmp/rollback-deadpid.out; then
+    passed=$((passed+1)); echo "  ✓ F-005: dead pid scenario emits 'stale lock' explanation"
+else
+    failed=$((failed+1)); echo "  ✗ F-005: dead pid scenario missing 'stale lock' message" >&2
+fi
+
+# Scenario B: lock claims a DIFFERENT host → treated as stale regardless of pid.
+FAKE_OTHERHOST=$TMP/home-otherhost
+fixture_with_metadata "$FAKE_OTHERHOST"
+printf 'pid=1\nhost=not-this-host-%s\nstarted=2026-05-20T00:00:00Z\n' "$$" \
+    > "$FAKE_OTHERHOST/.local/state/dev-bootstrap/migration.lock"
+HOME=$FAKE_OTHERHOST bash "$FAKE/repo/scripts/migrate-rollback.sh" > /tmp/rollback-otherhost.out 2>&1
+otherhost_rc=$?
+if [[ $otherhost_rc -eq 0 ]] && [[ ! -f "$FAKE_OTHERHOST/.local/state/dev-bootstrap/migration.lock" ]]; then
+    passed=$((passed+1)); echo "  ✓ F-005: different host → lock cleared"
+else
+    failed=$((failed+1)); echo "  ✗ F-005: different-host scenario (rc=$otherhost_rc)" >&2
+fi
+
+# Scenario C: lock claims THIS host and pid IS alive → refuse without --force.
+FAKE_ACTIVE=$TMP/home-active
+fixture_with_metadata "$FAKE_ACTIVE"
+# Use OUR shell's pid as the "active" pid — kill -0 $$ is guaranteed alive.
+printf 'pid=%s\nhost=%s\nstarted=2026-05-20T00:00:00Z\n' "$$" "$(hostname)" \
+    > "$FAKE_ACTIVE/.local/state/dev-bootstrap/migration.lock"
+active_rc=0
+HOME=$FAKE_ACTIVE bash "$FAKE/repo/scripts/migrate-rollback.sh" > /tmp/rollback-active.out 2>&1 || active_rc=$?
+if [[ $active_rc -eq 2 ]] && [[ -f "$FAKE_ACTIVE/.local/state/dev-bootstrap/migration.lock" ]]; then
+    passed=$((passed+1)); echo "  ✓ F-005: active pid → rollback exits 2, lock preserved"
+else
+    failed=$((failed+1)); echo "  ✗ F-005: active-pid scenario (rc=$active_rc, lock present=$([ -f "$FAKE_ACTIVE/.local/state/dev-bootstrap/migration.lock" ] && echo yes || echo no))" >&2
+fi
+if grep -q 'force-stale-lock' /tmp/rollback-active.out; then
+    passed=$((passed+1)); echo "  ✓ F-005: active-pid error names --force-stale-lock flag"
+else
+    failed=$((failed+1)); echo "  ✗ F-005: active-pid error missing --force-stale-lock hint" >&2
+fi
+
+# Scenario D: same lock + --force-stale-lock → delete + succeed.
+HOME=$FAKE_ACTIVE bash "$FAKE/repo/scripts/migrate-rollback.sh" --force-stale-lock \
+    > /tmp/rollback-force.out 2>&1
+force_rc=$?
+if [[ $force_rc -eq 0 ]] && [[ ! -f "$FAKE_ACTIVE/.local/state/dev-bootstrap/migration.lock" ]]; then
+    passed=$((passed+1)); echo "  ✓ F-005: --force-stale-lock overrides active-pid refusal"
+else
+    failed=$((failed+1)); echo "  ✗ F-005: --force-stale-lock did not release lock (rc=$force_rc)" >&2
+fi
+
+rm -f /tmp/rollback-deadpid.out /tmp/rollback-otherhost.out \
+      /tmp/rollback-active.out /tmp/rollback-force.out
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]

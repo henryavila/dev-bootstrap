@@ -6,9 +6,25 @@
 # repo, releases bridge lock.
 # Does NOT restore: packages installed by setup.sh, deploys (additive — engine
 # is idempotent F-A5 so re-running is safe).
+#
+# Flags:
+#   --force-stale-lock   delete the bridge lock even if it claims an active
+#                        bridge (pid alive on this host). Use when the
+#                        bridge process is hung and cannot be killed
+#                        cleanly. Without this flag the rollback refuses
+#                        with rc=2 to avoid racing a concurrent bridge.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE/.."
+
+FORCE_STALE_LOCK=0
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force-stale-lock) FORCE_STALE_LOCK=1 ;;
+        *) echo "ERROR: unknown argument: $1" >&2; exit 64 ;;
+    esac
+    shift
+done
 
 SNAP_DIR="$HOME/.local/state/dev-bootstrap/snapshots/$(hostname)-pre-migration"
 if [[ ! -d "$SNAP_DIR" ]]; then
@@ -61,8 +77,46 @@ else
 fi
 echo "  restored git: $prev_branch @ $prev_head"
 
-# 3. Release lock
-rm -f "$HOME/.local/state/dev-bootstrap/migration.lock"
+# 3. Release lock (A3-F-005: validate ownership before deletion).
+#    Bridge step 1 writes pid + host + started into the lock file. We
+#    only safely delete a lock whose claimed owner is dead OR runs on a
+#    different host. An active lock on this host means a bridge is mid-
+#    migration; refuse without --force-stale-lock so two unrelated
+#    operators don't accidentally race each other.
+LOCK="$HOME/.local/state/dev-bootstrap/migration.lock"
+if [[ -f "$LOCK" ]]; then
+    lock_pid=""; lock_host=""
+    if [[ -s "$LOCK" ]]; then
+        while IFS='=' read -r key value; do
+            case "$key" in
+                pid)  lock_pid="$value" ;;
+                host) lock_host="$value" ;;
+            esac
+        done < "$LOCK"
+    fi
+    current_host=$(hostname)
+    if [[ -z "$lock_pid" || -z "$lock_host" ]]; then
+        rm -f "$LOCK"
+        echo "  released stale lock (no ownership metadata)"
+    elif [[ "$lock_host" != "$current_host" ]]; then
+        rm -f "$LOCK"
+        echo "  released stale lock (host=$lock_host != current=$current_host)"
+    elif kill -0 "$lock_pid" 2>/dev/null; then
+        if [[ "$FORCE_STALE_LOCK" == "1" ]]; then
+            rm -f "$LOCK"
+            echo "  released ACTIVE lock via --force-stale-lock (pid=$lock_pid was running)" >&2
+        else
+            echo "ERROR: migration lock at $LOCK is held by an active process." >&2
+            echo "       pid=$lock_pid host=$lock_host" >&2
+            echo "       Pass --force-stale-lock to override (e.g., when the bridge" >&2
+            echo "       process is hung and cannot be killed cleanly)." >&2
+            exit 2
+        fi
+    else
+        rm -f "$LOCK"
+        echo "  released stale lock (pid=$lock_pid no longer running)"
+    fi
+fi
 
 echo "==> Rollback complete. System restored to pre-migration state."
 echo "    Snapshot preserved at $SNAP_DIR for forensic analysis."

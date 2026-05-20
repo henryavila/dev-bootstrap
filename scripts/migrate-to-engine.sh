@@ -88,6 +88,19 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 fi
 echo "[step 0] working tree clean at $WS_DIR"
 
+# CP4 A3 finding F-006: python3 is the case-insensitive marker rewriter for
+# step 3. Step 3 mutates ~/.bashrc, ~/.zshrc, ~/.ssh/authorized_keys, etc.
+# in place; a missing python3 mid-rewrite would leave half the markers in
+# old form. Preflight here — before the lock is acquired and before any
+# marker file is copied to .mesh-migrate — so a fresh macOS without
+# xcode-select gets a named error with no half-state.
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "ERROR: python3 not found in PATH — required for case-insensitive marker rewrite (step 3)." >&2
+    echo "Install python3 (xcode-select --install on macOS, apt install python3 on Debian/Ubuntu)" >&2
+    echo "before running $SCRIPT_NAME." >&2
+    exit 1
+fi
+
 # 1. Lock-file — ATOMIC acquisition via noclobber (O_EXCL).
 #    CX-H1 fix (checkpoint-3): the previous `[ -f $LOCK ] && touch $LOCK`
 #    pattern was check-then-touch, NOT atomic. Two concurrent bridge runs
@@ -113,28 +126,52 @@ echo "[step 1] lock acquired: $LOCK"
 # no-op (would silently approve any migration on hosts without brew/apt/npm).
 SNAP_DIR="$MESH_STATE_DIR/snapshots/$(hostname)-pre-migration"
 mkdir -p "$SNAP_DIR"
-snapshot_manager() {
-    # snapshot_manager <name> <probe-command> <list-command...>
-    local name="$1"; shift
+# CP4 A3 finding F-004: clear any stale partial files from a prior crashed
+# run (mktemp leftovers + half-written final files without a .done sentinel)
+# so a fresh snapshot is unambiguously the current truth.
+if [ ! -f "$SNAP_DIR/.done" ]; then
+    find "$SNAP_DIR" -maxdepth 1 -type f \( -name '*.tmp.*' -o -name 'brew-*.txt' -o -name 'apt.txt' -o -name 'npm-global.txt' -o -name 'git-*.txt' \) -delete 2>/dev/null || true
+fi
+# A3-F-004: atomic_snapshot writes the probe output to a same-dir mktemp
+# file and renames it on success. A crash mid-write leaves the tmp file
+# (cleaned by the next run's stale-sweep above) but never a half-written
+# .txt that the after-snapshot diff in step 8 would treat as truth.
+atomic_snapshot() {
+    # atomic_snapshot <out-name> <probe-command> <list-command...>
+    local out="$SNAP_DIR/$1"; shift
     local probe="$1"; shift
     if ! command -v "$probe" >/dev/null 2>&1; then
-        # Tool absent: leave NO file (distinguishes "absent" from "present but empty").
         return 0
     fi
-    if ! "$@" > "$SNAP_DIR/$name.txt" 2>/dev/null; then
-        # Tool present but failed (e.g., brew lock contention) — abort.
-        printf 'ERROR: snapshot for %s failed (tool present but list errored)\n' "$name" >&2
-        return 1
+    local tmp
+    tmp=$(mktemp "$SNAP_DIR/.tmp.XXXXXX")
+    if "$@" > "$tmp" 2>/dev/null; then
+        mv -f "$tmp" "$out"
+        return 0
     fi
+    rm -f "$tmp"
+    printf 'ERROR: snapshot for %s failed (tool present but list errored)\n' "$(basename "$out")" >&2
+    return 1
 }
+snapshot_manager() { atomic_snapshot "$1.txt" "$2" "${@:3}"; }
 snapshot_manager brew-formula brew brew list --formula
 snapshot_manager brew-cask    brew brew list --cask
 snapshot_manager apt          apt  apt list --installed
 snapshot_manager npm-global   npm  npm list -g --depth=0
-# Snapshot git refs so rollback can restore the pre-migration branch state.
-git rev-parse HEAD > "$SNAP_DIR/git-head-before-migration.txt"
-git symbolic-ref --short HEAD > "$SNAP_DIR/git-branch-before-migration.txt" 2>/dev/null \
-    || echo "(detached)" > "$SNAP_DIR/git-branch-before-migration.txt"
+# Snapshot git refs (atomic-via-tmp matches the manager probes above).
+git_tmp=$(mktemp "$SNAP_DIR/.tmp.XXXXXX")
+git rev-parse HEAD > "$git_tmp" && mv -f "$git_tmp" "$SNAP_DIR/git-head-before-migration.txt"
+git_tmp=$(mktemp "$SNAP_DIR/.tmp.XXXXXX")
+if git symbolic-ref --short HEAD > "$git_tmp" 2>/dev/null; then
+    mv -f "$git_tmp" "$SNAP_DIR/git-branch-before-migration.txt"
+else
+    echo "(detached)" > "$git_tmp"
+    mv -f "$git_tmp" "$SNAP_DIR/git-branch-before-migration.txt"
+fi
+# A3-F-004: completion sentinel marks the snapshot as wholly written.
+# Rollback (and step 8 below) can refuse to act on a snapshot dir without
+# .done — that signals a crashed snapshot run, not real evidence.
+: > "$SNAP_DIR/.done"
 echo "[step 2] snapshot taken at $SNAP_DIR"
 echo "         files: $(ls "$SNAP_DIR" 2>/dev/null | tr '\n' ' ')"
 
@@ -197,23 +234,12 @@ echo "[step 7] setup.sh applied"
 #    setup. Engine F-A5 (additive idempotent) guarantees no removal is
 #    expected; a non-empty diff means setup performed an unintended
 #    uninstall.
-snapshot_manager_after() {
-    # snapshot_manager_after <name> <probe-command> <list-command...>
-    local name="$1"; shift
-    local probe="$1"; shift
-    # Tool absent post-setup — symmetric with snapshot_manager: leave no file.
-    if ! command -v "$probe" >/dev/null 2>&1; then
-        return 0
-    fi
-    if ! "$@" > "$SNAP_DIR/$name.after.txt" 2>/dev/null; then
-        printf 'ERROR: after-snapshot for %s failed (tool present but list errored)\n' "$name" >&2
-        return 1
-    fi
-}
+snapshot_manager_after() { atomic_snapshot "$1.after.txt" "$2" "${@:3}"; }
 snapshot_manager_after brew-formula brew brew list --formula
 snapshot_manager_after brew-cask    brew brew list --cask
 snapshot_manager_after apt          apt  apt list --installed
 snapshot_manager_after npm-global   npm  npm list -g --depth=0
+: > "$SNAP_DIR/.done.after"
 if ! check_no_removals "$SNAP_DIR"; then
     cat >&2 <<EOF
 ERROR: package removals detected — aborting.
