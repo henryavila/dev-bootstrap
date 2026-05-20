@@ -72,81 +72,46 @@ PY
 }
 
 # Function: managed_block_in_sync <src-abs> <dst> <src-name>
-#   Mirrors install.sh:deploy_managed_block's "is the on-disk block what
-#   install.sh would produce?" idempotency check, without the side effects.
-#   Returns 0 if dst is in sync under the managed_block protocol, 1
-#   otherwise (markers missing, awk read failure, or block content diffs).
+#   Idempotency check used by doctor for drift detection. Returns 0 if the
+#   content between the markers in dst matches src, regardless of:
+#     - marker style (legacy `dotfiles-managed:` or canonical `mesh-managed:`)
+#     - block position in the file (header lines before, trailing after)
 #
-# Marker scope: matches the legacy `dotfiles-managed:` markers only,
-# preserving doctor.sh's pre-migration semantics. The dual-marker
-# (dotfiles|mesh, case-insensitive) handling that managed_block_apply
-# uses is a separate concern — drift detection should be extended once
-# install.sh fully migrates to mesh-managed.
+# CP4 D-F-002: previous implementation reconstructed "preserved + begin + src
+# + end" effectively anchoring drift detection at EOF — conflicting with the
+# writer's in-place pattern.sub() that preserves position. Unified contract:
+# the slot's payload IS the source of truth; markers and position are not.
+# Markers must be present (else block never deployed) and marker counts must
+# be balanced (else the file is corrupted and the writer would refuse).
 managed_block_in_sync() {
     local src_abs="$1" dst="$2" src_name="$3"
-    # CP4 chunk D finding D-F-001: writer (managed_block_apply) emits
-    # canonical `mesh-managed:` markers AND in-place migrates legacy
-    # `dotfiles-managed:` to the canonical form on every run. The
-    # detector must therefore look for EITHER marker style (we resolve
-    # to whichever the dst currently has) and compare against the
-    # canonical writer output. Otherwise the detector reports
-    # perpetual false drift on every block after one writer pass.
-    local begin end begin_legacy end_legacy begin_canon end_canon
-    begin_legacy="# >>> BEGIN dotfiles-managed: ${src_name} >>>"
-    end_legacy="# <<< END dotfiles-managed: ${src_name} <<<"
-    begin_canon="# >>> BEGIN mesh-managed: ${src_name} >>>"
-    end_canon="# <<< END mesh-managed: ${src_name} <<<"
+    [[ -f "$src_abs" && -f "$dst" ]] || return 1
 
-    # Pick the marker pair that's actually on disk. Canonical first
-    # because that's what the writer leaves after a fresh run.
-    if grep -qF -- "$begin_canon" "$dst" 2>/dev/null \
-       && grep -qF -- "$end_canon" "$dst" 2>/dev/null; then
-        begin="$begin_canon"
-        end="$end_canon"
-    elif grep -qF -- "$begin_legacy" "$dst" 2>/dev/null \
-         && grep -qF -- "$end_legacy" "$dst" 2>/dev/null; then
-        begin="$begin_legacy"
-        end="$end_legacy"
+    local begin end
+    if grep -qF -- "# >>> BEGIN mesh-managed: ${src_name} >>>" "$dst" 2>/dev/null \
+       && grep -qF -- "# <<< END mesh-managed: ${src_name} <<<" "$dst" 2>/dev/null; then
+        begin="# >>> BEGIN mesh-managed: ${src_name} >>>"
+        end="# <<< END mesh-managed: ${src_name} <<<"
+    elif grep -qF -- "# >>> BEGIN dotfiles-managed: ${src_name} >>>" "$dst" 2>/dev/null \
+         && grep -qF -- "# <<< END dotfiles-managed: ${src_name} <<<" "$dst" 2>/dev/null; then
+        begin="# >>> BEGIN dotfiles-managed: ${src_name} >>>"
+        end="# <<< END dotfiles-managed: ${src_name} <<<"
     else
-        # No matching marker pair → block never deployed (or markers
-        # were tampered with destructively). install.sh would write the
-        # canonical block on the next run, so reporting drift is the
-        # right thing.
         return 1
     fi
 
-    # Reconstruct what install.sh would produce: lines outside markers
-    # (preserved) + begin + src content (with trailing \n if missing) +
-    # end. Compare byte-for-byte against current dst.
-    local preserved
-    if ! preserved=$(awk -v b="$begin" -v e="$end" '
-        $0 == b { skip=1; next }
-        $0 == e { skip=0; next }
-        !skip { print }
-    ' "$dst" 2>/dev/null); then
-        return 1
-    fi
+    # Extract content strictly between the first marker pair.
+    local extracted src_content
+    extracted=$(awk -v b="$begin" -v e="$end" '
+        $0 == b { in_block=1; next }
+        $0 == e { if (in_block) { in_block=0; found=1; exit } }
+        in_block { print }
+        END { exit !found }
+    ' "$dst" 2>/dev/null) || return 1
 
-    local tmp
-    tmp=$(mktemp 2>/dev/null) || return 1
-    {
-        if [[ -n "$preserved" ]]; then
-            printf '%s\n' "$preserved"
-        fi
-        printf '%s\n' "$begin"
-        cat "$src_abs"
-        # Mirror install.sh:print_with_eol — append \n iff src is non-empty
-        # AND its last byte is non-newline. Required for cmp to match.
-        if [[ -s "$src_abs" ]] && [[ -n "$(tail -c1 "$src_abs")" ]]; then
-            printf '\n'
-        fi
-        printf '%s\n' "$end"
-    } > "$tmp" 2>/dev/null
-
-    if cmp -s "$tmp" "$dst"; then
-        rm -f "$tmp"
-        return 0
-    fi
-    rm -f "$tmp"
-    return 1
+    # Read src verbatim. Strip a single trailing newline from both sides so
+    # files that end without a newline still compare equal to ones that do
+    # (mirrors print_with_eol semantics the writer's block uses).
+    src_content=$(cat "$src_abs" 2>/dev/null) || return 1
+    [[ "$extracted" == "$src_content" ]]
 }

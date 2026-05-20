@@ -131,18 +131,21 @@ else
     failed=$((failed+1)); echo "  ✗ in_sync should tolerate header lines" >&2
 fi
 
-# Test 9b: trailing lines AFTER the block ARE drift — install.sh appends, so
-# any non-block content past the END marker would be moved by a re-deploy.
+# Test 9b (CP4 D-F-002): block in the MIDDLE of a file (header + block +
+# trailing) stays in sync. The writer's pattern.sub() does in-place replace
+# preserving position, so the unified detector contract treats trailing
+# content after the END marker as user-owned, not drift.
 {
+    printf 'before line\n'
     printf '# >>> BEGIN dotfiles-managed: env >>>\n'
     printf 'PATH=/usr/bin\n'
     printf '# <<< END dotfiles-managed: env <<<\n'
-    printf 'rogue trailing line\n'
-} > "$TMP/sync/dst-with-trailing"
-if managed_block_in_sync "$TMP/sync/src-env" "$TMP/sync/dst-with-trailing" "env"; then
-    failed=$((failed+1)); echo "  ✗ in_sync should flag trailing content as drift" >&2
+    printf 'after line\n'
+} > "$TMP/sync/dst-middle-block"
+if managed_block_in_sync "$TMP/sync/src-env" "$TMP/sync/dst-middle-block" "env"; then
+    passed=$((passed+1)); echo "  ✓ in_sync: block in middle of file stays in sync"
 else
-    passed=$((passed+1)); echo "  ✓ in_sync: trailing content after block is drift"
+    failed=$((failed+1)); echo "  ✗ in_sync should not flag mid-file blocks as drift" >&2
 fi
 
 # Test 10: src with no trailing newline still matches (print_with_eol mirror)
