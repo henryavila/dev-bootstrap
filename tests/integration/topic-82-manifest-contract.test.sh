@@ -82,4 +82,34 @@ done
 ASSERT_MSG="Test 4: install-rtk.sh check() uses 'rtk gain' as collision discriminator" \
     assert_true grep -q "rtk gain" "$INSTALL_RTK"
 
+# ─── Tests 5-8 (CP4 A3-F-007): release-based install with sha256 verify ──
+# Replaces the previous `curl raw.githubusercontent.com/.../master/install.sh
+# | sh` (mutable URL, no integrity check) with a release-pinned fetch +
+# checksums.txt verification.
+
+ASSERT_MSG="Test 5: A3-F-007 — install() no longer pipes curl to sh from master branch" \
+    assert_false grep -qE 'curl[^|]*master/install\.sh[[:space:]]*\|[[:space:]]*sh' "$INSTALL_RTK"
+
+ASSERT_MSG="Test 6: A3-F-007 — install fetches checksums.txt from immutable release URL" \
+    assert_true grep -q "releases/download/.*checksums.txt" "$INSTALL_RTK"
+
+ASSERT_MSG="Test 7: A3-F-007 — install verifies sha256 mismatch before extracting" \
+    assert_true grep -q "sha256 mismatch" "$INSTALL_RTK"
+
+ASSERT_MSG="Test 8: A3-F-007 — install guards against archive path traversal (CWE-22)" \
+    assert_true grep -qE '\\\.\\\.\(/\|\$\)' "$INSTALL_RTK"
+
+# ─── Tests 9-11 (CP4 A3-F-009): provenance-tracked rollback ─────────
+# rollback() must read recorded install path + sha256 and refuse to delete
+# a binary whose hash no longer matches (could be another vendor's rtk).
+
+ASSERT_MSG="Test 9: A3-F-009 — install() records rtk install path + sha256 in state file" \
+    assert_true grep -qE 'RTK_STATE_FILE.*rtk-installed\.env' "$INSTALL_RTK"
+
+ASSERT_MSG="Test 10: A3-F-009 — rollback() no longer deletes whichever rtk command -v resolves" \
+    assert_false grep -qE 'rm[[:space:]]+-f[[:space:]]+"\$\(command -v rtk' "$INSTALL_RTK"
+
+ASSERT_MSG="Test 11: A3-F-009 — rollback() refuses delete when recorded sha256 differs" \
+    assert_true grep -q "refusing to delete" "$INSTALL_RTK"
+
 summary
