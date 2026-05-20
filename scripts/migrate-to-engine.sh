@@ -1,54 +1,73 @@
 #!/usr/bin/env bash
-# bridge-v0.sh — P2 prototype of scripts/migrate-to-engine.sh from spec §7.4.
+# scripts/migrate-to-engine.sh — Phase 9 bridge migration (spec §7.4).
 #
-# Validates the bridge ARCHITECTURE (steps 0-3 + 8 abort logic), not the
-# end-to-end migration (steps 4-7 need setup.sh and a real refactor branch).
+# Migrate this machine to the new 2-layer mesh in one transaction:
+# clean-tree gate → atomic lock → pre-snapshot → marker rewrite → branch
+# checkout → setup.sh dry-run → setup.sh apply → post-snapshot diff →
+# doctor validation.
 #
-# Differences from spec §7.4 pseudocode:
-#   - Step 4 (git checkout refactor/install-engine) is SKIPPED with a warning.
-#   - Step 6/7 (setup.sh --dry-run + apply) replaced by a MOCK that always passes.
-#   - State path uses $MESH_STATE_DIR (default $HOME/.local/state/dev-bootstrap)
-#     so a sandboxed HOME isolates all mutations to a fixture directory.
+# Current state (post-Phase-8 increment 1 of 3):
+#   - Steps 0 + 4 are REAL (working-tree check + branch checkout).
+#   - Steps 1-3 (lock, snapshot, marker rewrite) are REAL since v0.
+#   - Steps 6/7/9 (setup.sh --dry-run / apply / doctor) are still MOCK/SKIP.
+#   - Step 8 still synthesizes the after-snapshot from the before-snapshot
+#     (vacuous removal check) — replaced in increment 2 of 3.
 #
-# Pass criterion (handoff §G4 P2):
-#   - Executes without leaving fixture in inconsistent state.
-#   - Step 3 marker rename is case-insensitive (catches bug-2026-04-23 pattern).
-#   - Step 8 abort-on-removal logic works (simulated).
+# Sandbox knobs (test/dev only — production omits):
+#   MESH_STATE_DIR        — override $HOME/.local/state/dev-bootstrap
+#   MESH_BRIDGE_REPO_DIR  — override the workstation repo root (default
+#                           $HERE/.. per spec §7.4); fixture tests point
+#                           this at a temp git repo with main + refactor/
+#                           install-engine branches so step 0 + 4 run
+#                           against an isolated tree.
+#   MESH_BRIDGE_V0_OK=1   — acknowledge the partial-real state of steps
+#                           6/7/8/9 until they land. Removed in increment 2.
+#   MESH_BRIDGE_LIB_ONLY=1 — source-only mode for unit-testing
+#                           check_no_removals() in isolation.
 
 set -euo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+WS_DIR="${MESH_BRIDGE_REPO_DIR:-$HERE/..}"
+
 # CP4 chunk A3 findings F-001 (blocker) + F-002 (critical) — fail-closed gate.
-# The body of this script is the Phase 2 P2 prototype (header above): steps
-# 4/6/7/9 SKIP/MOCK any real migration, and step 8 synthesizes the post-
-# migration package snapshot from the pre-migration snapshot (so "no
-# removals verified" is true by construction, not by check). Running this
-# on a real workstation rewrites marker files but does NOT migrate the
-# install layout, and reports success regardless.
+# Steps 6/7/9 are still MOCK/SKIP and step 8 synthesizes its own after-snapshot,
+# so on a real workstation the bridge would rewrite markers + check out the
+# refactor branch but would NOT install topics or validate via doctor, and
+# would report success regardless. The gate stays until increment 2 lands.
 #
-# Tests + sandbox runs set MESH_BRIDGE_V0_OK=1 to acknowledge v0 semantics.
+# Tests + sandbox runs set MESH_BRIDGE_V0_OK=1 to acknowledge the partial state.
 # Phase 9 users hit the gate and must use the per-machine runbook OR
-# wait for the real §7.4 bridge to be written.
+# wait for increments 2-3 to land.
 if [ "${MESH_BRIDGE_V0_OK:-0}" != "1" ] && [ "${MESH_BRIDGE_LIB_ONLY:-0}" != "1" ]; then
     cat <<'GATE' >&2
-ERROR: scripts/migrate-to-engine.sh is the v0 prototype — not the
-       production Phase 9 bridge.
+ERROR: scripts/migrate-to-engine.sh is still the v0 prototype — increments
+       2 + 3 of the §7.4 production bridge have not landed yet.
 
-       The current implementation:
-         - SKIPS git checkout of the refactor branch (step 4)
-         - MOCKS setup.sh --dry-run (step 6) and SKIPS real apply (step 7)
-         - SYNTHESIZES the post-migration package snapshot from the
-           pre-migration snapshot (step 8) — so "no removals verified"
-           is true by construction, not by check
-         - SKIPS doctor.sh validation (step 9)
+       Currently REAL:
+         - step 0: clean working-tree check
+         - step 1: atomic noclobber lock
+         - step 2: pre-migration package snapshot
+         - step 3: case-insensitive marker rewrite
+         - step 4: git fetch + checkout refactor/install-engine
 
-       Running this on a real workstation will rewrite marker files but
-       will NOT migrate the install layout, and will report success
-       regardless.
+       Still MOCK/SKIP (increment 2):
+         - step 6: setup.sh --dry-run
+         - step 7: setup.sh apply
+         - step 8: after-snapshot synthesized from before-snapshot
+                  (so "no removals verified" is true by construction)
+         - step 9: doctor.sh validation
+
+       Running this on a real workstation rewrites marker files + checks
+       out the refactor branch but does NOT install topics or validate
+       via doctor, and reports success regardless.
 
        For Phase 9, use the per-machine migration runbook at
-       docs/onboard-new-machine.md until the real §7.4 bridge is written.
+       docs/onboard-new-machine.md until increments 2-3 land.
 
-       For sandbox/test invocation, set MESH_BRIDGE_V0_OK=1 to ack v0.
+       For sandbox/test invocation, set MESH_BRIDGE_V0_OK=1 to ack the
+       v0 prototype state.
 
        See CP4 A3 findings F-001 + F-002 in the review file:
        dotfiles/.atomic-skills/reviews/2026-05-19-CP4-mesh-restructure.md
@@ -102,9 +121,23 @@ check_no_removals() {
 # Test mode: if MESH_BRIDGE_LIB_ONLY=1, source-only (don't run steps).
 [ "${MESH_BRIDGE_LIB_ONLY:-0}" = "1" ] && return 0 2>/dev/null || true
 
-# 0. PRE-FLIGHT — skip git check in v0 (no repo in fixture). Real bridge checks
-#    `git diff --quiet` on the workstation repo.
-echo "[step 0] pre-flight: SKIP (v0 has no repo; spec checks working tree clean)"
+# 0. PRE-FLIGHT — working tree must be clean.
+#    git checkout at step 4 would refuse on uncommitted state; abort early
+#    here with a named error rather than corrupting mid-migration. Both
+#    unstaged and staged changes block.
+cd "$WS_DIR"
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "ERROR: $WS_DIR is not a git work tree." >&2
+    echo "Set MESH_BRIDGE_REPO_DIR to the workstation checkout, or run $SCRIPT_NAME from within it." >&2
+    exit 1
+fi
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "ERROR: working tree at $WS_DIR has uncommitted changes." >&2
+    echo "Commit, stash, or discard them before running $SCRIPT_NAME." >&2
+    git status --short >&2
+    exit 1
+fi
+echo "[step 0] working tree clean at $WS_DIR"
 
 # 1. Lock-file — ATOMIC acquisition via noclobber (O_EXCL).
 #    CX-H1 fix (checkpoint-3): the previous `[ -f $LOCK ] && touch $LOCK`
@@ -149,6 +182,10 @@ snapshot_manager brew-formula brew brew list --formula
 snapshot_manager brew-cask    brew brew list --cask
 snapshot_manager apt          apt  apt list --installed
 snapshot_manager npm-global   npm  npm list -g --depth=0
+# Snapshot git refs so rollback can restore the pre-migration branch state.
+git rev-parse HEAD > "$SNAP_DIR/git-head-before-migration.txt"
+git symbolic-ref --short HEAD > "$SNAP_DIR/git-branch-before-migration.txt" 2>/dev/null \
+    || echo "(detached)" > "$SNAP_DIR/git-branch-before-migration.txt"
 echo "[step 2] snapshot taken at $SNAP_DIR"
 echo "         files: $(ls "$SNAP_DIR" 2>/dev/null | tr '\n' ' ')"
 
@@ -177,8 +214,10 @@ PY
 done
 echo "         files with marker rewrites: $renamed_count"
 
-# 4. SKIP — git checkout refactor branch (v0 fixture has no repo)
-echo "[step 4] git checkout: SKIP (v0)"
+# 4. Checkout refactor branch.
+git fetch origin refactor/install-engine
+git checkout refactor/install-engine
+echo "[step 4] checked out refactor/install-engine"
 
 # 5. (removed in spec — was dead code per spec comment)
 

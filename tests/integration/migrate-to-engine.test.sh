@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# P2 test — bridge-v0.sh against a sandboxed fixture.
+# Integration test for scripts/migrate-to-engine.sh — Phase 9 bridge.
 #
-# Validation steps:
-#   1. Create /tmp/mesh-p2-fixture/home/ with marker files including
-#      CASE-MIXED markers (catches bug-2026-04-23 regression).
-#   2. Compute SHA256 of every fixture file before running.
-#   3. Run bridge with HOME=$fixture/home — all ~ paths redirect.
-#   4. Verify lock cleanup, snapshot created, markers rewritten correctly.
-#   5. Verify NO file outside fixture/home was touched (sandbox proof).
-#   6. Verify backups (.mesh-migrate) preserve pre-rename content.
-#   7. Simulate "removal" scenario (after-snapshot diverges) and assert abort.
+# Validation:
+#   - Sandboxed HOME + MESH_STATE_DIR isolate marker/lock/snapshot mutations
+#   - MESH_BRIDGE_REPO_DIR points the bridge at a fixture git repo with
+#     main + refactor/install-engine branches + bare-repo origin so step 0
+#     (clean-tree check) and step 4 (git fetch + checkout) run hermetically
+#   - All existing v0 assertions (lock, snapshot, marker rewrite, removal
+#     abort, atomic lock acquisition) still hold against the same bridge
 
 # C1 fix: enable pipefail so `bash $BRIDGE | sed` propagates bridge's exit code.
 set -u
@@ -36,8 +34,39 @@ assert() {
     fi
 }
 
+# Build a minimal fixture workstation git repo at $1 with main + refactor/
+# install-engine branches and a bare-repo origin one level up. The bridge
+# is pointed at $1 via MESH_BRIDGE_REPO_DIR so its `cd $WS_DIR` lands inside
+# this fixture instead of the real workstation checkout.
+setup_fake_ws_repo() {
+    local ws="$1"
+    local bare="$ws.origin.bare"
+    rm -rf "$ws" "$bare"
+    mkdir -p "$ws"
+    git init --bare -q "$bare"
+    (
+        cd "$ws"
+        git init -q -b main
+        git config user.email "t@example.com"
+        git config user.name "fixture"
+        git config commit.gpgsign false
+        echo "# fake workstation" > README
+        git add README
+        git commit -q -m "init main"
+        git checkout -q -b refactor/install-engine
+        echo "refactor-branch-marker" > .ref-marker
+        git add .ref-marker
+        git commit -q -m "refactor commit"
+        git checkout -q main
+        git remote add origin "$bare"
+        git push -q origin main refactor/install-engine
+    )
+}
+
 rm -rf "$FIX"
 mkdir -p "$FIX/home"
+setup_fake_ws_repo "$FIX/ws-fake"
+MAIN_PREV_SHA=$(git -C "$FIX/ws-fake" rev-parse HEAD)
 
 # Fixture marker files — mixing case, both managed-by and dotfiles-managed:
 cat > "$FIX/home/.bashrc" <<'EOF'
@@ -68,8 +97,9 @@ REAL_HOME_MTIME=$(stat -f '%m' "$HOME" 2>/dev/null || stat -c '%Y' "$HOME" 2>/de
 # Run bridge with sandboxed HOME (pipefail above ensures bridge's rc propagates).
 # CP4 A3 F-001: explicit MESH_BRIDGE_V0_OK=1 acks the v0 prototype gate.
 echo ""
-echo "=== Running bridge v0 with HOME=$FIX/home ==="
-MESH_BRIDGE_V0_OK=1 HOME="$FIX/home" MESH_STATE_DIR="$FIX/home/.local/state/dev-bootstrap" \
+echo "=== Running bridge with HOME=$FIX/home + WS=$FIX/ws-fake ==="
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX/ws-fake" \
+    HOME="$FIX/home" MESH_STATE_DIR="$FIX/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" 2>&1 | sed 's/^/  /'
 rc=${PIPESTATUS[0]}
 
@@ -109,6 +139,82 @@ assert ".bashrc backup preserves pre-rename content" \
 REAL_HOME_MTIME_AFTER=$(stat -f '%m' "$HOME" 2>/dev/null || stat -c '%Y' "$HOME" 2>/dev/null || echo 0)
 assert "real \$HOME directory mtime unchanged (sandbox redirect honored)" \
     "[ '$REAL_HOME_MTIME' = '$REAL_HOME_MTIME_AFTER' ]"
+
+# Step 2 (git ref snapshot): pre-migration HEAD + branch captured for rollback.
+assert "snapshot has git-head-before-migration.txt" \
+    "[ -f '$SNAP/git-head-before-migration.txt' ]"
+assert "git-head-before-migration.txt records pre-migration main SHA" \
+    "[ \"\$(cat '$SNAP/git-head-before-migration.txt')\" = '$MAIN_PREV_SHA' ]"
+assert "git-branch-before-migration.txt records 'main'" \
+    "[ \"\$(cat '$SNAP/git-branch-before-migration.txt')\" = 'main' ]"
+
+# Step 4: real branch checkout — fixture repo is now on refactor/install-engine.
+assert "fixture repo HEAD is now refactor/install-engine" \
+    "[ \"\$(git -C '$FIX/ws-fake' rev-parse --abbrev-ref HEAD)\" = 'refactor/install-engine' ]"
+assert "fixture repo has the .ref-marker from refactor branch" \
+    "[ -f '$FIX/ws-fake/.ref-marker' ]"
+
+# --- Step 0 negative: dirty working tree aborts before lock acquired ---
+echo ""
+echo "=== Step 0: dirty working tree aborts cleanly ==="
+FIX_DIRTY="/tmp/mesh-p2-fixture-dirty"
+rm -rf "$FIX_DIRTY"
+mkdir -p "$FIX_DIRTY/home"
+setup_fake_ws_repo "$FIX_DIRTY/ws-fake"
+# Dirty the fixture: stage an uncommitted change.
+echo "drift" > "$FIX_DIRTY/ws-fake/README"
+DIRTY_OUT=$(mktemp -t mesh-p2-dirty-XXXXXX)
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_DIRTY/ws-fake" \
+    HOME="$FIX_DIRTY/home" MESH_STATE_DIR="$FIX_DIRTY/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >"$DIRTY_OUT" 2>&1
+dirty_rc=$?
+assert "step 0: dirty tree → bridge exits 1" "[ $dirty_rc -eq 1 ]"
+assert "step 0: error names 'uncommitted changes'" \
+    "grep -q 'uncommitted changes' '$DIRTY_OUT'"
+assert "step 0: no lock acquired when step 0 aborts" \
+    "[ ! -f '$FIX_DIRTY/home/.local/state/dev-bootstrap/migration.lock' ]"
+assert "step 0: no snapshot dir created when step 0 aborts" \
+    "[ ! -d '$FIX_DIRTY/home/.local/state/dev-bootstrap/snapshots' ]"
+rm -rf "$FIX_DIRTY" "$DIRTY_OUT"
+
+# --- Step 0 negative: non-git path aborts with named error ---
+echo ""
+echo "=== Step 0: non-git WS_DIR aborts ==="
+FIX_NOGIT="/tmp/mesh-p2-fixture-nogit"
+rm -rf "$FIX_NOGIT"
+mkdir -p "$FIX_NOGIT/home" "$FIX_NOGIT/not-a-repo"
+NOGIT_OUT=$(mktemp -t mesh-p2-nogit-XXXXXX)
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_NOGIT/not-a-repo" \
+    HOME="$FIX_NOGIT/home" MESH_STATE_DIR="$FIX_NOGIT/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >"$NOGIT_OUT" 2>&1
+nogit_rc=$?
+assert "step 0: non-git path → bridge exits 1" "[ $nogit_rc -eq 1 ]"
+assert "step 0: error names 'not a git work tree'" \
+    "grep -q 'not a git work tree' '$NOGIT_OUT'"
+rm -rf "$FIX_NOGIT" "$NOGIT_OUT"
+
+# --- Step 4 negative: missing refactor branch aborts ---
+echo ""
+echo "=== Step 4: missing refactor/install-engine branch aborts ==="
+FIX_NOBRANCH="/tmp/mesh-p2-fixture-nobranch"
+rm -rf "$FIX_NOBRANCH"
+mkdir -p "$FIX_NOBRANCH/home"
+# Build a fixture with main only; delete refactor/install-engine from both
+# the working tree and the bare origin so step 4's fetch + checkout fails.
+setup_fake_ws_repo "$FIX_NOBRANCH/ws-fake"
+git -C "$FIX_NOBRANCH/ws-fake" branch -D refactor/install-engine >/dev/null 2>&1
+git --git-dir="$FIX_NOBRANCH/ws-fake.origin.bare" branch -D refactor/install-engine >/dev/null 2>&1
+NOBRANCH_OUT=$(mktemp -t mesh-p2-nobranch-XXXXXX)
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_NOBRANCH/ws-fake" \
+    HOME="$FIX_NOBRANCH/home" MESH_STATE_DIR="$FIX_NOBRANCH/home/.local/state/dev-bootstrap" \
+    bash "$BRIDGE" >"$NOBRANCH_OUT" 2>&1
+nobranch_rc=$?
+# git fetch refusing a nonexistent ref or git checkout refusing the missing
+# branch — either way the bridge must not declare success.
+assert "step 4: missing refactor branch → bridge exits non-zero" "[ $nobranch_rc -ne 0 ]"
+assert "step 4: bridge did NOT print '==> v0 bridge completed' on missing branch" \
+    "! grep -q 'bridge completed' '$NOBRANCH_OUT'"
+rm -rf "$FIX_NOBRANCH" "$FIX_NOBRANCH.origin.bare" "$NOBRANCH_OUT"
 
 # --- H5 fix: removal-abort actually invokes bridge's check_no_removals function ---
 echo ""
@@ -207,12 +313,20 @@ cat > "$FIX_RERUN/home/.bashrc" <<'EOF'
 export PS1='\u@\h:\w\$ '
 # dotfiles-managed: 30-shell end
 EOF
+# Build TWO fixture repos — each run mutates branch state, so a second run
+# against the same ws-fake would find HEAD already on refactor/install-engine
+# and step 4 would no-op. To prove C-1 re-run safety on markers we use a
+# fresh fixture for each run; the lock is shared via MESH_STATE_DIR.
+setup_fake_ws_repo "$FIX_RERUN/ws-fake-1"
+setup_fake_ws_repo "$FIX_RERUN/ws-fake-2"
 # Run 1
-MESH_BRIDGE_V0_OK=1 HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RERUN/ws-fake-1" \
+    HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >/dev/null 2>&1
 rerun1_rc=$?
 # Run 2 (after lock released on EXIT trap)
-MESH_BRIDGE_V0_OK=1 HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RERUN/ws-fake-2" \
+    HOME="$FIX_RERUN/home" MESH_STATE_DIR="$FIX_RERUN/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE" >/dev/null 2>&1
 rerun2_rc=$?
 assert "C-1: bridge first run succeeds" "[ $rerun1_rc -eq 0 ]"
@@ -221,7 +335,7 @@ assert "C-1: .mesh-migrate backup preserves PRE-migration content after re-run" 
     "grep -q 'dotfiles-managed:' '$FIX_RERUN/home/.bashrc.mesh-migrate'"
 assert "C-1: .bashrc is migrated (mesh-managed: present)" \
     "grep -q 'mesh-managed:' '$FIX_RERUN/home/.bashrc'"
-rm -rf "$FIX_RERUN"
+rm -rf "$FIX_RERUN" "$FIX_RERUN/ws-fake-1.origin.bare" "$FIX_RERUN/ws-fake-2.origin.bare"
 
 # --- Mutation test for C-1: remove the guard and assert backup gets clobbered ---
 # Sanity-check that the C-1 fix is load-bearing, not cosmetic.
@@ -249,9 +363,15 @@ cat > "$FIX_MUT/home/.bashrc" <<'EOF'
 # dotfiles-managed: 30-shell start
 # dotfiles-managed: 30-shell end
 EOF
-MESH_BRIDGE_V0_OK=1 HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
+# Two fresh fixture repos so step 4 (real branch checkout) doesn't no-op
+# on the second run — exact same reasoning as the C-1 re-run test above.
+setup_fake_ws_repo "$FIX_MUT/ws-fake-1"
+setup_fake_ws_repo "$FIX_MUT/ws-fake-2"
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_MUT/ws-fake-1" \
+    HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE_BROKEN" >/dev/null 2>&1
-MESH_BRIDGE_V0_OK=1 HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_MUT/ws-fake-2" \
+    HOME="$FIX_MUT/home" MESH_STATE_DIR="$FIX_MUT/home/.local/state/dev-bootstrap" \
     bash "$BRIDGE_BROKEN" >/dev/null 2>&1
 # Backup file must exist (sanity for mutation harness itself).
 assert "C-1 mutation harness: broken bridge still produced backup file" \
@@ -317,10 +437,17 @@ cat > "$FIX_RACE/home/.bashrc" <<'EOF'
 # dotfiles-managed: start
 # dotfiles-managed: end
 EOF
+# Two fresh fixture repos — the loser bails on lock contention before step 4,
+# the winner does a real checkout. Either way both need a valid WS_DIR to
+# pass step 0; sharing one would have the loser stomp on the winner's tree.
+setup_fake_ws_repo "$FIX_RACE/ws-a"
+setup_fake_ws_repo "$FIX_RACE/ws-b"
 # Launch two slow-bridges concurrently, sharing the same MESH_STATE_DIR (lock target).
-MESH_BRIDGE_V0_OK=1 HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-1 2>&1 &
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RACE/ws-a" \
+    HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-1 2>&1 &
 PID1=$!
-MESH_BRIDGE_V0_OK=1 HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-2 2>&1 &
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RACE/ws-b" \
+    HOME="$FIX_RACE/home" MESH_STATE_DIR="$FIX_RACE/state" bash "$BRIDGE_SLOW" >/tmp/p2-race-2 2>&1 &
 PID2=$!
 wait $PID1; race_rc1=$?
 wait $PID2; race_rc2=$?
@@ -370,9 +497,13 @@ cat > "$FIX_RACY/home/.bashrc" <<'EOF'
 # dotfiles-managed: start
 # dotfiles-managed: end
 EOF
-MESH_BRIDGE_V0_OK=1 HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-1 2>&1 &
+setup_fake_ws_repo "$FIX_RACY/ws-a"
+setup_fake_ws_repo "$FIX_RACY/ws-b"
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RACY/ws-a" \
+    HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-1 2>&1 &
 PIDA=$!
-MESH_BRIDGE_V0_OK=1 HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-2 2>&1 &
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_RACY/ws-b" \
+    HOME="$FIX_RACY/home" MESH_STATE_DIR="$FIX_RACY/state" bash "$BRIDGE_RACY" >/tmp/p2-racy-2 2>&1 &
 PIDB=$!
 wait $PIDA; racy_rc1=$?
 wait $PIDB; racy_rc2=$?
@@ -428,7 +559,9 @@ else
 # dotfiles-managed: start
 # dotfiles-managed: end
 EOF
-    MESH_BRIDGE_V0_OK=1 HOME="$FIX_E99/home" MESH_STATE_DIR="$FIX_E99/state" \
+    setup_fake_ws_repo "$FIX_E99/ws-fake"
+    MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_E99/ws-fake" \
+        HOME="$FIX_E99/home" MESH_STATE_DIR="$FIX_E99/state" \
         bash "$BRIDGE_E99" 2>&1 | sed 's/^/  /' >/dev/null
     exit99_rc=${PIPESTATUS[0]}
     assert "CX-M1 P2: pipefail + PIPESTATUS[0] surfaces injected exit 99" \
@@ -461,7 +594,9 @@ cat > "$FIX_M2/home/.bashrc" <<EOF
 # dotfiles-managed: start
 # dotfiles-managed: end
 EOF
-MESH_BRIDGE_V0_OK=1 PATH="$FIX_M2/fakebin:/usr/bin:/bin" HOME="$FIX_M2/home" \
+setup_fake_ws_repo "$FIX_M2/ws-fake"
+MESH_BRIDGE_V0_OK=1 MESH_BRIDGE_REPO_DIR="$FIX_M2/ws-fake" \
+    PATH="$FIX_M2/fakebin:/usr/bin:/bin" HOME="$FIX_M2/home" \
     MESH_STATE_DIR="$FIX_M2/state" bash "$BRIDGE" >/dev/null 2>&1
 m2_rc=$?
 SNAP_M2="$FIX_M2/state/snapshots/$(hostname)-pre-migration"
