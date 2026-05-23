@@ -30,18 +30,18 @@ set -uo pipefail
 # without aborting the loop.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# CONF lookup priority (first hit wins):
+# CONF lookup priority (first hit wins) — spec §C10 path migration 2026-05:
 #   1. $AUTO_UPDATE_CONF                            — explicit override (tests, manual relocation)
-#   2. $HOME/.config/dotfiles/auto-update.conf      — fork-de-template layout
-#                                                     (template install.sh deploys
-#                                                     auto-update.conf.example here in `once` mode)
+#   2. $HOME/.config/mesh/config.env                — canonical per-host config
 #   3. $HERE/../auto-update.conf                    — in-tree (workstation layout, conf in scripts/)
-# Both real-world layouts therefore work without manual env wiring.
+# The legacy $HOME/.config/dotfiles/auto-update.conf path was dropped: the
+# mesh bridge migrates users to ~/.config/mesh/ and identity I4 (commit
+# 9e1071f) already removed the dotfiles/ fallback on the code-server resolver.
 # STATE_DIR overridable via env for test fixtures (see tests/auto-update.test.sh).
 CONF="${AUTO_UPDATE_CONF:-}"
 if [[ -z "$CONF" ]]; then
-    if [[ -r "$HOME/.config/dotfiles/auto-update.conf" ]]; then
-        CONF="$HOME/.config/dotfiles/auto-update.conf"
+    if [[ -r "$HOME/.config/mesh/config.env" ]]; then
+        CONF="$HOME/.config/mesh/config.env"
     else
         CONF="$HERE/../auto-update.conf"
     fi
@@ -118,16 +118,11 @@ fi
 # shellcheck disable=SC1090
 source "$CONF"
 
-# Per-host override — never tracked in git. Sourced AFTER the main conf so
-# re-assignments (e.g., AUTO_UPDATE_REPOS=(...)) take effect. Use this to
-# point AUTO_UPDATE_REPOS at non-canonical paths (e.g. /Volumes/External
-# on Mac) without forking the public conf. Path overridable via env for
-# test fixtures.
-LOCAL_CONF="${AUTO_UPDATE_LOCAL_CONF:-$HOME/.config/dotfiles/auto-update.conf.local}"
-if [[ -r "$LOCAL_CONF" ]]; then
-    # shellcheck disable=SC1090
-    source "$LOCAL_CONF"
-fi
+# Spec §C10 clean break: per-host .local override removed. ~/.config/mesh/
+# config.env is already per-user/per-host (lives in $HOME), so the separate
+# .local pattern is redundant. AUTO_UPDATE_REPOS overrides go directly into
+# config.env. Identity I4 (commit 9e1071f) made the same drop on the
+# code-server resolver.
 
 # ─── Lock (mkdir-based mutex; portable across Linux + macOS) ────────
 # Why not flock(1): GNU-only, not shipped on macOS without `brew install
@@ -256,7 +251,7 @@ process_repo() {
     # Silent skip used to leave users with a 3-second exit and zero hints.
     if [[ ! -d "$repo/.git" ]]; then
         notice "pulado: $name (caminho '$repo' não é repo git)"
-        notice "  → ajuste AUTO_UPDATE_REPOS em $CONF, ou crie $LOCAL_CONF para override per-host"
+        notice "  → ajuste AUTO_UPDATE_REPOS em $CONF"
         return 0
     fi
 
