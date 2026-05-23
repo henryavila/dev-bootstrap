@@ -36,7 +36,7 @@ deploy_one() {
     local src_path="$src_base/$src"
     [[ -r "$src_path" ]] || { echo "[deploy] missing source: $src_path" >&2; return 1; }
 
-    mkdir -p "$(dirname "$dst")"
+    mkdir -p "$(dirname "$dst")" || return $?
     case "$mode" in
         overwrite)
             # Reject destination types we cannot safely handle BEFORE any
@@ -76,8 +76,8 @@ deploy_one() {
                 rm -f "$tmp"
                 return 1
             fi
-            apply_perms "$tmp" "$perms"
-            mv "$tmp" "$dst"
+            apply_perms "$tmp" "$perms" || { rm -f "$tmp"; return 1; }
+            mv "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
             ;;
         once)
             # CP4 F-005: same dst-type guard as overwrite — `cp src dst` where
@@ -90,8 +90,8 @@ deploy_one() {
             if [[ -f "$dst" ]]; then
                 echo "[deploy] $dst exists; skipping (mode=once)"
             else
-                cp "$src_path" "$dst"
-                apply_perms "$dst" "$perms"
+                cp "$src_path" "$dst" || return $?
+                apply_perms "$dst" "$perms" || return $?
             fi
             ;;
         managed_block)
@@ -110,8 +110,8 @@ deploy_one() {
             fi
             local slot
             slot=$(basename "$src" | sed 's/\.[^.]*$//')
-            managed_block_apply "$dst" "$slot" < "$src_path"
-            apply_perms "$dst" "$perms"
+            managed_block_apply "$dst" "$slot" < "$src_path" || return $?
+            apply_perms "$dst" "$perms" || return $?
             ;;
         *)
             echo "[deploy] unknown mode: $mode" >&2; return 64

@@ -91,5 +91,30 @@ err_output=$(deploy_one "git/sample|$TMP/dst12-dir|managed_block|0644" "$TMP/src
 if [[ "$rc" == "2" ]] && [[ -d "$TMP/dst12-dir" ]] && [[ "$err_output" == *"not a regular file"* ]]; then passed=$((passed+1)); echo "  ✓ F-005 managed_block refuses directory destination"
 else failed=$((failed+1)); echo "  ✗ F-005 managed_block refuses directory destination (rc=$rc)" >&2; fi
 
+# Test 13 (CP4 A1-F-004 regression): deploy_one propagates inner failures even
+# when caller has no `set -e`. apply_perms override returns 7; without defense-
+# in-depth the function would continue (mv succeeds → rc 0); with || return
+# guards it propagates 7 (or whichever non-zero the failing call returned).
+rc=0
+(
+  set +eo pipefail
+  apply_perms() { return 7; }
+  deploy_one "git/sample|$TMP/dst13|overwrite|0644" "$TMP/src" >/dev/null 2>&1
+) || rc=$?
+if [[ "$rc" != "0" ]]; then passed=$((passed+1)); echo "  ✓ A1-F-004 propagates inner failure under set +e (rc=$rc)"
+else failed=$((failed+1)); echo "  ✗ A1-F-004 propagates inner failure under set +e (rc=0; deploy_one swallowed apply_perms failure)" >&2; fi
+
+# Test 14 (CP4 A1-F-004 regression): atomic-write tmp is cleaned up when
+# apply_perms fails (no .deploy.tmp.* orphans left under dst dir).
+rm -f "$TMP"/.deploy.tmp.* 2>/dev/null || true
+(
+  set +eo pipefail
+  apply_perms() { return 7; }
+  deploy_one "git/sample|$TMP/dst14|overwrite|0644" "$TMP/src" >/dev/null 2>&1
+) || true
+leftovers=$(find "$TMP" -maxdepth 1 -name '.deploy.tmp.*' 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$leftovers" == "0" ]]; then passed=$((passed+1)); echo "  ✓ A1-F-004 cleans up atomic tmp on apply_perms failure"
+else failed=$((failed+1)); echo "  ✗ A1-F-004 cleans up atomic tmp on apply_perms failure (orphans=$leftovers)" >&2; fi
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]
