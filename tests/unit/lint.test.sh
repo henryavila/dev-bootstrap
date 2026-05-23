@@ -249,13 +249,35 @@ rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
 echo
 echo "L09 injection: custom-script missing verify() and rollback()"
 mkdir -p "$REPO_ROOT/topics/__lint-injection__"
+# L18 forbids `check:` on type:custom, so the L09 fixture below intentionally
+# omits manifest check: (irrelevant to L09's verify/rollback check anyway).
 _inject "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
-    $'- name: bad-custom\n  type: custom\n  script: "./bad-custom.sh"\n  check: "true"\n  desc: "missing verify+rollback"\n  platforms: [mac]'
+    $'- name: bad-custom\n  type: custom\n  script: "./bad-custom.sh"\n  desc: "missing verify+rollback"\n  platforms: [mac]'
 _inject "$REPO_ROOT/topics/__lint-injection__/bad-custom.sh" \
     $'#!/usr/bin/env bash\ncheck() { :; }\ninstall() { :; }'
 _run_lint_expect_fail "L09-custom-script-contract.sh" "L09:"
 rm -f "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
       "$REPO_ROOT/topics/__lint-injection__/bad-custom.sh"
+
+# L18 — type:custom item with manifest check: field (engine override shadow)
+echo
+echo "L18 injection: items.yaml with type:custom + check:"
+_inject "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
+    $'- name: shadow-custom\n  type: custom\n  script: "./shadow.sh"\n  check: "command -v whatever"\n  desc: "shadow check"'
+_inject "$REPO_ROOT/topics/__lint-injection__/shadow.sh" \
+    $'#!/usr/bin/env bash\ncheck() { :; }\ninstall() { :; }\nverify() { :; }\nrollback() { :; }'
+_run_lint_expect_fail "L18-no-manifest-check-on-custom.sh" "L18:"
+rm -f "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
+      "$REPO_ROOT/topics/__lint-injection__/shadow.sh"
+
+# L18 — type:apt with check: is allowed (manifest override is intentional there)
+echo
+echo "L18 allowlist contract: non-custom type with check: is accepted"
+_inject "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
+    $'- name: ok-apt\n  type: apt\n  spec: htop\n  check: "command -v htop"'
+out=$(bash "$LINTS_DIR/L18-no-manifest-check-on-custom.sh" 2>&1); rc=$?
+assert_eq "$rc" "0" "L18 ignores check: on non-custom types"
+rm -f "$REPO_ROOT/topics/__lint-injection__/items.yaml"
 
 echo
 summary
