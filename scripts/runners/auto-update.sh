@@ -161,6 +161,23 @@ warn()   { printf '%s!%s %s\n' "$C_WARN" "$C_RST" "$1" >&2; }
 err()    { printf '%s✗%s %s\n' "$C_ERR" "$C_RST" "$1" >&2; }
 dbg()    { (( ${AUTO_UPDATE_VERBOSE:-0} )) && printf '%s· %s%s\n' "$C_DIM" "$1" "$C_RST" >&2; return 0; }
 
+# Atomic state write — mktemp + mv -f. The 4 last-applied callsites used to
+# do `echo "$sha" > "$path"`, which truncates on disk-full and leaves a
+# 0-byte file on failure under set -uo pipefail (script continues with
+# corrupted state). CP4 D-F-007 fix: centralize through a helper that fails
+# loudly + leaves the existing file intact when the write does not commit.
+write_state_file() {
+    local path="$1" content="$2"
+    local dir tmp
+    dir="$(dirname "$path")"
+    tmp="$(mktemp "$dir/.state.tmp.XXXXXX")" || return 1
+    if ! printf '%s\n' "$content" > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
+}
+
 # OS suffix used by dev-bootstrap install.<suffix>.sh convention.
 _uname_suffix() {
     case "$(uname -s)" in
@@ -402,7 +419,8 @@ process_repo() {
         # pre-flight time (normally same, but a stale upstream cache or
         # parallel writer could disagree). Prefer the post-pull truth.
         if [[ -n "$new_head" ]]; then
-            echo "$new_head" > "$STATE_DIR/last-applied-$name"
+            write_state_file "$STATE_DIR/last-applied-$name" "$new_head" \
+                || warn "$name: falha gravando last-applied (mantendo valor anterior)"
         fi
         rm -f "$STATE_DIR/pending-sudo-$name"
         ok "$name reaplicado em modo --full"
@@ -417,7 +435,8 @@ process_repo() {
     last_applied="$(cat "$STATE_DIR/last-applied-$name" 2>/dev/null || echo '')"
     if [[ -z "$last_applied" ]]; then
         # First run on this machine: seed with current upstream HEAD; do nothing this round.
-        echo "$head_remote" > "$STATE_DIR/last-applied-$name"
+        write_state_file "$STATE_DIR/last-applied-$name" "$head_remote" \
+            || { err "$name: falha gravando seed em last-applied"; return 1; }
         dbg "$name: seeded last-applied=$head_remote (first run, no apply)"
         return 0
     fi
@@ -448,7 +467,8 @@ process_repo() {
     diff_content="$(git -C "$repo" diff "$last_applied" "$head_remote" 2>/dev/null)"
     if [[ -z "$diff_paths" ]]; then
         # Edge case: empty diff but SHAs differ (merge commit?). Bump baseline silently.
-        echo "$head_remote" > "$STATE_DIR/last-applied-$name"
+        write_state_file "$STATE_DIR/last-applied-$name" "$head_remote" \
+            || warn "$name: falha gravando last-applied no merge-empty-diff"
         dbg "$name: empty diff between $last_applied..$head_remote — baseline bumped"
         return 0
     fi
@@ -544,7 +564,8 @@ process_repo() {
 
     # ─── Apply: success — bump last-applied SHA (only if NOT skip_install) ──
     if (( ! skip_install )); then
-        echo "$head_remote" > "$STATE_DIR/last-applied-$name"
+        write_state_file "$STATE_DIR/last-applied-$name" "$head_remote" \
+            || warn "$name: falha gravando last-applied (estado pode dessincronizar)"
         ok "$name atualizado"
     else
         # Pull happened but install scripts skipped — DO NOT bump last-applied.
