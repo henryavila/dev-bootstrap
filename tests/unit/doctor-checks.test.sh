@@ -76,6 +76,41 @@ EOF
 EOF
     n=$(DOCTOR_LAUNCHD_DIR="$TMP/launchd-other" run_doctor_field launchd_phantom)
     assert "non-homebrew.mxcl plist is ignored" "0" "$n"
+    # Test 4b (CP4 D-F-008 regression): plist with comments / blank lines
+    # between <key> and <string> — the old grep -A1 would miss this; plutil
+    # parses semantically and still counts it.
+    mkdir -p "$TMP/launchd-formatted"
+    cat > "$TMP/launchd-formatted/homebrew.mxcl.fake-service.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <!-- inline comment between key and value would break grep -A1 -->
+    <key>StandardErrorPath</key>
+
+    <string>/Volumes/External/log/fake.err</string>
+</dict>
+</plist>
+EOF
+    n=$(DOCTOR_LAUNCHD_DIR="$TMP/launchd-formatted" run_doctor_field launchd_phantom)
+    assert "D-F-008 formatted plist (comment + blank between key/value) is counted" "1" "$n"
+
+    # Test 4c (CP4 D-F-008 regression): plist where both StandardErrorPath
+    # AND StandardOutPath point at /Volumes/ — must count the plist ONCE,
+    # not twice. The `break` after the first key-match enforces this.
+    mkdir -p "$TMP/launchd-both"
+    cat > "$TMP/launchd-both/homebrew.mxcl.fake-service.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>StandardErrorPath</key>
+    <string>/Volumes/External/log/fake.err</string>
+    <key>StandardOutPath</key>
+    <string>/Volumes/External/log/fake.out</string>
+</dict>
+</plist>
+EOF
+    n=$(DOCTOR_LAUNCHD_DIR="$TMP/launchd-both" run_doctor_field launchd_phantom)
+    assert "D-F-008 plist with both phantom paths is counted once" "1" "$n"
 else
     # On Linux/WSL: function returns 0 unconditionally (uname guard).
     n=$(run_doctor_field launchd_phantom)

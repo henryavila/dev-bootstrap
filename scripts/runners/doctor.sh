@@ -185,14 +185,23 @@ check_launchd_volume_paths() {
     [[ "$(uname -s)" != "Darwin" ]] && return 0
     local launchd_dir="${DOCTOR_LAUNCHD_DIR:-/Library/LaunchDaemons}"
     [[ ! -d "$launchd_dir" ]] && return 0
-    local plist
+    # CP4 D-F-008: parse the plist semantically via plutil instead of relying
+    # on `grep -A1 <key>` adjacency. The previous form worked because Homebrew
+    # emits `<key>...</key>\n<string>...</string>` back-to-back; comments,
+    # blank lines, or third-party plist generators with attribute lists would
+    # silently miss a phantom path. `plutil -extract KEY raw` is macOS-bundled
+    # and returns the string value (rc=0) or fails clean (rc=1) when absent.
+    local plist key val
     for plist in "$launchd_dir"/homebrew.mxcl.*.plist; do
         [[ -f "$plist" ]] || continue
-        if grep -A1 -E '<key>(StandardErrorPath|StandardOutPath)</key>' "$plist" 2>/dev/null \
-            | grep -qE '<string>/Volumes/'; then
-            count_launchd_phantom=$((count_launchd_phantom + 1))
-            launchd_phantom_items+=("$plist")
-        fi
+        for key in StandardErrorPath StandardOutPath; do
+            val="$(plutil -extract "$key" raw -o - "$plist" 2>/dev/null || true)"
+            if [[ "$val" == /Volumes/* ]]; then
+                count_launchd_phantom=$((count_launchd_phantom + 1))
+                launchd_phantom_items+=("$plist")
+                break  # don't double-count when both Err and Out are phantom
+            fi
+        done
     done
 }
 
@@ -202,12 +211,32 @@ check_launchd_volume_paths() {
 # /Volumes/External/homebrew. That invalidates the embedded SHA512 PHAR
 # signature and leaves `composer` installed but unusable.
 check_composer_phar() {
-    local composer_bin out
+    local composer_bin out tmo_bin
     composer_bin="$(command -v composer 2>/dev/null || true)"
     [[ -n "$composer_bin" ]] || return 0
 
-    if out="$("$composer_bin" --version 2>&1)"; then
-        return 0
+    # CP4 D-F-006: hanging composer (broken plugin / first-run network probe
+    # / corrupt jenv shim) would block doctor → mesh-snap → shell-start
+    # precmd. Cap the probe at 10s when a timeout binary is available.
+    # Linux ships `timeout` in coreutils by default; macOS ships `gtimeout`
+    # via `brew install coreutils`. If neither exists we still run the probe
+    # un-bounded (preserves the historical check for hosts without either).
+    if command -v timeout >/dev/null 2>&1; then
+        tmo_bin="timeout"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        tmo_bin="gtimeout"
+    else
+        tmo_bin=""
+    fi
+
+    if [[ -n "$tmo_bin" ]]; then
+        if out="$("$tmo_bin" 10s "$composer_bin" --version 2>&1)"; then
+            return 0
+        fi
+    else
+        if out="$("$composer_bin" --version 2>&1)"; then
+            return 0
+        fi
     fi
 
     case "$out" in
