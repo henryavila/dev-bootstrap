@@ -207,5 +207,79 @@ set -e
 [[ -f "$TMP/drv-rollback-fired" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: driver-check path — rollback fired"; } \
                                    || { failed=$((failed+1)); echo "  ✗ A1-F-001: driver-check path — rollback was bypassed" >&2; }
 
+# Test 10 (CP4 A1-F-003): post: scalar runs after successful install + verify
+cat > "$TMP/installers/post-scalar-driver.sh" <<SH
+post_scalar_driver_check()   { return 1; }   # force install
+post_scalar_driver_install() { touch "$TMP/post-scalar-installed"; }
+post_scalar_driver_verify()  { test -f "$TMP/post-scalar-installed"; }
+SH
+cat > "$TMP/items-post-scalar.yaml" <<'YAML'
+- name: post-scalar-item
+  type: post-scalar-driver
+  spec: anything
+  post: touch "$TMP/post-scalar-ran"
+YAML
+rm -f "$TMP/post-scalar-installed" "$TMP/post-scalar-ran"
+TMP="$TMP" STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-post-scalar.yaml" --installers-dir "$TMP/installers" >/dev/null 2>&1
+[[ -f "$TMP/post-scalar-ran" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-003: post scalar runs after verify"; } \
+                                || { failed=$((failed+1)); echo "  ✗ A1-F-003: post scalar did not run" >&2; }
+
+# Test 11 (CP4 A1-F-003): post: list runs each command in order
+cat > "$TMP/items-post-list.yaml" <<'YAML'
+- name: post-list-item
+  type: post-scalar-driver
+  spec: anything
+  post:
+    - touch "$TMP/post-list-1"
+    - touch "$TMP/post-list-2"
+YAML
+rm -f "$TMP/post-scalar-installed" "$TMP/post-list-1" "$TMP/post-list-2"
+TMP="$TMP" STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-post-list.yaml" --installers-dir "$TMP/installers" >/dev/null 2>&1
+if [[ -f "$TMP/post-list-1" && -f "$TMP/post-list-2" ]]; then
+    passed=$((passed+1)); echo "  ✓ A1-F-003: post list runs all entries"
+else
+    failed=$((failed+1)); echo "  ✗ A1-F-003: post list missing entries (1=$([[ -f $TMP/post-list-1 ]]&&echo y||echo n) 2=$([[ -f $TMP/post-list-2 ]]&&echo y||echo n))" >&2
+fi
+
+# Test 12 (CP4 A1-F-003): post failure → rollback + rc=69
+cat > "$TMP/installers/post-fail-driver.sh" <<SH
+post_fail_driver_check()    { return 1; }
+post_fail_driver_install()  { touch "$TMP/post-fail-installed"; }
+post_fail_driver_verify()   { test -f "$TMP/post-fail-installed"; }
+post_fail_driver_rollback() { touch "$TMP/post-fail-rolled-back"; }
+SH
+cat > "$TMP/items-post-fail.yaml" <<'YAML'
+- name: post-fail-item
+  type: post-fail-driver
+  spec: anything
+  post: "false"
+YAML
+rm -f "$TMP/post-fail-installed" "$TMP/post-fail-rolled-back"
+set +e
+TMP="$TMP" STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-post-fail.yaml" --installers-dir "$TMP/installers" >/dev/null 2>&1
+rc=$?
+set -e
+[[ "$rc" -eq 69 ]] && { passed=$((passed+1)); echo "  ✓ A1-F-003: post failure → rc=69"; } \
+                  || { failed=$((failed+1)); echo "  ✗ A1-F-003: post failure rc=$rc, expected 69" >&2; }
+[[ -f "$TMP/post-fail-rolled-back" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-003: post failure fires rollback"; } \
+                                      || { failed=$((failed+1)); echo "  ✗ A1-F-003: rollback not called on post failure" >&2; }
+
+# Test 13 (CP4 A1-F-003): post does NOT run when pre-install check passes (skip path)
+cat > "$TMP/installers/post-skip-driver.sh" <<SH
+post_skip_driver_check()   { return 0; }   # already installed → skip
+post_skip_driver_install() { touch "$TMP/post-skip-installed"; }
+post_skip_driver_verify()  { return 0; }
+SH
+cat > "$TMP/items-post-skip.yaml" <<'YAML'
+- name: post-skip-item
+  type: post-skip-driver
+  spec: anything
+  post: touch "$TMP/post-skip-ran"
+YAML
+rm -f "$TMP/post-skip-installed" "$TMP/post-skip-ran"
+TMP="$TMP" STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-post-skip.yaml" --installers-dir "$TMP/installers" >/dev/null 2>&1
+[[ ! -f "$TMP/post-skip-ran" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-003: post skipped when pre-install check passes"; } \
+                                || { failed=$((failed+1)); echo "  ✗ A1-F-003: post ran on skip path (should not)" >&2; }
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]

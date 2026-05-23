@@ -4,9 +4,18 @@
 #   bash install-engine.sh --manifest items.yaml [--installers-dir DIR] [--dry-run] [--platform OS]
 #
 # Lifecycle (per spec §C17):
-#   for each item: check → install (if check fails) → verify (fallback check) → rollback (no-op if absent)
+#   for each item: check → install (if check fails) → verify (fallback check) → post → rollback (no-op if absent)
 # Custom-script dispatch (`type: custom`): runs $script in a subshell with helpers sourced.
 # Subshell isolation: each item runs in `(...)` so functions/vars don't leak across items.
+#
+# `post:` hook (CP4 A1-F-003, activated 2026-05-23):
+#   Optional scalar or list of shell command snippets, runs ONLY after a
+#   successful install + verify. Skipped when pre-install check decided
+#   nothing needs to install (no re-trigger of post on idempotent re-runs).
+#   Each snippet executes via `bash -c`; failure routes through rollback
+#   (symmetric with verify failure) and engine exits 69.
+#   Use cases: systemd reload, brew services restart, cache invalidation,
+#   shim regeneration after a binary install.
 #
 # Platform filter:
 #   Current platform resolved from $MESH_OS (export from setup.sh), --platform flag, or detect-os.sh.
@@ -20,6 +29,7 @@
 #   66 — no driver found for item type
 #   67 — verify failed (rollback was called if present)
 #   68 — post-install check failed (no verify function defined)
+#   69 — post: hook failed (rollback was called if present)
 set -euo pipefail
 
 ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -179,6 +189,24 @@ while :; do
             log_warn "$name: post-install verification failed; calling rollback if present"
             declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
             exit 67
+        fi
+        # CP4 A1-F-003: optional post: hook. Iterates over the list emitted
+        # by yaml-parse (scalar post: foo → POST_COUNT=1 + POST_0=foo; list
+        # form expanded into POST_<n>). Skipped silently when post_count=0.
+        post_count_var="ITEM_${i}_POST_COUNT"
+        post_count="${!post_count_var:-0}"
+        if (( post_count > 0 )); then
+            for ((p=0; p<post_count; p++)); do
+                post_entry_var="ITEM_${i}_POST_${p}"
+                post_cmd="${!post_entry_var:-}"
+                [[ -n "$post_cmd" ]] || continue
+                if ! bash -c "$post_cmd"; then
+                    log_warn "$name: post[$p] failed (cmd: $post_cmd); calling rollback if present"
+                    declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                    exit 69
+                fi
+            done
+            log_info "$name: post completed ($post_count command(s))"
         fi
     ) || { _rc=$?; log_error "$name: failed (rc=$_rc)"; exit $_rc; }
     processed=$((processed+1))
