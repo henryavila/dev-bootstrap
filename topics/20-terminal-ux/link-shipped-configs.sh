@@ -17,7 +17,7 @@ check() {
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     while IFS='|' read -r rel dst; do
         [[ -z "$rel" ]] && continue
-        dst="$(eval echo "$dst")"
+        dst="${dst//\$HOME/$HOME}"
         # Aligned with link_default_config "first-writer-wins": any
         # existing destination (real file, our symlink, identity-shipped
         # foreign symlink — stow-style workflows) counts as satisfied.
@@ -37,7 +37,7 @@ install() {
     local rel dst
     while IFS='|' read -r rel dst; do
         [[ -z "$rel" ]] && continue
-        dst="$(eval echo "$dst")"
+        dst="${dst//\$HOME/$HOME}"
         link_default_config "$here/$rel" "$dst"
     done < <(_pairs)
 }
@@ -52,7 +52,7 @@ rollback() {
     while IFS='|' read -r rel dst; do
         [[ -z "$rel" ]] && continue
         src="$here/$rel"
-        dst="$(eval echo "$dst")"
+        dst="${dst//\$HOME/$HOME}"
         if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$src" ]]; then
             rm -f "$dst"
         fi

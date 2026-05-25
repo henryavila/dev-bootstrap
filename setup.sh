@@ -663,4 +663,9 @@ if [[ "${#failed[@]}" -gt 0 ]]; then
     exit 1
 fi
 
+if ! command -v mesh >/dev/null 2>&1; then
+    warn "mesh is installed at ~/.local/bin/mesh but not in your current \$PATH"
+    warn "open a new terminal, or run:  export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
 ok "done"

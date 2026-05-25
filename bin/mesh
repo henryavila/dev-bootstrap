@@ -113,6 +113,7 @@ Usage:
   mesh catalog generate             Regenerate .catalog/ derived listings
   mesh init [MODE | FLAGS]          Bootstrap identity (adopt-url/create-new/skip/interactive)
   mesh template-check [flags]       Verify template/ ↔ identity parity (C16.1)
+  mesh personal-clone [flags]       Clone personal repos from identity catalog
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -292,23 +293,29 @@ _resolve_dev_bootstrap_repo() {
         return 0
     fi
 
-    local conf local_conf repo
+    local conf repo
     conf="$(_resolve_auto_update_conf)"
     if [[ -n "$conf" && -r "$conf" ]]; then
-        AUTO_UPDATE_REPOS=()
-        # shellcheck source=/dev/null
-        . "$conf" 2>/dev/null || true
-        local_conf="${AUTO_UPDATE_LOCAL_CONF:-$HOME/.config/dotfiles/auto-update.conf.local}"
-        if [[ -r "$local_conf" ]]; then
+        # Source config in a subshell to prevent clobbering dispatcher globals.
+        local repos_raw
+        repos_raw="$(
+            AUTO_UPDATE_REPOS=()
             # shellcheck source=/dev/null
-            . "$local_conf" 2>/dev/null || true
-        fi
-        for repo in "${AUTO_UPDATE_REPOS[@]+"${AUTO_UPDATE_REPOS[@]}"}"; do
+            . "$conf" 2>/dev/null || true
+            local_conf="${AUTO_UPDATE_LOCAL_CONF:-$HOME/.config/dotfiles/auto-update.conf.local}"
+            if [[ -r "$local_conf" ]]; then
+                # shellcheck source=/dev/null
+                . "$local_conf" 2>/dev/null || true
+            fi
+            printf '%s\n' "${AUTO_UPDATE_REPOS[@]+"${AUTO_UPDATE_REPOS[@]}"}"
+        )"
+        while IFS= read -r repo; do
+            [[ -z "$repo" ]] && continue
             if [[ "$(basename "$repo")" == "dev-bootstrap" && -d "$repo/topics" ]]; then
                 printf '%s\n' "$repo"
                 return 0
             fi
-        done
+        done <<< "$repos_raw"
     fi
 
     if [[ -d "$HOME/dev-bootstrap/topics" ]]; then
@@ -1163,6 +1170,13 @@ EOF
     esac
 }
 
+sub_personal_clone() {
+    local lib
+    lib="$(_resolve_companion "lib/personal-clone.sh")"
+    [[ -n "$lib" ]] || _die "lib/personal-clone.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$lib" "$@"
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
@@ -1209,6 +1223,10 @@ case "${1:-status}" in
     catalog)
         shift
         sub_catalog "$@"
+        ;;
+    personal-clone)
+        shift
+        sub_personal_clone "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.

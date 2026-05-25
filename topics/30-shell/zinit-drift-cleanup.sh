@@ -24,13 +24,9 @@ check() {
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         spec="${line#"${line%%[![:space:]]*}"}"
         spec="${spec%"${spec##*[![:space:]]}"}"
-        case "$spec" in
-            */*) ;;
-            *)   continue ;;
-        esac
-        case "$spec" in
-            *..*|*//*|/*|*/)  continue ;;
-        esac
+        if [[ ! "$spec" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            continue
+        fi
         mangled="${spec//\//---}"
         if [[ -d "$dir/$mangled" ]]; then
             return 1
@@ -52,16 +48,10 @@ install() {
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         spec="${line#"${line%%[![:space:]]*}"}"
         spec="${spec%"${spec##*[![:space:]]}"}"
-        case "$spec" in
-            */*) ;;
-            *)   echo "[zinit-cleanup] '$spec' malformed (expected owner/repo) — skipping" >&2
-                 continue ;;
-        esac
-        case "$spec" in
-            *..*|*//*|/*|*/)
-                echo "[zinit-cleanup] '$spec' rejected by sandbox — skipping" >&2
-                continue ;;
-        esac
+        if [[ ! "$spec" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "[zinit-cleanup] '$spec' rejected (must be owner/repo with [A-Za-z0-9_.-] chars only) — skipping" >&2
+            continue
+        fi
         mangled="${spec//\//---}"
         target="$dir/$mangled"
         if [[ -d "$target" ]]; then
