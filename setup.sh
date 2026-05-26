@@ -247,7 +247,7 @@ state_load
 
 usage() {
     cat <<'EOF'
-dev-bootstrap — set up a development machine
+mesh-workstation — set up a development machine
 
 Interactive mode (default):
   bash setup.sh                 prompts for opt-ins + identity, then runs
@@ -345,7 +345,7 @@ if [[ "$OS" == "unknown" ]]; then
     exit 1
 fi
 
-banner "dev-bootstrap :: $OS"
+banner "mesh-workstation :: $OS"
 
 # ---------- Detect Brew (macOS only; may be absent on fresh install) ----------
 BREW_BIN=""
@@ -535,7 +535,7 @@ if [[ "$OS" == "wsl" || "$OS" == "linux" ]] && [[ "${DRY_RUN:-}" != "1" ]]; then
 fi
 
 # ---------- Log file ----------
-LOG="/tmp/dev-bootstrap-$OS-$(date +%Y%m%d-%H%M%S).log"
+LOG="/tmp/mesh-workstation-$OS-$(date +%Y%m%d-%H%M%S).log"
 info "full log: $LOG"
 
 # Avoid `declare -a foo=() bar=() baz=()` one-liner — bash 3.2 parses it
