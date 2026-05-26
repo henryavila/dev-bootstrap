@@ -185,7 +185,7 @@ _topic_default_state() {
             fi
             ;;
         dotfiles)
-            local dir="${DOTFILES_DIR:-$HOME/dotfiles}"
+            local dir="${DOTFILES_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
             if [[ -d "$dir/.git" ]]; then
                 echo ON
             else
@@ -318,7 +318,7 @@ _ai_package_description() {
 }
 
 _dotfiles_manifest_root() {
-    local dir="${DOTFILES_DIR:-$HOME/dotfiles}"
+    local dir="${DOTFILES_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
     if [[ -f "$dir/ai/packages.default.list" || -f "$dir/scripts/install-ai-packages.sh" ]]; then
         printf '%s\n' "$dir"
         return 0
@@ -381,7 +381,7 @@ Topic 82 will open the dotfiles AI package selector during install." \
     ai_package_descriptions=()
     default_manifest="$root/ai/packages.default.list"
     local_manifest="$root/ai/packages.local.list"
-    host_manifest="${DOTFILES_AI_LOCAL_MANIFEST:-$HOME/.config/dotfiles/ai-packages.list}"
+    host_manifest="${DOTFILES_AI_LOCAL_MANIFEST:-$HOME/.config/mesh/ai-packages.list}"
     replace_defaults=0
     [[ -f "$local_manifest" && "$(_ai_manifest_mode "$local_manifest")" == "replace" ]] && replace_defaults=1
     [[ -f "$host_manifest" && "$(_ai_manifest_mode "$host_manifest")" == "replace" ]] && replace_defaults=1
@@ -529,7 +529,7 @@ run_menu() {
     # the dotfiles were already cloned.
     if [[ "$need_dotfiles_repo" == "1" ]]; then
         local existing_dotfiles_repo=""
-        local candidate_dir="${DOTFILES_DIR:-$HOME/dotfiles}"
+        local candidate_dir="${DOTFILES_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
         if command -v git >/dev/null 2>&1 && [[ -d "$candidate_dir/.git" ]]; then
             existing_dotfiles_repo=$(git -C "$candidate_dir" remote get-url origin 2>/dev/null || true)
         fi
@@ -647,7 +647,7 @@ Examples:
                     DOTFILES_DIR=$(whiptail --title "dotfiles repo :: clone path" \
                         --inputbox \
 "Where to clone the dotfiles repo:" \
-                        10 70 "${DOTFILES_DIR:-$HOME/dotfiles}" \
+                        10 70 "${DOTFILES_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}" \
                         3>&1 1>&2 2>&3) || _menu_cancel
                     export DOTFILES_DIR
                 fi

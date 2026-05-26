@@ -88,13 +88,16 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 # ─── Config ──────────────────────────────────────────────────────────
-CONF="${CONFIG_OVERRIDE:-${MESH_STATUS_CONF:-$HOME/.config/dotfiles/mesh-status.conf}}"
+CONF="${CONFIG_OVERRIDE:-${MESH_STATUS_CONF:-$HOME/.config/mesh/mesh-status.conf}}"
+# Fallback to pre-C10 path if the new one doesn't exist yet.
+[[ ! -r "$CONF" && -r "$HOME/.config/dotfiles/mesh-status.conf" ]] && \
+    CONF="$HOME/.config/dotfiles/mesh-status.conf"
 
 # Defaults — overridden by config file if present.
 MESH_SYNC_DIR="${MESH_SYNC_DIR:-$HOME/Sync/mesh-status}"
-MESH_HISTORY_DIR="${MESH_HISTORY_DIR:-$HOME/.local/state/dotfiles/mesh-history}"
+MESH_HISTORY_DIR="${MESH_HISTORY_DIR:-$HOME/.local/state/mesh/mesh-history}"
 MESH_HISTORY_RETENTION_DAYS="${MESH_HISTORY_RETENTION_DAYS:-90}"
-MESH_REPOS=("dev-bootstrap" "dotfiles" "dotfiles-template")
+MESH_REPOS=("mesh-workstation" "mesh-identity")
 # Default to empty JSON object. Note the awkward expansion: bash's
 # ${var:-X} terminates the substitution at the first unbalanced `}`, so
 # `${MAP:-{}}` parses as "default is {" with a trailing literal `}` —
@@ -109,7 +112,7 @@ if [[ -r "$CONF" ]]; then
 fi
 
 # Lock state dir (sibling to history). Used to coordinate concurrent runs.
-MESH_STATE_DIR="${MESH_STATE_DIR:-$HOME/.local/state/dotfiles}"
+MESH_STATE_DIR="${MESH_STATE_DIR:-$HOME/.local/state/mesh}"
 MESH_LOCK_DIR="$MESH_STATE_DIR/mesh-snap.lock.d"
 
 # Track partial-success state — any collector that fails sets this.
@@ -255,7 +258,10 @@ _repo_path_for() {
 }
 
 # State path used by auto-update. Consulted for last_applied per-repo.
-_LAST_APPLIED_DIR="${AUTO_UPDATE_STATE_DIR:-$HOME/.local/state/dev-bootstrap}"
+_LAST_APPLIED_DIR="${AUTO_UPDATE_STATE_DIR:-$HOME/.local/state/mesh}"
+# Fallback to pre-C10 state dir if the new one doesn't exist yet.
+[[ ! -d "$_LAST_APPLIED_DIR" && -d "$HOME/.local/state/dev-bootstrap" ]] && \
+    _LAST_APPLIED_DIR="$HOME/.local/state/dev-bootstrap"
 
 # Fetch timeout (seconds). Mirrors auto-update's defaults; configurable.
 MESH_FETCH_TIMEOUT="${MESH_FETCH_TIMEOUT:-3}"

@@ -108,8 +108,7 @@ deploy_one() {
                 echo "[deploy] $dst is a symlink; refusing managed_block edit" >&2
                 return 2
             fi
-            local slot
-            slot=$(basename "$src" | sed 's/\.[^.]*$//')
+            local slot="$src"
             managed_block_apply "$dst" "$slot" < "$src_path" || return $?
             apply_perms "$dst" "$perms" || return $?
             ;;

@@ -40,7 +40,7 @@ REPO="$(cd "$HERE/../.." && pwd)"
 # has no top-level install.sh; mappings remain identity-owned data per
 # spec D-B3 / §C18). Resolve identity via MESH_IDENTITY_DIR with the
 # usual fallback chain.
-IDENTITY="${MESH_IDENTITY_DIR:-${DOTFILES_DIR:-$HOME/dotfiles}}"
+IDENTITY="${MESH_IDENTITY_DIR:-${DOTFILES_DIR:-$HOME/mesh-identity}}"
 INSTALL="$IDENTITY/install.sh"
 
 QUIET=0
@@ -95,8 +95,8 @@ parse_mappings() {
 
 check_mapping() {
     local raw="$1"
-    local src dst mode
-    IFS='|' read -r src dst mode <<< "$raw"
+    local src dst mode perms
+    IFS='|' read -r src dst mode perms <<< "$raw"
     mode="${mode:-overwrite}"
     # Expand $HOME literally (install.sh does the same)
     dst="${dst//\$HOME/$HOME}"

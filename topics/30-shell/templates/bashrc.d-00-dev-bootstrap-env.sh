@@ -10,6 +10,10 @@ export DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0
 # setup.sh creates (C13.5). Lets ~/.bashrc.d/auto-update + downstream
 # fragments find the workstation root without needing each user to set the
 # env var manually. Honors a pre-set value. See Review B finding B2.
+if [[ -z "${MESH_WORKSTATION_DIR:-}" && -z "${MESH_IDENTITY_DIR:-}" ]]; then
+    [[ -r "$HOME/.config/mesh/config.env" ]] && . "$HOME/.config/mesh/config.env"
+fi
+
 if [[ -z "${MESH_WORKSTATION_DIR:-}" ]] && [[ -L "$HOME/.local/bin/mesh" ]]; then
     _mesh_link=$(readlink "$HOME/.local/bin/mesh")
     case "$_mesh_link" in
@@ -17,3 +21,7 @@ if [[ -z "${MESH_WORKSTATION_DIR:-}" ]] && [[ -L "$HOME/.local/bin/mesh" ]]; the
     esac
     unset _mesh_link
 fi
+
+: "${MESH_IDENTITY_DIR:=$HOME/mesh-identity}"
+: "${DOTFILES_DIR:=$MESH_IDENTITY_DIR}"
+export MESH_WORKSTATION_DIR MESH_IDENTITY_DIR DOTFILES_DIR

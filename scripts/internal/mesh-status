@@ -108,11 +108,13 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 # ─── Config (same defaults as mesh-snap) ─────────────────────────────
-CONF="${MESH_STATUS_CONF:-$HOME/.config/dotfiles/mesh-status.conf}"
+CONF="${MESH_STATUS_CONF:-$HOME/.config/mesh/mesh-status.conf}"
+[[ ! -r "$CONF" && -r "$HOME/.config/dotfiles/mesh-status.conf" ]] && \
+    CONF="$HOME/.config/dotfiles/mesh-status.conf"
 MESH_SYNC_DIR="${MESH_SYNC_DIR:-$HOME/Sync/mesh-status}"
-MESH_HISTORY_DIR="${MESH_HISTORY_DIR:-$HOME/.local/state/dotfiles/mesh-history}"
+MESH_HISTORY_DIR="${MESH_HISTORY_DIR:-$HOME/.local/state/mesh/mesh-history}"
 MESH_REFERENCE_BRANCH="${MESH_REFERENCE_BRANCH:-main}"
-MESH_REPOS=("dev-bootstrap" "dotfiles" "dotfiles-template")
+MESH_REPOS=("mesh-workstation" "mesh-identity")
 
 if [[ -r "$CONF" ]]; then
     # shellcheck disable=SC1090
