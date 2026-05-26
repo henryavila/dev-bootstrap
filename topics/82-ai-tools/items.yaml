@@ -7,8 +7,8 @@
 
 - name: atomic-skills
   type: npx
-  spec: "@henryavila/atomic-skills@1.7.0"
-  desc: "Atomic skills installer (npx wrapper) — runs every time per npx semantics"
+  spec: "@henryavila/atomic-skills@1.7.0 install --yes --all-detected --lang pt"
+  desc: "Atomic skills — detect IDEs + install agent skills (runs every time)"
   platforms: [mac, wsl]
 
 - name: rtk
