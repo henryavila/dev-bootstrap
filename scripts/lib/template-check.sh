@@ -40,10 +40,13 @@ SKIP_PREFIXES=(
     "tests/"
     "docs/"
     ".ai/memory/"
+    ".ai/"
+    ".atomic-skills/"
     "claude/"
     ".claude/"
     "npm/"
     "extensions/"
+    "config/"
 )
 SKIP_EXACT=(
     "codex/config.toml"
@@ -60,6 +63,8 @@ _is_skipped() {
     for p in "${SKIP_EXACT[@]}"; do
         [[ "$rel" == "$p" ]] && return 0
     done
+    # Identity .example scaffolds don't need double .example.example in template
+    [[ "$rel" == *.example ]] && return 0
     return 1
 }
 
