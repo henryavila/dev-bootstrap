@@ -26,7 +26,7 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-SNAP_DIR="$HOME/.local/state/dev-bootstrap/snapshots/$(hostname)-pre-migration"
+SNAP_DIR="$HOME/.local/state/mesh-workstation/snapshots/$(hostname)-pre-migration"
 if [[ ! -d "$SNAP_DIR" ]]; then
     echo "ERROR: no snapshot found at $SNAP_DIR — cannot rollback." >&2
     echo "(Did migrate-to-engine.sh ever run on this machine?)" >&2
@@ -83,7 +83,7 @@ echo "  restored git: $prev_branch @ $prev_head"
 #    different host. An active lock on this host means a bridge is mid-
 #    migration; refuse without --force-stale-lock so two unrelated
 #    operators don't accidentally race each other.
-LOCK="$HOME/.local/state/dev-bootstrap/migration.lock"
+LOCK="$HOME/.local/state/mesh-workstation/migration.lock"
 if [[ -f "$LOCK" ]]; then
     lock_pid=""; lock_host=""
     if [[ -s "$LOCK" ]]; then

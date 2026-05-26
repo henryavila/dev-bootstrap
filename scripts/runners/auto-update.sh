@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# scripts/runners/auto-update.sh — propagate dev-bootstrap + dotfiles changes across machines.
+# scripts/runners/auto-update.sh — propagate mesh-workstation + dotfiles changes across machines.
 #
 # Spec: docs/2026-04-25-auto-update-spec.md
 #
 # Usage:
 #   bash scripts/runners/auto-update.sh                     manual run, all repos, incremental
 #   bash scripts/runners/auto-update.sh --from-shell-start  hook invocation (allows auto-exec)
-#   bash scripts/runners/auto-update.sh -o|--only NAME      restrict to repo NAME (dev-bootstrap | dotfiles)
+#   bash scripts/runners/auto-update.sh -o|--only NAME      restrict to repo NAME (mesh-workstation | dotfiles)
 #   bash scripts/runners/auto-update.sh -f|--full           force full apply: bash setup.sh / install.sh
 #                                                   ignoring last-applied diff
-#   bash scripts/runners/auto-update.sh -i|--interactive    in --full + dev-bootstrap, run setup.sh
+#   bash scripts/runners/auto-update.sh -i|--interactive    in --full + mesh-workstation, run setup.sh
 #                                                   WITHOUT --non-interactive (i.e. show the menu).
 #                                                   Silently ignored for dotfiles or incremental runs.
 #   bash scripts/runners/auto-update.sh --reset-auth        clear auth-failed-* flags and exit
@@ -20,10 +20,10 @@
 #   1  fatal error (config missing, etc.)
 #
 # Side effects:
-#   ~/.local/state/dev-bootstrap/last-applied-<repo>  SHA aplicada por repo
-#   ~/.local/state/dev-bootstrap/update.lock          flock mutex
-#   ~/.local/state/dev-bootstrap/pending-sudo-<repo>  marker se sudo cancelado
-#   ~/.local/state/dev-bootstrap/auth-failed-<repo>   marker se git fetch deu 401/403
+#   ~/.local/state/mesh-workstation/last-applied-<repo>  SHA aplicada por repo
+#   ~/.local/state/mesh-workstation/update.lock          flock mutex
+#   ~/.local/state/mesh-workstation/pending-sudo-<repo>  marker se sudo cancelado
+#   ~/.local/state/mesh-workstation/auth-failed-<repo>   marker se git fetch deu 401/403
 
 set -uo pipefail
 # NOTE: not -e — we handle per-repo failures gracefully; lib funcs return non-zero
@@ -46,7 +46,7 @@ if [[ -z "$CONF" ]]; then
         CONF="$HERE/../auto-update.conf"
     fi
 fi
-STATE_DIR="${AUTO_UPDATE_STATE_DIR:-$HOME/.local/state/dev-bootstrap}"
+STATE_DIR="${AUTO_UPDATE_STATE_DIR:-$HOME/.local/state/mesh-workstation}"
 # (Legacy `LOCK="$STATE_DIR/update.lock"` removed — see LOCK_DIR below;
 # the mkdir-based mutex superseded the file-based one and the unused
 # variable was tripping shellcheck SC2034.)
@@ -70,7 +70,7 @@ while (( $# > 0 )); do
             # otherwise consume `--full` as the repo name and emit a confusing
             # "did not match" warning). Both long and short forms route here.
             if [[ -z "$ONLY" || "$ONLY" == -* ]]; then
-                echo "auto-update: -o/--only requires a repo name (e.g. dev-bootstrap, dotfiles)" >&2
+                echo "auto-update: -o/--only requires a repo name (e.g. mesh-workstation, dotfiles)" >&2
                 exit 1
             fi
             ;;
@@ -100,7 +100,7 @@ fi
 
 if (( RESET_AUTH )); then
     # Honor -o/--only when set: only clear that domain's flag — `mesh update
-    # -o dev-bootstrap --reset-auth` shouldn't touch dotfiles auth state.
+    # -o mesh-workstation --reset-auth` shouldn't touch dotfiles auth state.
     if [[ -n "$ONLY" ]]; then
         rm -f "$STATE_DIR/auth-failed-$ONLY"
         echo "auto-update: cleared auth-failed flag for $ONLY"
@@ -178,7 +178,7 @@ write_state_file() {
     mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
 }
 
-# OS suffix used by dev-bootstrap install.<suffix>.sh convention.
+# OS suffix used by mesh-workstation install.<suffix>.sh convention.
 _uname_suffix() {
     case "$(uname -s)" in
         Linux*)  echo "wsl" ;;
@@ -223,12 +223,12 @@ _run_with_timeout() {
 run_setup_interactive() {
     local repo="$1"
     # CP4 chunk D finding D-F-003: should_show_menu (scripts/lib/menu.sh)
-    # treats ANY pre-set INCLUDE_* / DOTFILES_* / PHP_* / POSTGRES_* /
+    # treats ANY pre-set INCLUDE_* / MESH_* / PHP_* / POSTGRES_* /
     # GIT_NAME/GIT_EMAIL as "automation mode" and suppresses the
     # interactive menu. Hard-coding the unset list got out of sync —
     # newer gates (INCLUDE_AI_TOOLS, INCLUDE_CODE_SERVER,
-    # INCLUDE_DOTFILES_PERSONAL, INCLUDE_NPM_GLOBAL, DOTFILES_NPM_GLOBAL,
-    # DOTFILES_AI_PACKAGES) silently leaked through and defeated the
+    # INCLUDE_IDENTITY, INCLUDE_NPM_GLOBAL, MESH_NPM_GLOBAL,
+    # MESH_AI_PACKAGES) silently leaked through and defeated the
     # wrapper's whole purpose.
     #
     # Defense: unset EVERY menu-owned gate that should_show_menu reads.
@@ -239,11 +239,11 @@ run_setup_interactive() {
         # All INCLUDE_* gates per should_show_menu (menu.sh:37-49).
         unset INCLUDE_DOCKER INCLUDE_WEBSTACK INCLUDE_LARAVEL INCLUDE_REMOTE
         unset INCLUDE_AI_TOOLS INCLUDE_CODE_SERVER INCLUDE_EDITOR
-        unset INCLUDE_DOTFILES_PERSONAL INCLUDE_MAILPIT INCLUDE_NGROK
+        unset INCLUDE_IDENTITY INCLUDE_MAILPIT INCLUDE_NGROK
         unset INCLUDE_MSSQL INCLUDE_POSTGRES INCLUDE_FRONTEND_PROXY
         unset INCLUDE_NPM_GLOBAL
-        # DOTFILES_* automation gates (menu.sh:49-50).
-        unset DOTFILES_NPM_GLOBAL DOTFILES_AI_PACKAGES DOTFILES_REPO
+        # MESH_* automation gates (menu.sh:49-50).
+        unset MESH_NPM_GLOBAL MESH_AI_PACKAGES MESH_IDENTITY_REPO
         # PHP / POSTGRES version pins (PHP_VERSIONS triggers automation mode).
         unset PHP_VERSIONS PHP_DEFAULT POSTGRES_VERSION
         # Identity overrides (intentionally kept: $HOME, $USER).
@@ -329,14 +329,14 @@ process_repo() {
 
     # ─── --full path: force setup.sh / install.sh, ignore diff ──
     # Skips last-applied/diff/pending-sudo logic and runs the orchestrator
-    # in full. Used by `bup --full` (rebootstrap dev-bootstrap from scratch)
+    # in full. Used by `bup --full` (rebootstrap mesh-workstation from scratch)
     # and `dotup --full` (re-deploy dotfiles). Bumps last-applied on success
     # so the next incremental run sees a fresh baseline.
     if (( FULL )); then
         notice "atualizando $name (--full)"
-        # Pre-emptive sudo for dev-bootstrap (setup.sh runs apt/brew/services).
+        # Pre-emptive sudo for mesh-workstation (setup.sh runs apt/brew/services).
         # dotfiles install.sh is HOME-only — no sudo needed.
-        if [[ "$name" == "dev-bootstrap" ]]; then
+        if [[ "$name" == "mesh-workstation" ]]; then
             notice "$name: --full requer sudo (setup.sh roda apt/brew/services)"
             if ! sudo -v 2>/dev/null; then
                 warn "$name: sudo cancelado — abortando --full"
@@ -367,7 +367,7 @@ process_repo() {
         else
             ok "$name: already at $new_short"
         fi
-        if [[ "$name" == "dev-bootstrap" ]]; then
+        if [[ "$name" == "mesh-workstation" ]]; then
             # -i/--interactive drops --non-interactive so setup.sh shows
             # its whiptail menu (used to validate new opt-ins like postgres
             # without committing config.env tweaks first). Default stays
@@ -514,8 +514,8 @@ process_repo() {
         return 1
     fi
 
-    # ─── Apply: re-run install scripts of affected topics (dev-bootstrap) ──
-    if (( ! skip_install )) && [[ "$name" == "dev-bootstrap" ]]; then
+    # ─── Apply: re-run install scripts of affected topics (mesh-workstation) ──
+    if (( ! skip_install )) && [[ "$name" == "mesh-workstation" ]]; then
         local affected_topics
         affected_topics="$(echo "$diff_paths" | grep -oE '^topics/[0-9]+-[^/]+' | sort -u || true)"
         if [[ -n "$affected_topics" ]]; then

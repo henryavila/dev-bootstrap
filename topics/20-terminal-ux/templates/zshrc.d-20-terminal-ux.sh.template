@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# 20-terminal-ux shell fragment (zsh) — managed by dev-bootstrap
+# 20-terminal-ux shell fragment (zsh) — managed by mesh-workstation
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 
 # Starship is deliberately NOT initialized on zsh: Powerlevel10k owns

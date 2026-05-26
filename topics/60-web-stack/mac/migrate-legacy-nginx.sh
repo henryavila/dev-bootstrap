@@ -2,7 +2,7 @@
 # Custom: pre-migrate legacy unmarked nginx files (60-web-stack mac).
 #
 # deploy.sh refuses to overwrite files in $BREW_PREFIX/etc/nginx/ that
-# don't carry the "managed by dev-bootstrap" marker — that's the safety
+# don't carry the "managed by mesh-workstation" marker — that's the safety
 # rail protecting user-authored configs from silent overwrite. But on
 # machines that ran an OLDER bootstrap (before the marker convention was
 # added to these specific templates), the files exist on disk without
@@ -29,9 +29,9 @@ install() {
     local NGINX_AVAILABLE_DIR="$BREW_PREFIX/etc/nginx/sites-available"
 
     local LEGACY_FILES=(
-        "$NGINX_SNIPPET_DIR/dev-bootstrap-security.conf"
-        "$NGINX_SNIPPET_DIR/dev-bootstrap-proxy.conf"
-        "$NGINX_MAP_DIR/dev-bootstrap-maps.conf"
+        "$NGINX_SNIPPET_DIR/mesh-security.conf"
+        "$NGINX_SNIPPET_DIR/mesh-proxy.conf"
+        "$NGINX_MAP_DIR/mesh-maps.conf"
         "$NGINX_AVAILABLE_DIR/catchall-php.conf"
         "$NGINX_AVAILABLE_DIR/catchall-proxy.conf"
     )
@@ -44,19 +44,19 @@ install() {
         sudo test -f "$legacy" 2>/dev/null || continue
         # Skip files that already carry the new marker — those are ours
         # and don't need migration.
-        sudo grep -qi "managed by dev-bootstrap" "$legacy" 2>/dev/null && continue
+        sudo grep -qi "managed by mesh-workstation" "$legacy" 2>/dev/null && continue
         # Codex review 2026-05-19 (C-F003 + F-F003): the previous logic
         # migrated ANY unmarked file at an allowlisted path. A user-authored
         # config at one of these paths would be silently moved out of
-        # service. Now we require a "dev-bootstrap" signature SOMEWHERE in
+        # service. Now we require a "mesh-workstation" signature SOMEWHERE in
         # the file content (older marker convention used the substring
         # before the canonical "Managed by dev-bootstrap" sentence). A
         # user-authored file is overwhelmingly unlikely to contain that
         # substring. Without the signature we leave the file in place and
         # emit an advisory so deploy.sh's overwrite-refusal surfaces the
         # conflict to the user.
-        if ! sudo grep -qi "dev-bootstrap" "$legacy" 2>/dev/null; then
-            echo "[migrate-legacy-nginx] $legacy: unmarked AND no dev-bootstrap signature — leaving in place. deploy.sh will refuse to overwrite; remove or rename manually if you want our template here." >&2
+        if ! sudo grep -qiE "(dev-bootstrap|mesh-workstation)" "$legacy" 2>/dev/null; then
+            echo "[migrate-legacy-nginx] $legacy: unmarked AND no mesh-workstation signature — leaving in place. deploy.sh will refuse to overwrite; remove or rename manually if you want our template here." >&2
             continue
         fi
         backup="${legacy}.pre-bootstrap-bak-${_migration_ts}"
@@ -84,19 +84,19 @@ verify() {
     local NGINX_MAP_DIR="$BREW_PREFIX/etc/nginx/conf.d"
     local NGINX_AVAILABLE_DIR="$BREW_PREFIX/etc/nginx/sites-available"
     local LEGACY_FILES=(
-        "$NGINX_SNIPPET_DIR/dev-bootstrap-security.conf"
-        "$NGINX_SNIPPET_DIR/dev-bootstrap-proxy.conf"
-        "$NGINX_MAP_DIR/dev-bootstrap-maps.conf"
+        "$NGINX_SNIPPET_DIR/mesh-security.conf"
+        "$NGINX_SNIPPET_DIR/mesh-proxy.conf"
+        "$NGINX_MAP_DIR/mesh-maps.conf"
         "$NGINX_AVAILABLE_DIR/catchall-php.conf"
         "$NGINX_AVAILABLE_DIR/catchall-proxy.conf"
     )
     local legacy
     for legacy in "${LEGACY_FILES[@]}"; do
         sudo test -f "$legacy" 2>/dev/null || continue
-        sudo grep -qi "managed by dev-bootstrap" "$legacy" 2>/dev/null && continue
+        sudo grep -qi "managed by mesh-workstation" "$legacy" 2>/dev/null && continue
         # File present, no new marker. Verify passes ONLY if it lacks the
         # dev-bootstrap signature (= user-authored, intentionally left).
-        sudo grep -qi "dev-bootstrap" "$legacy" 2>/dev/null && return 1
+        sudo grep -qiE "(dev-bootstrap|mesh-workstation)" "$legacy" 2>/dev/null && return 1
     done
     return 0
 }

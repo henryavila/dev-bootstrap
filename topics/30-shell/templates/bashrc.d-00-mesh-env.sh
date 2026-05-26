@@ -1,10 +1,10 @@
 # shellcheck shell=bash
-# ~/.bashrc.d/00-dev-bootstrap-env.sh — global dev-bootstrap feature defaults.
+# ~/.bashrc.d/00-mesh-env.sh — global mesh feature defaults.
 
 # Hard kill switch for dormant auto-main. This fragment loads before
 # ~/.bashrc.d/40-tmux.sh, including older deployed copies whose own default was
 # opt-out instead of opt-in.
-export DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0
+export MESH_TMUX_AUTO_MAIN=0
 
 # MESH_WORKSTATION_DIR auto-derived from the ~/.local/bin/mesh symlink that
 # setup.sh creates (C13.5). Lets ~/.bashrc.d/auto-update + downstream
@@ -23,5 +23,4 @@ if [[ -z "${MESH_WORKSTATION_DIR:-}" ]] && [[ -L "$HOME/.local/bin/mesh" ]]; the
 fi
 
 : "${MESH_IDENTITY_DIR:=$HOME/mesh-identity}"
-: "${DOTFILES_DIR:=$MESH_IDENTITY_DIR}"
-export MESH_WORKSTATION_DIR MESH_IDENTITY_DIR DOTFILES_DIR
+export MESH_WORKSTATION_DIR MESH_IDENTITY_DIR

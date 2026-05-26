@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# ~/.bashrc — managed by dev-bootstrap / 30-shell
+# ~/.bashrc — managed by mesh-workstation / 30-shell
 # Edit local overrides in ~/.bashrc.local (loaded last, never overwritten).
 
 # If not running interactively, don't do anything
@@ -60,7 +60,7 @@ export VISUAL="${VISUAL:-$EDITOR}"
 # Hard-disable dormant features before topic fragments load. In particular,
 # this prevents older deployed 40-tmux fragments from auto-attaching `main`
 # after a normal update refreshes only the 30-shell loader.
-export DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0
+export MESH_TMUX_AUTO_MAIN=0
 
 # ---------- Modular fragments ----------
 if [ -d "$HOME/.bashrc.d" ]; then

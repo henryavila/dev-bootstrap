@@ -25,7 +25,7 @@ assert_file_exists "$SECRETS_SH" "lib/secrets.sh present"
 # macOS + GNU; the `-t` prefix spelling is portable.
 _fresh_state() {
     local tmp
-    tmp="$(mktemp -d -t dev-bootstrap-secrets-test.XXXXXX)"
+    tmp="$(mktemp -d -t mesh-workstation-secrets-test.XXXXXX)"
     export BOOTSTRAP_STATE_DIR="$tmp"
     export BOOTSTRAP_SECRETS_FILE="$tmp/secrets.env"
     # shellcheck source=/dev/null

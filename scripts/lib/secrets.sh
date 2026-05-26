@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# lib/secrets.sh — dev-bootstrap shared secrets file (sourced, not executed).
+# lib/secrets.sh — mesh-workstation shared secrets file (sourced, not executed).
 #
 # Purpose:
 #   Central place for input-only tokens that tools need but cannot
@@ -27,7 +27,7 @@
 #   secrets_set for atomicity.
 #
 # Path:
-#   $BOOTSTRAP_SECRETS_FILE (default ~/.local/state/dev-bootstrap/secrets.env).
+#   $BOOTSTRAP_SECRETS_FILE (default ~/.local/state/mesh-workstation/secrets.env).
 #   Lives alongside config.env so there's a single state dir per host.
 #
 # What belongs here:
@@ -48,7 +48,7 @@
 # file is a last resort for tools that DON'T, so we don't undermine
 # the ones that DO.
 
-: "${BOOTSTRAP_STATE_DIR:=$HOME/.local/state/dev-bootstrap}"
+: "${BOOTSTRAP_STATE_DIR:=$HOME/.local/state/mesh-workstation}"
 : "${BOOTSTRAP_SECRETS_FILE:=$BOOTSTRAP_STATE_DIR/secrets.env}"
 export BOOTSTRAP_STATE_DIR BOOTSTRAP_SECRETS_FILE
 
@@ -66,7 +66,7 @@ if ! declare -F ok >/dev/null 2>&1; then
 fi
 
 # _secrets_mode — cross-platform (`stat` differs GNU vs BSD) octal mode
-# of a file. Last resort: perl, which exists on every dev-bootstrap
+# of a file. Last resort: perl, which exists on every mesh-workstation
 # target OS (WSL Ubuntu ships perl in base; macOS ships it too).
 _secrets_mode() {
     local f="$1"
@@ -87,7 +87,7 @@ secrets_init() {
     chmod 0700 "$dir" 2>/dev/null || true
     if [[ ! -f "$file" ]]; then
         cat > "$file" <<'EOF'
-# dev-bootstrap — local secrets file (mode 0600).
+# mesh-workstation — local secrets file (mode 0600).
 # Sourced by setup.sh BEFORE any topic runs, so installers
 # see these vars in their env.
 #

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # link-project — register a project with the nginx catchall stack.
-# Managed by dev-bootstrap / 60-web-stack.
+# Managed by mesh-workstation / 60-web-stack.
 #
 # Chrome / Edge / Firefox / Safari / curl all resolve *.localhost natively
 # (RFC 6761). No /etc/hosts editing and no sudo for the default flow — the
@@ -23,7 +23,7 @@
 #       sites-available copy is kept so re-enabling is instant.
 #
 #   link-project --list
-#       Show every enabled dev-bootstrap site.
+#       Show every enabled mesh-workstation site.
 set -euo pipefail
 
 : "${CODE_DIR:=$HOME/code/web}"
@@ -109,7 +109,7 @@ cmd_frontend() {
     # Inline heredoc rather than templating — the port and name come from
     # shell args, so expansion happens safely in the current process.
     sudo tee "$src" > /dev/null <<EOF
-# Managed by dev-bootstrap / link-project. Edits lost on re-link.
+# Managed by mesh-workstation / link-project. Edits lost on re-link.
 # Per-project proxy for $name → 127.0.0.1:$port
 
 upstream dev_${name}_backend {
@@ -128,14 +128,14 @@ server {
     ssl_certificate     ${CERT_DIR}/wildcard-localhost.pem;
     ssl_certificate_key ${CERT_DIR}/wildcard-localhost-key.pem;
 
-    include snippets/dev-bootstrap-security.conf;
+    include snippets/mesh-security.conf;
 
     access_log /var/log/nginx/${name}.front.localhost.access.log;
     error_log  /var/log/nginx/${name}.front.localhost.error.log;
 
     location / {
         proxy_pass http://dev_${name}_backend;
-        include snippets/dev-bootstrap-proxy.conf;
+        include snippets/mesh-proxy.conf;
     }
 
     error_page 502 503 504 = @backend_down;
@@ -184,7 +184,7 @@ cmd_list() {
         fi
         return 0
     fi
-    echo "Enabled dev-bootstrap sites (under $NGINX_ENABLED_DIR):"
+    echo "Enabled mesh-workstation sites (under $NGINX_ENABLED_DIR):"
     local any=0
     for f in "$NGINX_ENABLED_DIR"/catchall-php.conf \
              "$NGINX_ENABLED_DIR"/catchall-proxy.conf \

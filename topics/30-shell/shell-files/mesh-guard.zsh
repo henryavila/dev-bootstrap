@@ -1,5 +1,5 @@
 # shellcheck shell=bash disable=all
-# shell/mesh-guard.zsh — redirects `claude` to your $DOTFILES_DIR when invoked
+# shell/mesh-guard.zsh — redirects `claude` to your $MESH_IDENTITY_DIR when invoked
 # from any "mesh" repo so that PROJECT_STATUS.md / autoMemoryDirectory load.
 #
 # Why this exists: when you have a private dotfiles repo with rich Claude
@@ -10,15 +10,15 @@
 #
 # Activation (opt-in by file existence):
 #   1. Define your mesh repo paths in $MESH_REPOS_FILE (default:
-#      "$DOTFILES_DIR/shell/mesh-repos.list", one path per line).
+#      "$MESH_IDENTITY_DIR/shell/mesh-repos.list", one path per line).
 #   2. Source this file from your shell startup (the template's
 #      shell/aliases.sh.example does it conditionally).
 #   3. Forks that don't create the list → mesh-guard becomes a no-op.
 #
 # Override at runtime:
 #   `claude --here`      runs in the current cwd without prompt.
-#   $DOTFILES_DIR        target dir for redirect (default: $HOME/dotfiles).
-#   $MESH_REPOS_FILE     path to the list (default: $DOTFILES_DIR/shell/mesh-repos.list).
+#   $MESH_IDENTITY_DIR   target dir for redirect (default: $HOME/mesh-identity).
+#   $MESH_REPOS_FILE     path to the list (default: $MESH_IDENTITY_DIR/shell/mesh-repos.list).
 #
 # Sourced from shell/aliases.sh under a `[[ -n "$ZSH_VERSION" ]]` guard;
 # uses zsh-specific syntax (`read -r "var?prompt"`, `print -u2`).
@@ -30,8 +30,8 @@
 # absent (fresh forks), so this is safe on every machine.
 unset _MESH_PUBLIC_REPOS 2>/dev/null || true
 
-_MESH_DOTFILES_DIR="${MESH_IDENTITY_DIR:-${DOTFILES_DIR:-$HOME/dotfiles}}"
-_MESH_REPOS_FILE="${MESH_REPOS_FILE:-$_MESH_DOTFILES_DIR/shell/mesh-repos.list}"
+_MESH_IDENTITY="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
+_MESH_REPOS_FILE="${MESH_REPOS_FILE:-$_MESH_IDENTITY/shell/mesh-repos.list}"
 
 # Load the repo list lazily (file may not exist on a fresh fork — that's OK).
 _mesh_load_repos() {
@@ -91,8 +91,8 @@ claude() {
                         break
                     fi
                     print -u2 "↻ You are in $(basename "$PWD") — mesh repo without memory."
-                    if read -r "ans?Open Claude in $_MESH_DOTFILES_DIR? [Y/n] "; then
-                        [[ "$ans" =~ ^[Nn] ]] || cd "$_MESH_DOTFILES_DIR"
+                    if read -r "ans?Open Claude in $_MESH_IDENTITY? [Y/n] "; then
+                        [[ "$ans" =~ ^[Nn] ]] || cd "$_MESH_IDENTITY"
                     fi
                     break
                 fi

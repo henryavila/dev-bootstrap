@@ -63,7 +63,7 @@ emit_custom_prefix_warning() {
   │      hit the TCC sandbox and exit 78 — all wrapped via rootfs
   │      shims by lib/launch-wrapper.sh when their topic/opt-in runs.
   │
-  │  All of the above are AUTOMATED by dev-bootstrap; you don't need
+  │  All of the above are AUTOMATED by mesh-workstation; you don't need
   │  to do anything manually. The note exists so you understand why
   │  re-runs in this prefix take longer (source builds) than they
   │  would in /opt/homebrew.

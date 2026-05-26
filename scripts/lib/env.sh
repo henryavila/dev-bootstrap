@@ -19,7 +19,4 @@ fi
 : "${MESH_WORKSTATION_DIR:=${HOME}/mesh-workstation}"
 : "${MESH_IDENTITY_DIR:=${HOME}/mesh-identity}"
 
-# Transitional alias — preserved during migration; cleanup is C4/C10 scope.
-: "${DOTFILES_DIR:=$MESH_IDENTITY_DIR}"
-
-export MESH_WORKSTATION_DIR MESH_IDENTITY_DIR DOTFILES_DIR
+export MESH_WORKSTATION_DIR MESH_IDENTITY_DIR

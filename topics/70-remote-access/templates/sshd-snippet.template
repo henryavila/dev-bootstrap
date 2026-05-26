@@ -1,5 +1,5 @@
 # /etc/ssh/sshd_config.d/99-${USER}.conf
-# Managed by dev-bootstrap / 70-remote-access. Edits lost on next deploy.
+# Managed by mesh-workstation / 70-remote-access. Edits lost on next deploy.
 
 # Basic hardening
 PermitRootLogin no

@@ -10,11 +10,11 @@
 #
 # Exports set by run_menu (only when user selects them):
 #   INCLUDE_DOCKER, INCLUDE_WEBSTACK, INCLUDE_REMOTE, INCLUDE_AI_TOOLS,
-#   INCLUDE_CODE_SERVER, INCLUDE_EDITOR, INCLUDE_DOTFILES_PERSONAL
+#   INCLUDE_CODE_SERVER, INCLUDE_EDITOR, INCLUDE_IDENTITY
 #   INCLUDE_MAILPIT, INCLUDE_NGROK, INCLUDE_MSSQL, INCLUDE_POSTGRES,
 #   INCLUDE_FRONTEND_PROXY
 #   PHP_VERSIONS, PHP_DEFAULT, POSTGRES_VERSION
-#   DOTFILES_REPO, DOTFILES_NPM_GLOBAL, DOTFILES_AI_PACKAGES, GIT_NAME, GIT_EMAIL
+#   MESH_IDENTITY_REPO, MESH_NPM_GLOBAL, MESH_AI_PACKAGES, GIT_NAME, GIT_EMAIL
 #
 # Depends on: $OS (from setup.sh), $BREW_BIN (mac only), log.sh helpers.
 
@@ -40,17 +40,17 @@ should_show_menu() {
         [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && return 1
         [[ "${INCLUDE_EDITOR:-0}"  == "1" ]]  && return 1
-        [[ "${INCLUDE_DOTFILES_PERSONAL:-0}" == "1" ]] && return 1
+        [[ "${INCLUDE_IDENTITY:-0}" == "1" ]] && return 1
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]]  && return 1
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]]  && return 1
         [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] && return 1
         [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]] && return 1
-        [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && return 1
-        [[ "${DOTFILES_AI_PACKAGES:-0}" == "1" ]] && return 1
+        [[ "${MESH_NPM_GLOBAL:-0}" == "1" ]] && return 1
+        [[ "${MESH_AI_PACKAGES:-0}" == "1" ]] && return 1
         [[ -n "${PHP_VERSIONS:-}" ]]          && return 1
         [[ -n "${POSTGRES_VERSION:-}" ]]      && return 1
-        [[ -n "${DOTFILES_REPO:-}" ]]         && return 1
+        [[ -n "${MESH_IDENTITY_REPO:-}" ]]         && return 1
     }
 
     # No TTY → can't show a menu (piped install, cron, etc).
@@ -91,7 +91,7 @@ prepare_interactive_menu_dependencies() {
     [[ -n "${BREW_BIN:-}" ]] && return 0
 
     local root installer detect_out
-    root="${DEV_BOOTSTRAP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+    root="${MESH_WORKSTATION_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
     installer="$root/topics/00-core/install.mac.sh"
 
     if [[ ! -x "$installer" ]]; then
@@ -185,7 +185,7 @@ _topic_default_state() {
             fi
             ;;
         dotfiles)
-            local dir="${DOTFILES_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
+            local dir="${MESH_IDENTITY_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
             if [[ -d "$dir/.git" ]]; then
                 echo ON
             else
@@ -318,18 +318,18 @@ _ai_package_description() {
 }
 
 _dotfiles_manifest_root() {
-    local dir="${DOTFILES_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
+    local dir="${MESH_IDENTITY_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
     if [[ -f "$dir/ai/packages.default.list" || -f "$dir/scripts/install-ai-packages.sh" ]]; then
         printf '%s\n' "$dir"
         return 0
     fi
 
-    case "${DOTFILES_REPO:-}" in
+    case "${MESH_IDENTITY_REPO:-}" in
         file://*)
-            dir="${DOTFILES_REPO#file://}"
+            dir="${MESH_IDENTITY_REPO#file://}"
             ;;
         /*)
-            dir="$DOTFILES_REPO"
+            dir="$MESH_IDENTITY_REPO"
             ;;
         *)
             dir=""
@@ -346,7 +346,7 @@ _dotfiles_manifest_root() {
 
 _ai_package_default_state() {
     local package="$1" spec token normalized
-    spec="${DOTFILES_AI_PACKAGE_SELECTION:-}"
+    spec="${MESH_AI_PACKAGE_SELECTION:-}"
     [[ -n "$spec" ]] || { printf 'ON\n'; return; }
     normalized="$(printf '%s' "$spec" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
@@ -381,7 +381,7 @@ Topic 82 will open the dotfiles AI package selector during install." \
     ai_package_descriptions=()
     default_manifest="$root/ai/packages.default.list"
     local_manifest="$root/ai/packages.local.list"
-    host_manifest="${DOTFILES_AI_LOCAL_MANIFEST:-$HOME/.config/mesh/ai-packages.list}"
+    host_manifest="${MESH_AI_LOCAL_MANIFEST:-$HOME/.config/mesh/ai-packages.list}"
     replace_defaults=0
     [[ -f "$local_manifest" && "$(_ai_manifest_mode "$local_manifest")" == "replace" ]] && replace_defaults=1
     [[ -f "$host_manifest" && "$(_ai_manifest_mode "$host_manifest")" == "replace" ]] && replace_defaults=1
@@ -396,7 +396,7 @@ Topic 82 will open the dotfiles AI package selector during install." \
         whiptail --title "82-ai-tools :: packages" \
             --msgbox "No AI package entries were found in $root/ai/." \
             8 78 || _menu_cancel
-        export DOTFILES_AI_PACKAGE_SELECTION=none
+        export MESH_AI_PACKAGE_SELECTION=none
         return 0
     fi
 
@@ -431,13 +431,13 @@ Unchecked packages are skipped for this run." \
     else
         selection="${selected[*]}"
     fi
-    export DOTFILES_AI_PACKAGE_SELECTION="$selection"
+    export MESH_AI_PACKAGE_SELECTION="$selection"
 }
 
 run_menu() {
     banner "interactive setup"
     info "you can skip this menu anytime with: NON_INTERACTIVE=1 bash setup.sh"
-    info "or pre-seed via env vars (INCLUDE_WEBSTACK=1, DOTFILES_REPO=..., etc)"
+    info "or pre-seed via env vars (INCLUDE_WEBSTACK=1, MESH_IDENTITY_REPO=..., etc)"
     echo
 
     # ---------- Screen 1: opt-in topics ----------
@@ -450,7 +450,7 @@ run_menu() {
     # the menu and refer to it later in READMEs + commits). Widths tuned
     # so the longest ("95-dotfiles-personal: your private dotfiles") fits
     # without wrap on 85-col terminals.
-    choices=$(whiptail --title "dev-bootstrap :: opt-in topics" \
+    choices=$(whiptail --title "mesh-workstation :: opt-in topics" \
         --checklist \
         "Select optional topics to install (SPACE toggles, ENTER confirms).\nDefaults reflect what's already installed on this machine." \
         22 85 8 \
@@ -465,7 +465,7 @@ run_menu() {
         3>&1 1>&2 2>&3) || _menu_cancel
 
     local need_dotfiles_repo=0
-    export INCLUDE_DOTFILES_PERSONAL=0
+    export INCLUDE_IDENTITY=0
     # whiptail returns items quoted & space-separated: "webstack" "remote"
     # `local -a selected=()` (not just `local -a selected`) is needed for bash 3.2:
     # without an explicit empty-array initializer, `read -ra` into a still-undeclared
@@ -479,9 +479,9 @@ run_menu() {
             remote)   export INCLUDE_REMOTE=1 ;;
             code-server) export INCLUDE_CODE_SERVER=1 ;;
             editor)   export INCLUDE_EDITOR=1 ;;
-            npm-global) export INCLUDE_NPM_GLOBAL=1; export DOTFILES_NPM_GLOBAL=1 ;;
-            ai-tools) export INCLUDE_AI_TOOLS=1; export DOTFILES_AI_PACKAGES=1; need_dotfiles_repo=1 ;;
-            dotfiles) export INCLUDE_DOTFILES_PERSONAL=1; need_dotfiles_repo=1 ;;
+            npm-global) export INCLUDE_NPM_GLOBAL=1; export MESH_NPM_GLOBAL=1 ;;
+            ai-tools) export INCLUDE_AI_TOOLS=1; export MESH_AI_PACKAGES=1; need_dotfiles_repo=1 ;;
+            dotfiles) export INCLUDE_IDENTITY=1; need_dotfiles_repo=1 ;;
         esac
     done
 
@@ -529,18 +529,18 @@ run_menu() {
     # the dotfiles were already cloned.
     if [[ "$need_dotfiles_repo" == "1" ]]; then
         local existing_dotfiles_repo=""
-        local candidate_dir="${DOTFILES_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
+        local candidate_dir="${MESH_IDENTITY_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
         if command -v git >/dev/null 2>&1 && [[ -d "$candidate_dir/.git" ]]; then
             existing_dotfiles_repo=$(git -C "$candidate_dir" remote get-url origin 2>/dev/null || true)
         fi
 
-        if [[ -n "${DOTFILES_REPO:-}" ]]; then
+        if [[ -n "${MESH_IDENTITY_REPO:-}" ]]; then
             :  # provided via env — use as-is
         elif [[ -n "$existing_dotfiles_repo" ]]; then
             info "keeping existing dotfiles remote: $existing_dotfiles_repo"
-            DOTFILES_REPO="$existing_dotfiles_repo"
-            DOTFILES_DIR="$candidate_dir"
-            export DOTFILES_REPO DOTFILES_DIR
+            MESH_IDENTITY_REPO="$existing_dotfiles_repo"
+            MESH_IDENTITY_DIR="$candidate_dir"
+            export MESH_IDENTITY_REPO MESH_IDENTITY_DIR
         else
             # Two-path prompt: (a) create new fork from a public template via
             # `gh repo create --template`, or (b) provide an existing URL.
@@ -549,8 +549,8 @@ run_menu() {
             # Path (b) handles existing repos, local testing (`file://`), or
             # forks-of-forks where the template default doesn't apply.
             #
-            # Both paths set DOTFILES_REPO + DOTFILES_DIR. Path (a) ALSO exports
-            # CREATE_DOTFILES_FROM_TEMPLATE=1 + the inputs for `gh repo create`,
+            # Both paths set MESH_IDENTITY_REPO + MESH_IDENTITY_DIR. Path (a) ALSO exports
+            # CREATE_IDENTITY_FROM_TEMPLATE=1 + the inputs for `gh repo create`,
             # which dotfiles-backed topics consume (gh CLI is ready by then —
             # installed by 05-identity earlier in the topic order).
             # Capture rc explicitly: whiptail returns 0=Yes / 1=No / 255=ESC.
@@ -571,8 +571,8 @@ No   →  point me at an existing dotfiles repo URL." \
             (( _src_rc == 255 )) && _menu_cancel
             if (( _src_rc == 0 )); then
 
-                local _template_default="${DOTFILES_TEMPLATE_REPO:-henryavila/dotfiles-template}"
-                DOTFILES_TEMPLATE_REPO=$(whiptail --title "create from template :: source template" \
+                local _template_default="${MESH_IDENTITY_TEMPLATE_REPO:-henryavila/dotfiles-template}"
+                MESH_IDENTITY_TEMPLATE_REPO=$(whiptail --title "create from template :: source template" \
                     --inputbox \
 "Template repo (owner/name).
 Press ENTER to accept the default skeleton; override for forks-of-forks
@@ -593,14 +593,14 @@ or enterprise templates." \
                     --inputbox \
 "Your GitHub username (or organization). The new repo will be created
 as <owner>/<name>." \
-                    10 70 "${DOTFILES_NEW_REPO_OWNER:-$USER}" \
+                    10 70 "${MESH_IDENTITY_NEW_REPO_OWNER:-$USER}" \
                     3>&1 1>&2 2>&3) || _menu_cancel
 
                 local _new_name
                 _new_name=$(whiptail --title "create from template :: new repo name" \
                     --inputbox \
 "Name for the new repo:" \
-                    10 70 "${DOTFILES_NEW_REPO_NAME:-dotfiles}" \
+                    10 70 "${MESH_IDENTITY_NEW_REPO_NAME:-dotfiles}" \
                     3>&1 1>&2 2>&3) || _menu_cancel
 
                 # Default = private. The recommendation is private even for
@@ -615,41 +615,41 @@ as <owner>/<name>." \
                 local _new_private=1
                 (( _vis_rc != 0 )) && _new_private=0
 
-                DOTFILES_NEW_REPO_OWNER="$_new_owner"
-                DOTFILES_NEW_REPO_NAME="$_new_name"
-                DOTFILES_NEW_REPO_PRIVATE="$_new_private"
-                CREATE_DOTFILES_FROM_TEMPLATE=1
-                DOTFILES_REPO="git@github.com:${_new_owner}/${_new_name}.git"
-                DOTFILES_DIR="${DOTFILES_DIR:-$HOME/${_new_name}}"
-                export CREATE_DOTFILES_FROM_TEMPLATE DOTFILES_TEMPLATE_REPO
-                export DOTFILES_NEW_REPO_OWNER DOTFILES_NEW_REPO_NAME DOTFILES_NEW_REPO_PRIVATE
-                export DOTFILES_REPO DOTFILES_DIR
+                MESH_IDENTITY_NEW_REPO_OWNER="$_new_owner"
+                MESH_IDENTITY_NEW_REPO_NAME="$_new_name"
+                MESH_IDENTITY_NEW_REPO_PRIVATE="$_new_private"
+                CREATE_IDENTITY_FROM_TEMPLATE=1
+                MESH_IDENTITY_REPO="git@github.com:${_new_owner}/${_new_name}.git"
+                MESH_IDENTITY_DIR="${MESH_IDENTITY_DIR:-$HOME/${_new_name}}"
+                export CREATE_IDENTITY_FROM_TEMPLATE MESH_IDENTITY_TEMPLATE_REPO
+                export MESH_IDENTITY_NEW_REPO_OWNER MESH_IDENTITY_NEW_REPO_NAME MESH_IDENTITY_NEW_REPO_PRIVATE
+                export MESH_IDENTITY_REPO MESH_IDENTITY_DIR
             else
-                DOTFILES_REPO=$(whiptail --title "dotfiles repo :: URL" \
+                MESH_IDENTITY_REPO=$(whiptail --title "dotfiles repo :: URL" \
                     --inputbox \
 "URL of your personal dotfiles repo.
 Examples:
   git@github.com:youruser/dotfiles.git
   https://github.com/youruser/dotfiles.git
   file:///home/youruser/dotfiles   (local testing)" \
-                    14 78 "${DOTFILES_REPO:-}" \
+                    14 78 "${MESH_IDENTITY_REPO:-}" \
                     3>&1 1>&2 2>&3) || _menu_cancel
 
-                if [[ -z "$DOTFILES_REPO" ]]; then
+                if [[ -z "$MESH_IDENTITY_REPO" ]]; then
                     warn "empty dotfiles URL — skipping 95-dotfiles-personal"
                 else
-                    export DOTFILES_REPO
+                    export MESH_IDENTITY_REPO
 
-                    # DOTFILES_DIR — where the repo will be cloned.
+                    # MESH_IDENTITY_DIR — where the repo will be cloned.
                     # Pre-fill with expanded path so whiptail returns a valid absolute
                     # path (tilde would NOT be expanded by the shell since it came
                     # from user input, not a literal).
-                    DOTFILES_DIR=$(whiptail --title "dotfiles repo :: clone path" \
+                    MESH_IDENTITY_DIR=$(whiptail --title "dotfiles repo :: clone path" \
                         --inputbox \
 "Where to clone the dotfiles repo:" \
-                        10 70 "${DOTFILES_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}" \
+                        10 70 "${MESH_IDENTITY_DIR:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}" \
                         3>&1 1>&2 2>&3) || _menu_cancel
-                    export DOTFILES_DIR
+                    export MESH_IDENTITY_DIR
                 fi
             fi
         fi
@@ -872,37 +872,37 @@ or re-run bootstrap with NGROK_AUTHTOKEN=<token>." \
     [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && summary+="    ✓ 82-ai-tools\n"
     [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && summary+="    ✓ 85-code-server\n"
     [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && summary+="    ✓ 90-editor\n"
-    [[ "${INCLUDE_DOTFILES_PERSONAL:-0}" == "1" ]] && summary+="    ✓ 95-dotfiles-personal\n"
-    [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" || "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    ✓ npm globals in ~/.npm-global\n"
+    [[ "${INCLUDE_IDENTITY:-0}" == "1" ]] && summary+="    ✓ 95-dotfiles-personal\n"
+    [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" || "${MESH_NPM_GLOBAL:-0}" == "1" ]] && summary+="    ✓ npm globals in ~/.npm-global\n"
     [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && summary+="    ✓ AI packages from dotfiles manifest\n"
     if [[ "${INCLUDE_DOCKER:-0}"  != "1" && "${INCLUDE_WEBSTACK:-0}" != "1" \
        && "${INCLUDE_REMOTE:-0}"  != "1" && "${INCLUDE_AI_TOOLS:-0}" != "1" \
        && "${INCLUDE_CODE_SERVER:-0}" != "1" && "${INCLUDE_EDITOR:-0}"  != "1" \
-       && "${INCLUDE_DOTFILES_PERSONAL:-0}" != "1" \
-       && -z "${DOTFILES_REPO:-}" && "${DOTFILES_NPM_GLOBAL:-0}" != "1" \
-       && "${DOTFILES_AI_PACKAGES:-0}" != "1" ]]; then
+       && "${INCLUDE_IDENTITY:-0}" != "1" \
+       && -z "${MESH_IDENTITY_REPO:-}" && "${MESH_NPM_GLOBAL:-0}" != "1" \
+       && "${MESH_AI_PACKAGES:-0}" != "1" ]]; then
         summary+="    (none selected)\n"
     fi
     summary+="\n  Git identity:\n"
     summary+="    user.name  = $GIT_NAME\n"
     summary+="    user.email = $GIT_EMAIL\n"
-    if [[ -n "${DOTFILES_REPO:-}" ]] || [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]]; then
+    if [[ -n "${MESH_IDENTITY_REPO:-}" ]] || [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]]; then
         summary+="\n  Paths:\n"
-        [[ -n "${DOTFILES_REPO:-}" ]]        && summary+="    dotfiles   = $DOTFILES_DIR  ← $DOTFILES_REPO\n"
+        [[ -n "${MESH_IDENTITY_REPO:-}" ]]        && summary+="    dotfiles   = $MESH_IDENTITY_DIR  ← $MESH_IDENTITY_REPO\n"
         [[ "${INCLUDE_WEBSTACK:-0}" == "1" ]] && summary+="    code       = $CODE_DIR\n"
-        [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && summary+="    npm global = ~/.npm-global/bin\n"
+        [[ "${MESH_NPM_GLOBAL:-0}" == "1" ]] && summary+="    npm global = ~/.npm-global/bin\n"
         [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && summary+="    ai tools   = dotfiles manifest selector\n"
     fi
     summary+="\nProceed?"
 
-    whiptail --title "dev-bootstrap :: confirm" --yesno "$summary" 22 78 \
+    whiptail --title "mesh-workstation :: confirm" --yesno "$summary" 22 78 \
         || _menu_cancel
 
     ok "configuration captured — starting bootstrap"
 
     # Persist the answers so next run pre-fills the same values instead
     # of falling back to first-run defaults. Written to
-    # $BOOTSTRAP_STATE_CONFIG (default: ~/.local/state/dev-bootstrap/config.env).
+    # $BOOTSTRAP_STATE_CONFIG (default: ~/.local/state/mesh-workstation/config.env).
     # Plain shell-sourceable file — readable, diff-able, editable by hand.
     # Delete to reset.
     _persist_menu_state
@@ -917,13 +917,13 @@ _persist_menu_state() {
     # can't break the next bootstrap's `source`.
     local tmp="${BOOTSTRAP_STATE_CONFIG}.tmp"
     {
-        echo "# dev-bootstrap — last menu selections. Auto-generated."
+        echo "# mesh-workstation — last menu selections. Auto-generated."
         echo "# Edit by hand or delete this file to reset defaults."
         echo "# Env vars set at runtime still win over whatever is here."
         echo
         [[ -n "${CODE_DIR:-}" ]]             && printf 'export CODE_DIR=%q\n' "$CODE_DIR"
-        [[ -n "${DOTFILES_REPO:-}" ]]        && printf 'export DOTFILES_REPO=%q\n' "$DOTFILES_REPO"
-        [[ -n "${DOTFILES_DIR:-}" ]]         && printf 'export DOTFILES_DIR=%q\n' "$DOTFILES_DIR"
+        [[ -n "${MESH_IDENTITY_REPO:-}" ]]        && printf 'export MESH_IDENTITY_REPO=%q\n' "$MESH_IDENTITY_REPO"
+        [[ -n "${MESH_IDENTITY_DIR:-}" ]]         && printf 'export MESH_IDENTITY_DIR=%q\n' "$MESH_IDENTITY_DIR"
         [[ -n "${PHP_VERSIONS:-}" ]]         && printf 'export PHP_VERSIONS=%q\n' "$PHP_VERSIONS"
         [[ -n "${PHP_DEFAULT:-}" ]]          && printf 'export PHP_DEFAULT=%q\n' "$PHP_DEFAULT"
         [[ -n "${DEV_DEFAULT_PORT:-}" ]]     && printf 'export DEV_DEFAULT_PORT=%q\n' "$DEV_DEFAULT_PORT"
@@ -938,16 +938,16 @@ _persist_menu_state() {
         [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && echo 'export INCLUDE_AI_TOOLS=1'
         [[ "${INCLUDE_CODE_SERVER:-0}" == "1" ]] && echo 'export INCLUDE_CODE_SERVER=1'
         [[ "${INCLUDE_EDITOR:-0}"  == "1" ]] && echo 'export INCLUDE_EDITOR=1'
-        [[ -n "${DOTFILES_REPO:-}" ]] && printf 'export INCLUDE_DOTFILES_PERSONAL=%q\n' "${INCLUDE_DOTFILES_PERSONAL:-0}"
+        [[ -n "${MESH_IDENTITY_REPO:-}" ]] && printf 'export INCLUDE_IDENTITY=%q\n' "${INCLUDE_IDENTITY:-0}"
         [[ "${INCLUDE_MAILPIT:-0}" == "1" ]] && echo 'export INCLUDE_MAILPIT=1'
         [[ "${INCLUDE_NGROK:-0}"   == "1" ]] && echo 'export INCLUDE_NGROK=1'
         [[ "${INCLUDE_MSSQL:-0}"   == "1" ]] && echo 'export INCLUDE_MSSQL=1'
         [[ "${INCLUDE_FRONTEND_PROXY:-0}" == "1" ]] && echo 'export INCLUDE_FRONTEND_PROXY=1'
         [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]] && echo 'export INCLUDE_NPM_GLOBAL=1'
-        [[ "${DOTFILES_NPM_GLOBAL:-0}" == "1" ]] && echo 'export DOTFILES_NPM_GLOBAL=1'
-        [[ "${DOTFILES_AI_PACKAGES:-0}" == "1" ]] && echo 'export DOTFILES_AI_PACKAGES=1'
-        [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && [[ -n "${DOTFILES_AI_PACKAGE_SELECTION:-}" ]] \
-            && printf 'export DOTFILES_AI_PACKAGE_SELECTION=%q\n' "$DOTFILES_AI_PACKAGE_SELECTION"
+        [[ "${MESH_NPM_GLOBAL:-0}" == "1" ]] && echo 'export MESH_NPM_GLOBAL=1'
+        [[ "${MESH_AI_PACKAGES:-0}" == "1" ]] && echo 'export MESH_AI_PACKAGES=1'
+        [[ "${INCLUDE_AI_TOOLS:-0}" == "1" ]] && [[ -n "${MESH_AI_PACKAGE_SELECTION:-}" ]] \
+            && printf 'export MESH_AI_PACKAGE_SELECTION=%q\n' "$MESH_AI_PACKAGE_SELECTION"
         # POSTGRES_VERSION coupled to INCLUDE_POSTGRES — only meaningful when
         # the opt-in is on. Persisting the version separately would let it
         # leak into a future toggle-on without the user's intent. Both keys

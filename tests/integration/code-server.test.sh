@@ -51,7 +51,7 @@ assert_pattern_present "$INSTALL" 'curl -fsSL https://code-server\.dev/install\.
 assert_pattern_present "$INSTALL" '[-][-]method=standalone --prefix "\$CODE_SERVER_INSTALL_PREFIX"' \
     "installer uses standalone method with prefix"
 assert_pattern_present "$INSTALL" 'env -u OS -u ARCH -u DISTRO sh -s --' \
-    "installer clears dev-bootstrap OS env before running upstream install script"
+    "installer clears mesh-workstation OS env before running upstream install script"
 assert_pattern_absent "$INSTALL" 'brew install code-server' \
     "installer does not use Homebrew code-server formula"
 assert_pattern_present "$INSTALL" 'CODE_SERVER_UPGRADE:=0' \

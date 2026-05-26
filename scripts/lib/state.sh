@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# lib/state.sh — persist dev-bootstrap decisions across runs.
+# lib/state.sh — persist mesh-workstation decisions across runs.
 #
-# State lives in ~/.config/dev-bootstrap/state.env as a shell-sourceable
+# State lives in ~/.config/mesh/state.env as a shell-sourceable
 # KEY="VALUE" file. This format is deliberate — `00-core` runs before any
 # topic that might install jq, so state must be readable without external
 # tools. Bash 3.2 (Mac default) is the floor.
@@ -17,11 +17,11 @@
 #
 # Bash-only: this file uses bash 3.2 idioms (printf-driven escaping, parameter
 # expansion patterns) that don't always parse cleanly when sourced from zsh.
-# All dev-bootstrap entry points are bash (#!/usr/bin/env bash), so this is a
+# All mesh-workstation entry points are bash (#!/usr/bin/env bash), so this is a
 # self-imposed limit, not a production concern. To inspect state from any
 # shell interactively, source the OUTPUT file directly:
 #
-#     source ~/.config/dev-bootstrap/state.env
+#     source ~/.config/mesh/state.env
 #     echo "$BREW_PREFIX"
 #
 # That file is plain KEY="VALUE" and works in zsh, bash, sh, dash, …
@@ -35,13 +35,13 @@
 #                                       → write BREW_PREFIX + metadata in one call
 #
 # Test hook:
-#   DEV_BOOTSTRAP_STATE_DIR=...         override state directory (used by tests)
+#   MESH_STATE_DIR=...         override state directory (used by tests)
 
 [ -n "${_STATE_LOADED:-}" ] && return 0
 _STATE_LOADED=1
 
 state_path() {
-    printf '%s/state.env' "${DEV_BOOTSTRAP_STATE_DIR:-$HOME/.config/dev-bootstrap}"
+    printf '%s/state.env' "${MESH_STATE_DIR:-$HOME/.config/mesh}"
 }
 
 # Source the state file if it exists. Idempotent.
@@ -87,7 +87,7 @@ state_set() {
 
     local tmp="${path}.tmp.$$"
     {
-        printf '# dev-bootstrap state — auto-generated. Do not edit by hand.\n'
+        printf '# mesh-workstation state — auto-generated. Do not edit by hand.\n'
         printf '# Read+written by lib/state.sh. Last updated: %s\n' \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         if [[ -f "$path" ]]; then

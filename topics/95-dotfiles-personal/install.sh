@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# 95-dotfiles-personal: apply personal dotfiles from $DOTFILES_REPO.
-# Gated by setup.sh: skipped unless INCLUDE_DOTFILES_PERSONAL=1.
+# 95-dotfiles-personal: apply personal dotfiles from $MESH_IDENTITY_REPO.
+# Gated by setup.sh: skipped unless INCLUDE_IDENTITY=1.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$HERE/../../scripts/lib/log.sh"
 # shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/dotfiles-repo.sh"
+source "$HERE/../../scripts/lib/identity-repo.sh"
 # shellcheck disable=SC1091
 source "$HERE/../../scripts/lib/topic-cleanup.sh"
 
-: "${DOTFILES_REPO:?DOTFILES_REPO not set (setup.sh should have skipped this topic)}"
-: "${DOTFILES_DIR:=${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
+: "${MESH_IDENTITY_REPO:?MESH_IDENTITY_REPO not set (setup.sh should have skipped this topic)}"
+: "${MESH_IDENTITY_DIR:=$HOME/mesh-identity}"
 
-dotfiles_ensure_repo "$DOTFILES_REPO" "$DOTFILES_DIR"
+identity_ensure_repo "$MESH_IDENTITY_REPO" "$MESH_IDENTITY_DIR"
 
-if [[ -f "$DOTFILES_DIR/install.sh" ]]; then
-    info "running $DOTFILES_DIR/install.sh"
-    DOTFILES_NPM_GLOBAL="${DOTFILES_NPM_GLOBAL:-0}" bash "$DOTFILES_DIR/install.sh"
+if [[ -f "$MESH_IDENTITY_DIR/install.sh" ]]; then
+    info "running $MESH_IDENTITY_DIR/install.sh"
+    MESH_NPM_GLOBAL="${MESH_NPM_GLOBAL:-0}" bash "$MESH_IDENTITY_DIR/install.sh"
 else
-    warn "$DOTFILES_DIR/install.sh not found — dotfiles cloned but not applied"
+    warn "$MESH_IDENTITY_DIR/install.sh not found — dotfiles cloned but not applied"
 fi
 
 # Drift cleanup: artifacts the dotfiles fork used to install but no longer

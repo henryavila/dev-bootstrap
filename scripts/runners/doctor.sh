@@ -6,8 +6,8 @@
 #        ✓ src matches dst byte-for-byte (deploy up to date)
 #        ! dst missing (install.sh never ran, or user deleted)
 #        ✗ dst drifted (content differs from src)
-#   2. For dev-bootstrap-managed files (~/.bashrc, ~/.zshrc, ~/.tmux.conf):
-#        ✓ header "managed by dev-bootstrap" present
+#   2. For mesh-workstation-managed files (~/.bashrc, ~/.zshrc, ~/.tmux.conf):
+#        ✓ header "managed by mesh-workstation" present
 #        ! marker absent (hand-edited or deployed by another tool)
 #   3. Fragments in ~/.bashrc.d/ and ~/.zshrc.d/:
 #        Lists owners (topic NN-name) inferred from filename prefix.
@@ -21,12 +21,12 @@
 #   bash scripts/runners/doctor.sh --quiet    # only drift/missing lines
 #   bash scripts/runners/doctor.sh --json     # structured output (for automation)
 #
-# Override knobs (forks using a non-dev-bootstrap installer):
+# Override knobs (forks using a non-mesh-workstation installer):
 #   DOCTOR_MARKER_FILES   space-separated list of files to check for the
 #                         "managed by" marker. Default: ~/.bashrc ~/.zshrc
-#                         ~/.tmux.conf (the three files dev-bootstrap manages).
+#                         ~/.tmux.conf (the three files mesh-workstation manages).
 #   DOCTOR_MARKER_STRING  the substring to look for. Default:
-#                         "managed by dev-bootstrap".
+#                         "managed by mesh-workstation".
 #   Example: DOCTOR_MARKER_FILES="$HOME/.zshrc" DOCTOR_MARKER_STRING="managed by chezmoi" bash doctor.sh
 
 set -euo pipefail
@@ -40,7 +40,7 @@ REPO="$(cd "$HERE/../.." && pwd)"
 # has no top-level install.sh; mappings remain identity-owned data per
 # spec D-B3 / §C18). Resolve identity via MESH_IDENTITY_DIR with the
 # usual fallback chain.
-IDENTITY="${MESH_IDENTITY_DIR:-${DOTFILES_DIR:-$HOME/mesh-identity}}"
+IDENTITY="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
 INSTALL="$IDENTITY/install.sh"
 
 QUIET=0
@@ -142,9 +142,9 @@ check_mapping() {
 }
 
 # ─── Managed-by marker check ───────────────────────────────────────
-# Defaults match the dev-bootstrap convention. Override via env if your
+# Defaults match the mesh-workstation convention. Override via env if your
 # fork uses a different installer that writes its own marker string.
-DOCTOR_MARKER_STRING="${DOCTOR_MARKER_STRING:-managed by dev-bootstrap}"
+DOCTOR_MARKER_STRING="${DOCTOR_MARKER_STRING:-managed by mesh-workstation}"
 if [[ -n "${DOCTOR_MARKER_FILES:-}" ]]; then
     # Word-split the env value (space-separated paths, no globbing).
     read -r -a MARKER_FILES <<< "$DOCTOR_MARKER_FILES"
@@ -159,7 +159,7 @@ check_markers() {
     local f
     for f in "${MARKER_FILES[@]}"; do
         [[ ! -f "$f" ]] && continue
-        if ! grep -q "$DOCTOR_MARKER_STRING" "$f" 2>/dev/null; then
+        if ! grep -qiE "managed by (mesh-workstation|dev-bootstrap)" "$f" 2>/dev/null; then
             count_marker_miss=$((count_marker_miss + 1))
             marker_miss_items+=("$f")
         fi

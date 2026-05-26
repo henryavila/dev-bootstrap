@@ -20,11 +20,11 @@ source "$HERE/../lib/assert.sh"
 
 MENU="$REPO_ROOT/scripts/lib/menu.sh"
 AI_TOPIC="$REPO_ROOT/topics/82-ai-tools/install.sh"
-DOTFILES_TOPIC="$REPO_ROOT/topics/95-dotfiles-personal/install.sh"
+IDENTITY_TOPIC="$REPO_ROOT/topics/95-dotfiles-personal/install.sh"
 BOOTSTRAP="$REPO_ROOT/setup.sh"
 assert_file_exists "$MENU" "lib/menu.sh present"
 assert_file_exists "$AI_TOPIC" "82-ai-tools install.sh present"
-assert_file_exists "$DOTFILES_TOPIC" "95-dotfiles-personal install.sh present"
+assert_file_exists "$IDENTITY_TOPIC" "95-dotfiles-personal install.sh present"
 assert_file_exists "$BOOTSTRAP" "setup.sh present"
 
 # Source menu.sh in isolation. Needs OS + log.sh helpers first.
@@ -44,9 +44,9 @@ _test_gates() {
     # Unset everything relevant first
     unset NON_INTERACTIVE ONLY_TOPICS
     unset INCLUDE_DOCKER INCLUDE_LARAVEL INCLUDE_REMOTE INCLUDE_AI_TOOLS INCLUDE_EDITOR
-    unset INCLUDE_DOTFILES_PERSONAL
+    unset INCLUDE_IDENTITY
     unset INCLUDE_MAILPIT INCLUDE_NGROK INCLUDE_MSSQL
-    unset PHP_VERSIONS DOTFILES_REPO DOTFILES_NPM_GLOBAL DOTFILES_AI_PACKAGES
+    unset PHP_VERSIONS MESH_IDENTITY_REPO MESH_NPM_GLOBAL MESH_AI_PACKAGES
     unset CI
 
     # Set the one being tested
@@ -63,14 +63,14 @@ _test_gates "INCLUDE_LARAVEL=1"
 _test_gates "INCLUDE_REMOTE=1"
 _test_gates "INCLUDE_AI_TOOLS=1"
 _test_gates "INCLUDE_EDITOR=1"
-_test_gates "INCLUDE_DOTFILES_PERSONAL=1"
+_test_gates "INCLUDE_IDENTITY=1"
 _test_gates "INCLUDE_MAILPIT=1"
 _test_gates "INCLUDE_NGROK=1"
 _test_gates "INCLUDE_MSSQL=1"
 _test_gates "PHP_VERSIONS=8.5"
-_test_gates "DOTFILES_REPO=git@github.com:x/y.git"
-_test_gates "DOTFILES_NPM_GLOBAL=1"
-_test_gates "DOTFILES_AI_PACKAGES=1"
+_test_gates "MESH_IDENTITY_REPO=git@github.com:x/y.git"
+_test_gates "MESH_NPM_GLOBAL=1"
+_test_gates "MESH_AI_PACKAGES=1"
 _test_gates "CI=true"
 
 echo
@@ -82,25 +82,25 @@ assert_pattern_present "$MENU" '^[[:space:]]*"npm-global"[[:space:]]+"10-languag
 assert_pattern_present "$MENU" '^[[:space:]]*"ai-tools"[[:space:]]+"82-ai-tools: AI review prompts [+] token-saving CLI tools"' \
     "menu checklist shows AI tools opt-in under topic 82"
 
-assert_pattern_present "$MENU" 'npm-global\) export INCLUDE_NPM_GLOBAL=1; export DOTFILES_NPM_GLOBAL=1' \
-    "menu selection exports INCLUDE_NPM_GLOBAL (new, workstation gate) + DOTFILES_NPM_GLOBAL (legacy, identity gate; both set during transition)"
+assert_pattern_present "$MENU" 'npm-global\) export INCLUDE_NPM_GLOBAL=1; export MESH_NPM_GLOBAL=1' \
+    "menu selection exports INCLUDE_NPM_GLOBAL (new, workstation gate) + MESH_NPM_GLOBAL (legacy, identity gate; both set during transition)"
 
-assert_pattern_present "$MENU" 'ai-tools\) export INCLUDE_AI_TOOLS=1; export DOTFILES_AI_PACKAGES=1' \
+assert_pattern_present "$MENU" 'ai-tools\) export INCLUDE_AI_TOOLS=1; export MESH_AI_PACKAGES=1' \
     "menu selection exports AI tools flags"
 
-assert_file_contains "$MENU" 'DOTFILES_NPM_GLOBAL:-0\}" == "1" \]\] *&& return 1' \
-    "should_show_menu treats DOTFILES_NPM_GLOBAL as a pre-seed signal"
+assert_file_contains "$MENU" 'MESH_NPM_GLOBAL:-0\}" == "1" \]\] *&& return 1' \
+    "should_show_menu treats MESH_NPM_GLOBAL as a pre-seed signal"
 
-assert_file_contains "$MENU" 'DOTFILES_AI_PACKAGES:-0\}" == "1" \]\] *&& return 1' \
-    "should_show_menu treats DOTFILES_AI_PACKAGES as a pre-seed signal"
+assert_file_contains "$MENU" 'MESH_AI_PACKAGES:-0\}" == "1" \]\] *&& return 1' \
+    "should_show_menu treats MESH_AI_PACKAGES as a pre-seed signal"
 assert_file_contains "$MENU" 'INCLUDE_AI_TOOLS:-0\}" == "1" \]\] *&& return 1' \
     "should_show_menu treats INCLUDE_AI_TOOLS as a pre-seed signal"
 
-assert_file_contains "$MENU" "echo 'export DOTFILES_NPM_GLOBAL=1'" \
-    "_persist_menu_state persists DOTFILES_NPM_GLOBAL"
+assert_file_contains "$MENU" "echo 'export MESH_NPM_GLOBAL=1'" \
+    "_persist_menu_state persists MESH_NPM_GLOBAL"
 
-assert_file_contains "$MENU" "echo 'export DOTFILES_AI_PACKAGES=1'" \
-    "_persist_menu_state persists DOTFILES_AI_PACKAGES"
+assert_file_contains "$MENU" "echo 'export MESH_AI_PACKAGES=1'" \
+    "_persist_menu_state persists MESH_AI_PACKAGES"
 assert_file_contains "$MENU" "echo 'export INCLUDE_AI_TOOLS=1'" \
     "_persist_menu_state persists INCLUDE_AI_TOOLS"
 
@@ -111,11 +111,11 @@ _test_persist_dotfiles_optins() {
         set -uo pipefail
         TMP=\$(mktemp -d)
         export BOOTSTRAP_STATE_CONFIG=\"\$TMP/config.env\"
-        export DOTFILES_NPM_GLOBAL='$npm_enabled'
-        export DOTFILES_AI_PACKAGES='$ai_enabled'
+        export MESH_NPM_GLOBAL='$npm_enabled'
+        export MESH_AI_PACKAGES='$ai_enabled'
         export INCLUDE_AI_TOOLS='$ai_enabled'
-        export DOTFILES_REPO='git@github.com:test/dotfiles.git'
-        export INCLUDE_DOTFILES_PERSONAL=0
+        export MESH_IDENTITY_REPO='git@github.com:test/dotfiles.git'
+        export INCLUDE_IDENTITY=0
         ok()   { :; }
         info() { :; }
         warn() { :; }
@@ -139,34 +139,34 @@ _test_persist_ai_packages() {
 }
 
 npm_global_state="$(_test_persist_npm_global 1)"
-assert_contains "$npm_global_state" "export DOTFILES_NPM_GLOBAL=1" \
+assert_contains "$npm_global_state" "export MESH_NPM_GLOBAL=1" \
     "_persist_menu_state round-trips npm global opt-in when enabled"
 
 npm_global_state="$(_test_persist_npm_global 0)"
-assert_not_contains "$npm_global_state" "DOTFILES_NPM_GLOBAL" \
+assert_not_contains "$npm_global_state" "MESH_NPM_GLOBAL" \
     "_persist_menu_state omits npm global opt-in when disabled"
 
 ai_packages_state="$(_test_persist_ai_packages 1)"
-assert_contains "$ai_packages_state" "export DOTFILES_AI_PACKAGES=1" \
+assert_contains "$ai_packages_state" "export MESH_AI_PACKAGES=1" \
     "_persist_menu_state round-trips AI packages opt-in when enabled"
 assert_contains "$ai_packages_state" "export INCLUDE_AI_TOOLS=1" \
     "_persist_menu_state round-trips INCLUDE_AI_TOOLS when enabled"
-assert_contains "$ai_packages_state" "export INCLUDE_DOTFILES_PERSONAL=0" \
+assert_contains "$ai_packages_state" "export INCLUDE_IDENTITY=0" \
     "_persist_menu_state records AI-only dotfiles repo without enabling 95"
 
 ai_packages_state="$(_test_persist_ai_packages 0)"
-assert_not_contains "$ai_packages_state" "DOTFILES_AI_PACKAGES" \
+assert_not_contains "$ai_packages_state" "MESH_AI_PACKAGES" \
     "_persist_menu_state omits AI packages opt-in when disabled"
 assert_not_contains "$ai_packages_state" "INCLUDE_AI_TOOLS=1" \
     "_persist_menu_state omits INCLUDE_AI_TOOLS when disabled"
 
-assert_pattern_present "$DOTFILES_TOPIC" 'DOTFILES_NPM_GLOBAL="\$\{DOTFILES_NPM_GLOBAL:-0\}"' \
-    "95-dotfiles-personal forwards DOTFILES_NPM_GLOBAL to dotfiles install.sh"
+assert_pattern_present "$IDENTITY_TOPIC" 'MESH_NPM_GLOBAL="\$\{MESH_NPM_GLOBAL:-0\}"' \
+    "95-dotfiles-personal forwards MESH_NPM_GLOBAL to dotfiles install.sh"
 
-assert_not_contains "$(cat "$DOTFILES_TOPIC")" "DOTFILES_AI_PACKAGES=" \
+assert_not_contains "$(cat "$IDENTITY_TOPIC")" "MESH_AI_PACKAGES=" \
     "95-dotfiles-personal does not install AI packages"
-assert_pattern_present "$AI_TOPIC" 'DOTFILES_AI_PACKAGES=1 bash "\$ai_installer"' \
-    "82-ai-tools runs the dotfiles AI package installer"
+assert_pattern_present "$AI_TOPIC" 'install-engine.sh' \
+    "82-ai-tools dispatches through install-engine"
 
 _test_ai_tools_screen_runs_after_webstack_before_confirm() {
     local tmp out titles selection extras_line ai_line confirm_line ai_args
@@ -188,13 +188,13 @@ source "$REPO_ROOT/scripts/lib/log.sh"
 OS="wsl"
 HOME="$TMP_ROOT/home"
 BOOTSTRAP_STATE_CONFIG="$TMP_ROOT/config.env"
-DOTFILES_REPO="file://$TMP_ROOT/dotfiles"
-DOTFILES_DIR="$TMP_ROOT/dotfiles"
+MESH_IDENTITY_REPO="file://$TMP_ROOT/dotfiles"
+MESH_IDENTITY_DIR="$TMP_ROOT/dotfiles"
 GIT_NAME="Test User"
 GIT_EMAIL="test@example.com"
-DEV_BOOTSTRAP_ROOT="$REPO_ROOT"
-export OS HOME BOOTSTRAP_STATE_CONFIG DOTFILES_REPO DOTFILES_DIR
-export GIT_NAME GIT_EMAIL DEV_BOOTSTRAP_ROOT
+MESH_WORKSTATION_ROOT="$REPO_ROOT"
+export OS HOME BOOTSTRAP_STATE_CONFIG MESH_IDENTITY_REPO MESH_IDENTITY_DIR
+export GIT_NAME GIT_EMAIL MESH_WORKSTATION_ROOT
 
 secrets_has() { return 1; }
 secrets_set() { return 0; }
@@ -214,7 +214,7 @@ whiptail() {
     done
     printf '%s\n' "$title" >> "$TMP_ROOT/titles.log"
     case "$title" in
-        "dev-bootstrap :: opt-in topics")
+        "mesh-workstation :: opt-in topics")
             printf '"webstack" "ai-tools"\n' >&2
             ;;
         "60-web-stack :: projects root")
@@ -233,7 +233,7 @@ whiptail() {
             printf '\n' >> "$TMP_ROOT/ai-args.log"
             printf 'mdprobe\nrtk\n' >&2
             ;;
-        "dev-bootstrap :: confirm")
+        "mesh-workstation :: confirm")
             return 0
             ;;
         *)
@@ -245,7 +245,7 @@ whiptail() {
 
 source "$MENU"
 run_menu >/dev/null
-printf 'SELECTION=%s\n' "${DOTFILES_AI_PACKAGE_SELECTION:-}"
+printf 'SELECTION=%s\n' "${MESH_AI_PACKAGE_SELECTION:-}"
 cat "$TMP_ROOT/titles.log"
 BASH
     out="$(TMP_ROOT="$tmp" REPO_ROOT="$REPO_ROOT" MENU="$MENU" bash "$tmp/run-menu.sh")"
@@ -254,7 +254,7 @@ BASH
     selection="$(printf '%s\n' "$out" | sed -n 's/^SELECTION=//p')"
     extras_line="$(printf '%s\n' "$titles" | grep -nFx "60-web-stack :: optional extras" | head -1 | cut -d: -f1)"
     ai_line="$(printf '%s\n' "$titles" | grep -nFx "82-ai-tools :: packages" | head -1 | cut -d: -f1)"
-    confirm_line="$(printf '%s\n' "$titles" | grep -nFx "dev-bootstrap :: confirm" | head -1 | cut -d: -f1)"
+    confirm_line="$(printf '%s\n' "$titles" | grep -nFx "mesh-workstation :: confirm" | head -1 | cut -d: -f1)"
     ai_args="$(cat "$tmp/ai-args.log" 2>/dev/null || true)"
 
     if [[ -n "$extras_line" && -n "$ai_line" && -n "$confirm_line" \
@@ -280,9 +280,9 @@ echo "macOS menu dependencies"
 _test_mac_menu_bootstraps_brew_when_whiptail_needs_homebrew() {
     local tmp fake_root marker
     tmp="$(mktemp -d)"
-    fake_root="$tmp/dev-bootstrap"
+    fake_root="$tmp/mesh-workstation"
     marker="$tmp/00-core-ran"
-    mkdir -p "$fake_root/topics/00-core" "$fake_root/lib" "$tmp/homebrew/bin" "$tmp/bin"
+    mkdir -p "$fake_root/topics/00-core" "$fake_root/scripts/lib" "$tmp/homebrew/bin" "$tmp/bin"
     local bash_bin
     bash_bin="$(command -v bash)"
     ln -s "$bash_bin" "$tmp/bin/bash"
@@ -304,7 +304,7 @@ exit 0
 EOF
     chmod +x "$tmp/homebrew/bin/brew"
 
-    cat > "$fake_root/lib/detect-brew.sh" <<EOF
+    cat > "$fake_root/scripts/lib/detect-brew.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'BREW_BIN=%q\n' "$tmp/homebrew/bin/brew"
@@ -317,7 +317,7 @@ EOF
     export OS="mac"
     BREW_BIN=""
     BREW_PREFIX=""
-    export DEV_BOOTSTRAP_ROOT="$fake_root"
+    export MESH_WORKSTATION_ROOT="$fake_root"
 
     prepare_interactive_menu_dependencies
 

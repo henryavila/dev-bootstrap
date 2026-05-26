@@ -1,5 +1,5 @@
 #compdef mesh
-# managed by dev-bootstrap
+# managed by mesh-workstation
 
 _mesh_topic_specs() {
     emulate -L zsh

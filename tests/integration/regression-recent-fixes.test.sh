@@ -25,7 +25,7 @@ LOG="$ROOT/scripts/lib/log.sh"
 # under mac/, wsl/, and extras/. We bundle each topic's customs into a single
 # temp file so the existing pattern-based assertions still grep against the
 # topic's complete install logic (the *invariants* are file-location-agnostic).
-_bundle_dir="$(mktemp -d -t dev-bootstrap-test-bundle.XXXXXX)"
+_bundle_dir="$(mktemp -d -t mesh-workstation-test-bundle.XXXXXX)"
 trap 'rm -rf "$_bundle_dir"' EXIT
 
 _make_bundle() {
@@ -376,31 +376,26 @@ echo "═══ Pre-migration of legacy unmarked nginx files (60-web-stack mac) 
 assert_pattern_present "$MAC" 'pre-bootstrap-bak' \
     "60-web-stack/install.mac.sh — backs up legacy unmarked files before deploy"
 
-assert_pattern_present "$MAC" 'managed by dev-bootstrap' \
+assert_pattern_present "$MAC" 'managed by mesh-workstation' \
     "60-web-stack/install.mac.sh — checks for marker before touching legacy files"
 
 # Allowlist: only specific paths are migrated (not arbitrary deletions)
 assert_pattern_present "$MAC" 'LEGACY_FILES=' \
     "60-web-stack/install.mac.sh — explicit allowlist of paths to migrate"
 
-# Case-insensitive marker check: templates write "Managed by dev-bootstrap"
-# (capital M), health-checks must use grep -i. A case-sensitive check caused
-# the nginx migration block to re-migrate already-migrated files on EVERY run,
-# producing one .pre-bootstrap-bak-<ts> backup per execution. Regression found
-# 2026-04-23 with 6 backups stacked up in 24h on M2.
-assert_pattern_present "$MAC" 'grep -qi "managed by dev-bootstrap"' \
+# Case-insensitive marker check: templates write "managed by mesh-workstation",
+# health-checks must use grep -i. A case-sensitive check caused the nginx
+# migration block to re-migrate already-migrated files on EVERY run.
+assert_pattern_present "$MAC" 'grep -qi "managed by mesh-workstation"' \
     "60-web-stack/install.mac.sh — migration marker check is case-insensitive (grep -qi)"
 
-assert_pattern_absent "$MAC" 'grep -q "managed by dev-bootstrap"' \
+assert_pattern_absent "$MAC" 'grep -q "managed by mesh-workstation"' \
     "60-web-stack/install.mac.sh — no case-sensitive marker check (would loop-migrate)"
 
-assert_pattern_present "$ROOT/scripts/lib/deploy.sh" 'grep -qiF "managed by dev-bootstrap"' \
-    "lib/deploy.sh — overwrite-protection marker check is case-insensitive"
+assert_pattern_present "$ROOT/scripts/lib/deploy.sh" 'managed by (mesh-workstation|dev-bootstrap)' \
+    "lib/deploy.sh — overwrite-protection accepts both old and new marker"
 
-assert_pattern_absent "$ROOT/scripts/lib/deploy.sh" 'grep -qF "managed by dev-bootstrap"' \
-    "lib/deploy.sh — no case-sensitive marker check in overwrite protection"
-
-assert_pattern_present "$WSL" 'grep -qi "managed by dev-bootstrap"' \
+assert_pattern_present "$WSL" 'grep -qi "managed by mesh-workstation"' \
     "60-web-stack/install.wsl.sh — legacy catchall removal marker check is case-insensitive"
 
 echo
@@ -891,7 +886,7 @@ echo
 echo "═══ 40-tmux ships generic tmux helpers (tl / ta / tn / tm) ═══"
 
 # These used to live in Henry's private dotfiles; lifted to the
-# public dev-bootstrap after the 'tm' helper proved useful enough
+# public mesh-workstation after the 'tm' helper proved useful enough
 # to belong in the shared baseline. The dotfiles-private file
 # should NOT redeclare them — the aliases_private_keeps_only_project
 # assertion catches accidental drift.

@@ -45,7 +45,7 @@ Public `dev-bootstrap` repo that:
 │ 2. Dev on WSL/Mac → bash setup.sh
 │ 3. (optional) Dev creates their own dotfiles from
 │    the public `dotfiles-template`
-│ 4. DOTFILES_REPO=... bash setup.sh applies the
+│ 4. MESH_IDENTITY_REPO=... bash setup.sh applies the
 │    personal configs at the end
 └─────────────────────────────────────────────────────┘
 ```
@@ -117,9 +117,9 @@ bash setup.sh --help                   # list topics + env vars
 | `SKIP_TOPICS` | list of topics to skip (space-separated) |
 | `ONLY_TOPICS` | run only these (ignore the rest) |
 | `DRY_RUN=1` | don't execute, just list |
-| `DOTFILES_REPO` | URL of the personal dotfiles repo (used by topic `95-dotfiles-personal`) |
-| `DOTFILES_DIR` | clone destination (default: `~/dotfiles`) |
-| `DOTFILES_NPM_GLOBAL=1` | tell the dotfiles installer to configure npm globals under `~/.npm-global` and persist `~/.npm-global/bin` on PATH |
+| `MESH_IDENTITY_REPO` | URL of the personal dotfiles repo (used by topic `95-dotfiles-personal`) |
+| `MESH_IDENTITY_DIR` | clone destination (default: `~/mesh-identity`) |
+| `MESH_NPM_GLOBAL=1` | tell the dotfiles installer to configure npm globals under `~/.npm-global` and persist `~/.npm-global/bin` on PATH |
 | `GIT_NAME`, `GIT_EMAIL` | identity for `50-git` |
 | `CODE_DIR` | where projects live (default: `~/code/web`; on Henry's Mac: `/Volumes/External/code`) |
 | `INCLUDE_WEBSTACK=1` | enable topic `60-web-stack` (default: skip) |
@@ -142,7 +142,7 @@ bash setup.sh --help                   # list topics + env vars
      60-web-stack    requires INCLUDE_WEBSTACK=1    (skip with message otherwise)
      70-remote-access    requires INCLUDE_REMOTE=1
      90-editor           requires INCLUDE_EDITOR=1
-     95-dotfiles-personal requires DOTFILES_REPO set
+     95-dotfiles-personal requires MESH_IDENTITY_REPO set
 6. for each unfiltered topic:
    a. if DRY_RUN: print "would run: <installer>" and continue
    b. resolve installer: prefer install.$OS.sh, fall back to install.sh
@@ -154,7 +154,7 @@ bash setup.sh --help                   # list topics + env vars
 ```
 
 **Variables exported by the runner** (inherited by all installers and deploy.sh):
-`OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `DOTFILES_REPO`, `DOTFILES_DIR`, `DOTFILES_NPM_GLOBAL`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_WEBSTACK`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `INCLUDE_POSTGRES`, `POSTGRES_VERSION`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
+`OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `MESH_IDENTITY_REPO`, `MESH_IDENTITY_DIR`, `MESH_NPM_GLOBAL`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_WEBSTACK`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `INCLUDE_POSTGRES`, `POSTGRES_VERSION`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
 
 ### Log
 
@@ -425,15 +425,15 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 **Purpose:** apply the dev's personal dotfiles (opt-in via env var).
 
-**Activation:** `DOTFILES_REPO=git@github.com:user/dotfiles.git bash setup.sh`
+**Activation:** `MESH_IDENTITY_REPO=git@github.com:user/dotfiles.git bash setup.sh`
 
-Optional npm-global activation: add `DOTFILES_NPM_GLOBAL=1` or tick `npm-global` in the interactive menu. This delegates prefix/PATH persistence to the dotfiles installer.
+Optional npm-global activation: add `MESH_NPM_GLOBAL=1` or tick `npm-global` in the interactive menu. This delegates prefix/PATH persistence to the dotfiles installer.
 
 **Contents:**
-1. If `DOTFILES_REPO` isn't set → skip with message.
+1. If `MESH_IDENTITY_REPO` isn't set → skip with message.
 2. Otherwise:
-   - Clone into `~/dotfiles` (or `$DOTFILES_DIR` if set)
-   - If `~/dotfiles/install.sh` exists: `DOTFILES_NPM_GLOBAL="${DOTFILES_NPM_GLOBAL:-0}" bash ~/dotfiles/install.sh`
+   - Clone into `~/mesh-identity` (or `$MESH_IDENTITY_DIR` if set)
+   - If `~/mesh-identity/install.sh` exists: `MESH_NPM_GLOBAL="${MESH_NPM_GLOBAL:-0}" bash ~/mesh-identity/install.sh`
 
 **Templates:** none.
 

@@ -3,11 +3,11 @@
 Installs optional AI workflow tools from the selected dotfiles manifest without
 applying personal dotfiles.
 
-The topic needs `DOTFILES_REPO` because the package manifest and installer live
-in the dotfiles repo, but it does not run `$DOTFILES_DIR/install.sh`.
+The topic needs `MESH_IDENTITY_REPO` because the package manifest and installer live
+in the dotfiles repo, but it does not run `$MESH_IDENTITY_DIR/install.sh`.
 
 ```bash
-INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:youruser/dotfiles.git bash setup.sh
+INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=git@github.com:youruser/dotfiles.git bash setup.sh
 ```
 
 In interactive mode, selecting `82-ai-tools` opens a package selector before the
@@ -25,5 +25,5 @@ The default manifest currently exposes:
 
 If the dotfiles repo has not been cloned yet, topic 82 clones it first and then
 falls back to the dotfiles installer's selector during the topic run. Installed
-packages are skipped unless the run sets `DOTFILES_AI_PACKAGES_UPDATE=1`.
+packages are skipped unless the run sets `MESH_AI_PACKAGES_UPDATE=1`.
 Non-interactive runs select the full manifest and only install what is missing.

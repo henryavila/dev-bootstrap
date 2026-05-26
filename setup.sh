@@ -9,12 +9,12 @@
 #   SKIP_TOPICS         space-separated list of topics to skip
 #   ONLY_TOPICS         space-separated list of topics to run exclusively
 #   DRY_RUN=1           print actions without executing
-#   DOTFILES_REPO       dotfiles repo URL (used by 82-ai-tools / 95-dotfiles-personal)
-#   DOTFILES_DIR        where to clone dotfiles (default: ~/dotfiles)
+#   MESH_IDENTITY_REPO       identity repo URL (used by 82-ai-tools / 95-dotfiles-personal)
+#   MESH_IDENTITY_DIR        where to clone identity repo (default: ~/mesh-identity)
 #   INCLUDE_AI_TOOLS=1  install AI review prompts + token-saving CLI tools
-#   INCLUDE_DOTFILES_PERSONAL=1 apply personal dotfiles from DOTFILES_REPO
-#   DOTFILES_NPM_GLOBAL=1 configure npm globals under ~/.npm-global via dotfiles
-#   DOTFILES_AI_PACKAGES=1 legacy alias for INCLUDE_AI_TOOLS=1
+#   INCLUDE_IDENTITY=1 apply personal identity from MESH_IDENTITY_REPO
+#   MESH_NPM_GLOBAL=1 configure npm globals under ~/.npm-global
+#   MESH_AI_PACKAGES=1 legacy alias for INCLUDE_AI_TOOLS=1
 #   GIT_NAME, GIT_EMAIL identity for 50-git
 #   GPG_SIGN=1          enable commit/tag signing in 50-git (opt-in)
 #   GPG_KEY_ID          explicit signing key (else first secret key is picked)
@@ -41,7 +41,7 @@
 #                       PECL extensions (ACCEPT_EULA=Y auto-set)
 #   NGROK_AUTHTOKEN     ngrok token to auto-configure during install
 #                       (if unset, the menu prompts once + persists to
-#                       ~/.local/state/dev-bootstrap/secrets.env, mode 0600)
+#                       ~/.local/state/mesh-workstation/secrets.env, mode 0600)
 #   CHSH_AUTO=0         skip the auto `sudo chsh` attempt in 20-terminal-ux
 #                       (default 1 — tries to set zsh as default login
 #                       shell using the cached sudo ticket; falls back
@@ -94,7 +94,7 @@ optin_var_for() {
         82-ai-tools)      echo "INCLUDE_AI_TOOLS" ;;
         85-code-server)   echo "INCLUDE_CODE_SERVER" ;;
         90-editor)        echo "INCLUDE_EDITOR" ;;
-        95-dotfiles-personal) echo "INCLUDE_DOTFILES_PERSONAL" ;;
+        95-dotfiles-personal) echo "INCLUDE_IDENTITY" ;;
         *)                echo "" ;;
     esac
 }
@@ -106,9 +106,9 @@ print_topic_list() {
         number="${topic%%-*}"
         var="$(optin_var_for "$topic")"
         if [[ "$topic" == "82-ai-tools" ]]; then
-            printf '%s  %s  opt-in: INCLUDE_AI_TOOLS=1 DOTFILES_REPO=<url>  AI review prompts + token-saving CLI tools\n' "$number" "$topic"
+            printf '%s  %s  opt-in: INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=<url>  AI review prompts + token-saving CLI tools\n' "$number" "$topic"
         elif [[ "$topic" == "95-dotfiles-personal" ]]; then
-            printf '%s  %s  opt-in: INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>\n' "$number" "$topic"
+            printf '%s  %s  opt-in: INCLUDE_IDENTITY=1 MESH_IDENTITY_REPO=<url>\n' "$number" "$topic"
         elif [[ -n "$var" ]]; then
             printf '%s  %s  opt-in: %s=1\n' "$number" "$topic" "$var"
         else
@@ -186,7 +186,7 @@ done
 # warnings across hundreds of lines of topic output). Topics invoke
 # `followup <severity> <msg>` from lib/log.sh — the severity bucket
 # (critical / manual / info) drives how the summary renders.
-BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t dev-bootstrap-followup.XXXXXX 2>/dev/null || mktemp)"
+BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t mesh-workstation-followup.XXXXXX 2>/dev/null || mktemp)"
 export BOOTSTRAP_FOLLOWUP_FILE
 trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
 
@@ -195,7 +195,7 @@ trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
 # opt-in flags, etc.) on re-runs instead of always showing the defaults.
 # Format: shell-sourceable `export KEY=value` lines — readable, diff-able,
 # editable by hand. Delete the file to reset to defaults.
-export BOOTSTRAP_STATE_DIR="$HOME/.local/state/dev-bootstrap"
+export BOOTSTRAP_STATE_DIR="$HOME/.local/state/mesh-workstation"
 export BOOTSTRAP_STATE_CONFIG="$BOOTSTRAP_STATE_DIR/config.env"
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
     echo "+ mkdir -p $BOOTSTRAP_STATE_DIR  [dry-run, skipped]"
@@ -266,14 +266,14 @@ Opt-in topics (menu toggles these, or set env var in automation):
   45-docker             INCLUDE_DOCKER=1
   60-web-stack          INCLUDE_WEBSTACK=1   (legacy: INCLUDE_LARAVEL=1 still accepted)
   70-remote-access      INCLUDE_REMOTE=1
-  82-ai-tools           INCLUDE_AI_TOOLS=1 DOTFILES_REPO=<url>  AI review prompts + token-saving CLI tools
+  82-ai-tools           INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=<url>  AI review prompts + token-saving CLI tools
   85-code-server        INCLUDE_CODE_SERVER=1
   90-editor             INCLUDE_EDITOR=1
-  95-dotfiles-personal  INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>
-                       DOTFILES_NPM_GLOBAL=1  npm globals under ~/.npm-global
+  95-dotfiles-personal  INCLUDE_IDENTITY=1 MESH_IDENTITY_REPO=<url>
+                       MESH_NPM_GLOBAL=1  npm globals under ~/.npm-global
 
 Other env vars:
-  GIT_NAME, GIT_EMAIL, CODE_DIR, DOTFILES_DIR, NO_COLOR
+  GIT_NAME, GIT_EMAIL, CODE_DIR, MESH_IDENTITY_DIR, NO_COLOR
   GPG_SIGN=1 [+ GPG_KEY_ID=<id>]  enable GPG commit signing in 50-git
   PHP_VERSIONS="8.4 8.5" [+ PHP_DEFAULT=8.5]  multi-PHP install (60-web-stack)
   INCLUDE_WEBSTACK=1              opt-in for 60-web-stack
@@ -430,24 +430,24 @@ if should_show_menu; then
 fi
 
 # ---------- Defaults for inherited vars ----------
-export DOTFILES_REPO="${DOTFILES_REPO:-}"
-export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
-export DOTFILES_NPM_GLOBAL="${DOTFILES_NPM_GLOBAL:-0}"
-export DOTFILES_AI_PACKAGES="${DOTFILES_AI_PACKAGES:-0}"
-if [[ "${DOTFILES_AI_PACKAGES:-0}" == "1" && -z "${INCLUDE_AI_TOOLS:-}" ]]; then
+export MESH_IDENTITY_REPO="${MESH_IDENTITY_REPO:-}"
+export MESH_IDENTITY_DIR="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
+export MESH_NPM_GLOBAL="${MESH_NPM_GLOBAL:-0}"
+export MESH_AI_PACKAGES="${MESH_AI_PACKAGES:-0}"
+if [[ "${MESH_AI_PACKAGES:-0}" == "1" && -z "${INCLUDE_AI_TOOLS:-}" ]]; then
     export INCLUDE_AI_TOOLS=1
 fi
-if [[ -z "${INCLUDE_DOTFILES_PERSONAL+x}" ]]; then
-    # Backward compatibility: DOTFILES_REPO alone used to mean "run 95".
+if [[ -z "${INCLUDE_IDENTITY+x}" ]]; then
+    # Backward compatibility: MESH_IDENTITY_REPO alone used to mean "run 95".
     # The interactive menu sets this explicitly, so an AI-only selection can
-    # use DOTFILES_REPO as manifest source without applying personal dotfiles.
-    if [[ -n "${DOTFILES_REPO:-}" ]]; then
-        export INCLUDE_DOTFILES_PERSONAL=1
+    # use MESH_IDENTITY_REPO as manifest source without applying personal dotfiles.
+    if [[ -n "${MESH_IDENTITY_REPO:-}" ]]; then
+        export INCLUDE_IDENTITY=1
     else
-        export INCLUDE_DOTFILES_PERSONAL=0
+        export INCLUDE_IDENTITY=0
     fi
 else
-    export INCLUDE_DOTFILES_PERSONAL="${INCLUDE_DOTFILES_PERSONAL:-0}"
+    export INCLUDE_IDENTITY="${INCLUDE_IDENTITY:-0}"
 fi
 export GIT_NAME="${GIT_NAME:-}"
 export GIT_EMAIL="${GIT_EMAIL:-}"
@@ -554,7 +554,7 @@ run_topic() {
     if [[ -n "$var" ]]; then
         local val="${!var:-0}"
         if [[ "$val" != "1" ]]; then
-            if [[ "${DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS:-0}" == "1" ]] && \
+            if [[ "${MESH_REQUIRE_ONLY_TOPICS:-0}" == "1" ]] && \
                in_list "$topic" "${only_list[@]+"${only_list[@]}"}"; then
                 fail "$topic is opt-in; set $var=1 to run it"
                 failed+=("$topic")
@@ -566,14 +566,14 @@ run_topic() {
         fi
     fi
 
-    # Dotfiles-backed opt-ins require DOTFILES_REPO.
-    if [[ ( "$topic" == "82-ai-tools" || "$topic" == "95-dotfiles-personal" ) && -z "$DOTFILES_REPO" ]]; then
-        if [[ "${DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS:-0}" == "1" ]] && \
+    # Dotfiles-backed opt-ins require MESH_IDENTITY_REPO.
+    if [[ ( "$topic" == "82-ai-tools" || "$topic" == "95-dotfiles-personal" ) && -z "$MESH_IDENTITY_REPO" ]]; then
+        if [[ "${MESH_REQUIRE_ONLY_TOPICS:-0}" == "1" ]] && \
            in_list "$topic" "${only_list[@]+"${only_list[@]}"}"; then
-            fail "$topic is opt-in; set DOTFILES_REPO=<url> to run it"
+            fail "$topic is opt-in; set MESH_IDENTITY_REPO=<url> to run it"
             failed+=("$topic")
         else
-            info "skip $topic (set DOTFILES_REPO to enable)"
+            info "skip $topic (set MESH_IDENTITY_REPO to enable)"
             skipped+=("$topic")
         fi
         return 0
@@ -668,4 +668,4 @@ if ! command -v mesh >/dev/null 2>&1; then
     warn "open a new terminal, or run:  export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
 
-ok "done"
+ok "done — full log: $LOG"

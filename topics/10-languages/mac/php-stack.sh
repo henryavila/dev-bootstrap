@@ -504,7 +504,7 @@ for ver in $PHP_VERSIONS; do
     # with brew's PHAR bug — surfaces the bug instead of hiding it).
     cat > "$_wrapper" <<EOF
 #!/usr/bin/env bash
-# composer${ver} — Managed by dev-bootstrap / 10-languages.
+# composer${ver} — Managed by mesh-workstation / 10-languages.
 # Runs Composer with PHP ${ver} instead of the machine's default PHP.
 # Generated once per non-default version in PHP_VERSIONS; safe to delete
 # (bootstrap re-creates) but not safe to edit (overwritten on next run).

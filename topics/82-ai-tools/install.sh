@@ -4,7 +4,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Workstation root: prefer the env var (when set by setup.sh / config.env /
-# 00-dev-bootstrap-env.sh auto-derive). Fall back to $HERE-relative
+# 00-mesh-env.sh auto-derive). Fall back to $HERE-relative
 # resolution; never a hardcoded developer-machine path (Review B finding B3).
 WS_DIR="${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}"
 # Locate engine relative to this file's git toplevel (more reliable than env in tests):

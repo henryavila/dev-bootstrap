@@ -16,7 +16,7 @@
 #   - cached PATH in shell sessions
 #   - 16+ repos at /Volumes/External/code/
 #   - all subsequent system + user-scope brew services (exit 78)
-#   - dev-bootstrap recovery (detect-brew hardcoded /Volumes/External/...)
+#   - mesh-workstation recovery (detect-brew hardcoded /Volumes/External/...)
 #
 # Two-pronged defense, both grep-asserted here:
 #   (1) topics/60-web-stack/mac/launchdaemon-hardening.sh — POST-`valet install`,

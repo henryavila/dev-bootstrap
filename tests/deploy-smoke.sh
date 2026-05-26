@@ -7,7 +7,7 @@
 # care about:
 #   1. .template files pass through envsubst with ${BREW_PREFIX} allowlist
 #      entry properly substituted on this machine.
-#   2. Destinations without the "managed by dev-bootstrap" marker are
+#   2. Destinations without the "managed by mesh-workstation" marker are
 #      refused (and the ALLOW_OVERWRITE_UNMANAGED escape hatch works).
 #   3. Templates or DEPLOY entries with .local suffix are refused.
 #
@@ -74,7 +74,7 @@ new_fixture() {
 echo "Test 1: envsubst \${BREW_PREFIX} in .template files"
 fx1="$(new_fixture test1)"
 cat > "$fx1/templates/bashrc.template" <<'TPL'
-# ~/.bashrc — managed by dev-bootstrap / test
+# ~/.bashrc — managed by mesh-workstation / test
 __prefix='${BREW_PREFIX}'
 echo "$__prefix"
 TPL
@@ -82,11 +82,11 @@ TPL
 export HOME="$fx1/home"
 export BREW_PREFIX="/Volumes/External/homebrew"
 # Clear other allowlist vars to ensure isolation
-export CODE_DIR="" NGINX_CONF_DIR="" DOTFILES_DIR=""
+export CODE_DIR="" NGINX_CONF_DIR="" MESH_IDENTITY_DIR=""
 
 if bash "$DEPLOY_SH" "$fx1/templates" >"$fx1/log" 2>&1; then
     assert_file_contains "bashrc deployed to fake HOME" \
-        "$HOME/.bashrc" "managed by dev-bootstrap"
+        "$HOME/.bashrc" "managed by mesh-workstation"
     assert_file_contains "BREW_PREFIX substituted correctly" \
         "$HOME/.bashrc" "__prefix='/Volumes/External/homebrew'"
 else
@@ -101,7 +101,7 @@ echo
 echo "Test 2: empty BREW_PREFIX produces empty string (Linux without brew)"
 fx2="$(new_fixture test2)"
 cat > "$fx2/templates/bashrc.template" <<'TPL'
-# ~/.bashrc — managed by dev-bootstrap / test
+# ~/.bashrc — managed by mesh-workstation / test
 __prefix='${BREW_PREFIX}'
 TPL
 
@@ -124,7 +124,7 @@ echo
 echo "Test 3: refuse overwrite of existing file without managed-by marker"
 fx3="$(new_fixture test3)"
 cat > "$fx3/templates/bashrc.template" <<'TPL'
-# ~/.bashrc — managed by dev-bootstrap / test
+# ~/.bashrc — managed by mesh-workstation / test
 new_content=yes
 TPL
 
@@ -144,7 +144,7 @@ else
     assert "deploy.sh exited non-zero" "1" "$rc"
     assert_file_contains "original .bashrc preserved" \
         "$HOME/.bashrc" "User's handwritten .bashrc"
-    if grep -qF "no 'managed by dev-bootstrap' marker" "$fx3/log"; then
+    if grep -qF "no 'managed by mesh-workstation' marker" "$fx3/log"; then
         echo "  ✓ refuse message emitted"
         pass_count=$((pass_count + 1))
     else
@@ -160,7 +160,7 @@ echo
 echo "Test 4: ALLOW_OVERWRITE_UNMANAGED=1 allows overwrite + creates backup"
 fx4="$(new_fixture test4)"
 cat > "$fx4/templates/bashrc.template" <<'TPL'
-# ~/.bashrc — managed by dev-bootstrap / test
+# ~/.bashrc — managed by mesh-workstation / test
 new_content=yes
 TPL
 
@@ -238,13 +238,13 @@ echo
 echo "Test 7: prune_backups retains 5 newest + 1 oldest (8 backups → 6)"
 fx7="$(new_fixture test7)"
 cat > "$fx7/templates/bashrc.template" <<'TPL'
-# ~/.bashrc — managed by dev-bootstrap / test
+# ~/.bashrc — managed by mesh-workstation / test
 version_9=yes
 TPL
 
 export HOME="$fx7/home"
 # Pre-existing .bashrc with marker (so overwrite proceeds cleanly)
-printf '# managed by dev-bootstrap\noriginal=yes\n' > "$HOME/.bashrc"
+printf '# managed by mesh-workstation\noriginal=yes\n' > "$HOME/.bashrc"
 # 8 pre-existing backups with ascending mtime
 for i in 1 2 3 4 5 6 7 8; do
     ts="20260420-0${i}0000"
@@ -292,7 +292,7 @@ cp "$REPO_ROOT/topics/30-shell/templates/zshrc.template" "$fx8/templates/"
 
 export HOME="$fx8/home"
 export BREW_PREFIX="$fx8/fake-brew"
-export CODE_DIR="" NGINX_CONF_DIR="" DOTFILES_DIR=""
+export CODE_DIR="" NGINX_CONF_DIR="" MESH_IDENTITY_DIR=""
 
 bash "$DEPLOY_SH" "$fx8/templates" >"$fx8/log" 2>&1 || {
     echo "  ✗ deploy.sh failed"

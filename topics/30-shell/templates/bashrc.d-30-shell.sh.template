@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# 30-shell shell fragment (bash) — managed by dev-bootstrap
+# 30-shell shell fragment (bash) — managed by mesh-workstation
 # Fundamentals every dev wants: bash completion, dircolors, sane defaults.
 # Loaded by ~/.bashrc from ~/.bashrc.d/ (ordered alphabetically — 30 runs
 # AFTER 10-languages and 20-terminal-ux but BEFORE user overrides in

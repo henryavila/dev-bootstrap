@@ -207,7 +207,7 @@ rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
 echo
 echo "L01 allowlist contract: \${VAR:-\$HOME/dotfiles} accepted"
 _inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
-    $'#!/usr/bin/env bash\ndir="${DOTFILES_DIR:-$HOME/dotfiles}"'
+    $'#!/usr/bin/env bash\ndir="${MESH_IDENTITY_DIR:-$HOME/dotfiles}"'
 out=$(bash "$LINTS_DIR/L01-no-hardcoded-dotfiles-path.sh" 2>&1); rc=$?
 assert_eq "$rc" "0" "L01 accepts \${VAR:-\$HOME/dotfiles} fallback"
 rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"

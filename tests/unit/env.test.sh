@@ -31,11 +31,7 @@ rm -rf "$FAKE"
 out=$(MESH_IDENTITY_DIR=/tmp/mid bash -c ". '$WS/scripts/lib/env.sh'; echo \$MESH_IDENTITY_DIR")
 assert "MESH_IDENTITY_DIR honored from env" "/tmp/mid" "$out"
 
-# Test 5: DOTFILES_DIR transitional alias
-out=$(unset DOTFILES_DIR; MESH_IDENTITY_DIR=/tmp/mid bash -c ". '$WS/scripts/lib/env.sh'; echo \$DOTFILES_DIR")
-assert "DOTFILES_DIR aliased to MESH_IDENTITY_DIR" "/tmp/mid" "$out"
-
-# Test 6: pre-set MESH_WORKSTATION_DIR is NOT overwritten by config.env when MESH_IDENTITY_DIR is also unset (i.e., both must be unset before config.env loads)
+# Test 5: pre-set MESH_WORKSTATION_DIR is NOT overwritten by config.env when MESH_IDENTITY_DIR is also unset (i.e., both must be unset before config.env loads)
 FAKE6=/tmp/fakehome-cfg-mixed-$$
 mkdir -p "$FAKE6/.config/mesh"
 cat > "$FAKE6/.config/mesh/config.env" <<EOF

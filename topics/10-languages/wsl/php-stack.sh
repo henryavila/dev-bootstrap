@@ -190,7 +190,7 @@ fi
 #
 # WSL installs php binaries at /usr/bin/php<maj.min>; composer lives at
 # /usr/local/bin/composer. Wrappers land in ~/.local/bin (user-writable,
-# in PATH by dotfiles/dev-bootstrap convention).
+# in PATH by dotfiles/mesh-workstation convention).
 _compose_wrapper_dir="$HOME/.local/bin"
 mkdir -p "$_compose_wrapper_dir"
 for ver in $PHP_VERSIONS; do
@@ -209,7 +209,7 @@ for ver in $PHP_VERSIONS; do
     # version control — honor that.
     cat > "$_wrapper" <<EOF
 #!/usr/bin/env bash
-# composer${ver} — Managed by dev-bootstrap / 10-languages.
+# composer${ver} — Managed by mesh-workstation / 10-languages.
 # Runs Composer with PHP ${ver} instead of the machine's default PHP.
 # Generated once per non-default version in PHP_VERSIONS; safe to delete
 # (bootstrap re-creates) but not safe to edit (overwritten on next run).

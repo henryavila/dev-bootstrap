@@ -1,4 +1,4 @@
-# Managed by dev-bootstrap / 60-web-stack. Edits lost on next deploy.
+# Managed by mesh-workstation / 60-web-stack. Edits lost on next deploy.
 #
 # Catchall for *.front.localhost → http://127.0.0.1:$DEV_DEFAULT_PORT
 # (default 3000 — set via menu or DEV_DEFAULT_PORT env var).
@@ -30,14 +30,14 @@ server {
     ssl_certificate     ${CERT_DIR}/wildcard-localhost.pem;
     ssl_certificate_key ${CERT_DIR}/wildcard-localhost-key.pem;
 
-    include snippets/dev-bootstrap-security.conf;
+    include snippets/mesh-security.conf;
 
     access_log /var/log/nginx/${project}.front.localhost.access.log;
     error_log  /var/log/nginx/${project}.front.localhost.error.log;
 
     location / {
         proxy_pass http://dev_server_default;
-        include snippets/dev-bootstrap-proxy.conf;
+        include snippets/mesh-proxy.conf;
     }
 
     # Graceful 503 when the dev server isn't running — tells you how to

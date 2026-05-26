@@ -150,7 +150,7 @@ mapping_dst=()
 # Variables allowed in template substitution. Restricting the set keeps
 # envsubst from mangling unrelated $tokens (e.g. nginx's $project capture,
 # shell positional $1, php's $_SERVER). Add here if a new topic needs more.
-ENVSUBST_ALLOWLIST='${USER} ${HOME} ${BREW_PREFIX} ${CODE_DIR} ${DOTFILES_DIR} ${NGINX_CONF_DIR} ${NGINX_AVAILABLE_DIR} ${NGINX_ENABLED_DIR} ${NGINX_SNIPPET_DIR} ${NGINX_MAP_DIR} ${CERT_DIR} ${PHP_DEFAULT} ${DEV_DEFAULT_PORT}'
+ENVSUBST_ALLOWLIST='${USER} ${HOME} ${BREW_PREFIX} ${CODE_DIR} ${MESH_IDENTITY_DIR} ${NGINX_CONF_DIR} ${NGINX_AVAILABLE_DIR} ${NGINX_ENABLED_DIR} ${NGINX_SNIPPET_DIR} ${NGINX_MAP_DIR} ${CERT_DIR} ${PHP_DEFAULT} ${DEV_DEFAULT_PORT}'
 
 # ---------- Build mapping list ----------
 
@@ -203,7 +203,7 @@ refuse_local_suffix() {
             # no separate `.local` arm is needed (shellcheck SC2221/2222).
             fail "deploy.sh: refusing $what '$value' with .local-suffix filename."
             fail "  The basename ($base) ends in .local, which is reserved for"
-            fail "  user overrides (loaded last, never managed by dev-bootstrap)."
+            fail "  user overrides (loaded last, never managed by mesh-workstation)."
             fail "  Rename the template, or use a non-.local destination name."
             exit 1
             ;;
@@ -361,7 +361,7 @@ deploy_one() {
         fi
 
         # Safety check: refuse to overwrite user-facing rc files that lack
-        # our 'managed by dev-bootstrap' marker. Fragments in *.d/ dirs and
+        # our 'managed by mesh-workstation' marker. Fragments in *.d/ dirs and
         # scripts in .local/bin/ are considered bootstrap-owned by convention
         # and skip the check. Escape hatch: ALLOW_OVERWRITE_UNMANAGED=1.
         # Context: prevents the 30-shell regression where a user's handcrafted
@@ -406,13 +406,13 @@ deploy_one() {
         if [[ "$needs_header_check" == "1" ]] \
              && [[ "$looks_unowned" != "1" ]] \
              && [[ "${ALLOW_OVERWRITE_UNMANAGED:-0}" != "1" ]] \
-             && ! grep -qiF "managed by dev-bootstrap" "$dst" 2>/dev/null; then
+             && ! grep -qiE "managed by (mesh-workstation|dev-bootstrap)" "$dst" 2>/dev/null; then
             # Persist the staged content so the user can diff it. tmp_staging/
             # is cleared when deploy.sh exits; /tmp survives until reboot.
             local inspect_path
-            inspect_path="/tmp/dev-bootstrap-would-overwrite-$(basename "$dst")-$$"
+            inspect_path="/tmp/mesh-workstation-would-overwrite-$(basename "$dst")-$$"
             cp "$staged" "$inspect_path" 2>/dev/null || true
-            fail "refusing to overwrite $dst — no 'managed by dev-bootstrap' marker."
+            fail "refusing to overwrite $dst — no 'managed by mesh-workstation' marker."
             fail "This file has user-authored content. Options:"
             fail "  1. Move custom blocks to ${dst}.local (never overwritten), delete $dst, re-run."
             fail "  2. Review the template that would replace it:"
@@ -459,7 +459,7 @@ prune_backups() {
 
     # Retention: keep the 5 newest backups + the single oldest. The oldest
     # is protected because it typically captures the pre-bootstrap state
-    # (the user's handwritten config from before dev-bootstrap managed this
+    # (the user's handwritten config from before mesh-workstation managed this
     # file) — losing it means losing the only restore point for customizations
     # that predate the migration. Re-runs of bootstrap churn the middle of
     # the backup stack; newest+oldest retention keeps both recent history

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ~/.local/bin/claude-hook-env — managed by dev-bootstrap / 80-claude-code
+# ~/.local/bin/claude-hook-env — managed by mesh-workstation / 80-claude-code
 #
 # PATH-fixing wrapper for Claude Code settings.json hooks.
 #

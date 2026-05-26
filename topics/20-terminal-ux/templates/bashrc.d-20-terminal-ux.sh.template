@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# 20-terminal-ux shell fragment (bash) — managed by dev-bootstrap
+# 20-terminal-ux shell fragment (bash) — managed by mesh-workstation
 # Loaded by ~/.bashrc from ~/.bashrc.d/
 
 # starship prompt

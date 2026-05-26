@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # ~/.bashrc.d/40-tmux.sh — generic tmux shortcuts shipped with
-# dev-bootstrap. Personal project-specific session aliases (e.g. `th`
+# mesh-workstation. Personal project-specific session aliases (e.g. `th`
 # for a session named 'arch') belong in your private dotfiles, NOT
 # here — this file is what everyone using the bootstrap receives.
 
@@ -12,7 +12,7 @@ __dev_bootstrap_tmux_auto_main_ready() {
     # Dormant by default: auto-attaching "main" proved unstable in
     # Moshi and normal terminal login flows. Keep the implementation for
     # explicit experiments only. See docs/INACTIVE_FEATURES.md.
-    [ "${DEV_BOOTSTRAP_TMUX_AUTO_MAIN:-0}" = "1" ] || return 1
+    [ "${MESH_TMUX_AUTO_MAIN:-0}" = "1" ] || return 1
     case "$-" in *i*) ;; *) return 1 ;; esac
     [ -z "${TMUX:-}" ] || return 1
     [ "${__dev_bootstrap_tmux_auto_main_done:-0}" = "0" ] || return 1

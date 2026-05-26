@@ -157,9 +157,9 @@ assert_eq "$(tmux_calls)" "" \
     "zsh login with p10k-style redirected fds does not auto-attach main by default"
 
 home_p10k_optin="$TESTROOT/home-p10k-optin"
-run_zsh_p10k_like_startup "$home_p10k_optin" DEV_BOOTSTRAP_TMUX_AUTO_MAIN=1
+run_zsh_p10k_like_startup "$home_p10k_optin" MESH_TMUX_AUTO_MAIN=1
 assert_eq "$(tmux_calls)" "new-session -A -s main" \
-    "DEV_BOOTSTRAP_TMUX_AUTO_MAIN=1 preserves p10k-style deferred auto-main experiment"
+    "MESH_TMUX_AUTO_MAIN=1 preserves p10k-style deferred auto-main experiment"
 
 home_bash="$TESTROOT/home-bash"
 make_bash_home "$home_bash"
@@ -169,8 +169,8 @@ assert_eq "$(tmux_calls)" "detach" \
 
 home_bash_optin="$TESTROOT/home-bash-optin"
 make_bash_home "$home_bash_optin"
-run_bash_login_command "$home_bash_optin" "td" DEV_BOOTSTRAP_TMUX_AUTO_MAIN=1
+run_bash_login_command "$home_bash_optin" "td" MESH_TMUX_AUTO_MAIN=1
 assert_eq "$(tmux_calls)" $'new-session -A -s main\ndetach' \
-    "DEV_BOOTSTRAP_TMUX_AUTO_MAIN=1 still leaves the shell alive after tmux detach"
+    "MESH_TMUX_AUTO_MAIN=1 still leaves the shell alive after tmux detach"
 
 summary

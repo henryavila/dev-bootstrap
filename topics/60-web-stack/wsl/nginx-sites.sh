@@ -22,7 +22,7 @@ install() {
     # Legacy single-file catchall cleanup
     local old_catchall="$NGINX_ENABLED_DIR/catchall.conf"
     if [[ -f "$old_catchall" ]] && [[ ! -L "$old_catchall" ]]; then
-        if sudo grep -qi "managed by dev-bootstrap" "$old_catchall" 2>/dev/null; then
+        if sudo grep -qi "managed by mesh-workstation" "$old_catchall" 2>/dev/null; then
             sudo rm -f "$old_catchall"
         fi
     fi

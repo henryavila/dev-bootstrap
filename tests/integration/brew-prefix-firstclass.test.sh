@@ -184,8 +184,8 @@ fi
 #   1. Spawn a fake `brew` in a tempdir + prepend to PATH.
 #      `lib/detect-brew.sh` walks PATH first, so this wins rung 1
 #      ("detected_existing") deterministically.
-#   2. Override DEV_BOOTSTRAP_STATE_DIR so we don't clobber the user's
-#      real state.env at ~/.config/dev-bootstrap.
+#   2. Override MESH_STATE_DIR so we don't clobber the user's
+#      real state.env at ~/.config/mesh-workstation.
 #   3. Run install.mac.sh standalone, capture exit code + log.
 #   4. Assert exit 0, no "unbound variable" anywhere, and state.env
 #      ends up populated with method=detected_existing.
@@ -235,7 +235,7 @@ EXEC_LOG="$EXEC_TMP/run.log"
 EXEC_STATE="$EXEC_TMP/state-dir"
 
 if PATH="$EXEC_TMP/bin:$PATH" \
-   DEV_BOOTSTRAP_STATE_DIR="$EXEC_STATE" \
+   MESH_STATE_DIR="$EXEC_STATE" \
    bash "$ROOT/topics/00-core/install.mac.sh" >"$EXEC_LOG" 2>&1; then
     pass "install.mac.sh exits 0 with brew already on PATH (regression: was 'unbound variable')"
 else
@@ -257,7 +257,7 @@ fi
 # state.env must be populated — proves the state_record_brew_prefix call
 # was actually reached (it lives AFTER the failing line in the broken version).
 if [[ -f "$EXEC_STATE/state.env" ]]; then
-    pass "state.env created at \$DEV_BOOTSTRAP_STATE_DIR (state_record_brew_prefix reached)"
+    pass "state.env created at \$MESH_STATE_DIR (state_record_brew_prefix reached)"
 
     if grep -qE '^BREW_PREFIX_DECISION_METHOD="detected_existing"' "$EXEC_STATE/state.env"; then
         pass "state.env records method=detected_existing (rung 1 wired correctly)"

@@ -171,7 +171,7 @@ else
         warn "    open https://github.com/settings/ssh/new  and paste the key"
         warn "Or grant the scope + re-run this topic:"
         warn "    gh auth refresh -s admin:public_key"
-        warn "    bash ~/dev-bootstrap/setup.sh"
+        warn "    bash ~/mesh-workstation/setup.sh"
     fi
 fi
 

@@ -91,6 +91,11 @@ install() {
 
     mkdir -p "$HOME/.bashrc.d" "$HOME/.zshrc.d" "$HOME/.config" "$HOME/.local/bin"
 
+    # Cleanup stale fragments from the env rename (dev-bootstrap → mesh).
+    for stale in "$HOME/.bashrc.d/00-dev-bootstrap-env.sh" "$HOME/.zshrc.d/00-dev-bootstrap-env.sh"; do
+        [[ -f "$stale" ]] && rm -f "$stale"
+    done
+
     # Shell-file symlinks. CP4 chunk C finding C-F-003: refuse to
     # create dangling links — fail loud if a required hook source is
     # missing (partial workstation checkout).

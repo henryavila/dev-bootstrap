@@ -97,8 +97,8 @@ pecl_install_for_version_linux() {
     #                             this, the next -f install uninstalls
     #                             the previous version's .so first
     local tmpbin tmpmeta
-    tmpbin="$(mktemp -d -t dev-bootstrap-pecl-bin.XXXXXX)"
-    tmpmeta="$(mktemp -d -t dev-bootstrap-pecl-meta.XXXXXX)"
+    tmpbin="$(mktemp -d -t mesh-workstation-pecl-bin.XXXXXX)"
+    tmpmeta="$(mktemp -d -t mesh-workstation-pecl-meta.XXXXXX)"
     ln -s "$phpize_bin"      "$tmpbin/phpize"
     ln -s "$php_config_bin"  "$tmpbin/php-config"
     ln -s "$php_bin"         "$tmpbin/php"

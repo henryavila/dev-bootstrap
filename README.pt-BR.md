@@ -45,7 +45,7 @@ Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
 
 1. Quais topics opt-in ativar (`60-web-stack` / `70-remote-access` / `82-ai-tools` / `90-editor` / `95-dotfiles-personal` — você desmarca o que não quer).
 2. `GIT_NAME` / `GIT_EMAIL` (pula silenciosamente se `git config --global` já tiver esses valores).
-3. `DOTFILES_REPO` + `DOTFILES_DIR` (só se você marcou `82-ai-tools`, `95-dotfiles-personal` ou `npm-global`).
+3. `MESH_IDENTITY_REPO` + `MESH_IDENTITY_DIR` (só se você marcou `82-ai-tools`, `95-dotfiles-personal` ou `npm-global`).
 4. `CODE_DIR` (só se você marcou `60-web-stack`).
 5. Tela final com resumo e confirmação — cancelar em qualquer tela aborta limpo (sem estado parcial).
 
@@ -68,13 +68,13 @@ ONLY_TOPICS="00-core 10-languages" bash setup.sh
 INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash setup.sh
 
 # aplicar dotfiles pessoais no fim
-DOTFILES_REPO=git@github.com:you/dotfiles.git bash setup.sh
+MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git bash setup.sh
 
 # instalar ferramentas de IA pelo manifesto dos dotfiles, sem aplicar dados pessoais
-INCLUDE_AI_TOOLS=1 DOTFILES_REPO=git@github.com:you/dotfiles.git bash setup.sh
+INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git bash setup.sh
 ```
 
-O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) qualquer var de controle (`INCLUDE_*`, `DOTFILES_REPO`, `DOTFILES_NPM_GLOBAL`, `DOTFILES_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) já vem do env; (c) stdin/stdout não é TTY (pipe, cron, CI).
+O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) qualquer var de controle (`INCLUDE_*`, `MESH_IDENTITY_REPO`, `MESH_NPM_GLOBAL`, `MESH_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) já vem do env; (c) stdin/stdout não é TTY (pipe, cron, CI).
 
 Logo após o menu (ou imediatamente, quando pulado), o bootstrap roda `sudo -v` pra warmup do cache — uma única prompt de senha, e as chamadas `sudo` subsequentes dentro da janela do cache (~5–15min) são silenciosas.
 
@@ -91,9 +91,9 @@ Logo após o menu (ou imediatamente, quando pulado), o bootstrap roda `sudo -v` 
 | `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, catchall `*.localhost` | `INCLUDE_WEBSTACK=1` |
 | `70-remote-access` | sshd (com hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + drop-in systemd que seta MTU 1200 em `tailscale0` (prevenção do SSH KEX PQ hang) | `INCLUDE_REMOTE=1` |
 | `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — fundação do Claude Sync cross-machine via camada de dotfiles | — |
-| `82-ai-tools` | instala ferramentas de workflow com IA pelo manifesto dos dotfiles: mdProbe para revisão de Markdown/MCP, Atomic Skills para prompts/skills reutilizáveis e RTK para compactar saída de shell antes de chegar ao agente; usa `$DOTFILES_REPO` só como fonte do manifesto/installer, sem aplicar dotfiles pessoais | `INCLUDE_AI_TOOLS=1 DOTFILES_REPO=<url>` |
+| `82-ai-tools` | instala ferramentas de workflow com IA pelo manifesto dos dotfiles: mdProbe para revisão de Markdown/MCP, Atomic Skills para prompts/skills reutilizáveis e RTK para compactar saída de shell antes de chegar ao agente; usa `$MESH_IDENTITY_REPO` só como fonte do manifesto/installer, sem aplicar dotfiles pessoais | `INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=<url>` |
 | `90-editor` | `~/.local/bin/typora-wait` — abre `.md` no Typora GUI a partir do terminal; WSL delega pra `Typora.exe` via interop (`wslpath -w`), macOS usa `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
-| `95-dotfiles-personal` | clona `$DOTFILES_REPO` em `$DOTFILES_DIR` (default `~/dotfiles`) + roda o `install.sh` dele | `INCLUDE_DOTFILES_PERSONAL=1 DOTFILES_REPO=<url>` |
+| `95-dotfiles-personal` | clona `$MESH_IDENTITY_REPO` em `$MESH_IDENTITY_DIR` (default `~/mesh-identity`) + roda o `install.sh` dele | `INCLUDE_IDENTITY=1 MESH_IDENTITY_REPO=<url>` |
 
 Cada topic tem o próprio `README.md`. Fluxo interno: `install.$OS.sh` (se existe) ou `install.sh` (fallback OS-agnóstico), depois `lib/deploy.sh` processa `templates/` quando houver. Templates `bashrc.d-<topic>.sh` / `zshrc.d-<topic>.sh` mapeiam automaticamente pra `~/.bashrc.d/<topic>.sh` / `~/.zshrc.d/<topic>.sh`.
 
@@ -108,8 +108,8 @@ Primariamente para automação / CI — o menu interativo preenche essas vars pr
 | `--help` / `-h` | Mensagem de uso |
 | `SKIP_TOPICS` | lista espaço-separada de topics a pular |
 | `ONLY_TOPICS` | rodar apenas estes topics |
-| `DOTFILES_REPO` | URL/path do repo dotfiles pessoal (aceita `file://` para testes locais) |
-| `DOTFILES_DIR` | destino do clone (default `~/dotfiles`) |
+| `MESH_IDENTITY_REPO` | URL/path do repo dotfiles pessoal (aceita `file://` para testes locais) |
+| `MESH_IDENTITY_DIR` | destino do clone (default `~/mesh-identity`) |
 | `GIT_NAME` / `GIT_EMAIL` | identidade — aplicada só se `user.name` / `user.email` ainda não existem (topic 50-git preserva existentes) |
 | `CODE_DIR` | raiz de projetos (default `~/code/web`) |
 | `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | ativa topic opt-in |
@@ -167,7 +167,7 @@ Hotfixes sem mudança estrutural (bug em template, typo em README) usam commit n
 
 ## Dotfiles pessoais
 
-Este repo **nunca** versiona configs pessoais (SSH, identidade git, aliases project-specific). Para isso, use [dotfiles-template](https://github.com/henryavila/dotfiles-template): clique *Use this template* no GitHub, marque o repo novo como **privado**, e deixe o menu interativo coletar `DOTFILES_REPO` ou seta via env var antes de rodar `setup.sh`.
+Este repo **nunca** versiona configs pessoais (SSH, identidade git, aliases project-specific). Para isso, use [dotfiles-template](https://github.com/henryavila/dotfiles-template): clique *Use this template* no GitHub, marque o repo novo como **privado**, e deixe o menu interativo coletar `MESH_IDENTITY_REPO` ou seta via env var antes de rodar `setup.sh`.
 
 ## Contribuir
 

@@ -1,4 +1,4 @@
-# Managed by dev-bootstrap / 60-web-stack. Edits lost on next deploy.
+# Managed by mesh-workstation / 60-web-stack. Edits lost on next deploy.
 #
 # Catchall for *.localhost → $CODE_DIR/<project>/public via PHP-FPM.
 # Serves HTTP (80) + HTTPS (443) from the same block — HTTPS lines become
@@ -17,7 +17,7 @@ server {
     ssl_certificate     ${CERT_DIR}/wildcard-localhost.pem;
     ssl_certificate_key ${CERT_DIR}/wildcard-localhost-key.pem;
 
-    include snippets/dev-bootstrap-security.conf;
+    include snippets/mesh-security.conf;
 
     root ${CODE_DIR}/$project/public;
     index index.php index.html;

@@ -18,11 +18,11 @@
 # convention and the user can `unlink` to disable without losing the config.
 
 # Snippets (included by site configs)
-nginx-snippets/security-baseline.conf=${NGINX_SNIPPET_DIR}/dev-bootstrap-security.conf
-nginx-snippets/proxy-params.conf=${NGINX_SNIPPET_DIR}/dev-bootstrap-proxy.conf
+nginx-snippets/security-baseline.conf=${NGINX_SNIPPET_DIR}/mesh-security.conf
+nginx-snippets/proxy-params.conf=${NGINX_SNIPPET_DIR}/mesh-proxy.conf
 
 # Maps (auto-loaded inside http{} via conf.d)
-nginx-maps/dev-bootstrap-maps.conf=${NGINX_MAP_DIR}/dev-bootstrap-maps.conf
+nginx-maps/mesh-maps.conf=${NGINX_MAP_DIR}/mesh-maps.conf
 
 # Site configs (sites-available; install.sh creates the sites-enabled symlinks)
 nginx-sites/catchall-php.conf.template=${NGINX_AVAILABLE_DIR}/catchall-php.conf

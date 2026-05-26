@@ -8,7 +8,7 @@
 # Skip in:
 #   - non-zsh shells (defensive; aliases.sh already guards)
 #   - non-interactive contexts (CI, scripts, sourced from non-tty)
-#   - missing controlling tty (matches dev-bootstrap _has_ctty convention,
+#   - missing controlling tty (matches mesh-workstation _has_ctty convention,
 #     see feedback_tty_detection_under_tee_pipe.md)
 #
 # Why precmd instead of running synchronously here:
