@@ -1,10 +1,11 @@
 # 80-claude-code — Claude Code CLI + Bun (for claude-mem plugin) + Syncthing
-# (to converge curated parts of ~/.claude across personal machines).
+# (to converge curated parts of ~/.claude across personal machines) +
+# Moshi Hook (AI agent bridge to the Moshi mobile app).
 #
-# Bun + Claude CLI use curl-pipe installers (universal). Syncthing splits
-# per platform: brew formula + service launch on mac (with launch-wrapper
-# TCC workaround for non-standard brew prefixes), apt + user systemd service
-# on WSL.
+# Bun + Claude CLI use curl-pipe installers (universal). Syncthing and
+# Moshi Hook split per platform: brew formula + service launch on mac
+# (with launch-wrapper TCC workaround for non-standard brew prefixes),
+# curl installer + systemd user service on WSL.
 
 - name: bun
   type: custom
@@ -41,3 +42,29 @@
   platforms: [wsl]
   requires: [syncthing-wsl]
   desc: "Enable syncthing user service + linger (so it survives logout)"
+
+- name: moshi-hook-mac
+  type: brew-formula
+  spec: rjyo/moshi/moshi-hook
+  platforms: [mac]
+  desc: "Moshi Hook daemon (brew tap rjyo/moshi + install)"
+
+- name: moshi-hook-mac-service
+  type: custom
+  script: "./moshi-hook-service-mac.sh"
+  platforms: [mac]
+  requires: [moshi-hook-mac]
+  desc: "Launch moshi-hook via brew services OR launch-wrapper + pair + install hooks"
+
+- name: moshi-hook-linux
+  type: custom
+  script: "./install-moshi-hook.sh"
+  platforms: [wsl]
+  desc: "Moshi Hook daemon (curl-pipe https://getmoshi.app/install.sh)"
+
+- name: moshi-hook-wsl-service
+  type: custom
+  script: "./moshi-hook-service-wsl.sh"
+  platforms: [wsl]
+  requires: [moshi-hook-linux]
+  desc: "Launch moshi-hook via systemd user service + pair + install hooks"
