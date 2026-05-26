@@ -12,7 +12,7 @@ source "$HERE/../../scripts/lib/dotfiles-repo.sh"
 source "$HERE/../../scripts/lib/topic-cleanup.sh"
 
 : "${DOTFILES_REPO:?DOTFILES_REPO not set (setup.sh should have skipped this topic)}"
-: "${DOTFILES_DIR:=$HOME/dotfiles}"
+: "${DOTFILES_DIR:=${MESH_IDENTITY_DIR:-$HOME/mesh-identity}}"
 
 dotfiles_ensure_repo "$DOTFILES_REPO" "$DOTFILES_DIR"
 
