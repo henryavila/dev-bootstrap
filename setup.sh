@@ -211,6 +211,11 @@ else
         done
     fi
     unset _old_state _f _base
+    # Remove stale shell fragments from the env rename (dev-bootstrap → mesh).
+    for _stale in "$HOME/.bashrc.d/00-dev-bootstrap-env.sh" "$HOME/.zshrc.d/00-dev-bootstrap-env.sh"; do
+        [[ -f "$_stale" ]] && rm -f "$_stale"
+    done
+    unset _stale
 fi
 if [[ -f "$BOOTSTRAP_STATE_CONFIG" ]]; then
     # shellcheck source=/dev/null
