@@ -68,3 +68,8 @@
   platforms: [wsl]
   requires: [moshi-hook-linux]
   desc: "Launch moshi-hook via systemd user service + pair + install hooks"
+
+- name: claudebar
+  type: custom
+  script: "./install-claudebar.sh"
+  desc: "Claude Code statusline (git clone → ~/.claude/statusline + patch settings.json)"
