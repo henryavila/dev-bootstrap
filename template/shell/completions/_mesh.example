@@ -1,0 +1,17 @@
+#compdef mesh
+# Zsh completion for the mesh CLI.
+# Customize or regenerate from `mesh --help` output.
+
+_mesh() {
+    local -a commands
+    commands=(
+        'status:Show mesh status dashboard'
+        'snap:Take a mesh snapshot'
+        'update:Update repos (incremental or full)'
+        'doctor:Run health checks'
+        'run:Execute a command across mesh hosts'
+    )
+    _describe 'mesh command' commands
+}
+
+_mesh "$@"

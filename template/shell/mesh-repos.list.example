@@ -1,0 +1,9 @@
+# shell/mesh-repos.list — paths whose `claude` invocations get redirected
+# to $MESH_IDENTITY_DIR by mesh-guard.zsh.
+#
+# One path per line. When cwd matches any prefix below, mesh-guard offers
+# to `cd` into the identity repo before running claude.
+#
+# Example:
+# /home/you/mesh-workstation
+# /home/you/some-other-project

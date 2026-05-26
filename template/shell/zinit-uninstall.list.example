@@ -1,0 +1,7 @@
+# shell/zinit-uninstall.list — zinit plugins to remove on next install.sh run.
+#
+# Format: owner/repo (same form as `zinit light owner/repo`).
+# Each entry triggers cache cleanup during install.sh.
+#
+# Example:
+# MichaelAquilina/zsh-you-should-use

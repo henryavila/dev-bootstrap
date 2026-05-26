@@ -1,0 +1,11 @@
+# scripts/auto-update.conf — config for the auto-update motor.
+# Bash-sourceable. No JSON/YAML parser dep.
+
+# Repos to track. Each entry: absolute path. Order = check order.
+AUTO_UPDATE_REPOS=(
+    "$MESH_WORKSTATION_DIR"
+    "$MESH_IDENTITY_DIR"
+)
+
+# How often to check (seconds). Default: 86400 (daily).
+# AUTO_UPDATE_INTERVAL=86400

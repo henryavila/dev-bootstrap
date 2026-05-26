@@ -1,0 +1,25 @@
+# Global git ignore (~/.config/git/ignore).
+# Patterns here apply to every git repo on this machine.
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/todos.json
+
+# Editor swap/backup
+*.swp
+*.swo
+*~
+.*.swp
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

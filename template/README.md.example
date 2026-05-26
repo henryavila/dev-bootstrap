@@ -1,0 +1,26 @@
+# mesh-identity
+
+Private identity repo for the mesh ecosystem. Contains personal configs,
+secrets-adjacent placeholders, host-specific paths, and Claude memory.
+
+Paired with [mesh-workstation](https://github.com/YOUR_USER/mesh-workstation)
+which provides all universal tooling.
+
+## Setup
+
+```bash
+git clone git@github.com:YOUR_USER/mesh-identity.git ~/mesh-identity
+MESH_WORKSTATION_DIR=~/mesh-workstation bash ~/mesh-identity/install.sh
+```
+
+## Layout
+
+| Path | Purpose |
+|------|---------|
+| `shell/` | Shell configs (aliases, completions, zshrc.local) |
+| `git/` | Git identity (gitconfig.local, gitignore_global) |
+| `ssh/` | SSH config + authorized_keys |
+| `config/` | App configs (btop, eza, lazygit, nvim, htop) |
+| `code-server/` | code-server settings + extensions |
+| `.ai/memory/` | Claude persistent memory |
+| `scripts/` | Per-host auto-update config |
