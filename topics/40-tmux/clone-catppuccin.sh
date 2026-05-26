@@ -21,9 +21,10 @@ check() {
         *catppuccin/tmux*) ;;
         *) return 1 ;;
     esac
-    # describe matches the tag we cloned with --branch (annotated or lightweight).
-    describe="$(git -C "$CATP_TMUX" describe --tags --exact-match 2>/dev/null)"
-    [[ "$describe" == "$CATP_TAG" ]]
+    # The pinned commit may carry multiple tags (v1, v1.0, v1.0.3).
+    # describe --exact-match returns only one (lexicographically first),
+    # so we check the full tag list at HEAD instead.
+    git -C "$CATP_TMUX" tag --points-at HEAD 2>/dev/null | grep -qxF "$CATP_TAG"
 }
 
 install() {
