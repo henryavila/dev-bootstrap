@@ -201,6 +201,16 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
     echo "+ mkdir -p $BOOTSTRAP_STATE_DIR  [dry-run, skipped]"
 else
     mkdir -p "$BOOTSTRAP_STATE_DIR"
+    # Migrate state from the old directory name (dev-bootstrap → mesh-workstation).
+    _old_state="$HOME/.local/state/dev-bootstrap"
+    if [[ -d "$_old_state" ]] && [[ "$_old_state" != "$BOOTSTRAP_STATE_DIR" ]]; then
+        for _f in "$_old_state"/*; do
+            [[ -f "$_f" ]] || continue
+            _base="${_f##*/}"
+            [[ -f "$BOOTSTRAP_STATE_DIR/$_base" ]] || cp "$_f" "$BOOTSTRAP_STATE_DIR/$_base"
+        done
+    fi
+    unset _old_state _f _base
 fi
 if [[ -f "$BOOTSTRAP_STATE_CONFIG" ]]; then
     # shellcheck source=/dev/null

@@ -47,6 +47,10 @@ if [[ -z "$CONF" ]]; then
     fi
 fi
 STATE_DIR="${AUTO_UPDATE_STATE_DIR:-$HOME/.local/state/mesh-workstation}"
+# Migrate state from old directory name if it exists and new one is empty.
+if [[ -d "$HOME/.local/state/dev-bootstrap" ]] && [[ ! -d "$STATE_DIR" ]]; then
+    mv "$HOME/.local/state/dev-bootstrap" "$STATE_DIR" 2>/dev/null || true
+fi
 # (Legacy `LOCK="$STATE_DIR/update.lock"` removed — see LOCK_DIR below;
 # the mkdir-based mutex superseded the file-based one and the unused
 # variable was tripping shellcheck SC2034.)
