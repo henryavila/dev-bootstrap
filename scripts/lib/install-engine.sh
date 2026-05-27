@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/lib/install-engine.sh — YAML manifest → driver dispatcher.
 # Usage:
-#   bash install-engine.sh --manifest items.yaml [--installers-dir DIR] [--dry-run] [--platform OS]
+#   bash install-engine.sh --manifest items.yaml [--installers-dir DIR] [--dry-run] [--platform OS] [--items=a,b,c]
 #
 # Lifecycle (per spec §C17):
 #   for each item: check → install (if check fails) → verify (fallback check) → post → rollback (no-op if absent)
@@ -42,6 +42,7 @@ DRY_RUN=0
 MANIFEST=""
 INSTALLERS_DIR="$ENGINE_DIR/installers"
 PLATFORM_OVERRIDE=""
+ITEMS_FILTER=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -49,6 +50,8 @@ while [[ $# -gt 0 ]]; do
         --installers-dir)  INSTALLERS_DIR="$2"; shift 2 ;;
         --dry-run)         DRY_RUN=1; shift ;;
         --platform)        PLATFORM_OVERRIDE="$2"; shift 2 ;;
+        --items=*)         ITEMS_FILTER="${1#--items=}"; shift ;;
+        --items)           ITEMS_FILTER="$2"; shift 2 ;;
         --help|-h)         sed -n '2,8p' "$0"; exit 0 ;;
         *)                 log_error "unknown arg: $1"; exit 64 ;;
     esac
@@ -109,6 +112,19 @@ while :; do
         skipped_platform=$((skipped_platform+1))
         i=$((i+1))
         continue
+    fi
+
+    # Items filter: --items=a,b,c limits which items from the manifest are processed.
+    if [[ -n "$ITEMS_FILTER" ]]; then
+        _in_items_filter=0
+        IFS=',' read -ra _filter_entries <<< "$ITEMS_FILTER"
+        for _fe in "${_filter_entries[@]}"; do
+            [[ "$_fe" == "$name" ]] && { _in_items_filter=1; break; }
+        done
+        if (( _in_items_filter == 0 )); then
+            i=$((i+1))
+            continue
+        fi
     fi
 
     # Resolve dispatch argument: custom items use script: field, others use spec:

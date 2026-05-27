@@ -37,6 +37,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$ROOT/tests/lib/assert.sh"
 
 LIB="$ROOT/scripts/lib/topic-cleanup.sh"
+HANDLERS="$ROOT/scripts/lib/uninstall-handlers.sh"
 
 echo
 echo "═══ uninstall-mechanism (drift management for installed artifacts) ═══"
@@ -45,8 +46,11 @@ echo "═══ uninstall-mechanism (drift management for installed artifacts) �
 assert_file_exists "$LIB" "scripts/lib/topic-cleanup.sh exists (renamed from uninstall.sh per spec reconciliation)"
 assert_pattern_present "$LIB" '^uninstall_apply\(\)' \
     "scripts/lib/topic-cleanup.sh defines uninstall_apply()"
+assert_file_exists "$HANDLERS" "scripts/lib/uninstall-handlers.sh exists (shared handler definitions)"
+assert_pattern_present "$LIB" 'uninstall-handlers.sh' \
+    "topic-cleanup.sh sources uninstall-handlers.sh"
 
-# ─── 2. Each verb has a handler ─────────────────────────────────────
+# ─── 2. Each verb has a handler (defined in shared handlers file) ───
 for verb_handler in \
     "_uninstall_apt"        \
     "_uninstall_brew"       \
@@ -55,33 +59,31 @@ for verb_handler in \
     "_uninstall_zinit"      \
     "_uninstall_user_bin"   \
     "_uninstall_sys_bin"    ; do
-    assert_pattern_present "$LIB" "^${verb_handler}\\(\\)" \
+    assert_pattern_present "$HANDLERS" "^${verb_handler}\\(\\)" \
         "handler $verb_handler defined"
 done
 
 # ─── OS guards ──────────────────────────────────────────────────────
-# apt block must guard on Linux (else early-return on Mac)
-apt_block="$(awk '/^_uninstall_apt\(\)/,/^}/' "$LIB")"
+apt_block="$(awk '/^_uninstall_apt\(\)/,/^}/' "$HANDLERS")"
 assert_contains "$apt_block" 'uname -s' \
     "_uninstall_apt checks uname (OS guard)"
 assert_contains "$apt_block" 'Linux' \
     "_uninstall_apt guards on Linux"
 
-brew_block="$(awk '/^_uninstall_brew\(\)/,/^}/' "$LIB")"
+brew_block="$(awk '/^_uninstall_brew\(\)/,/^}/' "$HANDLERS")"
 assert_contains "$brew_block" 'Darwin' \
     "_uninstall_brew guards on Darwin"
 
-cask_block="$(awk '/^_uninstall_brew_cask\(\)/,/^}/' "$LIB")"
+cask_block="$(awk '/^_uninstall_brew_cask\(\)/,/^}/' "$HANDLERS")"
 assert_contains "$cask_block" 'Darwin' \
     "_uninstall_brew_cask guards on Darwin"
 
 # ─── 3. Sandbox protection on rm-based verbs ────────────────────────
-assert_pattern_present "$LIB" '_sandbox_name' \
+assert_pattern_present "$HANDLERS" '_sandbox_name' \
     "_sandbox_name helper exists (shared sandbox)"
 
-# clone, user-bin, sys-bin all use sandbox
 for fn in _uninstall_clone _uninstall_user_bin _uninstall_sys_bin; do
-    block="$(awk "/^${fn}\\(\\)/,/^}/" "$LIB")"
+    block="$(awk "/^${fn}\\(\\)/,/^}/" "$HANDLERS")"
     if echo "$block" | grep -qE '_sandbox_name|\\.\\.|/\\*' ; then
         pass "$fn rejects path-traversal args"
     else
@@ -90,7 +92,7 @@ for fn in _uninstall_clone _uninstall_user_bin _uninstall_sys_bin; do
 done
 
 # ─── 4. zinit handler maps owner/repo → owner---repo ────────────────
-zinit_block="$(awk '/^_uninstall_zinit\(\)/,/^}/' "$LIB")"
+zinit_block="$(awk '/^_uninstall_zinit\(\)/,/^}/' "$HANDLERS")"
 assert_contains "$zinit_block" '---' \
     "_uninstall_zinit produces zinit cache mangled name (--- separator)"
 assert_contains "$zinit_block" '.local/share/zinit/plugins' \
