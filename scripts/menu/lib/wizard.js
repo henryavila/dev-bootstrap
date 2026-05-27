@@ -1,5 +1,6 @@
 import * as p from '@clack/prompts';
 import { isCancel } from '@clack/core';
+import { execSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { readAllManifests, groupByTopic } from './core/manifest-reader.js';
 import { scanAll } from './core/scanner.js';
@@ -10,20 +11,33 @@ import { selectItems } from './screens/item-selector.js';
 import { promptParams } from './screens/param-prompts.js';
 import { showSummary } from './screens/summary.js';
 
+function detectPlatform() {
+  try {
+    const menuDir = dirname(new URL(import.meta.url).pathname);
+    const detectScript = join(menuDir, '..', '..', '..', 'lib', 'detect-os.sh');
+    return execSync(`bash "${detectScript}"`, { encoding: 'utf8', timeout: 3_000 }).trim();
+  } catch {
+    return process.platform === 'darwin' ? 'mac' : 'linux';
+  }
+}
+
 export async function runWizard({ dryRun = false, topicsRoot = null, platform = null } = {}) {
   const menuDir = dirname(new URL(import.meta.url).pathname);
   if (!topicsRoot) {
     topicsRoot = join(menuDir, '..', '..', '..', 'topics');
   }
+  if (!platform) {
+    platform = detectPlatform();
+  }
 
-  p.intro('mesh setup');
+  p.intro(`mesh setup (${platform})`);
 
   const allItems = readAllManifests(topicsRoot, { platform });
   const grouped = groupByTopic(allItems);
 
   const s = p.spinner();
   s.start('Scanning installed items...');
-  const installedStatus = await scanAll(allItems, { topicsRoot, platform: platform ?? 'mac' });
+  const installedStatus = await scanAll(allItems, { topicsRoot, platform });
   s.stop('Scan complete.');
 
   const previousSelections = readSelections() ?? [];
