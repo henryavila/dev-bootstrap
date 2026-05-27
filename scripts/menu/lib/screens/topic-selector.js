@@ -33,6 +33,16 @@ const TOPIC_HINTS = {
   '90-editor': 'Neovim default config',
 };
 
+function isAllOrNothing(items) {
+  if (items.length <= 1) return true;
+  const independentItems = items.filter((item) => {
+    const isDependedOn = items.some((other) => other.requires?.includes(item.name));
+    const hasDeps = item.requires?.length > 0;
+    return !item.required && !isDependedOn && !hasDeps;
+  });
+  return independentItems.length === 0;
+}
+
 export function getSelectableTopics(groupedItems, installedStatus) {
   const topics = [];
   for (const [topic, items] of groupedItems) {
@@ -40,9 +50,11 @@ export function getSelectableTopics(groupedItems, installedStatus) {
     const installed = items.filter(
       (i) => installedStatus.get(`${i.topic}/${i.name}`) === true,
     ).length;
+    const name = TOPIC_LABELS[topic] ?? topic;
+    const label = isAllOrNothing(items) ? name : `${name} (${installed}/${items.length})`;
     topics.push({
       value: topic,
-      label: `${TOPIC_LABELS[topic] ?? topic} (${installed}/${items.length})`,
+      label,
       hint: TOPIC_HINTS[topic] ?? '',
       installed,
       total: items.length,
