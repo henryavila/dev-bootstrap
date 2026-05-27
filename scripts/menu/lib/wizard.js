@@ -36,7 +36,7 @@ export async function runWizard({ dryRun = false, topicsRoot = null, platform = 
     [...selectionsToMap(previousSelections).keys()],
   );
   if (selectedTopics === null) {
-    p.outro('Setup cancelled.');
+    p.outro('Cancelled.');
     return false;
   }
 
@@ -61,50 +61,32 @@ export async function runWizard({ dryRun = false, topicsRoot = null, platform = 
       for (const item of items) {
         allSelectedEntries.push(`${item.topic}/${item.name}`);
       }
-      const names = items.map((it) => it.desc || it.name).join(', ');
-      p.log.step(`${topic}: all items selected (${names})`);
+      const names = items.map((it) => it.name).join(', ');
+      p.log.step(`${topic}: ${names}`);
       continue;
     }
 
-    let selected = null;
-    while (selected === null) {
-      selected = await selectItems(topic, items, installedStatus, prevForTopic, {
-        index: i,
-        total: optInTopics.length,
-      });
+    const selected = await selectItems(topic, items, installedStatus, prevForTopic, {
+      index: i,
+      total: optInTopics.length,
+    });
 
-      if (selected === null) {
-        const recovery = await p.select({
-          message: `${topic} — cancelled. What next?`,
-          options: [
-            { value: 'retry', label: 'Try again' },
-            { value: 'skip', label: 'Skip this topic' },
-            { value: 'exit', label: 'Exit setup' },
-          ],
-        });
-
-        if (isCancel(recovery) || recovery === 'exit') {
-          p.outro('Setup cancelled.');
-          return false;
-        }
-        if (recovery === 'skip') {
-          selected = [];
-        }
-        // 'retry' loops back
-      }
+    if (selected === null) {
+      p.outro('Cancelled.');
+      return false;
     }
     allSelectedEntries.push(...selected);
   }
 
   const { selected: withDeps, added } = autoSelectDependencies(allItems, allSelectedEntries);
   if (added.length > 0) {
-    p.log.info(`Auto-selected ${added.length} dependencies: ${added.map(shortName).join(', ')}`);
+    p.log.info(`Auto-selected ${added.length} dep(s): ${added.map(shortName).join(', ')}`);
   }
 
   // Phase 3: parameters
   const params = await promptParams(selectedTopics, previousParams, { topicsRoot });
   if (params === null) {
-    p.outro('Setup cancelled.');
+    p.outro('Cancelled.');
     return false;
   }
 
@@ -124,19 +106,18 @@ export async function runWizard({ dryRun = false, topicsRoot = null, platform = 
     p.log.info('Dry run — no files written.');
   }
 
-  p.outro('Setup complete.');
+  p.outro('Done.');
   return { selections: withDeps, params, delta };
 }
 
 function isAllOrNothing(items) {
   if (items.length <= 1) return true;
-  const hasIndependentItems = items.filter((item) => {
-    const isRequired = item.required;
+  const independentItems = items.filter((item) => {
     const isDependedOn = items.some((other) => other.requires?.includes(item.name));
     const hasDeps = item.requires?.length > 0;
-    return !isRequired && !isDependedOn && !hasDeps;
+    return !item.required && !isDependedOn && !hasDeps;
   });
-  return hasIndependentItems.length === 0;
+  return independentItems.length === 0;
 }
 
 function shortName(entry) {
