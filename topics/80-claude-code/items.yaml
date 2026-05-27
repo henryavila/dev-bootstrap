@@ -70,6 +70,7 @@
   desc: "Launch moshi-hook via systemd user service + pair + install hooks"
 
 - name: claudebar
-  type: custom
-  script: "./install-claudebar.sh"
-  desc: "Claude Code statusline (git clone → ~/.claude/statusline + patch settings.json)"
+  type: npx
+  spec: "@henryavila/claudebar@latest install"
+  check: "test -f $HOME/.config/claudebar/statusline.sh && jq -e '.statusLine.command | test(\"claudebar\")' $HOME/.claude/settings.json >/dev/null 2>&1"
+  desc: "Claude Code statusline (npx @henryavila/claudebar → ~/.config/claudebar/ + patch settings.json)"
