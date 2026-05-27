@@ -16,16 +16,13 @@ check() {
     dpkg -s msodbcsql18    >/dev/null 2>&1 || return 1
     dpkg -s mssql-tools18  >/dev/null 2>&1 || return 1
     dpkg -s unixodbc-dev   >/dev/null 2>&1 || return 1
-    local ver pecl_bin
+    local ver php_bin
     for ver in ${PHP_VERSIONS:-${PHP_DEFAULT:-}}; do
         [[ -z "$ver" ]] && continue
-        # Only enforce PECL state for versions whose dev pkg the installer
-        # would have used (others aren't candidates for this pass).
         dpkg -s "php${ver}-dev" >/dev/null 2>&1 || continue
-        pecl_bin="$(command -v "pecl${ver}" 2>/dev/null || command -v pecl 2>/dev/null)"
-        [[ -n "$pecl_bin" ]] || return 1
-        "$pecl_bin" list -c "php${ver}" 2>/dev/null | grep -q '^sqlsrv\b'     || return 1
-        "$pecl_bin" list -c "php${ver}" 2>/dev/null | grep -q '^pdo_sqlsrv\b' || return 1
+        php_bin="$(command -v "php${ver}" 2>/dev/null)" || return 1
+        "$php_bin" -m 2>/dev/null | grep -q '^sqlsrv$'     || return 1
+        "$php_bin" -m 2>/dev/null | grep -q '^pdo_sqlsrv$' || return 1
     done
     return 0
 }
