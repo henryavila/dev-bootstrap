@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/mesh — unified dispatcher for the dotfiles ecosystem.
+# bin/mesh — unified dispatcher for the mesh ecosystem.
 #
 # Replaces the older quartet `bup` / `dotup` / `mesh-snap` / `mesh-status`
 # with a single command. Subcommands delegate to the underlying motors:
@@ -7,7 +7,7 @@
 #   mesh status [<alias>] [flags]            →  scripts/internal/mesh-status (positional → --detail)
 #   mesh snap   [flags]                      →  scripts/internal/mesh-snap   (passthrough)
 #   mesh update [-o NAME] [-f] [-i] [flags]  →  scripts/runners/auto-update.sh  (--only / --full / --interactive)
-#   mesh topic list|<numbers...>             →  dev-bootstrap topic list / topic-only apply
+#   mesh topic list|<numbers...>             →  mesh-workstation topic list / topic-only apply
 #   mesh run [flags] <subcommand> [args]     →  selected hosts, sequential over SSH
 #
 # Bare `mesh` (no subcommand) renders the cross-mesh dashboard (= `mesh status`).
@@ -48,7 +48,6 @@ HERE="$(cd "$(dirname "$(_canonicalize "${BASH_SOURCE[0]}")")" && pwd -P)"
 # Tier order:
 #   1. $MESH_HOME (env override; test fixtures, manual relocation)
 #   2. $HERE/../scripts/<target> (development tree; bin/mesh sibling)
-#   3. $HOME/dotfiles/scripts/<target> (legacy deployed default)
 #
 # Returns absolute path on stdout; empty on miss.
 _resolve_companion() {
@@ -60,11 +59,6 @@ _resolve_companion() {
     local dev_target="$HERE/../scripts/$target"
     if [[ -d "$dev_target" ]] || [[ -f "$dev_target" ]]; then
         echo "$dev_target"
-        return
-    fi
-    local home_target="$HOME/dotfiles/scripts/$target"
-    if [[ -d "$home_target" ]] || [[ -f "$home_target" ]]; then
-        echo "$home_target"
         return
     fi
     echo ""
@@ -106,8 +100,8 @@ Usage:
   mesh status [<alias>] [flags]     Cross-mesh dashboard; positional drill-down
   mesh snap [flags]                 Generate this host's snapshot
   mesh update [-o NAME] [-f] [-i]   Pull and apply updates
-  mesh topic list                   List dev-bootstrap topics
-  mesh topic <NN...>                Re-apply dev-bootstrap topics by number
+  mesh topic list                   List mesh-workstation topics
+  mesh topic <NN...>                Re-apply mesh-workstation topics by number
   mesh run [flags] <subcommand>     Run mesh subcommands on selected hosts
   mesh lint                         Run repo invariant lints (scripts/lib/lints/L*.sh)
   mesh catalog generate             Regenerate .catalog/ derived listings
@@ -127,18 +121,18 @@ Subcommands:
 
            Flags (lowercase short, GNU long, both accepted):
              -o, --only NAME         Restrict to NAME (mesh-workstation | mesh-identity).
-                                     Legacy aliases accepted: bootstrap, dev-bootstrap, dotfiles, identity.
-             -f, --full              Full apply (runs bootstrap.sh / install.sh
+                                     Aliases: workstation, identity.
+             -f, --full              Full apply (runs setup.sh / install.sh
                                      instead of incremental diff replay).
-             -i, --interactive       In `-f` + dev-bootstrap, run bootstrap.sh
+             -i, --interactive       In `-f` + mesh-workstation, run setup.sh
                                      WITHOUT --non-interactive (i.e. show the menu).
-                                     Silently ignored for dotfiles or incremental runs.
+                                     Silently ignored for mesh-identity or incremental runs.
 
            Passthrough flags: --reset-auth, --from-shell-start.
-  topic    Convenience wrapper for dev-bootstrap topics. `mesh topic list`
-           prints the topic numbers from the local dev-bootstrap checkout.
+  topic    Convenience wrapper for mesh-workstation topics. `mesh topic list`
+           prints the topic numbers from the local mesh-workstation checkout.
            `mesh topic 20 30` runs only those topics, equivalent to
-           `mesh update -o bootstrap --topics 20,30`.
+           `mesh update -o workstation --topics 20,30`.
 
   run      Fan out a mesh subcommand to selected hosts. Default mode opens
            a multi-select with all online hosts preselected when fzf/whiptail
@@ -185,11 +179,11 @@ Examples:
   mesh status --write               Refresh §3 of PROJECT_STATUS.md
   mesh update                       Both repos, incremental
   mesh update -f                    Both repos, full apply
-  mesh update -o bootstrap          Only dev-bootstrap, incremental
-  mesh update -o bootstrap -f       Only dev-bootstrap, full (non-interactive)
-  mesh update -o bootstrap -f -i    Only dev-bootstrap, full, with interactive menu
-  mesh update -o dotfiles           Only dotfiles, incremental
-  mesh topic list                   Show official dev-bootstrap topic numbers
+  mesh update -o workstation         Only mesh-workstation, incremental
+  mesh update -o workstation -f     Only mesh-workstation, full (non-interactive)
+  mesh update -o workstation -f -i  Only mesh-workstation, full, with interactive menu
+  mesh update -o identity           Only mesh-identity, incremental
+  mesh topic list                   Show official mesh-workstation topic numbers
   mesh topic 20 30                  Re-apply terminal UX + shell topics
   mesh run update -f                Select hosts, then run mesh update -f
   mesh run --hosts mac,crc update -f
@@ -201,8 +195,8 @@ Examples:
                                    Install pre-commit hook in mesh-identity
 
 Configuration:
-  ~/.config/dotfiles/mesh-status.conf   (alias map, run hosts, repos tracked, retention)
-  ~/.config/dotfiles/auto-update.conf   (which repos to track, sudo regex)
+  ~/.config/mesh/mesh-status.conf       (alias map, run hosts, repos tracked, retention)
+  ~/.config/mesh/config.env             (per-host config: repo paths, auto-update repos)
 
 Spec: docs/2026-05-02-mesh-cli-refactor-spec.md
 EOF
@@ -245,84 +239,19 @@ _normalize_topic_spec() {
     printf '%s' "$*"
 }
 
-_resolve_auto_update_conf() {
-    if [[ -n "${AUTO_UPDATE_CONF:-}" ]]; then
-        printf '%s\n' "$AUTO_UPDATE_CONF"
-        return
-    fi
-    if [[ -r "$HOME/.config/dotfiles/auto-update.conf" ]]; then
-        printf '%s\n' "$HOME/.config/dotfiles/auto-update.conf"
-        return
-    fi
-    if [[ -r "$HERE/../scripts/auto-update.conf" ]]; then
-        printf '%s\n' "$HERE/../scripts/auto-update.conf"
-        return
-    fi
-    if [[ -r "$HOME/dotfiles/scripts/auto-update.conf" ]]; then
-        printf '%s\n' "$HOME/dotfiles/scripts/auto-update.conf"
-        return
-    fi
-    if [[ -r "$HOME/dotfiles/scripts/auto-update.conf.example" ]]; then
-        printf '%s\n' "$HOME/dotfiles/scripts/auto-update.conf.example"
-        return
-    fi
-    printf ''
-}
-
-_resolve_dev_bootstrap_repo() {
-    if [[ -n "${MESH_DEV_BOOTSTRAP_DIR:-}" && -d "$MESH_DEV_BOOTSTRAP_DIR/topics" ]]; then
-        printf '%s\n' "$MESH_DEV_BOOTSTRAP_DIR"
-        return 0
-    fi
-
-    # $HERE-relative fallback: when invoked from the workstation checkout
-    # (either directly via `./bin/mesh` or through the canonicalized
-    # symlink), the repo IS one level up. Prefer this over auto-update
-    # config so a fresh `git clone … && bin/mesh topic list` works
-    # without any prior conf setup.
-    if [[ -d "$HERE/../topics" ]]; then
-        printf '%s\n' "$( cd "$HERE/.." && pwd -P )"
-        return 0
-    fi
-
-    # Honor MESH_WORKSTATION_DIR during transition (today's repo is
-    # named `dev-bootstrap` but the public template renames to
-    # `mesh-workstation`).
+_resolve_workstation_repo() {
     if [[ -n "${MESH_WORKSTATION_DIR:-}" && -d "$MESH_WORKSTATION_DIR/topics" ]]; then
         printf '%s\n' "$MESH_WORKSTATION_DIR"
         return 0
     fi
-
-    local conf repo
-    conf="$(_resolve_auto_update_conf)"
-    if [[ -n "$conf" && -r "$conf" ]]; then
-        # Source config in a subshell to prevent clobbering dispatcher globals.
-        local repos_raw
-        repos_raw="$(
-            AUTO_UPDATE_REPOS=()
-            # shellcheck source=/dev/null
-            . "$conf" 2>/dev/null || true
-            local_conf="${AUTO_UPDATE_LOCAL_CONF:-$HOME/.config/dotfiles/auto-update.conf.local}"
-            if [[ -r "$local_conf" ]]; then
-                # shellcheck source=/dev/null
-                . "$local_conf" 2>/dev/null || true
-            fi
-            printf '%s\n' "${AUTO_UPDATE_REPOS[@]+"${AUTO_UPDATE_REPOS[@]}"}"
-        )"
-        while IFS= read -r repo; do
-            [[ -z "$repo" ]] && continue
-            if [[ "$(basename "$repo")" == "dev-bootstrap" && -d "$repo/topics" ]]; then
-                printf '%s\n' "$repo"
-                return 0
-            fi
-        done <<< "$repos_raw"
-    fi
-
-    if [[ -d "$HOME/dev-bootstrap/topics" ]]; then
-        printf '%s\n' "$HOME/dev-bootstrap"
+    if [[ -d "$HERE/../topics" ]]; then
+        printf '%s\n' "$( cd "$HERE/.." && pwd -P )"
         return 0
     fi
-
+    if [[ -d "$HOME/mesh-workstation/topics" ]]; then
+        printf '%s\n' "$HOME/mesh-workstation"
+        return 0
+    fi
     return 1
 }
 
@@ -349,8 +278,8 @@ sub_topic() {
             shift
             (( $# == 0 )) || _die "topic list: unexpected arg '$1'"
             local repo
-            repo="$(_resolve_dev_bootstrap_repo)" || \
-                _die "dev-bootstrap repo not found (set MESH_DEV_BOOTSTRAP_DIR or AUTO_UPDATE_REPOS)"
+            repo="$(_resolve_workstation_repo)" || \
+                _die "mesh-workstation repo not found (set MESH_WORKSTATION_DIR)"
             exec bash "$repo/setup.sh" --list-topics
             ;;
     esac
@@ -362,8 +291,6 @@ sub_topic() {
 }
 
 sub_update() {
-    # Updates must never re-enable dev-bootstrap's dormant tmux auto-main
-    # experiment in child shells while propagating across the mesh.
     export DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0
 
     local motor
@@ -376,8 +303,7 @@ sub_update() {
 
     # Flags forwarded to the motor verbatim. `-o NAME` / `--only NAME` is
     # extracted into $only because we use it both for single-target dispatch
-    # and (when empty) for the both-repos fallback below. `bootstrap` is
-    # accepted as a brevity alias for `dev-bootstrap` (the canonical repo name).
+    # and (when empty) for the both-repos fallback below.
     local only=""
     local topics_spec=""
     local full=0
@@ -392,8 +318,8 @@ sub_update() {
                     _die "update: -o/--only requires a repo name (mesh-workstation | mesh-identity)"
                 fi
                 case "$val" in
-                    bootstrap|dev-bootstrap|workstation) val="mesh-workstation" ;;
-                    dotfiles|identity) val="mesh-identity" ;;
+                    workstation) val="mesh-workstation" ;;
+                    identity)   val="mesh-identity" ;;
                 esac
                 only="$val"
                 shift
@@ -459,7 +385,7 @@ _run_config_is_array() {
 }
 
 _load_mesh_run_config() {
-    local conf="${MESH_STATUS_CONF:-$HOME/.config/dotfiles/mesh-status.conf}"
+    local conf="${MESH_STATUS_CONF:-$HOME/.config/mesh/mesh-status.conf}"
     if [[ -r "$conf" ]]; then
         # shellcheck source=/dev/null
         . "$conf" 2>/dev/null || true
@@ -958,7 +884,7 @@ _mesh_quote_args() {
 _mesh_remote_command() {
     local quoted
     quoted="$(_mesh_quote_args "$@")"
-    printf "DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0; export DEV_BOOTSTRAP_TMUX_AUTO_MAIN; if command -v mesh >/dev/null 2>&1; then mesh %s; elif [ -x \"\$HOME/.local/bin/mesh\" ]; then \"\$HOME/.local/bin/mesh\" %s; elif [ -x \"\$HOME/dotfiles/scripts/mesh\" ]; then bash \"\$HOME/dotfiles/scripts/mesh\" %s; else echo \"mesh: remote mesh command not found\" >&2; exit 127; fi" "$quoted" "$quoted" "$quoted"
+    printf "DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0; export DEV_BOOTSTRAP_TMUX_AUTO_MAIN; if command -v mesh >/dev/null 2>&1; then mesh %s; elif [ -x \"\$HOME/.local/bin/mesh\" ]; then \"\$HOME/.local/bin/mesh\" %s; else echo \"mesh: remote mesh command not found\" >&2; exit 127; fi" "$quoted" "$quoted"
 }
 
 _mesh_command_display() {

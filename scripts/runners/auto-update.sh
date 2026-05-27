@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# scripts/runners/auto-update.sh — propagate mesh-workstation + dotfiles changes across machines.
+# scripts/runners/auto-update.sh — propagate mesh-workstation + mesh-identity changes across machines.
 #
 # Spec: docs/2026-04-25-auto-update-spec.md
 #
 # Usage:
 #   bash scripts/runners/auto-update.sh                     manual run, all repos, incremental
 #   bash scripts/runners/auto-update.sh --from-shell-start  hook invocation (allows auto-exec)
-#   bash scripts/runners/auto-update.sh -o|--only NAME      restrict to repo NAME (mesh-workstation | dotfiles)
+#   bash scripts/runners/auto-update.sh -o|--only NAME      restrict to repo NAME (mesh-workstation | mesh-identity)
 #   bash scripts/runners/auto-update.sh -f|--full           force full apply: bash setup.sh / install.sh
 #                                                   ignoring last-applied diff
 #   bash scripts/runners/auto-update.sh -i|--interactive    in --full + mesh-workstation, run setup.sh
 #                                                   WITHOUT --non-interactive (i.e. show the menu).
-#                                                   Silently ignored for dotfiles or incremental runs.
+#                                                   Silently ignored for mesh-identity or incremental runs.
 #   bash scripts/runners/auto-update.sh --reset-auth        clear auth-failed-* flags and exit
 #   bash scripts/runners/auto-update.sh -h|--help           this help
 #
@@ -34,9 +34,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   1. $AUTO_UPDATE_CONF                            — explicit override (tests, manual relocation)
 #   2. $HOME/.config/mesh/config.env                — canonical per-host config
 #   3. $HERE/../auto-update.conf                    — in-tree (workstation layout, conf in scripts/)
-# The legacy $HOME/.config/dotfiles/auto-update.conf path was dropped: the
-# mesh bridge migrates users to ~/.config/mesh/ and identity I4 (commit
-# 9e1071f) already removed the dotfiles/ fallback on the code-server resolver.
+# Config lives at ~/.config/mesh/config.env (canonical per-host config).
 # STATE_DIR overridable via env for test fixtures (see tests/auto-update.test.sh).
 CONF="${AUTO_UPDATE_CONF:-}"
 if [[ -z "$CONF" ]]; then
@@ -47,10 +45,6 @@ if [[ -z "$CONF" ]]; then
     fi
 fi
 STATE_DIR="${AUTO_UPDATE_STATE_DIR:-$HOME/.local/state/mesh-workstation}"
-# Migrate state from old directory name if it exists and new one is empty.
-if [[ -d "$HOME/.local/state/dev-bootstrap" ]] && [[ ! -d "$STATE_DIR" ]]; then
-    mv "$HOME/.local/state/dev-bootstrap" "$STATE_DIR" 2>/dev/null || true
-fi
 # (Legacy `LOCK="$STATE_DIR/update.lock"` removed — see LOCK_DIR below;
 # the mkdir-based mutex superseded the file-based one and the unused
 # variable was tripping shellcheck SC2034.)
@@ -74,7 +68,7 @@ while (( $# > 0 )); do
             # otherwise consume `--full` as the repo name and emit a confusing
             # "did not match" warning). Both long and short forms route here.
             if [[ -z "$ONLY" || "$ONLY" == -* ]]; then
-                echo "auto-update: -o/--only requires a repo name (e.g. mesh-workstation, dotfiles)" >&2
+                echo "auto-update: -o/--only requires a repo name (e.g. mesh-workstation, mesh-identity)" >&2
                 exit 1
             fi
             ;;
@@ -104,7 +98,7 @@ fi
 
 if (( RESET_AUTH )); then
     # Honor -o/--only when set: only clear that domain's flag — `mesh update
-    # -o mesh-workstation --reset-auth` shouldn't touch dotfiles auth state.
+    # -o mesh-workstation --reset-auth` shouldn't touch mesh-identity auth state.
     if [[ -n "$ONLY" ]]; then
         rm -f "$STATE_DIR/auth-failed-$ONLY"
         echo "auto-update: cleared auth-failed flag for $ONLY"
@@ -266,10 +260,8 @@ _only_matches() {
     bn="$(basename "$repo")"
     [[ "$bn" == "$only" ]] && return 0
     case "$only" in
-        dotfiles|mesh-identity|identity)
-            _is_identity_repo "$repo" && return 0 ;;
-        dev-bootstrap|mesh-workstation|bootstrap|workstation)
-            _is_workstation_repo "$repo" && return 0 ;;
+        mesh-identity)  _is_identity_repo "$repo"  && return 0 ;;
+        mesh-workstation) _is_workstation_repo "$repo" && return 0 ;;
     esac
     return 1
 }
@@ -353,12 +345,12 @@ process_repo() {
     # ─── --full path: force setup.sh / install.sh, ignore diff ──
     # Skips last-applied/diff/pending-sudo logic and runs the orchestrator
     # in full. Used by `bup --full` (rebootstrap mesh-workstation from scratch)
-    # and `dotup --full` (re-deploy dotfiles). Bumps last-applied on success
+    # and `dotup --full` (re-deploy mesh-identity). Bumps last-applied on success
     # so the next incremental run sees a fresh baseline.
     if (( FULL )); then
         notice "atualizando $name (--full)"
         # Pre-emptive sudo for mesh-workstation (setup.sh runs apt/brew/services).
-        # dotfiles install.sh is HOME-only — no sudo needed.
+        # identity install.sh is HOME-only — no sudo needed.
         if _is_workstation_repo "$repo"; then
             notice "$name: --full requer sudo (setup.sh roda apt/brew/services)"
             if ! sudo -v 2>/dev/null; then
@@ -402,14 +394,14 @@ process_repo() {
             # cosmetic loses to having the menu actually render. Default
             # mode keeps the pipe so the shell-start hook output stays
             # uniform.
-            local bootstrap_rc=0
+            local setup_rc=0
             if (( INTERACTIVE )); then
                 notice "$name: --interactive — setup.sh roda com menu (output direto pro TTY, sem prefix)"
-                run_setup_interactive "$repo" || bootstrap_rc=$?
+                run_setup_interactive "$repo" || setup_rc=$?
             else
-                bash "$repo/setup.sh" --non-interactive 2>&1 | sed 's/^/    /' || bootstrap_rc=$?
+                bash "$repo/setup.sh" --non-interactive 2>&1 | sed 's/^/    /' || setup_rc=$?
             fi
-            if (( bootstrap_rc != 0 )); then
+            if (( setup_rc != 0 )); then
                 warn "$name: setup.sh --full falhou — last-applied NÃO bumped"
                 return 1
             fi
@@ -574,7 +566,7 @@ process_repo() {
         fi
     fi
 
-    # ─── Validador (apenas dotfiles no MVP) ─────────────────────────
+    # ─── Validador (apenas identity) ─────────────────────────────────
     # CP4 chunk D finding D-F-004: incremental path uses workstation
     # doctor.sh (peer to this script post-Phase 7a). Identity no longer
     # ships scripts/runners/doctor.sh; the previous `[[ -f $repo/... ]]`
