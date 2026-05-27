@@ -37,7 +37,7 @@ export function formatHint(option, isSelected) {
 
 export function buildLegend() {
   return [
-    `${pc.dim('Space/Tab to toggle')} ${pc.dim('·')} ${pc.dim('Enter to confirm')} ${pc.dim('·')} ${pc.dim('Type to search')}`,
+    `${pc.dim('Enter/Space = toggle')} ${pc.dim('·')} ${pc.dim('Type to filter')} ${pc.dim('·')} ${pc.dim('Navigate to [ Confirm ] when done')}`,
     `${pc.green(icons.installed)} ${pc.dim('= installed')}  ${pc.yellow(icons.available)} ${pc.dim('= available')}`,
   ].join('\n');
 }

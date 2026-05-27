@@ -1,6 +1,6 @@
 import { isCancel } from '@clack/core';
 import { AutocompleteMultiselectPrompt } from '../ui/autocomplete-multiselect.js';
-import { formatItemLabel, formatHint, buildLegend, formatTopicHeader } from '../ui/format.js';
+import { formatItemLabel, formatHint, formatTopicHeader } from '../ui/format.js';
 import { icons, pc, symbol } from '../ui/theme.js';
 
 export async function selectItems(
@@ -39,7 +39,6 @@ export async function selectItems(
     .map((o) => o.value);
 
   const header = formatTopicHeader(topicName, index, total, installedCount, items.length);
-  const legend = buildLegend();
 
   const prompt = new AutocompleteMultiselectPrompt({
     options,
@@ -47,7 +46,6 @@ export async function selectItems(
     render() {
       const title = `${pc.gray(icons.bar)}\n${symbol(this.state)}  ${header}\n`;
       const focused = this.focusedOption();
-      const focusedIdx = this.focusedRealIndex();
 
       switch (this.state) {
         case 'submit': {
@@ -60,13 +58,12 @@ export async function selectItems(
         case 'cancel':
           return `${title}${pc.gray(icons.bar)}  ${pc.strikethrough(pc.dim('cancelled'))}`;
         default: {
+          const legendLine = `${pc.cyan(icons.bar)}  ${pc.dim('Enter/Space = toggle')} ${pc.dim('·')} ${pc.dim('Type to filter')} ${pc.dim('·')} ${pc.green(icons.installed)} ${pc.dim('installed')}  ${pc.yellow(icons.available)} ${pc.dim('available')}`;
+
           const searchLine = this.search
-            ? `${pc.cyan(icons.bar)}  ${pc.dim('Search:')} ${this.search}`
-            : `${pc.cyan(icons.bar)}  ${pc.dim('Type to search...')}`;
-          const legendLines = legend
-            .split('\n')
-            .map((l) => `${pc.cyan(icons.bar)}  ${l}`)
-            .join('\n');
+            ? `${pc.cyan(icons.bar)}  ${pc.dim('Filter:')} ${this.search}`
+            : '';
+
           const rows = this.filteredIndices.map((realIdx, displayIdx) => {
             const opt = this.options[realIdx];
             const isFocused = displayIdx === this.cursor;
@@ -76,10 +73,23 @@ export async function selectItems(
             const line = hint ? `${label}  ${hint}` : label;
             return `${pc.cyan(icons.bar)}  ${line}`;
           });
+
           if (rows.length === 0) {
             rows.push(`${pc.cyan(icons.bar)}  ${pc.dim('No matches')}`);
           }
-          return `${title}${legendLines}\n${searchLine}\n${rows.join('\n')}\n${pc.cyan(icons.end)}`;
+
+          const confirmFocused = this.cursorOnConfirm;
+          const confirmRow = confirmFocused
+            ? `${pc.cyan(icons.bar)}  ${pc.bgCyan(pc.bold(' Confirm '))} ${pc.dim('press Enter to continue')}`
+            : `${pc.cyan(icons.bar)}  ${pc.dim('[ Confirm ]')}`;
+
+          const parts = [title, legendLine];
+          if (searchLine) parts.push(searchLine);
+          parts.push(rows.join('\n'));
+          parts.push(`${pc.cyan(icons.bar)}`);
+          parts.push(confirmRow);
+          parts.push(`${pc.cyan(icons.end)}`);
+          return parts.join('\n');
         }
       }
     },

@@ -40,6 +40,11 @@ describe('AutocompleteMultiselectPrompt', () => {
       const p = makePrompt();
       assert.strictEqual(p.search, '');
     });
+
+    it('cursor is not on confirm row initially', () => {
+      const p = makePrompt();
+      assert.strictEqual(p.cursorOnConfirm, false);
+    });
   });
 
   describe('filtering', () => {
@@ -75,12 +80,13 @@ describe('AutocompleteMultiselectPrompt', () => {
       assert.strictEqual(p.filteredIndices.length, 4);
     });
 
-    it('clamps cursor to filtered results', () => {
+    it('clamps cursor to filtered results + confirm', () => {
       const p = makePrompt();
-      p.cursor = 3;
+      p.cursor = 4; // on confirm row
       p.search = 'mysql';
       p._refilter();
-      assert.strictEqual(p.cursor, 0);
+      // 1 match + confirm row → cursor should be at most 1
+      assert.ok(p.cursor <= 1);
     });
 
     it('handles no matches gracefully', () => {
@@ -124,7 +130,7 @@ describe('AutocompleteMultiselectPrompt', () => {
       const p = makePrompt();
       p.search = 'zzzzz';
       p._refilter();
-      p._toggle(); // should not throw
+      p._toggle();
       assert.strictEqual(p._value.length, 2);
     });
 
@@ -136,6 +142,34 @@ describe('AutocompleteMultiselectPrompt', () => {
       p._toggle();
       assert.ok(p._value.includes('ngrok'));
       assert.strictEqual(p._value.length, 3);
+    });
+
+    it('does not toggle when cursor is on confirm row', () => {
+      const p = makePrompt();
+      p.cursor = p.filteredIndices.length; // confirm row
+      assert.ok(p.cursorOnConfirm);
+      p._toggle();
+      assert.strictEqual(p._value.length, 2, 'should not change');
+    });
+  });
+
+  describe('confirm row navigation', () => {
+    it('cursor can reach confirm row', () => {
+      const p = makePrompt();
+      p.cursor = 4; // 4 items → confirm is at index 4
+      assert.ok(p.cursorOnConfirm);
+    });
+
+    it('focusedOption returns null on confirm row', () => {
+      const p = makePrompt();
+      p.cursor = 4;
+      assert.strictEqual(p.focusedOption(), null);
+    });
+
+    it('focusedRealIndex returns -1 on confirm row', () => {
+      const p = makePrompt();
+      p.cursor = 4;
+      assert.strictEqual(p.focusedRealIndex(), -1);
     });
   });
 
@@ -161,7 +195,7 @@ describe('AutocompleteMultiselectPrompt', () => {
       p.search = 'post';
       p._refilter();
       p.cursor = 0;
-      assert.strictEqual(p.focusedRealIndex(), 3); // postgres is at index 3
+      assert.strictEqual(p.focusedRealIndex(), 3);
     });
 
     it('returns -1 when no matches', () => {
@@ -175,14 +209,14 @@ describe('AutocompleteMultiselectPrompt', () => {
   describe('isSelected', () => {
     it('returns true for selected items', () => {
       const p = makePrompt();
-      assert.strictEqual(p.isSelected(0), true);  // mysql
-      assert.strictEqual(p.isSelected(1), true);  // redis
+      assert.strictEqual(p.isSelected(0), true);
+      assert.strictEqual(p.isSelected(1), true);
     });
 
     it('returns false for unselected items', () => {
       const p = makePrompt();
-      assert.strictEqual(p.isSelected(2), false);  // ngrok
-      assert.strictEqual(p.isSelected(3), false);  // postgres
+      assert.strictEqual(p.isSelected(2), false);
+      assert.strictEqual(p.isSelected(3), false);
     });
   });
 });

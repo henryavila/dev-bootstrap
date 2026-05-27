@@ -67,10 +67,10 @@ describe('formatHint', () => {
 });
 
 describe('buildLegend', () => {
-  it('includes toggle and search instructions', () => {
+  it('includes toggle and filter instructions', () => {
     const legend = buildLegend();
     assert.ok(legend.includes('toggle'));
-    assert.ok(legend.includes('search'));
+    assert.ok(legend.includes('filter'));
   });
 
   it('includes installed and available labels', () => {

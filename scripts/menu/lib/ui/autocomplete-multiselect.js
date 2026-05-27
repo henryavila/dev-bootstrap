@@ -7,11 +7,16 @@ export class AutocompleteMultiselectPrompt extends Prompt {
   selectedValues;
   filteredIndices = [];
   required;
+  _confirmRow = false;
 
   get _value() {
     return this.options
       .filter((_, i) => this.selectedValues.has(i))
       .map((o) => o.value);
+  }
+
+  get cursorOnConfirm() {
+    return this.cursor === this.filteredIndices.length;
   }
 
   constructor(opts) {
@@ -28,6 +33,7 @@ export class AutocompleteMultiselectPrompt extends Prompt {
 
     this.options = opts.options;
     this.required = opts.required ?? false;
+    this._confirmRow = true;
     this.selectedValues = new Set(
       opts.initialValues
         ? opts.options
@@ -38,30 +44,51 @@ export class AutocompleteMultiselectPrompt extends Prompt {
     this._refilter();
     this.value = this._value;
 
+    const baseOnKeypress = this.onKeypress;
+    this.onKeypress = (char, key) => {
+      if (key?.name === 'return') {
+        if (this.cursorOnConfirm) {
+          this.value = this._value;
+          this.state = 'submit';
+          this.emit('finalize');
+          this.render();
+          this.close();
+          return;
+        }
+        this._toggle();
+        if (this.state === 'error') this.state = 'active';
+        this.render();
+        return;
+      }
+      baseOnKeypress(char, key);
+    };
+
     this.on('cursor', (action) => {
+      const totalRows = this.filteredIndices.length + 1;
       switch (action) {
         case 'up':
-          this.cursor =
-            this.filteredIndices.length === 0
-              ? 0
-              : (this.cursor - 1 + this.filteredIndices.length) %
-                this.filteredIndices.length;
+          this.cursor = totalRows === 0 ? 0 : (this.cursor - 1 + totalRows) % totalRows;
           break;
         case 'down':
-          this.cursor =
-            this.filteredIndices.length === 0
-              ? 0
-              : (this.cursor + 1) % this.filteredIndices.length;
+          this.cursor = totalRows === 0 ? 0 : (this.cursor + 1) % totalRows;
           break;
         case 'space':
-          this._toggle();
+          if (this.cursorOnConfirm) {
+            this.value = this._value;
+            this.state = 'submit';
+            this.emit('finalize');
+            this.render();
+            this.close();
+          } else {
+            this._toggle();
+          }
           break;
       }
     });
 
     this.on('key', (char) => {
       if (char === '\t') {
-        this._toggle();
+        if (!this.cursorOnConfirm) this._toggle();
         return;
       }
       if (char === '\x7F' || char === '\b') {
@@ -82,6 +109,7 @@ export class AutocompleteMultiselectPrompt extends Prompt {
 
   _toggle() {
     if (this.filteredIndices.length === 0) return;
+    if (this.cursorOnConfirm) return;
     const realIndex = this.filteredIndices[this.cursor];
     const opt = this.options[realIndex];
     if (opt.disabled) return;
@@ -106,17 +134,19 @@ export class AutocompleteMultiselectPrompt extends Prompt {
           : -1;
       })
       .filter((i) => i >= 0);
-    if (this.cursor >= this.filteredIndices.length) {
-      this.cursor = Math.max(0, this.filteredIndices.length - 1);
+    if (this.cursor > this.filteredIndices.length) {
+      this.cursor = this.filteredIndices.length;
     }
   }
 
   focusedOption() {
+    if (this.cursorOnConfirm) return null;
     if (this.filteredIndices.length === 0) return null;
     return this.options[this.filteredIndices[this.cursor]];
   }
 
   focusedRealIndex() {
+    if (this.cursorOnConfirm) return -1;
     if (this.filteredIndices.length === 0) return -1;
     return this.filteredIndices[this.cursor];
   }
