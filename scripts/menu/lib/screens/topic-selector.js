@@ -23,6 +23,16 @@ const TOPIC_LABELS = {
   '90-editor': 'Editor',
 };
 
+const TOPIC_HINTS = {
+  '45-docker': 'Colima + Docker CLI + Compose',
+  '60-web-stack': 'MySQL, Redis, Valet, mkcert + extras',
+  '70-remote-access': 'Tailscale, mosh, SSH',
+  '80-claude-code': 'Claude CLI, syncthing, moshi, claudebar',
+  '82-ai-tools': 'mdprobe, atomic-skills, rtk',
+  '85-code-server': 'Standalone code-server',
+  '90-editor': 'Neovim default config',
+};
+
 export function getSelectableTopics(groupedItems, installedStatus) {
   const topics = [];
   for (const [topic, items] of groupedItems) {
@@ -32,8 +42,8 @@ export function getSelectableTopics(groupedItems, installedStatus) {
     ).length;
     topics.push({
       value: topic,
-      label: TOPIC_LABELS[topic] ?? topic,
-      hint: `${installed}/${items.length} installed`,
+      label: `${TOPIC_LABELS[topic] ?? topic} (${installed}/${items.length})`,
+      hint: TOPIC_HINTS[topic] ?? '',
       installed,
       total: items.length,
     });

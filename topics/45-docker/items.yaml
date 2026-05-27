@@ -12,18 +12,23 @@
   type: brew-formula
   spec: colima
   platforms: [mac]
+  required: true
   desc: "Headless Linux VM for Docker on macOS (no Docker Desktop)"
 
 - name: docker
   type: brew-formula
   spec: docker
   platforms: [mac]
+  required: true
+  requires: [colima]
   desc: "Docker CLI (mac, talks to Colima socket)"
 
 - name: docker-compose
   type: brew-formula
   spec: docker-compose
   platforms: [mac]
+  required: true
+  requires: [docker]
   desc: "Standalone Docker Compose v2 binary (works with Colima)"
 
 # ─── WSL ───────────────────────────────────────────────────────────
@@ -31,18 +36,23 @@
   type: apt
   spec: docker.io
   platforms: [wsl]
+  required: true
   desc: "Ubuntu's docker.io package (boring choice; no extra apt repo)"
 
 - name: docker-compose-v2
   type: apt
   spec: docker-compose-v2
   platforms: [wsl]
+  required: true
+  requires: [docker-engine]
   desc: "Docker Compose plugin (`docker compose ...` syntax)"
 
 - name: docker-buildx
   type: apt
   spec: docker-buildx
   platforms: [wsl]
+  required: true
+  requires: [docker-engine]
   desc: "BuildKit builder plugin (removes legacy-builder DEPRECATED banner)"
 
 - name: docker-post-setup

@@ -19,7 +19,7 @@ export async function selectItems(
     const installed = installedStatus.get(key) === true;
     return {
       value: key,
-      label: item.desc || item.name,
+      label: item.name,
       hint: item.desc,
       desc: item.desc,
       installed,

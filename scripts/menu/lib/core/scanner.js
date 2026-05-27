@@ -1,6 +1,8 @@
 import { execSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+
+const ENGINE_DIR = join(dirname(new URL(import.meta.url).pathname), '..', '..', '..', 'lib');
 
 export function checkItem(item, { topicsRoot, platform = 'mac' } = {}) {
   if (item.check) {
@@ -28,11 +30,31 @@ function runShellCheck(cmd) {
   }
 }
 
-function checkCustomScript(_scriptPath) {
-  // Custom scripts define check() but sourcing them is fragile (dependencies,
-  // top-level code). Without a manifest `check:` field, skip — the item shows
-  // as "available" in the menu, which is a safe default.
-  return false;
+function checkCustomScript(scriptPath) {
+  if (!existsSync(scriptPath)) return false;
+  try {
+    const content = readFileSync(scriptPath, 'utf8');
+    if (!/^check\s*\(\)/m.test(content)) return false;
+
+    const result = execSync(
+      `bash -c '
+        set +e
+        source "${ENGINE_DIR}/log.sh" 2>/dev/null
+        source "${ENGINE_DIR}/env.sh" 2>/dev/null
+        BREW_BIN="${process.env.HOMEBREW_PREFIX || '/opt/homebrew'}/bin/brew"
+        source "${scriptPath}" 2>/dev/null
+        if declare -f check >/dev/null 2>&1; then
+          check && echo __INSTALLED__ || echo __NOT_INSTALLED__
+        else
+          echo __NO_CHECK__
+        fi
+      '`,
+      { stdio: 'pipe', timeout: 5_000, encoding: 'utf8' },
+    );
+    return result.includes('__INSTALLED__');
+  } catch {
+    return false;
+  }
 }
 
 function checkViaDriver(item) {

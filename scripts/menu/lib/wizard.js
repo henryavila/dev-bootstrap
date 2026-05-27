@@ -43,7 +43,6 @@ export async function runWizard({ dryRun = false, topicsRoot = null, platform = 
   // Phase 2: per-topic item selection
   const allSelectedEntries = [];
 
-  // Always-on topics: select all items
   for (const topic of getAlwaysOnTopics()) {
     const items = grouped.get(topic);
     if (!items) continue;
@@ -52,27 +51,51 @@ export async function runWizard({ dryRun = false, topicsRoot = null, platform = 
     }
   }
 
-  // Opt-in topics: item-level selection
   const optInTopics = selectedTopics.filter((t) => grouped.has(t));
   for (let i = 0; i < optInTopics.length; i++) {
     const topic = optInTopics[i];
     const items = grouped.get(topic);
-    const topicLabel = topic;
     const prevForTopic = previousSelections.filter((e) => e.startsWith(`${topic}/`));
 
-    const selected = await selectItems(topicLabel, items, installedStatus, prevForTopic, {
-      index: i,
-      total: optInTopics.length,
-    });
+    if (isAllOrNothing(items)) {
+      for (const item of items) {
+        allSelectedEntries.push(`${item.topic}/${item.name}`);
+      }
+      const names = items.map((it) => it.desc || it.name).join(', ');
+      p.log.step(`${topic}: all items selected (${names})`);
+      continue;
+    }
 
-    if (selected === null) {
-      p.outro('Setup cancelled.');
-      return false;
+    let selected = null;
+    while (selected === null) {
+      selected = await selectItems(topic, items, installedStatus, prevForTopic, {
+        index: i,
+        total: optInTopics.length,
+      });
+
+      if (selected === null) {
+        const recovery = await p.select({
+          message: `${topic} — cancelled. What next?`,
+          options: [
+            { value: 'retry', label: 'Try again' },
+            { value: 'skip', label: 'Skip this topic' },
+            { value: 'exit', label: 'Exit setup' },
+          ],
+        });
+
+        if (isCancel(recovery) || recovery === 'exit') {
+          p.outro('Setup cancelled.');
+          return false;
+        }
+        if (recovery === 'skip') {
+          selected = [];
+        }
+        // 'retry' loops back
+      }
     }
     allSelectedEntries.push(...selected);
   }
 
-  // Auto-select dependencies
   const { selected: withDeps, added } = autoSelectDependencies(allItems, allSelectedEntries);
   if (added.length > 0) {
     p.log.info(`Auto-selected ${added.length} dependencies: ${added.map(shortName).join(', ')}`);
@@ -93,7 +116,6 @@ export async function runWizard({ dryRun = false, topicsRoot = null, platform = 
     return false;
   }
 
-  // Persist selections
   if (!dryRun) {
     writeSelections(withDeps);
     writeParams(params);
@@ -104,6 +126,17 @@ export async function runWizard({ dryRun = false, topicsRoot = null, platform = 
 
   p.outro('Setup complete.');
   return { selections: withDeps, params, delta };
+}
+
+function isAllOrNothing(items) {
+  if (items.length <= 1) return true;
+  const hasIndependentItems = items.filter((item) => {
+    const isRequired = item.required;
+    const isDependedOn = items.some((other) => other.requires?.includes(item.name));
+    const hasDeps = item.requires?.length > 0;
+    return !isRequired && !isDependedOn && !hasDeps;
+  });
+  return hasIndependentItems.length === 0;
 }
 
 function shortName(entry) {
