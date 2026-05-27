@@ -108,6 +108,7 @@ Usage:
   mesh init [MODE | FLAGS]          Bootstrap identity (adopt-url/create-new/skip/interactive)
   mesh template-check [flags]       Verify template/ ↔ identity parity (C16.1)
   mesh personal-clone [flags]       Clone personal repos from identity catalog
+  mesh menu [--apply]               Interactive item selector (standalone or with apply)
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -1106,6 +1107,28 @@ sub_personal_clone() {
     exec bash "$lib" "$@"
 }
 
+sub_menu() {
+    local runner apply=0
+    runner="$(_resolve_companion "runners/menu.sh")"
+    [[ -n "$runner" ]] || _die "runners/menu.sh not found (set \$MESH_HOME or check installation)"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --apply) apply=1; shift ;;
+            -h|--help)
+                echo "Usage: mesh menu [--apply]"
+                echo "  mesh menu          Run the interactive selector (standalone)"
+                echo "  mesh menu --apply  Run selector + execute install/uninstall delta"
+                return 0 ;;
+            *) _die "menu: unknown arg '$1'" ;;
+        esac
+    done
+    if (( apply )); then
+        exec bash "$runner" --apply
+    else
+        exec bash "$runner"
+    fi
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
@@ -1156,6 +1179,10 @@ case "${1:-status}" in
     personal-clone)
         shift
         sub_personal_clone "$@"
+        ;;
+    menu)
+        shift
+        sub_menu "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.

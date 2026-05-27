@@ -437,10 +437,40 @@ fi
 # ---------- Interactive menu (default on TTYs; skipped for automation) ----------
 # shellcheck disable=SC1091
 source "$HERE/scripts/lib/menu.sh"
+
+ensure_node() {
+    command -v node >/dev/null 2>&1 && return 0
+    if [[ "$OS" == "mac" ]]; then
+        local brew_bin="${BREW_BIN:-$(command -v brew 2>/dev/null || true)}"
+        if [[ -n "$brew_bin" ]]; then
+            info "Installing Node.js for the interactive menu..."
+            "$brew_bin" install node 2>&1 | sed 's/^/    /' || true
+            command -v node >/dev/null 2>&1 && return 0
+        fi
+    else
+        if command -v apt-get >/dev/null 2>&1; then
+            info "Installing Node.js for the interactive menu..."
+            sudo apt-get install -y -qq nodejs npm 2>&1 | sed 's/^/    /' || true
+            command -v node >/dev/null 2>&1 && return 0
+        fi
+    fi
+    return 1
+}
+
 if should_show_menu; then
-    prepare_interactive_menu_dependencies || true
-    if ensure_whiptail; then
-        run_menu
+    MENU_DIR="$HERE/scripts/menu"
+    if [[ -f "$MENU_DIR/index.js" ]] && ensure_node; then
+        # Node.js @clack menu (F9.5): per-item selection, search, uninstall
+        if [[ ! -d "$MENU_DIR/node_modules" ]]; then
+            (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent 2>/dev/null) || true
+        fi
+        node "$MENU_DIR/index.js" || true
+    else
+        # Fallback: legacy whiptail menu
+        prepare_interactive_menu_dependencies || true
+        if ensure_whiptail; then
+            run_menu
+        fi
     fi
 fi
 

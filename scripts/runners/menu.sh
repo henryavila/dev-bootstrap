@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# scripts/runners/menu.sh — run the Node.js interactive menu.
+#
+# Usage:
+#   bash menu.sh [--apply]
+#
+# Without --apply: runs the selector, writes selections.list + params.env.
+# With --apply: runs the selector, then executes the install/uninstall delta
+# via install-engine.sh and uninstall-engine.sh.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+
+# shellcheck disable=SC1091
+. "$ROOT/scripts/lib/log.sh"
+# shellcheck disable=SC1091
+. "$ROOT/scripts/lib/detect-os.sh" 2>/dev/null && PLATFORM="$OS" || PLATFORM="unknown"
+
+APPLY=0
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --apply) APPLY=1; shift ;;
+        *) log_error "unknown arg: $1"; exit 64 ;;
+    esac
+done
+
+if ! command -v node >/dev/null 2>&1; then
+    log_error "Node.js is required for the interactive menu."
+    log_error "Install it first: brew install node (macOS) or apt install nodejs (Linux)"
+    exit 1
+fi
+
+MENU_DIR="$ROOT/scripts/menu"
+if [[ ! -d "$MENU_DIR/node_modules" ]]; then
+    info "Installing menu dependencies..."
+    (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent)
+fi
+
+node "$MENU_DIR/index.js" "$@"
+menu_exit=$?
+
+if (( menu_exit != 0 )); then
+    exit $menu_exit
+fi
+
+if (( APPLY == 0 )); then
+    exit 0
+fi
+
+SELECTIONS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/selections.list"
+if [[ ! -f "$SELECTIONS_FILE" ]]; then
+    log_error "No selections file found after menu run."
+    exit 1
+fi
+
+info "Applying selections..."
+
+while IFS= read -r entry; do
+    [[ -z "$entry" || "$entry" == \#* ]] && continue
+    topic="${entry%%/*}"
+    item="${entry#*/}"
+    manifest="$ROOT/topics/$topic/items.yaml"
+    [[ -f "$manifest" ]] || continue
+    bash "$ROOT/scripts/lib/install-engine.sh" \
+        --manifest "$manifest" \
+        --items="$item" \
+        --platform "$PLATFORM"
+done < "$SELECTIONS_FILE"
+
+info "All selections applied."
