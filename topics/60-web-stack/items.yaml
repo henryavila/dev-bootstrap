@@ -11,12 +11,14 @@
   type: custom
   script: "./mac/mysql.sh"
   platforms: [mac]
+  uninstall_tier: 3
   desc: "MySQL 8 — brew formula with Oracle DMG fallback (skip if /usr/local/mysql)"
 
 - name: redis-mac
   type: custom
   script: "./mac/redis.sh"
   platforms: [mac]
+  uninstall_tier: 2
   desc: "Redis — brew formula + service launch (launch-wrapper for custom prefix)"
 
 - name: mkcert-mac
@@ -79,6 +81,7 @@
 - name: postgres
   type: custom
   script: "./extras/postgres.sh"
+  uninstall_tier: 3
   desc: "PostgreSQL server + role/db — gated by INCLUDE_POSTGRES=1"
 
 - name: mssql-driver

@@ -464,6 +464,13 @@ if should_show_menu; then
         if [[ ! -d "$MENU_DIR/node_modules" ]]; then
             (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent 2>/dev/null) || true
         fi
+        # First-run migration: old config.env → selections.list + params.env
+        SELECTIONS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/selections.list"
+        OLD_STATE_CONFIG="$HOME/.local/state/mesh-workstation/config.env"
+        if [[ -f "$OLD_STATE_CONFIG" && ! -f "$SELECTIONS_FILE" ]]; then
+            info "Migrating legacy config.env to selections.list + params.env..."
+            node -e "import { migrateLegacyConfig } from '$MENU_DIR/lib/core/migrate.js'; migrateLegacyConfig('$HERE/topics');" 2>/dev/null || true
+        fi
         node "$MENU_DIR/index.js" || true
     else
         # Fallback: legacy whiptail menu

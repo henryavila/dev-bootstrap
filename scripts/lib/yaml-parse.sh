@@ -239,7 +239,9 @@ process_kv() {
         return 0
     fi
 
-    err "$line" "$col" "unknown key: $key"
+    # Menu-only fields (required, uninstall_tier) are consumed by the JS
+    # manifest-reader; skip silently here rather than erroring.
+    return 0
 }
 
 # Main parsing loop.
