@@ -110,7 +110,7 @@ _create_new() {
     # developers, not identity owners. L11 lint allowlists these in template/;
     # we mirror that exclusion on copy.
     find "$IDENTITY_DIR" -type f \
-        \( -iname 'README*' -o -name '.keep' \) -delete 2>/dev/null || true
+        \( \( -iname 'README*' ! -name '*.example' \) -o -name '.keep' \) -delete 2>/dev/null || true
 
     # Strip .example suffix on every remaining file.
     while IFS= read -r -d '' f; do

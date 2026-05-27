@@ -24,7 +24,7 @@ else failed=$((failed+1)); echo "  ✗ once mode preserves existing" >&2; fi
 
 # Test 3: managed_block injects between markers
 deploy_one "git/sample|$TMP/dst3|managed_block|0644" "$TMP/src"
-if grep -q 'mesh-managed: sample' "$TMP/dst3"; then passed=$((passed+1)); echo "  ✓ managed_block injects markers"
+if grep -q 'mesh-managed: git/sample' "$TMP/dst3"; then passed=$((passed+1)); echo "  ✓ managed_block injects markers"
 else failed=$((failed+1)); echo "  ✗ managed_block injects markers" >&2; fi
 
 # Test 4: overwrite skips when content identical (no backup created)

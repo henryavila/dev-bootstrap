@@ -103,14 +103,12 @@ err()  { printf '✗ %s\n' "$1" >&2; }
 
 # ─── Dep check ───────────────────────────────────────────────────────
 if ! command -v jq >/dev/null 2>&1; then
-    err "jq missing — install via dev-bootstrap topic 00-core"
+    err "jq missing — install via mesh-workstation topic 00-core"
     exit 1
 fi
 
 # ─── Config (same defaults as mesh-snap) ─────────────────────────────
 CONF="${MESH_STATUS_CONF:-$HOME/.config/mesh/mesh-status.conf}"
-[[ ! -r "$CONF" && -r "$HOME/.config/dotfiles/mesh-status.conf" ]] && \
-    CONF="$HOME/.config/dotfiles/mesh-status.conf"
 MESH_SYNC_DIR="${MESH_SYNC_DIR:-$HOME/Sync/mesh-status}"
 MESH_HISTORY_DIR="${MESH_HISTORY_DIR:-$HOME/.local/state/mesh/mesh-history}"
 MESH_REFERENCE_BRANCH="${MESH_REFERENCE_BRANCH:-main}"
@@ -703,14 +701,13 @@ render_detail() {
 # ─── --write: markdown surgery ───────────────────────────────────────
 # Builds the markdown payload (table) and rewrites the section between
 # <!-- mesh-status:start --> and <!-- mesh-status:end --> markers in the
-# target file (default: $HOME/dotfiles/.ai/memory/PROJECT_STATUS.md;
+# target file (default: $HOME/mesh-identity/.ai/memory/PROJECT_STATUS.md;
 # overridable via --target). Idempotent: re-running with the same data
 # produces the same file. Markers must already exist or we fail loud
 # per spec §6.4.
 _default_write_target() {
-    # Look for the file relative to the dotfiles checkout.
     local candidates=(
-        "$HOME/dotfiles/.ai/memory/PROJECT_STATUS.md"
+        "${MESH_IDENTITY_DIR:-$HOME/mesh-identity}/.ai/memory/PROJECT_STATUS.md"
         "$(cd "$HERE/.." 2>/dev/null && pwd)/.ai/memory/PROJECT_STATUS.md"
     )
     local c

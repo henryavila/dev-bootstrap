@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/internal/mesh-snap — collector for mesh-status v1.
 #
-# Captures the local host's view of the dotfiles ecosystem (host metadata,
+# Captures the local host's view of the mesh ecosystem (host metadata,
 # repo SHAs / fetch state, drift via doctor.sh, advisories, tailscale state)
 # and writes a JSON snapshot to $MESH_SYNC_DIR/<alias>.json so peer hosts can
 # read it via Syncthing replication. Also appends a timestamped copy under
@@ -79,7 +79,7 @@ err()  { printf '✗ %s\n' "$1" >&2; }
 
 # ─── Dep check ───────────────────────────────────────────────────────
 if ! command -v jq >/dev/null 2>&1; then
-    err "jq missing — install via dev-bootstrap topic 00-core (apt install jq / brew install jq)"
+    err "jq missing — install via mesh-workstation topic 00-core (apt install jq / brew install jq)"
     exit 1
 fi
 if ! command -v git >/dev/null 2>&1; then
@@ -89,9 +89,6 @@ fi
 
 # ─── Config ──────────────────────────────────────────────────────────
 CONF="${CONFIG_OVERRIDE:-${MESH_STATUS_CONF:-$HOME/.config/mesh/mesh-status.conf}}"
-# Fallback to pre-C10 path if the new one doesn't exist yet.
-[[ ! -r "$CONF" && -r "$HOME/.config/dotfiles/mesh-status.conf" ]] && \
-    CONF="$HOME/.config/dotfiles/mesh-status.conf"
 
 # Defaults — overridden by config file if present.
 MESH_SYNC_DIR="${MESH_SYNC_DIR:-$HOME/Sync/mesh-status}"
@@ -429,10 +426,9 @@ collect_all_repos() {
 }
 
 # ─── Collector: drift (delegate to doctor.sh) ────────────────────────
-# Looks for doctor.sh next to mesh-snap (the dotfiles repo's scripts/) or
-# in $HOME/dotfiles/scripts/. If absent or it errors, emit a stub object
-# that explains why — keeps snapshot useful when this host doesn't have
-# the dotfiles repo cloned.
+# Looks for doctor.sh in the workstation scripts/runners/ tree. If absent
+# or it errors, emit a stub object that explains why — keeps snapshot
+# useful when this host doesn't have the workstation repo cloned.
 #
 # doctor.sh's --json schema (today): {ok, drift, missing, marker_miss,
 # drift_items, missing_items, marker_miss_items}. We reshape it to the
@@ -441,23 +437,14 @@ collect_drift() {
     local doctor=""
     # Locate doctor.sh in this priority order:
     #   1. $MESH_DOCTOR (env override — used by tests + custom layouts)
-    #   2. $self_dir/../runners/doctor.sh (workstation sibling — canonical
-    #      post-Phase 2; runners and internal are peers under scripts/)
-    #   3. $HOME/dotfiles/scripts/doctor.sh (legacy identity layout —
-    #      kept during the identity-cleanup transition; will become a
-    #      no-op once identity drops its copy in Phase 7)
-    # Tier 2 was previously `$self_dir/doctor.sh` (assumed sibling); after
-    # the 4-way split (commit 25ea628), doctor.sh moved into runners/ but
-    # this resolver wasn't updated — masked at runtime by tier 3 silently
-    # consuming the stale identity copy. See Review A finding A7.
+    #   2. $self_dir/../runners/doctor.sh (workstation sibling — canonical;
+    #      runners and internal are peers under scripts/)
     local self_dir
     self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if [[ -n "${MESH_DOCTOR:-}" && -x "$MESH_DOCTOR" ]]; then
         doctor="$MESH_DOCTOR"
     elif [[ -x "$self_dir/../runners/doctor.sh" ]]; then
         doctor="$self_dir/../runners/doctor.sh"
-    elif [[ -x "$HOME/dotfiles/scripts/doctor.sh" ]]; then
-        doctor="$HOME/dotfiles/scripts/doctor.sh"
     fi
 
     if [[ -z "$doctor" ]]; then
@@ -539,12 +526,12 @@ collect_drift() {
 }
 
 # ─── Collector: advisories ───────────────────────────────────────────
-# Reads $HOME/.local/state/dotfiles/followup/*.json. Schema is undefined
+# Reads followup/*.json from the mesh state dir. Schema is undefined
 # today — be best-effort: count is len of valid JSON files, items have
 # kind/severity/since/detail when extractable. Spec §14: only `kind` is
 # emitted, never the literal followup message body (avoids token leaks).
 collect_advisories() {
-    local followup_dir="${MESH_FOLLOWUP_DIR:-$HOME/.local/state/dotfiles/followup}"
+    local followup_dir="${MESH_FOLLOWUP_DIR:-$HOME/.local/state/mesh/followup}"
     if [[ ! -d "$followup_dir" ]]; then
         jq -n '{count: 0, items: []}'
         return 0

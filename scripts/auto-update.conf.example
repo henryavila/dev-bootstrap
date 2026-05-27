@@ -1,8 +1,8 @@
 # scripts/auto-update.conf — config for scripts/auto-update.sh
 #
 # Bash-sourceable. No JSON/YAML parser dep.
-# Deployed to ~/.config/dotfiles/auto-update.conf in `once` mode by
-# install.sh — edit there directly, not in the repo.
+# Deployed to ~/.config/mesh/config.env in `once` mode by
+# setup.sh — edit there directly, not in the repo.
 #
 # Spec: docs/2026-04-25-auto-update-spec.md (auto-update motor)
 #       docs/2026-05-02-mesh-cli-refactor-spec.md (mesh CLI dispatcher)
@@ -10,19 +10,18 @@
 # Repos to track. Each entry: absolute path. Order = check order.
 # Defaults assume the canonical clone layout in $HOME. To point
 # AUTO_UPDATE_REPOS at non-canonical paths per-host (e.g. when the disk
-# is on /Volumes/External on Mac), create the file below — never tracked
-# in git, sourced after this conf so re-assignments take effect:
+# is on /Volumes/External on Mac), override in ~/.config/mesh/config.env
+# (per-host, never tracked in git, sourced after this conf):
 #
-#   # ~/.config/dotfiles/auto-update.conf.local
 #   AUTO_UPDATE_REPOS=(
-#       "/Volumes/External/code/dev-bootstrap"
-#       "$HOME/dotfiles"
+#       "/Volumes/External/code/mesh-workstation"
+#       "$HOME/mesh-identity"
 #   )
 #
 # (Path overridable via $AUTO_UPDATE_LOCAL_CONF env for test fixtures.)
 AUTO_UPDATE_REPOS=(
-    "$HOME/dev-bootstrap"
-    "$HOME/dotfiles"
+    "$HOME/mesh-workstation"
+    "$HOME/mesh-identity"
 )
 
 # Reload table: bash glob → command to run after a successful apply when a
