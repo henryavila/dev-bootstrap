@@ -126,8 +126,8 @@ Subcommands:
            Default scope (no -o) = both repos sequentially. Default mode = incremental.
 
            Flags (lowercase short, GNU long, both accepted):
-             -o, --only NAME         Restrict to NAME (dev-bootstrap | dotfiles).
-                                     `bootstrap` accepted as alias for dev-bootstrap.
+             -o, --only NAME         Restrict to NAME (mesh-workstation | mesh-identity).
+                                     Legacy aliases accepted: bootstrap, dev-bootstrap, dotfiles, identity.
              -f, --full              Full apply (runs bootstrap.sh / install.sh
                                      instead of incremental diff replay).
              -i, --interactive       In `-f` + dev-bootstrap, run bootstrap.sh
@@ -389,9 +389,12 @@ sub_update() {
                 shift
                 local val="${1:-}"
                 if [[ -z "$val" || "$val" == -* ]]; then
-                    _die "update: -o/--only requires a repo name (dev-bootstrap | dotfiles)"
+                    _die "update: -o/--only requires a repo name (mesh-workstation | mesh-identity)"
                 fi
-                [[ "$val" == "bootstrap" ]] && val="dev-bootstrap"
+                case "$val" in
+                    bootstrap|dev-bootstrap|workstation) val="mesh-workstation" ;;
+                    dotfiles|identity) val="mesh-identity" ;;
+                esac
                 only="$val"
                 shift
                 ;;
@@ -421,10 +424,10 @@ sub_update() {
 
     if [[ -n "$topics_spec" ]]; then
         (( interactive == 0 )) || _die "update: --topics cannot be combined with -i/--interactive"
-        if [[ -n "$only" && "$only" != "dev-bootstrap" ]]; then
-            _die "update: --topics applies only to dev-bootstrap"
+        if [[ -n "$only" && "$only" != "mesh-workstation" ]]; then
+            _die "update: --topics applies only to mesh-workstation"
         fi
-        only="dev-bootstrap"
+        only="mesh-workstation"
         topics_spec="$(_normalize_topic_spec "$topics_spec")"
         [[ -n "$topics_spec" ]] || _die "update: --topics requires a topic number or name"
         if (( full == 0 )); then
@@ -441,12 +444,12 @@ sub_update() {
     # No -o/--only — run both sequentially. Exit code = OR of both rc (any
     # failure surfaces; user can see which via output). Bash 3.2 safe array
     # expansion.
-    local bootstrap_rc=0 dotfiles_rc=0
-    bash "$motor" --only dev-bootstrap "${pass_args[@]+"${pass_args[@]}"}"
-    bootstrap_rc=$?
-    bash "$motor" --only dotfiles "${pass_args[@]+"${pass_args[@]}"}"
-    dotfiles_rc=$?
-    exit $(( bootstrap_rc | dotfiles_rc ))
+    local ws_rc=0 id_rc=0
+    bash "$motor" --only mesh-workstation "${pass_args[@]+"${pass_args[@]}"}"
+    ws_rc=$?
+    bash "$motor" --only mesh-identity "${pass_args[@]+"${pass_args[@]}"}"
+    id_rc=$?
+    exit $(( ws_rc | id_rc ))
 }
 
 # ─── mesh run helpers ──────────────────────────────────────────────

@@ -255,6 +255,25 @@ run_setup_interactive() {
     )
 }
 
+# ─── Role detection ────────────────────────────────────────────────
+# Classifies a repo by content, not basename — works with any directory name.
+_is_identity_repo()  { [[ -f "$1/install.sh" && ! -f "$1/setup.sh" ]]; }
+_is_workstation_repo() { [[ -f "$1/setup.sh" && -d "$1/topics" ]]; }
+
+# Match --only NAME against a repo, accepting both canonical and legacy names.
+_only_matches() {
+    local repo="$1" only="$2" bn
+    bn="$(basename "$repo")"
+    [[ "$bn" == "$only" ]] && return 0
+    case "$only" in
+        dotfiles|mesh-identity|identity)
+            _is_identity_repo "$repo" && return 0 ;;
+        dev-bootstrap|mesh-workstation|bootstrap|workstation)
+            _is_workstation_repo "$repo" && return 0 ;;
+    esac
+    return 1
+}
+
 # ─── Accumulators ───────────────────────────────────────────────────
 SHELL_RC_CHANGED=0
 FOLLOWUPS=()
@@ -340,7 +359,7 @@ process_repo() {
         notice "atualizando $name (--full)"
         # Pre-emptive sudo for mesh-workstation (setup.sh runs apt/brew/services).
         # dotfiles install.sh is HOME-only — no sudo needed.
-        if [[ "$name" == "mesh-workstation" ]]; then
+        if _is_workstation_repo "$repo"; then
             notice "$name: --full requer sudo (setup.sh roda apt/brew/services)"
             if ! sudo -v 2>/dev/null; then
                 warn "$name: sudo cancelado — abortando --full"
@@ -371,7 +390,7 @@ process_repo() {
         else
             ok "$name: already at $new_short"
         fi
-        if [[ "$name" == "mesh-workstation" ]]; then
+        if _is_workstation_repo "$repo"; then
             # -i/--interactive drops --non-interactive so setup.sh shows
             # its whiptail menu (used to validate new opt-ins like postgres
             # without committing config.env tweaks first). Default stays
@@ -394,7 +413,7 @@ process_repo() {
                 warn "$name: setup.sh --full falhou — last-applied NÃO bumped"
                 return 1
             fi
-        elif [[ "$name" == "dotfiles" ]]; then
+        elif _is_identity_repo "$repo"; then
             if ! bash "$repo/install.sh" 2>&1 | sed 's/^/    /'; then
                 warn "$name: install.sh --full falhou — last-applied NÃO bumped"
                 return 1
@@ -548,8 +567,8 @@ process_repo() {
         fi
     fi
 
-    # ─── Apply: re-run install.sh of dotfiles (idempotent, no sudo) ─
-    if (( ! skip_install )) && [[ "$name" == "dotfiles" ]]; then
+    # ─── Apply: re-run install.sh of identity (idempotent, no sudo) ─
+    if (( ! skip_install )) && _is_identity_repo "$repo"; then
         if ! bash "$repo/install.sh" 2>&1 | sed 's/^/    /'; then
             warn "$name: install.sh falhou (continuando)"
         fi
@@ -560,7 +579,7 @@ process_repo() {
     # doctor.sh (peer to this script post-Phase 7a). Identity no longer
     # ships scripts/runners/doctor.sh; the previous `[[ -f $repo/... ]]`
     # check always failed silently.
-    if (( ! skip_install )) && [[ "$name" == "dotfiles" ]] && [[ -f "$HERE/doctor.sh" ]]; then
+    if (( ! skip_install )) && _is_identity_repo "$repo" && [[ -f "$HERE/doctor.sh" ]]; then
         if ! MESH_IDENTITY_DIR="$repo" bash "$HERE/doctor.sh" --quiet >/dev/null 2>&1; then
             warn "$name: doctor.sh reporta drift residual — rode \`MESH_IDENTITY_DIR=$repo bash $HERE/doctor.sh\` para detalhes"
         fi
@@ -652,18 +671,16 @@ if (( ${#AUTO_UPDATE_REPOS[@]} == 0 )); then
 fi
 
 for repo in "${AUTO_UPDATE_REPOS[@]}"; do
-    if [[ -n "$ONLY" && "$(basename "$repo")" != "$ONLY" ]]; then
+    if [[ -n "$ONLY" ]] && ! _only_matches "$repo" "$ONLY"; then
         continue
     fi
     process_repo "$repo" || { warn "process_repo failed for $repo (continuing)"; EXIT_RC=1; }
 done
 
 if [[ -n "$ONLY" ]]; then
-    # Sanity check: -o/--only NAME must match at least one configured repo.
-    # Typo `-o dotfile` is a user error — fail loud, NOT silent exit 0.
     matched=0
     for repo in "${AUTO_UPDATE_REPOS[@]}"; do
-        [[ "$(basename "$repo")" == "$ONLY" ]] && matched=1
+        _only_matches "$repo" "$ONLY" && matched=1
     done
     if (( ! matched )); then
         err "auto-update: -o/--only $ONLY did not match any configured repo (AUTO_UPDATE_REPOS in $CONF)"
