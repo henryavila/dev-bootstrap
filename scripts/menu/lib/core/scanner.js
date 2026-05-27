@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
+import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 
 const ENGINE_DIR = join(dirname(new URL(import.meta.url).pathname), '..', '..', '..', 'lib');
 
@@ -36,6 +37,9 @@ function checkCustomScript(scriptPath) {
     const content = readFileSync(scriptPath, 'utf8');
     if (!/^check\s*\(\)/m.test(content)) return false;
 
+    const brewBin = process.env.HOMEBREW_PREFIX
+      ? `${process.env.HOMEBREW_PREFIX}/bin/brew`
+      : '/opt/homebrew/bin/brew';
     const result = execSync(
       `bash -c '
         set +e
@@ -43,7 +47,7 @@ function checkCustomScript(scriptPath) {
         export -f sudo
         source "${ENGINE_DIR}/log.sh" 2>/dev/null
         source "${ENGINE_DIR}/env.sh" 2>/dev/null
-        BREW_BIN="${process.env.HOMEBREW_PREFIX || '/opt/homebrew'}/bin/brew"
+        BREW_BIN="${brewBin}"
         source "${scriptPath}" 2>/dev/null
         if declare -f check >/dev/null 2>&1; then
           check && echo __INSTALLED__ || echo __NOT_INSTALLED__
@@ -84,7 +88,7 @@ function checkViaDriver(item) {
   }
 }
 
-export function scanAll(items, { topicsRoot, platform = 'mac' } = {}) {
+function scanAllSync(items, { topicsRoot, platform = 'mac' } = {}) {
   const brewFormulas = [];
   const brewCasks = [];
   const results = new Map();
@@ -116,6 +120,26 @@ export function scanAll(items, { topicsRoot, platform = 'mac' } = {}) {
   return results;
 }
 
+export async function scanAll(items, { topicsRoot, platform = 'mac' } = {}) {
+  const thisFile = new URL(import.meta.url).pathname;
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(thisFile, {
+      workerData: {
+        items: items.map((i) => ({ ...i })),
+        topicsRoot,
+        platform,
+      },
+    });
+    worker.on('message', (entries) => {
+      resolve(new Map(entries));
+    });
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) reject(new Error(`Scanner exited with code ${code}`));
+    });
+  });
+}
+
 function batchBrewCheck(flag, specs) {
   if (specs.length === 0) return new Set();
   try {
@@ -129,4 +153,10 @@ function batchBrewCheck(flag, specs) {
   } catch {
     return new Set();
   }
+}
+
+if (!isMainThread) {
+  const { items, topicsRoot, platform } = workerData;
+  const results = scanAllSync(items, { topicsRoot, platform });
+  parentPort.postMessage([...results.entries()]);
 }

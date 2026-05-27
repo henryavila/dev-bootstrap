@@ -23,7 +23,7 @@ export async function runWizard({ dryRun = false, topicsRoot = null, platform = 
 
   const s = p.spinner();
   s.start('Scanning installed items...');
-  const installedStatus = scanAll(allItems, { topicsRoot, platform: platform ?? 'mac' });
+  const installedStatus = await scanAll(allItems, { topicsRoot, platform: platform ?? 'mac' });
   s.stop('Scan complete.');
 
   const previousSelections = readSelections() ?? [];

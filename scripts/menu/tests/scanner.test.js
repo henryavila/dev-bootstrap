@@ -58,26 +58,26 @@ describe('checkItem', () => {
 });
 
 describe('scanAll', () => {
-  it('scans real topics without hanging', () => {
+  it('scans real topics without hanging', async () => {
     const items = [
       { topic: '20-terminal-ux', name: 'fzf-mac', type: 'brew-formula', spec: 'fzf', platforms: ['mac'], check: '', requires: [] },
       { topic: '20-terminal-ux', name: 'bat-mac', type: 'brew-formula', spec: 'bat', platforms: ['mac'], check: '', requires: [] },
       { topic: '82-ai-tools', name: 'mdprobe', type: 'npm-global', spec: '@henryavila/mdprobe', check: 'command -v mdprobe', platforms: ['mac', 'wsl'], requires: [] },
     ];
     const start = Date.now();
-    const results = scanAll(items, { topicsRoot: TOPICS_ROOT, platform: 'mac' });
+    const results = await scanAll(items, { topicsRoot: TOPICS_ROOT, platform: 'mac' });
     const elapsed = Date.now() - start;
     assert.strictEqual(results.size, 3);
     assert.ok(elapsed < 15_000, `scan should complete in <15s, took ${elapsed}ms`);
   });
 
-  it('batches brew formula checks', () => {
+  it('batches brew formula checks', async () => {
     const items = Array.from({ length: 10 }, (_, i) => ({
       topic: 'test', name: `brew${i}`, type: 'brew-formula',
       spec: `nonexistent-pkg-${i}`, platforms: ['mac'], check: '', requires: [],
     }));
     const start = Date.now();
-    const results = scanAll(items, { topicsRoot: TOPICS_ROOT, platform: 'mac' });
+    const results = await scanAll(items, { topicsRoot: TOPICS_ROOT, platform: 'mac' });
     const elapsed = Date.now() - start;
     assert.strictEqual(results.size, 10);
     assert.ok(elapsed < 15_000, `10 brew checks should batch, took ${elapsed}ms`);
