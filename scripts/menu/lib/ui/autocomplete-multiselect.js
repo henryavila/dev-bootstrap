@@ -1,0 +1,127 @@
+import { Prompt, isCancel } from '@clack/core';
+
+export class AutocompleteMultiselectPrompt extends Prompt {
+  options;
+  cursor = 0;
+  search = '';
+  selectedValues;
+  filteredIndices = [];
+  required;
+
+  get _value() {
+    return this.options
+      .filter((_, i) => this.selectedValues.has(i))
+      .map((o) => o.value);
+  }
+
+  constructor(opts) {
+    super(
+      {
+        validate: opts.validate,
+        render: opts.render,
+        input: opts.input,
+        output: opts.output,
+        signal: opts.signal,
+      },
+      false,
+    );
+
+    this.options = opts.options;
+    this.required = opts.required ?? false;
+    this.selectedValues = new Set(
+      opts.initialValues
+        ? opts.options
+            .map((o, i) => (opts.initialValues.includes(o.value) ? i : -1))
+            .filter((i) => i >= 0)
+        : [],
+    );
+    this._refilter();
+    this.value = this._value;
+
+    this.on('cursor', (action) => {
+      switch (action) {
+        case 'up':
+          this.cursor =
+            this.filteredIndices.length === 0
+              ? 0
+              : (this.cursor - 1 + this.filteredIndices.length) %
+                this.filteredIndices.length;
+          break;
+        case 'down':
+          this.cursor =
+            this.filteredIndices.length === 0
+              ? 0
+              : (this.cursor + 1) % this.filteredIndices.length;
+          break;
+        case 'space':
+          this._toggle();
+          break;
+      }
+    });
+
+    this.on('key', (char) => {
+      if (char === '\t') {
+        this._toggle();
+        return;
+      }
+      if (char === '\x7F' || char === '\b') {
+        this.search = this.search.slice(0, -1);
+        this._refilter();
+        return;
+      }
+      if (char.length === 1 && char >= ' ' && char !== '\x1B') {
+        this.search += char;
+        this._refilter();
+      }
+    });
+
+    this.on('finalize', () => {
+      this.value = this._value;
+    });
+  }
+
+  _toggle() {
+    if (this.filteredIndices.length === 0) return;
+    const realIndex = this.filteredIndices[this.cursor];
+    const opt = this.options[realIndex];
+    if (opt.disabled) return;
+    if (this.selectedValues.has(realIndex)) {
+      this.selectedValues.delete(realIndex);
+    } else {
+      this.selectedValues.add(realIndex);
+    }
+    this.value = this._value;
+  }
+
+  _refilter() {
+    const q = this.search.toLowerCase();
+    this.filteredIndices = this.options
+      .map((o, i) => {
+        if (!q) return i;
+        const label = (o.label ?? String(o.value)).toLowerCase();
+        const hint = (o.hint ?? '').toLowerCase();
+        const desc = (o.desc ?? '').toLowerCase();
+        return label.includes(q) || hint.includes(q) || desc.includes(q)
+          ? i
+          : -1;
+      })
+      .filter((i) => i >= 0);
+    if (this.cursor >= this.filteredIndices.length) {
+      this.cursor = Math.max(0, this.filteredIndices.length - 1);
+    }
+  }
+
+  focusedOption() {
+    if (this.filteredIndices.length === 0) return null;
+    return this.options[this.filteredIndices[this.cursor]];
+  }
+
+  focusedRealIndex() {
+    if (this.filteredIndices.length === 0) return -1;
+    return this.filteredIndices[this.cursor];
+  }
+
+  isSelected(realIndex) {
+    return this.selectedValues.has(realIndex);
+  }
+}
