@@ -39,6 +39,8 @@ function checkCustomScript(scriptPath) {
     const result = execSync(
       `bash -c '
         set +e
+        sudo() { return 1; }
+        export -f sudo
         source "${ENGINE_DIR}/log.sh" 2>/dev/null
         source "${ENGINE_DIR}/env.sh" 2>/dev/null
         BREW_BIN="${process.env.HOMEBREW_PREFIX || '/opt/homebrew'}/bin/brew"
@@ -49,7 +51,7 @@ function checkCustomScript(scriptPath) {
           echo __NO_CHECK__
         fi
       '`,
-      { stdio: 'pipe', timeout: 5_000, encoding: 'utf8' },
+      { stdio: ['pipe', 'pipe', 'pipe'], timeout: 5_000, encoding: 'utf8' },
     );
     return result.includes('__INSTALLED__');
   } catch {
