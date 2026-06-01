@@ -35,5 +35,12 @@ export const MESH_STATE_DIR = path.join(stateHome, 'mesh');
 export const SELECTIONS_FILE = path.join(MESH_CONFIG_DIR, 'selections.list');
 export const PARAMS_FILE = path.join(MESH_CONFIG_DIR, 'params.env');
 
-/** Install markers the engine writes after a successful item, keyed `<topic>__<item>`. */
-export const MARKERS_DIR = path.join(MESH_STATE_DIR, 'markers');
+/**
+ * Install markers the engine writes after each successful item, one
+ * `<topic>__<item>.env` file. Matches install-state.sh `install_state_dir`:
+ * MESH_INSTALL_STATE_DIR override → else <state>/mesh/installed.
+ */
+export const MARKERS_DIR =
+  process.env.MESH_INSTALL_STATE_DIR && process.env.MESH_INSTALL_STATE_DIR.trim() !== ''
+    ? process.env.MESH_INSTALL_STATE_DIR
+    : path.join(MESH_STATE_DIR, 'installed');

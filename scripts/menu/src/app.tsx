@@ -1,46 +1,28 @@
 /**
- * app.tsx — entry point for the mesh setup wizard (Ink + blink-tui).
- *
- * Invoked as `node index.js [--dry-run]` by setup.sh / scripts/runners/menu.sh.
- * Detects the icon set, reads the platform's manifests, and runs the screen
- * flow. On confirm it writes ~/.config/mesh/{selections.list,params.env} and
- * exits 0; on cancel it exits 1 so the caller falls back to saved/default.
- *
- * NOTE: screen flow (TopicPicker → OptionsForm → Summary → Apply) lands in
- * T-304+. This bootstrap renders a manifest summary to prove the toolchain.
+ * app.tsx — bootstrap entry for the mesh setup wizard (loaded by index.js via
+ * tsx). Detects the icon set, registers the domain glyph packs, renders <App/>,
+ * and exits with the App's code (0 = wrote selections + applied; 1 = cancelled,
+ * caller falls back to saved/default). The App component lives in wizard.tsx so
+ * it stays side-effect-free and testable.
  */
-import { render, Box, Text } from 'ink';
-import { ThemeProvider, Header, detectIconSet } from '@henryavila/blink-tui';
-import { readAllManifests, filterByPlatform, flattenBundles } from './core/manifest-reader.js';
-import { detectPlatform } from './core/platform.js';
-
-function Summary() {
-  const platform = detectPlatform();
-  const topics = filterByPlatform(readAllManifests(), platform);
-  const bundles = flattenBundles(topics);
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      <Header title="mesh setup" subtitle={`${platform} · ${topics.length} topics · ${bundles.length} bundles`} />
-      <Box flexDirection="column" marginTop={1}>
-        {topics.map((t) => (
-          <Text key={t.id}>
-            {t.header.label} ({t.bundles.length})
-          </Text>
-        ))}
-      </Box>
-    </Box>
-  );
-}
+import { render } from 'ink';
+import { ThemeProvider, detectIconSet } from '@henryavila/blink-tui';
+import { registerDomainGlyphs } from './glyphs.js';
+import { App } from './wizard.js';
 
 async function main() {
+  registerDomainGlyphs();
+  const dryRun = process.argv.slice(2).includes('--dry-run');
   const iconSet = await detectIconSet();
+
+  let code = 1;
   const { waitUntilExit } = render(
     <ThemeProvider iconSet={iconSet}>
-      <Summary />
+      <App dryRun={dryRun} onExit={(c) => (code = c)} />
     </ThemeProvider>,
   );
   await waitUntilExit();
-  process.exit(0);
+  process.exit(code);
 }
 
 main();
