@@ -56,13 +56,17 @@ export interface TopicPickerProps {
 
 type Pane2 = 'topics' | 'bundles';
 
-// Lean footer: the moment-to-moment keys only, importance-ordered. The full
-// keymap (a/n/u, arrows, panes) lives in the `?` help so the bar stays calm.
+// Footer shows how to NAVIGATE + the core actions, so the main screen is
+// self-explanatory. Power shortcuts (a/n select-all-none, u updates) stay in
+// the `?` help to keep the bar from overloading. blink drops chips from the
+// right when the width is tight, so navigation (leftmost) always survives.
 const FOOTER_KEYS: HotkeyDef[] = [
+  { k: '↑↓', desc: 'move' },
+  { k: 'tab', desc: 'panes' },
   { k: 'space', desc: 'select' },
   { k: 'enter', desc: 'options' },
   { k: 'c', desc: 'apply' },
-  { k: '?', desc: 'help' },
+  { k: '?', desc: 'more' },
   { k: 'q', desc: 'quit' },
 ];
 
@@ -212,7 +216,7 @@ export function TopicPicker(props: TopicPickerProps) {
         </Box>
       </Box>
       {banner ? <Banner tone="info" text={banner} /> : null}
-      <Footer keys={FOOTER_KEYS} right={focusedKey} />
+      <Footer keys={FOOTER_KEYS} />
     </Box>
   );
 }
