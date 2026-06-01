@@ -34,7 +34,9 @@ fi
 MENU_DIR="$ROOT/scripts/menu"
 if [[ ! -d "$MENU_DIR/node_modules" ]]; then
     info "Installing menu dependencies..."
-    (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent)
+    # --install-links: pack the file: blink-tui dep as a real copy (dist only, no
+    # bundled React) so React dedupes to one instance (else: invalid-hook crash).
+    (cd "$MENU_DIR" && npm install --omit=dev --install-links --no-audit --no-fund --silent)
 fi
 
 node "$MENU_DIR/index.js" "$@"

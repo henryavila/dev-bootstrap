@@ -224,7 +224,9 @@ run_menu_if_available() {
     command -v node >/dev/null 2>&1 || { warn "Node.js not found — cannot run the setup menu"; return 1; }
     info "launching the bundle menu…"
     if [[ ! -d "$MENU_DIR/node_modules" ]]; then
-        (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent 2>/dev/null) || true
+        # --install-links: pack the file: blink-tui dep as a real copy (dist only,
+        # no bundled React) so React dedupes to one instance (else: invalid-hook).
+        (cd "$MENU_DIR" && npm install --omit=dev --install-links --no-audit --no-fund --silent 2>/dev/null) || true
     fi
     node "$MENU_DIR/index.js" || return 1
     [[ -f "$SELECTIONS_FILE" ]]
