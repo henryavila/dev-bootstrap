@@ -31,7 +31,7 @@ is checkable at a glance.
 
 ```
 topics/
-├── foundation/manifest.yaml          # required, invisible
+├── foundation/manifest.yaml          # required, visible+locked (ratified 2026-06-01)
 ├── identity/manifest.yaml            # required
 ├── dotfiles-personal/manifest.yaml   # required
 ├── git/manifest.yaml                 # required
@@ -69,7 +69,7 @@ That's it at the root. Everything else nests inside `bundles[].*`.
 |---|---|:---:|---|---|
 | `label` | string | ✓ | — | display name shown in the topic-picker (e.g., "Web") |
 | `hint` | string | — | empty | one-line tagline shown next to label (max ~60 chars) |
-| `required` | boolean | — | `false` | `true` = topic always-on, doesn't appear in picker |
+| `required` | boolean | — | `false` | `true` = topic always-on AND shown in the picker as a **locked** (pre-selected, non-deselectable) row. **NOT hidden** (ratified 2026-06-01, supersedes the earlier "invisible" intent). e.g., Foundation appears locked at the top |
 | `order` | number | ✓ | — | sort key in topic-picker (10, 20, 30, ...). Reserve gaps for inserts |
 | `description` | string | — | empty | longer description shown in topic detail (multi-line ok) |
 
@@ -352,13 +352,17 @@ running items, and so re-runs honor prior input:
 - **Secret values** (`secret`) are written to the existing `secrets.env`
   (mode `0600`, managed by `scripts/lib/secrets.sh`), never to `params.env`.
 
-> **FLAG — state-dir naming to reconcile (T-200 / T-303):** there is an existing
-> inconsistency in where mesh state lives. Install-state markers (§3.1, §6)
-> currently live under `~/.local/state/mesh/`, while secrets live under
-> `~/.local/state/mesh-workstation/secrets.env`. This spec also introduces
-> `~/.config/mesh/params.env`. These three roots (`~/.local/state/mesh/`,
-> `~/.local/state/mesh-workstation/`, `~/.config/mesh/`) must be reconciled to a
-> single canonical convention during implementation — not silently picked here.
+> **RESOLVED — canonical state-dir convention (ratified 2026-06-01):**
+> - `~/.config/mesh/` — **menu/user state:** `selections.list` (bundle selections) +
+>   `params.env` (resolved non-secret option values). Honors `$XDG_CONFIG_HOME`.
+> - `~/.local/state/mesh/` — **machine/install state:** install markers
+>   (`installed/<topic>__<item>.env`) AND `secrets.env` (mode 0600). Honors
+>   `$XDG_STATE_HOME`. The legacy `~/.local/state/mesh-workstation/secrets.env`
+>   location is migrated here by `secrets.sh` (one-time mv if the old path exists).
+>
+> Mnemonic: **config = what the user chose** (re-runnable, syncable); **state =
+> what this machine did** (host-local, not synced). T-200 (engine) + T-303 (TUI io)
+> both read from these canonical roots.
 
 ---
 
@@ -562,7 +566,7 @@ Soft warnings (manifest accepted):
 
 | v1 topic | v2 topic(s) | notes |
 |---|---|---|
-| `00-core` | `foundation` | invisible (`required: true`, no picker entry) |
+| `00-core` | `foundation` | `required: true` → visible in picker as a locked row (ratified 2026-06-01) |
 | `05-identity` | `identity` | unchanged scope |
 | `10-languages` | `languages` | `required` was true → now `false` (PHP isn't universal) |
 | `20-terminal-ux` | `shell-terminal` | merged with 30/40/90 |
