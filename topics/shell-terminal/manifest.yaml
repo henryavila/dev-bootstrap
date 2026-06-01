@@ -1,0 +1,272 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Shell & Terminal"
+  hint: "zsh, modern CLI, tmux, Neovim, fonts"
+  required: true
+  order: 50
+  description: |
+    The full terminal experience: a zsh setup (powerlevel10k, zinit, atuin,
+    completions), a suite of modern CLI tools, tmux with Catppuccin, Neovim,
+    and a Nerd Font. Merges the former terminal-ux/shell/tmux/editor topics.
+
+bundles:
+
+  - name: cli-tools
+    label: "Modern CLI tools"
+    desc: "fzf, bat, eza, zoxide, ripgrep, atuin, starship…"
+    required: true
+    icon_name: terminal
+    items:
+      - name: fzf-mac
+        type: brew-formula
+        spec: fzf
+        platforms: [mac]
+      - name: bat-mac
+        type: brew-formula
+        spec: bat
+        platforms: [mac]
+      - name: eza-mac
+        type: brew-formula
+        spec: eza
+        platforms: [mac]
+      - name: zoxide-mac
+        type: brew-formula
+        spec: zoxide
+        platforms: [mac]
+      - name: ripgrep-mac
+        type: brew-formula
+        spec: ripgrep
+        platforms: [mac]
+      - name: fd-mac
+        type: brew-formula
+        spec: fd
+        platforms: [mac]
+      - name: starship-mac
+        type: brew-formula
+        spec: starship
+        platforms: [mac]
+      - name: lazygit-mac
+        type: brew-formula
+        spec: lazygit
+        platforms: [mac]
+      - name: git-delta-mac
+        type: brew-formula
+        spec: git-delta
+        platforms: [mac]
+      - name: atuin-mac
+        type: brew-formula
+        spec: atuin
+        platforms: [mac]
+      - name: forgit-mac
+        type: brew-formula
+        spec: forgit
+        platforms: [mac]
+      - name: btop-mac
+        type: brew-formula
+        spec: btop
+        platforms: [mac]
+      - name: dust-mac
+        type: brew-formula
+        spec: dust
+        platforms: [mac]
+      - name: duf-mac
+        type: brew-formula
+        spec: duf
+        platforms: [mac]
+      - name: gping-mac
+        type: brew-formula
+        spec: gping
+        platforms: [mac]
+      - name: xh-mac
+        type: brew-formula
+        spec: xh
+        platforms: [mac]
+      - name: sd-mac
+        type: brew-formula
+        spec: sd
+        platforms: [mac]
+      - name: tealdeer-mac
+        type: brew-formula
+        spec: tealdeer
+        platforms: [mac]
+      - name: procs-mac
+        type: brew-formula
+        spec: procs
+        platforms: [mac]
+      - name: fzf-wsl
+        type: apt
+        spec: fzf
+        platforms: [wsl]
+      - name: bat-wsl
+        type: apt
+        spec: bat
+        platforms: [wsl]
+      - name: eza-wsl
+        type: apt
+        spec: eza
+        platforms: [wsl]
+      - name: zoxide-wsl
+        type: apt
+        spec: zoxide
+        platforms: [wsl]
+      - name: ripgrep-wsl
+        type: apt
+        spec: ripgrep
+        platforms: [wsl]
+      - name: fd-find-wsl
+        type: apt
+        spec: fd-find
+        platforms: [wsl]
+      - name: btop-wsl
+        type: apt
+        spec: btop
+        platforms: [wsl]
+      - name: tealdeer-wsl
+        type: apt
+        spec: tealdeer
+        platforms: [wsl]
+      - name: starship-wsl
+        type: custom
+        script: ./wsl/install-starship.sh
+        platforms: [wsl]
+      - name: lazygit-wsl
+        type: custom
+        script: ./wsl/install-lazygit.sh
+        platforms: [wsl]
+      - name: git-delta-wsl
+        type: custom
+        script: ./wsl/install-delta.sh
+        platforms: [wsl]
+      - name: atuin-wsl
+        type: custom
+        script: ./wsl/install-atuin.sh
+        platforms: [wsl]
+      - name: rust-bins-wsl
+        type: custom
+        script: ./wsl/install-rust-bins.sh
+        platforms: [wsl]
+
+  - name: zsh
+    label: "zsh setup"
+    desc: "powerlevel10k + zinit + atuin + completions"
+    required: true
+    icon_name: terminal
+    requires_bundles:
+      - shell-terminal/cli-tools
+    items:
+      - name: zsh-completions-mac
+        type: brew-formula
+        spec: zsh-completions
+        platforms: [mac]
+      - name: zsh-autosuggestions-mac
+        type: brew-formula
+        spec: zsh-autosuggestions
+        platforms: [mac]
+      - name: zsh-syntax-highlighting-mac
+        type: brew-formula
+        spec: zsh-syntax-highlighting
+        platforms: [mac]
+      - name: zsh-history-substring-mac
+        type: brew-formula
+        spec: zsh-history-substring-search
+        platforms: [mac]
+      - name: zsh-autosuggestions-wsl
+        type: apt
+        spec: zsh-autosuggestions
+        platforms: [wsl]
+      - name: zsh-syntax-highlighting-wsl
+        type: apt
+        spec: zsh-syntax-highlighting
+        platforms: [wsl]
+      - name: zinit
+        type: custom
+        script: ./install-zinit.sh
+      - name: fzf-tab
+        type: custom
+        script: ./clone-fzf-tab.sh
+      - name: powerlevel10k
+        type: custom
+        script: ./clone-p10k.sh
+      - name: bat-catppuccin-theme
+        type: custom
+        script: ./bat-catppuccin-theme.sh
+      - name: shell-bootstrap
+        type: custom
+        script: ./shell-bootstrap.sh
+      - name: zinit-drift-cleanup
+        type: custom
+        script: ./zinit-drift-cleanup.sh
+      - name: zsh-default-shell
+        type: custom
+        script: ./zsh-default-shell.sh
+      - name: shipped-configs
+        type: custom
+        script: ./link-shipped-configs.sh
+      - name: generate-zsh-completions
+        type: custom
+        script: ./generate-completions.sh
+        idempotent: true
+      - name: atuin-login
+        type: custom
+        script: ./atuin-login.sh
+      - name: drift-cleanup
+        type: custom
+        script: ./drift-cleanup.sh
+        idempotent: true
+
+  - name: tmux
+    label: "tmux"
+    desc: "tmux + TPM + Catppuccin theme"
+    icon_name: terminal
+    items:
+      - name: tmux-mac
+        type: brew-formula
+        spec: tmux
+        platforms: [mac]
+      - name: tmux-wsl
+        type: apt
+        spec: tmux
+        platforms: [wsl]
+      - name: tpm-clone
+        type: custom
+        script: ./clone-tpm.sh
+      - name: catppuccin-tmux-clone
+        type: custom
+        script: ./clone-catppuccin.sh
+
+  - name: nvim
+    label: "Neovim"
+    desc: "Neovim + Catppuccin default config"
+    icon_name: vim
+    items:
+      - name: neovim-mac
+        type: brew-formula
+        spec: neovim
+        platforms: [mac]
+      - name: neovim-wsl
+        type: apt
+        spec: neovim
+        platforms: [wsl]
+      - name: nvim-default-config
+        type: custom
+        script: ./link-nvim-config.sh
+
+  - name: fonts
+    label: "Nerd Font + terminal config"
+    desc: "CaskaydiaCove NF + iTerm2 / Windows Terminal"
+    icon_name: text
+    items:
+      - name: nerd-font-mac
+        type: brew-cask
+        spec: font-caskaydia-cove-nerd-font
+        platforms: [mac]
+      - name: iterm2-font-config
+        type: custom
+        script: ./mac/iterm2-font.sh
+        platforms: [mac]
+        idempotent: true
+      - name: windows-terminal-config
+        type: custom
+        script: ./wsl/windows-terminal-config.sh
+        platforms: [wsl]
+        idempotent: true
