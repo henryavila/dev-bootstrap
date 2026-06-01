@@ -4,7 +4,12 @@
 # (Engine wiring to pass $script vs $spec is Task 1.7 scope per the install-engine TODO note.)
 custom_check() {
     local script="$1"
-    [[ -x "$script" ]] || { echo "custom: script not executable: $script"; return 1; }
+    # Custom scripts are SOURCED (`. "$script"`) by every verb below, never
+    # executed — so they need to be readable, not executable. The previous
+    # `-x` gate made any custom script missing the exec bit fail check()
+    # unconditionally (regardless of its real state), forcing install() to
+    # re-run on every pass and silently breaking idempotency-respect.
+    [[ -r "$script" ]] || { echo "custom: script not readable: $script"; return 1; }
     ( . "$script"; declare -f check >/dev/null && check )
 }
 custom_install() {
