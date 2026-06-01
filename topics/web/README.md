@@ -1,6 +1,13 @@
-# 60-web-stack (opt-in)
+# web (opt-in)
 
-Enabled via `INCLUDE_WEBSTACK=1 bash setup.sh` (or by checking it in the interactive menu).
+> **Manifest v2 (F9.6):** this topic was split out of the former `60-web-stack`.
+> The database servers (MySQL, Redis, PostgreSQL, MS SQL driver) now live in
+> the separate **`databases`** topic; `web` keeps Valet / nginx+php-fpm / mailpit
+> / ngrok and pulls the databases it needs via `requires_bundles`. Some prose
+> below still describes the old combined stack pending a full rewrite (T-105).
+
+Selected in the interactive menu (the `web` topic). The bundles are: `valet`
+(mac), `nginx-php-fpm` (wsl), `mailpit`, `ngrok`.
 
 ## What you get
 

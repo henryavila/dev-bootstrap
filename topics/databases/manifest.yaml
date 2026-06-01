@@ -1,0 +1,79 @@
+topic:
+  label: "Databases"
+  hint: "MySQL, Redis, PostgreSQL, MS SQL driver"
+  required: false
+  order: 65
+  description: |
+    Local database servers and drivers for development. MySQL and Redis back
+    the web stack (Valet / nginx pull them in automatically). PostgreSQL and
+    the MS SQL ODBC driver are independent opt-ins for projects that need them.
+
+bundles:
+
+  - name: mysql
+    label: "MySQL"
+    desc: "MySQL 8 server — the default relational store for dev"
+    icon_name: mysql
+    items:
+      - name: mysql-mac
+        type: custom
+        script: ./mac/mysql.sh
+        platforms: [mac]
+        uninstall_tier: 3
+      - name: mysql-wsl
+        type: custom
+        script: ./wsl/mysql.sh
+        platforms: [wsl]
+        uninstall_tier: 3
+
+  - name: redis
+    label: "Redis"
+    desc: "Redis — in-memory cache & queue backend"
+    icon_name: redis
+    items:
+      - name: redis-mac
+        type: custom
+        script: ./mac/redis.sh
+        platforms: [mac]
+        uninstall_tier: 2
+      - name: redis-wsl
+        type: custom
+        script: ./wsl/redis.sh
+        platforms: [wsl]
+        uninstall_tier: 2
+
+  - name: postgresql
+    label: "PostgreSQL"
+    desc: "PostgreSQL server — pick the major version below"
+    icon_name: postgres
+    options:
+      - name: version
+        type: select
+        label: "PostgreSQL major version"
+        env: POSTGRES_VERSION
+        default: "17"
+        choices:
+          - { value: "17", label: "17 (latest)" }
+          - { value: "16", label: "16" }
+          - { value: "15", label: "15" }
+    items:
+      - name: postgresql
+        type: custom
+        script: ./postgresql.sh
+        uninstall_tier: 3
+
+  - name: mssql-driver
+    label: "MS SQL driver"
+    desc: "MS SQL ODBC driver + PHP sqlsrv (corporate DBs)"
+    platforms: [wsl]
+    icon_name: database
+    items:
+      # ODBC driver + (when PHP is present) PECL sqlsrv/pdo_sqlsrv. The
+      # heavy-lifter no-ops the PECL pass when no PHP version is found, so
+      # the spec's separate `sqlsrv-php-ext` (when: php_installed) item is
+      # deferred until the engine's when: resolver (T-201) can validate it.
+      - name: mssql-driver
+        type: custom
+        script: ./mssql-driver.sh
+        platforms: [wsl]
+        uninstall_tier: 1

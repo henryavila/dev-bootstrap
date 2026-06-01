@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Custom wrapper: PostgreSQL (gated by INCLUDE_POSTGRES=1).
+# Custom wrapper: PostgreSQL (databases/postgresql bundle).
+# v2: bundle selection is the gate — no INCLUDE_* guard. Major version comes
+# from the bundle's POSTGRES_VERSION option (params.env), default 17.
 
 check() {
-    # Probe system state unconditionally — the menu scanner needs a real
-    # answer regardless of whether INCLUDE_POSTGRES is exported. The gate
-    # stays in install() for back-compat with the legacy non-menu flow.
     #
     # Codex review 2026-05-19 (C-F001): `command -v postgres` fails after a
     # supported install because brew formula `postgresql@17` puts the
@@ -23,10 +22,9 @@ check() {
 }
 
 install() {
-    [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] || return 0
     local here
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    bash "$here/../scripts/install-postgres.sh"
+    bash "$here/scripts/install-postgres.sh"
 }
 
 verify() {

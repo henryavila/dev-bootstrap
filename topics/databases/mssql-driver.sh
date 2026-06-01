@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Custom wrapper: MS SQL Server ODBC driver + PHP sqlsrv extensions
-# (gated by INCLUDE_MSSQL=1; WSL only — Mac install is manual).
+# (databases/mssql-driver bundle; WSL only — Mac install is manual).
+# v2: bundle selection is the gate — no INCLUDE_* guard.
+# NOTE: this single item installs the ODBC driver AND (when PHP is present)
+# the PECL sqlsrv/pdo_sqlsrv extensions. The install-mssql-driver.sh heavy-
+# lifter already no-ops the PECL pass when no PHP version is found, so the
+# spec's separate `sqlsrv-php-ext` (when: php_installed) item is intentionally
+# deferred until the engine's when: resolver (T-201) exists to validate the
+# split end-to-end — splitting the battle-tested PECL script blind is risky.
 
 check() {
-    # Probe system state unconditionally — the menu scanner needs a real
-    # answer regardless of whether INCLUDE_MSSQL is exported. The gate
-    # stays in install() for back-compat with the legacy non-menu flow.
     #
     # Codex review 2026-05-19 (C-F002): the previous check accepted just
     # msodbcsql18 + unixodbc-dev as "installed", but install-mssql-driver.sh
@@ -31,10 +35,9 @@ check() {
 }
 
 install() {
-    [[ "${INCLUDE_MSSQL:-0}" == "1" ]] || return 0
     local here
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    bash "$here/../scripts/install-mssql-driver.sh"
+    bash "$here/scripts/install-mssql-driver.sh"
 }
 
 verify() {
