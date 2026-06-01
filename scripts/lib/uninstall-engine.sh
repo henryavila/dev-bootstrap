@@ -84,6 +84,17 @@ else
 fi
 export MESH_OS="$PLATFORM"
 
+# Mirror install-engine: export BREW_PREFIX/BREW_BIN on macOS so custom
+# uninstall() scripts that reference them as bare env vars work under set -u.
+if [[ "$PLATFORM" == "mac" ]]; then
+    __brew_out="$(bash "$ENGINE_DIR/detect-brew.sh" 2>/dev/null || true)"
+    if [[ -n "$__brew_out" ]]; then
+        eval "$__brew_out"
+        export BREW_BIN BREW_PREFIX
+    fi
+    unset __brew_out
+fi
+
 SECRETS_FILES=()
 if [[ -n "$SECRETS_OVERRIDE" ]]; then
     SECRETS_FILES=("$SECRETS_OVERRIDE")

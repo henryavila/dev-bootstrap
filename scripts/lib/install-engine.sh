@@ -112,6 +112,23 @@ else
 fi
 export MESH_OS="$PLATFORM"
 
+# On macOS, many custom item scripts reference $BREW_PREFIX/$BREW_BIN as bare
+# env vars (v1 setup.sh exported them globally; the v2 engine must too, mirroring
+# MESH_LIB_DIR). Detect Homebrew once and export so every item subshell inherits
+# them. Tolerant: if brew isn't on disk yet (e.g. a fresh machine before
+# foundation/base installs it) we leave them unset — foundation/mac/core.sh
+# self-resolves via detect-brew.sh, and later bundles re-run the engine with brew
+# present. Items that need brew but run before it exists fail loudly under set -u,
+# which is correct (topo order puts foundation first anyway).
+if [[ "$PLATFORM" == "mac" ]]; then
+    __brew_out="$(bash "$ENGINE_DIR/detect-brew.sh" 2>/dev/null || true)"
+    if [[ -n "$__brew_out" ]]; then
+        eval "$__brew_out"
+        export BREW_BIN BREW_PREFIX
+    fi
+    unset __brew_out
+fi
+
 # Resolve which secrets file(s) to source: explicit override wins; otherwise
 # source legacy then new so the canonical (new) location overrides the legacy.
 SECRETS_FILES=()
