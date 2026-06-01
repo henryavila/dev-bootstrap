@@ -643,6 +643,35 @@ process_repo() {
     return 0
 }
 
+# ─── Version-aware update phase (T-600) ─────────────────────────────
+# After repos are pulled, upgrade installed packages via the engine's --update
+# mode — opt-in, version-aware (only stale items). No-op by default: nothing
+# runs unless the user enabled at least one MESH_UPDATE_* category (params.env
+# or env), so existing `mesh update` behavior is unchanged.
+_any_update_optin() {
+    local params="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/params.env" v
+    [[ -r "$params" ]] && . "$params" 2>/dev/null
+    for v in "${MESH_UPDATE_AGENT_CLIS:-0}" "${MESH_UPDATE_RUNTIMES_DBS:-0}" "${MESH_UPDATE_CLI_TOOLS:-0}"; do
+        case "$v" in 1|true|yes|on) return 0 ;; esac
+    done
+    return 1
+}
+
+run_update_phase() {
+    # subshell so sourcing params.env in the guard never pollutes our globals
+    ( _any_update_optin ) || { dbg "update phase: no opt-in categories — skipping"; return 0; }
+    local r ws=""
+    for r in "${AUTO_UPDATE_REPOS[@]}"; do _is_workstation_repo "$r" && { ws="$r"; break; }; done
+    [[ -n "$ws" ]] || { dbg "update phase: no workstation repo configured — skipping"; return 0; }
+    local sel="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/selections.list"
+    [[ -r "$sel" ]] || { dbg "update phase: no selections.list — skipping"; return 0; }
+    local engine="$ws/scripts/lib/install-engine.sh"
+    [[ -r "$engine" ]] || { warn "update phase: engine not found at $engine"; return 0; }
+    notice "version-aware update phase (opt-in categories enabled)"
+    bash "$engine" --update --non-interactive --selections "$sel" 2>&1 | sed 's/^/    /' \
+        || warn "update phase: install-engine --update returned non-zero"
+}
+
 # ─── Main loop ──────────────────────────────────────────────────────
 # -o/--only NAME restricts processing to that repo (matched against the basename
 # of each entry in AUTO_UPDATE_REPOS). Used by `mesh update -o <repo>` to scope
@@ -679,6 +708,9 @@ if [[ -n "$ONLY" ]]; then
         EXIT_RC=1
     fi
 fi
+
+# ─── Version-aware package update (opt-in; no-op unless a category enabled) ──
+run_update_phase || { warn "update phase failed (continuing)"; EXIT_RC=1; }
 
 # ─── Followup summary ───────────────────────────────────────────────
 if (( ${#FOLLOWUPS[@]} > 0 )); then
