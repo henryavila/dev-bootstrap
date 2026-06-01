@@ -227,21 +227,22 @@ export function App({ dryRun, onExit }: AppProps) {
 }
 
 const HELP_LINES = [
-  'Tab / ← →     switch pane (topics ↔ bundles)',
-  '↑ ↓ / k j     move focus',
-  'Space         select / deselect the focused bundle',
-  'Enter         edit the bundle’s options',
-  'a / n         select all / none (required stay locked)',
-  'c             continue to the apply summary',
-  'u             update categories (mesh update)',
-  '? / q         this help / quit (cancel)',
+  'Choose the bundles to install, then press  c  to apply.',
+  'Move      ↑ ↓ / k j     within a pane',
+  '          Tab / ← →     switch topics ⇄ bundles',
+  'Select    Space         add / remove a bundle',
+  '          a / n         select all / none',
+  'Options   Enter         edit a bundle’s options',
+  'Updates   u             what `mesh update` upgrades',
+  'Finish    c  apply       ·    q  cancel',
+  'Bundles marked ▣ are required (always installed).',
 ];
 
 function HelpDialog({ onClose }: { onClose: () => void }) {
   useInput(() => onClose());
   return (
     <Box flexDirection="column">
-      <Dialog title="keys" tone="default" lines={HELP_LINES} actions={[{ key: 'any', label: 'close' }]} width={64} />
+      <Dialog title="how to use" tone="default" lines={HELP_LINES} actions={[{ key: 'any', label: 'close' }]} width={62} />
     </Box>
   );
 }

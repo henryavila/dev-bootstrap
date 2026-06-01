@@ -56,14 +56,12 @@ export interface TopicPickerProps {
 
 type Pane2 = 'topics' | 'bundles';
 
+// Lean footer: the moment-to-moment keys only, importance-ordered. The full
+// keymap (a/n/u, arrows, panes) lives in the `?` help so the bar stays calm.
 const FOOTER_KEYS: HotkeyDef[] = [
-  { k: 'tab', desc: 'pane' },
   { k: 'space', desc: 'select' },
   { k: 'enter', desc: 'options' },
-  { k: 'c', desc: 'continue' },
-  { k: 'a', desc: 'all' },
-  { k: 'n', desc: 'none' },
-  { k: 'u', desc: 'updates' },
+  { k: 'c', desc: 'apply' },
   { k: '?', desc: 'help' },
   { k: 'q', desc: 'quit' },
 ];
