@@ -145,6 +145,10 @@ bundles:
         type: custom
         script: ./wsl/install-rust-bins.sh
         platforms: [wsl]
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/cli-tools
+        idempotent: true
 
   - name: zsh
     label: "zsh setup"
@@ -213,6 +217,10 @@ bundles:
         type: custom
         script: ./drift-cleanup.sh
         idempotent: true
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/zsh
+        idempotent: true
 
   - name: tmux
     label: "tmux"
@@ -233,6 +241,10 @@ bundles:
       - name: catppuccin-tmux-clone
         type: custom
         script: ./clone-catppuccin.sh
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/tmux
+        idempotent: true
 
   - name: nvim
     label: "Neovim"

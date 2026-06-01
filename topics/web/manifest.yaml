@@ -34,6 +34,10 @@ bundles:
         type: custom
         script: ./mac/migrate-legacy-nginx.sh
         idempotent: true
+      - name: serve-config
+        type: deploy
+        spec: ./templates/serve
+        idempotent: true
 
   - name: nginx-php-fpm
     label: "nginx + php-fpm"
@@ -51,6 +55,10 @@ bundles:
       - name: mkcert
         type: custom
         script: ./wsl/mkcert.sh
+      - name: serve-config
+        type: deploy
+        spec: ./templates/serve
+        idempotent: true
       - name: nginx-sites
         type: custom
         script: ./wsl/nginx-sites.sh
@@ -79,3 +87,7 @@ bundles:
       - name: ngrok
         type: custom
         script: ./extras/ngrok.sh
+      - name: share-cli
+        type: deploy
+        spec: ./templates/share
+        idempotent: true

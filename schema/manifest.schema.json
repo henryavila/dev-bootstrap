@@ -61,7 +61,7 @@
       "properties": {
         "name": { "$ref": "#/$defs/kebab" },
         "type": {
-          "enum": ["custom", "brew-formula", "brew-cask", "apt", "npm-global", "npx", "cargo", "pip", "git-clone", "github-release", "go-install"]
+          "enum": ["custom", "brew-formula", "brew-cask", "apt", "npm-global", "npx", "cargo", "pip", "git-clone", "github-release", "go-install", "deploy"]
         },
         "spec": { "type": "string" },
         "script": { "type": "string" },

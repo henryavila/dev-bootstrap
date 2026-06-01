@@ -26,6 +26,10 @@ bundles:
         type: npx
         spec: "@henryavila/claudebar@latest install"
         check: "test -f $HOME/.config/claudebar/statusline.sh && jq -e '.statusLine.command | test(\"claudebar\")' $HOME/.claude/settings.json >/dev/null 2>&1"
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/claude-code
+        idempotent: true
 
   - name: moshi-hook
     label: "Moshi Hook"

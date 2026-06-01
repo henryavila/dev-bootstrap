@@ -28,6 +28,10 @@ bundles:
         type: apt
         spec: openssh-server
         platforms: [wsl]
+      - name: sshd-snippet
+        type: deploy
+        spec: ./templates/ssh
+        idempotent: true
 
   - name: tailscale
     label: "Tailscale"
@@ -46,6 +50,10 @@ bundles:
         type: custom
         script: ./tailscale-mtu-fix-wsl.sh
         platforms: [wsl]
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/tailscale
+        idempotent: true
 
   - name: mosh
     label: "mosh"

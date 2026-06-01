@@ -54,6 +54,10 @@
 set -euo pipefail
 
 ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Canonical scripts/lib dir, exported so drivers (e.g. the deploy driver, which
+# needs scripts/lib/deploy.sh) can resolve sibling libs without fragile
+# BASH_SOURCE/cwd gymnastics inside per-item subshells.
+export MESH_LIB_DIR="$ENGINE_DIR"
 # shellcheck disable=SC1091
 . "$ENGINE_DIR/log.sh"
 # shellcheck disable=SC1091

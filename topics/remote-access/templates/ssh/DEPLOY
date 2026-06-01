@@ -1,0 +1,3 @@
+# ssh bundle deploy mapping. sshd config snippet with light hardening, scoped
+# to this user. deploy.sh elevates with sudo automatically for /etc paths.
+sshd-snippet.template=/etc/ssh/sshd_config.d/99-${USER}.conf

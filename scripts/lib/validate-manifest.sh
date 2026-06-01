@@ -291,7 +291,7 @@ validate_one() {
                 elif [ -n "$itype" ]; then
                     [ -n "$ispec" ] || E "$itag: type '$itype' requires spec"
                     case "$itype" in
-                        brew-formula|brew-cask|apt|npm-global|npx|cargo|pip|git-clone|github-release|go-install) ;;
+                        brew-formula|brew-cask|apt|npm-global|npx|cargo|pip|git-clone|github-release|go-install|deploy) ;;
                         *) W "$itag: unknown driver type '$itype'" ;;
                     esac
                 fi

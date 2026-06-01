@@ -32,6 +32,10 @@ bundles:
         type: custom
         script: ./gitconfig-apply.sh
         idempotent: true
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/config
+        idempotent: true
 
   - name: lazygit
     label: "lazygit config"
