@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# NPM global prefix (~/.npm-global) — gated by INCLUDE_NPM_GLOBAL=1.
+# NPM global prefix (~/.npm-global). Gated in v2 by the languages/node bundle's
+# `npm-global-prefix` toggle (when: option.npm-global-prefix) — the engine only
+# runs this item when the toggle is on, so there is no env guard in the script.
 
 NPM_GLOBAL_BIN="$HOME/.npm-global/bin"
 NPM_GLOBAL_PREFIX_NPMRC='prefix=${HOME}/.npm-global'
 NPM_GLOBAL_FRAGMENT_NAME="20-npm-global.sh"
 
 check() {
-    [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]] || return 0
     [[ -f "$HOME/.npmrc" ]] || return 1
     grep -qxF "$NPM_GLOBAL_PREFIX_NPMRC" "$HOME/.npmrc"
 }
@@ -61,7 +62,6 @@ _ensure_npmrc() {
 }
 
 install() {
-    [[ "${INCLUDE_NPM_GLOBAL:-0}" == "1" ]] || return 0
     mkdir -p "$NPM_GLOBAL_BIN"
     _ensure_npmrc
     _path_fragment "$HOME/.bashrc.d/$NPM_GLOBAL_FRAGMENT_NAME"

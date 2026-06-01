@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Identity"
+  hint: "gh CLI + SSH key + GitHub registration"
+  required: true
+  order: 20
+  description: |
+    GitHub CLI, an SSH key, and GitHub registration. Runs before the private
+    dotfiles clone so authenticated git access is ready. On WSL it also
+    installs wslu so `gh auth login` can open the Windows browser.
+
+bundles:
+
+  - name: identity
+    label: "GitHub identity"
+    desc: "gh CLI + SSH key + GitHub auth"
+    required: true
+    icon_name: github
+    items:
+      - name: gh-mac
+        type: brew-formula
+        spec: gh
+        platforms: [mac]
+      - name: gh-wsl
+        type: custom
+        script: ./install-gh-wsl.sh
+        platforms: [wsl]
+      - name: wslu
+        type: apt
+        spec: wslu
+        platforms: [wsl]
+      - name: identity-setup
+        type: custom
+        script: ./identity-setup.sh
