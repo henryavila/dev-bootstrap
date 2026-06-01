@@ -49,6 +49,21 @@ custom_verify() {
         fi
     )
 }
+# Version-aware update (T-600): run the script's own update() if it defines one
+# (e.g. a tool with a self-update subcommand). Absent → no-op; the engine logs
+# "no updater" and the custom installer stays untouched on `mesh update`.
+custom_update() {
+    local script="$1"
+    [[ -r "$script" ]] || { echo "custom: script not readable: $script" >&2; return 1; }
+    (
+        . "$script"
+        if declare -f update >/dev/null; then
+            update
+        else
+            echo "custom: $script defines no update() — skipping" >&2
+        fi
+    )
+}
 custom_rollback() {
     # CP4 A2-F-008: surface rollback failure rather than swallowing it
     # with `|| true`. If rollback explicitly fails, the caller (engine)

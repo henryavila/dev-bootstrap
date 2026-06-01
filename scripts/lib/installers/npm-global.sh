@@ -7,3 +7,13 @@ npm_global_check()   {
     [[ -n "$out" ]]
 }
 npm_global_install() { npm install -g "$1"; }
+# Version-aware update (T-600): `npm outdated -g <pkg>` exits 0 when the package
+# is current, non-zero when a newer version exists — only reinstall if stale.
+npm_global_update() {
+    if npm outdated -g "$1" >/dev/null 2>&1; then
+        echo "npm-global: $1 already latest" >&2
+    else
+        echo "npm-global: updating $1" >&2
+        npm install -g "$1"
+    fi
+}

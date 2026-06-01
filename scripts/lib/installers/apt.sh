@@ -26,3 +26,17 @@ apt_install() {
     _apt_update_if_stale
     sudo -E apt-get install -y -o Dpkg::Options::=--force-confold -- "$1"
 }
+
+# Version-aware update (T-600): refresh the index, then upgrade only if a newer
+# candidate exists. `apt-get -s install --only-upgrade` simulates and prints an
+# `Inst <pkg> ...` line exactly when it would actually upgrade.
+apt_update() {
+    export DEBIAN_FRONTEND=noninteractive
+    _apt_update_if_stale
+    if apt-get -s install --only-upgrade -- "$1" 2>/dev/null | grep -q "^Inst $1 "; then
+        echo "apt: upgrading $1" >&2
+        sudo -E apt-get install -y --only-upgrade -o Dpkg::Options::=--force-confold -- "$1"
+    else
+        echo "apt: $1 already latest" >&2
+    fi
+}

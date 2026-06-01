@@ -45,3 +45,9 @@ npx_rollback() {
     pkg="$(_npx_extract_package "$1")"
     npx -y "$pkg" uninstall 2>/dev/null || true
 }
+
+# Version-aware update (T-600): npx has no installed version to diff, so re-run
+# the spec — `npx -y` fetches the latest matching the spec (a pinned @version is
+# a no-op; @latest / unpinned picks up new releases). Same word-split as install.
+# shellcheck disable=SC2086
+npx_update() { echo "npx: re-running $1 (latest)" >&2; npx -y $1; }
