@@ -42,5 +42,19 @@ out=$(unset MESH_IDENTITY_DIR; MESH_WORKSTATION_DIR=/preset HOME=$FAKE6 bash -c 
 assert "pre-set workstation NOT overwritten by config.env when identity is unset" "/preset" "$out"
 rm -rf "$FAKE6"
 
+# Test 6: config.env resolves the OTHER var when only one was set in env.
+# Regression for the mac runtime test: setting MESH_IDENTITY_DIR alone used to
+# suppress config.env loading, so MESH_WORKSTATION_DIR fell through to the wrong
+# $HOME/mesh-workstation instead of the config-provided (non-default) path.
+FAKE7=/tmp/fakehome-cfg-sym-$$
+mkdir -p "$FAKE7/.config/mesh"
+cat > "$FAKE7/.config/mesh/config.env" <<EOF
+MESH_WORKSTATION_DIR=/from-config-ws
+MESH_IDENTITY_DIR=/from-config-id
+EOF
+out=$(unset MESH_WORKSTATION_DIR; MESH_IDENTITY_DIR=/preset-id HOME=$FAKE7 bash -c ". '$WS/scripts/lib/env.sh'; echo \$MESH_WORKSTATION_DIR:\$MESH_IDENTITY_DIR")
+assert "config.env fills workstation when only identity is preset" "/from-config-ws:/preset-id" "$out"
+rm -rf "$FAKE7"
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]
