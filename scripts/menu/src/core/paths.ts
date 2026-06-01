@@ -3,8 +3,13 @@
  *
  * State-dir convention (initiative D-15):
  *   ~/.config/mesh/{selections.list,params.env}  — menu state + resolved options
- *   ~/.local/state/mesh/                          — engine install markers
- * Honor XDG_CONFIG_HOME / XDG_STATE_HOME when set.
+ *   ~/.local/state/mesh/installed/                — engine install markers
+ * Honor XDG_CONFIG_HOME / XDG_STATE_HOME / MESH_INSTALL_STATE_DIR when set.
+ *
+ * The env-dependent paths are FUNCTIONS, resolved at call time — not module-load
+ * constants — so an env change (a test pinning XDG_CONFIG_HOME, a wrapper
+ * exporting it) is always honored and tests never touch real ~/.config state.
+ * REPO_ROOT / TOPICS_DIR are stable and stay constants.
  */
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -19,28 +24,34 @@ export const REPO_ROOT = path.resolve(
 /** topics/ directory holding the per-topic manifest.yaml files. */
 export const TOPICS_DIR = path.join(REPO_ROOT, 'topics');
 
-const configHome =
-  process.env.XDG_CONFIG_HOME && process.env.XDG_CONFIG_HOME.trim() !== ''
-    ? process.env.XDG_CONFIG_HOME
-    : path.join(homedir(), '.config');
+function envDir(name: string, fallback: () => string): string {
+  const v = process.env[name];
+  return v && v.trim() !== '' ? v : fallback();
+}
 
-const stateHome =
-  process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim() !== ''
-    ? process.env.XDG_STATE_HOME
-    : path.join(homedir(), '.local', 'state');
+export function meshConfigDir(): string {
+  return path.join(envDir('XDG_CONFIG_HOME', () => path.join(homedir(), '.config')), 'mesh');
+}
 
-export const MESH_CONFIG_DIR = path.join(configHome, 'mesh');
-export const MESH_STATE_DIR = path.join(stateHome, 'mesh');
+export function meshStateDir(): string {
+  return path.join(
+    envDir('XDG_STATE_HOME', () => path.join(homedir(), '.local', 'state')),
+    'mesh',
+  );
+}
 
-export const SELECTIONS_FILE = path.join(MESH_CONFIG_DIR, 'selections.list');
-export const PARAMS_FILE = path.join(MESH_CONFIG_DIR, 'params.env');
+export function selectionsFile(): string {
+  return path.join(meshConfigDir(), 'selections.list');
+}
+
+export function paramsFile(): string {
+  return path.join(meshConfigDir(), 'params.env');
+}
 
 /**
- * Install markers the engine writes after each successful item, one
- * `<topic>__<item>.env` file. Matches install-state.sh `install_state_dir`:
- * MESH_INSTALL_STATE_DIR override → else <state>/mesh/installed.
+ * Install markers the engine writes (one `<topic>__<item>.env`). Matches
+ * install-state.sh: MESH_INSTALL_STATE_DIR override → else <state>/mesh/installed.
  */
-export const MARKERS_DIR =
-  process.env.MESH_INSTALL_STATE_DIR && process.env.MESH_INSTALL_STATE_DIR.trim() !== ''
-    ? process.env.MESH_INSTALL_STATE_DIR
-    : path.join(MESH_STATE_DIR, 'installed');
+export function markersDir(): string {
+  return envDir('MESH_INSTALL_STATE_DIR', () => path.join(meshStateDir(), 'installed'));
+}

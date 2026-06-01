@@ -8,7 +8,7 @@
  */
 import { closeRequires } from './delta.js';
 import { readSelections } from './selections-io.js';
-import { SELECTIONS_FILE } from './paths.js';
+import { selectionsFile } from './paths.js';
 import type { BundleRef } from '../types.js';
 
 /** Fresh-install default: required, or anything not explicitly default_selected:false. */
@@ -38,10 +38,10 @@ export interface InitialSelection {
 export function initialSelection(
   refs: BundleRef[],
   index: Map<string, BundleRef>,
-  selectionsFile: string = SELECTIONS_FILE,
+  selectionsPath: string = selectionsFile(),
 ): InitialSelection {
   const required = requiredKeys(refs);
-  const saved = readSelections(selectionsFile);
+  const saved = readSelections(selectionsPath);
   let base: Set<string>;
   let fromSaved: boolean;
   if (saved.size > 0) {

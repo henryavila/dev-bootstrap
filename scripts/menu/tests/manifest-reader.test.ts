@@ -1,0 +1,77 @@
+import { describe, it, expect } from 'vitest';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import {
+  readAllManifests,
+  readTopicManifest,
+  filterByPlatform,
+  flattenBundles,
+  indexByKey,
+  appliesToPlatform,
+  ManifestError,
+} from '../src/core/manifest-reader.js';
+import { tmp } from './helpers.js';
+
+describe('readAllManifests (real repo manifests)', () => {
+  const topics = readAllManifests();
+
+  it('reads all 12 topics, sorted by order', () => {
+    expect(topics.length).toBe(12);
+    const orders = topics.map((t) => t.header.order);
+    expect([...orders]).toEqual([...orders].sort((a, b) => a - b));
+    expect(topics[0].id).toBe('foundation');
+  });
+
+  it('every requires_bundles target resolves in the flattened index', () => {
+    const refs = flattenBundles(topics);
+    const index = indexByKey(refs);
+    for (const r of refs) {
+      for (const dep of r.bundle.requires_bundles ?? []) {
+        expect(index.has(dep), `${r.key} requires missing ${dep}`).toBe(true);
+      }
+    }
+  });
+
+  it('languages/php has a multiselect + a derive_from select', () => {
+    const refs = flattenBundles(topics);
+    const php = indexByKey(refs).get('languages/php')!;
+    const opts = php.bundle.options!;
+    expect(opts.find((o) => o.name === 'versions')!.type).toBe('multiselect');
+    expect(opts.find((o) => o.name === 'default-version')!.derive_from).toBe('versions');
+  });
+});
+
+describe('filterByPlatform', () => {
+  const topics = readAllManifests();
+  it('mac keeps mac+universal bundles, drops wsl-only', () => {
+    const mac = flattenBundles(filterByPlatform(topics, 'mac')).map((r) => r.key);
+    expect(mac).toContain('web/valet');
+    expect(mac).not.toContain('web/nginx-php-fpm');
+  });
+  it('wsl keeps wsl bundles', () => {
+    const wsl = flattenBundles(filterByPlatform(topics, 'wsl')).map((r) => r.key);
+    expect(wsl).toContain('web/nginx-php-fpm');
+    expect(wsl).not.toContain('web/valet');
+  });
+});
+
+describe('appliesToPlatform', () => {
+  it('undefined/empty applies everywhere; wsl inherits linux', () => {
+    expect(appliesToPlatform(undefined, 'mac')).toBe(true);
+    expect(appliesToPlatform(['linux'], 'wsl')).toBe(true);
+    expect(appliesToPlatform(['mac'], 'wsl')).toBe(false);
+  });
+});
+
+describe('readTopicManifest errors', () => {
+  it('rejects a manifest with no topic block', () => {
+    const f = path.join(tmp(), 'manifest.yaml');
+    writeFileSync(f, 'bundles: []\n');
+    expect(() => readTopicManifest(f, 'x', path.dirname(f))).toThrow(ManifestError);
+  });
+  it('rejects a bundle with no items', () => {
+    const f = path.join(tmp(), 'manifest.yaml');
+    writeFileSync(f, 'topic:\n  label: X\n  order: 1\nbundles:\n  - name: a\n    label: A\n    items: []\n');
+    expect(() => readTopicManifest(f, 'x', path.dirname(f))).toThrow(/no items|non-empty/);
+  });
+});

@@ -22,7 +22,7 @@
  */
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { MARKERS_DIR } from './paths.js';
+import { markersDir } from './paths.js';
 import { appliesToPlatform } from './manifest-reader.js';
 import type { BundleRef, Platform } from '../types.js';
 
@@ -45,7 +45,7 @@ function markerPath(topicId: string, itemName: string, dir: string): string {
 export function scanBundle(
   ref: BundleRef,
   platform: Platform,
-  dir: string = MARKERS_DIR,
+  dir: string = markersDir(),
 ): BundleScan {
   const items = ref.bundle.items.filter((i) => appliesToPlatform(i.platforms, platform));
   const total = items.length;
@@ -64,7 +64,7 @@ export function scanBundle(
 export function scanAll(
   refs: BundleRef[],
   platform: Platform,
-  dir: string = MARKERS_DIR,
+  dir: string = markersDir(),
 ): Map<string, BundleScan> {
   return new Map(refs.map((ref) => [ref.key, scanBundle(ref, platform, dir)]));
 }

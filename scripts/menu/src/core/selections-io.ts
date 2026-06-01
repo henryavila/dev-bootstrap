@@ -10,11 +10,11 @@
  * shapes in install-engine.sh.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { MESH_CONFIG_DIR, PARAMS_FILE, SELECTIONS_FILE } from './paths.js';
+import { meshConfigDir, paramsFile, selectionsFile } from './paths.js';
 import type { FieldValue } from '@henryavila/blink-tui';
 
 function ensureConfigDir(): void {
-  mkdirSync(MESH_CONFIG_DIR, { recursive: true });
+  mkdirSync(meshConfigDir(), { recursive: true });
 }
 
 function readLinesSafe(file: string): string[] | null {
@@ -27,7 +27,7 @@ function readLinesSafe(file: string): string[] | null {
 }
 
 /** Selected `topic/bundle` keys from selections.list (empty set if absent). */
-export function readSelections(file: string = SELECTIONS_FILE): Set<string> {
+export function readSelections(file: string = selectionsFile()): Set<string> {
   const lines = readLinesSafe(file);
   const out = new Set<string>();
   if (!lines) return out;
@@ -39,7 +39,7 @@ export function readSelections(file: string = SELECTIONS_FILE): Set<string> {
 }
 
 /** Write selections.list (sorted, with a provenance header). */
-export function writeSelections(keys: Iterable<string>, file: string = SELECTIONS_FILE): void {
+export function writeSelections(keys: Iterable<string>, file: string = selectionsFile()): void {
   ensureConfigDir();
   const sorted = [...new Set(keys)].sort();
   const body = ['# mesh selections — written by the setup menu (topic/bundle per line)', ...sorted].join('\n');
@@ -57,7 +57,7 @@ export function quoteParam(value: string): string {
 }
 
 /** Parse params.env into a KEY→value map (strips surrounding quotes). */
-export function readParams(file: string = PARAMS_FILE): Map<string, string> {
+export function readParams(file: string = paramsFile()): Map<string, string> {
   const lines = readLinesSafe(file);
   const out = new Map<string, string>();
   if (!lines) return out;
@@ -80,7 +80,7 @@ export function readParams(file: string = PARAMS_FILE): Map<string, string> {
 }
 
 /** Write params.env (sorted by key, bash-safe quoting, provenance header). */
-export function writeParams(params: Map<string, string>, file: string = PARAMS_FILE): void {
+export function writeParams(params: Map<string, string>, file: string = paramsFile()): void {
   ensureConfigDir();
   const keys = [...params.keys()].sort();
   const body = [
@@ -112,5 +112,3 @@ export function serializeOptionValue(
     }
   }
 }
-
-export { SELECTIONS_FILE, PARAMS_FILE, MESH_CONFIG_DIR };
