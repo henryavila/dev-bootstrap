@@ -61,7 +61,12 @@ bundles:
       - name: mdprobe
         type: npm-global
         spec: "@henryavila/mdprobe"
-        check: "command -v mdprobe"
+        # idempotent (no check:) so the engine always runs `npm install -g` →
+        # resolves the unpinned spec to latest, UPDATING a stale install. A
+        # `command -v mdprobe` check skipped on mere presence, pinning whoever
+        # ran setup first to their original version forever. Matches how the
+        # npx tools (atomic-skills, claudebar) already run every pass.
+        idempotent: true
       - name: atomic-skills
         type: npx
         spec: "@henryavila/atomic-skills@1.7.0 install --yes --all-detected --lang pt"
