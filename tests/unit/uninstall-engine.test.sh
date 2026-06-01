@@ -1,75 +1,130 @@
 #!/usr/bin/env bash
-# tests/unit/uninstall-engine.test.sh
-# Verify uninstall-engine.sh dispatch and argument handling.
+# Unit tests for scripts/lib/uninstall-engine.sh (manifest v2 bundle engine).
+# Covers: reverse-topological order (dependents before deps), reverse item
+# order within a bundle, when: gating (skip never-installed items), custom
+# uninstall() dispatch, install-marker removal, and NO requires_bundles closure
+# (uninstalling a dependent must not auto-remove its dep).
 set -uo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
-source "$ROOT/tests/lib/assert.sh"
+WS="$(cd "$HERE/../.." && pwd)"
+ENGINE="$WS/scripts/lib/uninstall-engine.sh"
 
-echo
-echo "═══ uninstall-engine ═══"
+passed=0; failed=0
+assert() {
+    local name="$1" expected="$2" actual="$3"
+    if [[ "$actual" == "$expected" ]]; then passed=$((passed+1)); echo "  ✓ $name"
+    else failed=$((failed+1)); echo "  ✗ $name (expected: [$expected], got: [$actual])" >&2; fi
+}
 
-UNINSTALL_ENGINE="$ROOT/scripts/lib/uninstall-engine.sh"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TD="$TMP/topics"; ST="$TMP/state/installed"; OUT="$TMP/out"
+PARAMS="$TMP/params.env"
+mkdir -p "$TD/t1" "$TD/t2" "$ST" "$OUT"
+printf 'T2_FLAG=1\n' > "$PARAMS"
 
-# 1. File exists and is syntactically valid
-assert_file_exists "$UNINSTALL_ENGINE" "uninstall-engine.sh exists"
-bash -n "$UNINSTALL_ENGINE" && pass "syntax check passes" || fail "syntax error"
-
-# 2. Requires --items
-output=$(bash "$UNINSTALL_ENGINE" --manifest /dev/null 2>&1 || true)
-assert_contains "$output" "missing --items" "requires --items flag"
-
-# 3. Sources uninstall-handlers.sh
-assert_pattern_present "$UNINSTALL_ENGINE" 'uninstall-handlers.sh' \
-    "sources shared handlers"
-
-# 4. Dry-run mode
-FIXTURES="$HERE/fixtures/uninstall-test"
-mkdir -p "$FIXTURES"
-
-cat > "$FIXTURES/items.yaml" <<'YAML'
-- name: test-brew
-  type: brew-formula
-  spec: fake-pkg
-  platforms: [mac]
-
-- name: test-custom
-  type: custom
-  script: "./test-script.sh"
-  platforms: [mac]
+cat > "$TD/t1/manifest.yaml" <<'YAML'
+topic:
+  label: "T1"
+  order: 10
+bundles:
+  - name: base
+    label: "Base"
+    desc: "dep of t2/dependent"
+    items:
+      - name: b1
+        type: custom
+        script: ./b1.sh
+YAML
+cat > "$TD/t2/manifest.yaml" <<'YAML'
+topic:
+  label: "T2"
+  order: 20
+bundles:
+  - name: dependent
+    label: "Dependent"
+    desc: "requires t1/base"
+    requires_bundles:
+      - t1/base
+    options:
+      - name: flag
+        type: toggle
+        label: "Flag"
+        env: T2_FLAG
+        default: false
+    items:
+      - name: d1
+        type: custom
+        script: ./d1.sh
+      - name: d2
+        type: custom
+        script: ./d2.sh
+      - name: dgate
+        type: custom
+        script: ./dgate.sh
+        when: option.flag
 YAML
 
-output=$(bash "$UNINSTALL_ENGINE" \
-    --manifest "$FIXTURES/items.yaml" \
-    --items=test-brew,test-custom \
-    --dry-run \
-    --platform mac 2>&1 || true)
+_mk() {  # $1 dir, $2 name
+    cat > "$1/$2.sh" <<SH
+TAG="$2"; OUT="\${ENGTEST_OUT:?}"
+check()     { [ -f "\$OUT/\$TAG.done" ]; }
+install()   { : > "\$OUT/\$TAG.done"; }
+verify()    { check; }
+uninstall() { rm -f "\$OUT/\$TAG.done"; echo "\$TAG" >> "\$OUT/ulog.txt"; }
+SH
+    chmod +x "$1/$2.sh"
+}
+_mk "$TD/t1" b1
+_mk "$TD/t2" d1
+_mk "$TD/t2" d2
+_mk "$TD/t2" dgate
 
-assert_contains "$output" "dry-run" "dry-run output present"
-assert_contains "$output" "test-brew" "test-brew mentioned in dry-run"
-assert_contains "$output" "test-custom" "test-custom mentioned in dry-run"
+# Seed install state (as if installed): markers + .done files for all items.
+seed() {
+    rm -rf "$ST" "$OUT"; mkdir -p "$ST" "$OUT"
+    ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+        bash "$WS/scripts/lib/install-engine.sh" --topics-dir "$TD" --params "$PARAMS" \
+        --platform mac --bundle t1/base --bundle t2/dependent >/dev/null 2>&1
+}
 
-# 5. Platform filter
-output=$(bash "$UNINSTALL_ENGINE" \
-    --manifest "$FIXTURES/items.yaml" \
-    --items=test-brew \
-    --dry-run \
-    --platform wsl 2>&1 || true)
+# ── Test 1: reverse topo + reverse item order + custom uninstall() ──
+seed
+printf 't1/base\nt2/dependent\n' > "$TMP/sel.list"
+out="$(ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.list" 2>&1)"
+# dependent (t2, order 20) removed before base (t1, order 10); within dependent,
+# items reverse: dgate, d2, d1; then base: b1.
+assert "reverse order (deps last, items reversed)" "dgate
+d2
+d1
+b1" "$(cat "$OUT/ulog.txt")"
+assert "markers cleared after uninstall" "" "$(ls "$ST" 2>/dev/null)"
 
-if echo "$output" | grep -q "dry-run.*test-brew"; then
-    fail "mac-only item should be skipped on wsl"
-else
-    pass "platform filter skips mac-only items on wsl"
-fi
+# ── Test 2: NO closure — uninstalling only the dependent leaves the dep's marker ──
+seed
+printf 't2/dependent\n' > "$TMP/sel.dep"
+ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.dep" >/dev/null 2>&1
+assert "no closure: t1/base marker survives" "yes" "$(test -f "$ST/t1__b1.env" && echo yes || echo no)"
+assert "no closure: t2 dependent markers gone" "no" "$(test -f "$ST/t2__d1.env" && echo yes || echo no)"
 
-# 6. D-B3 invariant: install-engine.sh has no uninstall logic
-if grep -v '^#' "$ROOT/scripts/lib/install-engine.sh" | grep -v 'items' | grep -qi 'uninstall'; then
-    fail "install-engine.sh contains uninstall logic (D-B3 violation)"
-else
-    pass "D-B3: install-engine.sh has no uninstall logic"
-fi
+# ── Test 3: when: option false → never-installed item skipped on uninstall ──
+seed
+: > "$PARAMS"   # flag now off → dgate considered not-installed
+out="$(ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.dep" 2>&1)"
+assert "when off: dgate skipped on uninstall" "yes" "$(echo "$out" | grep -q 'dgate: skip uninstall (when: option.flag off)' && echo yes || echo no)"
 
-rm -rf "$FIXTURES"
+# ── Test 4: dry-run performs no removal ──
+seed
+ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.dep" --dry-run >/dev/null 2>&1
+assert "dry-run: marker still present" "yes" "$(test -f "$ST/t2__d1.env" && echo yes || echo no)"
 
-summary
+echo ""
+echo "uninstall-engine.test: $passed passed, $failed failed"
+[[ "$failed" -eq 0 ]]

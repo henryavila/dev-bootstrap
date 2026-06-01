@@ -1,285 +1,219 @@
 #!/usr/bin/env bash
-# Unit tests for scripts/lib/install-engine.sh.
-# Verifies: lifecycle ordering, subshell isolation, dry-run mode, custom-script dispatch.
-set -euo pipefail
+# Unit tests for scripts/lib/install-engine.sh (manifest v2 bundle engine).
+# Covers: requires_bundles closure + topological order, platform gating,
+# when: (option.X + named condition + unknown→exit 71), options→env export,
+# idempotent items, install-marker write/skip on re-run, the deploy driver,
+# and cycle detection (exit 70).
+set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS="$(cd "$HERE/../.." && pwd)"
 ENGINE="$WS/scripts/lib/install-engine.sh"
-FIX="$HERE/fixtures/install-engine"
 
 passed=0; failed=0
 assert() {
     local name="$1" expected="$2" actual="$3"
     if [[ "$actual" == "$expected" ]]; then passed=$((passed+1)); echo "  ✓ $name"
-    else failed=$((failed+1)); echo "  ✗ $name (expected: $expected, got: $actual)" >&2; fi
+    else failed=$((failed+1)); echo "  ✗ $name (expected: [$expected], got: [$actual])" >&2; fi
 }
 
-# Build a minimal items.yaml for the test (single brew-formula item).
-TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-cat > "$TMP/items.yaml" <<'YAML'
-- name: htop
-  type: brew-formula
-  spec: htop
-  check: command -v htop
-  desc: "Interactive process viewer"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TD="$TMP/topics"; ST="$TMP/state/installed"; OUT="$TMP/out"; HOMEDIR="$TMP/home"
+PARAMS="$TMP/params.env"
+mkdir -p "$TD/t1" "$TD/t2" "$ST" "$OUT" "$HOMEDIR"
+
+# ── topic t1 (order 10): bundle base ──
+cat > "$TD/t1/manifest.yaml" <<'YAML'
+topic:
+  label: "T1"
+  order: 10
+bundles:
+  - name: base
+    label: "Base"
+    desc: "no deps"
+    items:
+      - name: mk-base
+        type: custom
+        script: ./mk-base.sh
+      - name: idem
+        type: custom
+        script: ./idem.sh
+        idempotent: true
 YAML
 
-# Mock brew driver: writes a file when install runs.
-mkdir -p "$TMP/installers"
-cat > "$TMP/installers/brew-formula.sh" <<'SH'
-brew_formula_check()   { command -v "$1" >/dev/null 2>&1; }
-brew_formula_install() { echo "installed:$1" > "$STATE_DIR/installed"; }
-brew_formula_verify()  { command -v "$1" >/dev/null 2>&1; }
+# ── topic t2 (order 20): dependent + opt bundles ──
+cat > "$TD/t2/manifest.yaml" <<'YAML'
+topic:
+  label: "T2"
+  order: 20
+bundles:
+  - name: dependent
+    label: "Dependent"
+    desc: "requires t1/base"
+    requires_bundles:
+      - t1/base
+    items:
+      - name: mk-dep
+        type: custom
+        script: ./mk-dep.sh
+      - name: wsl-only
+        type: custom
+        script: ./wsl-only.sh
+        platforms: [wsl]
+  - name: opt
+    label: "Opt"
+    desc: "option-gated + named-cond + deploy"
+    options:
+      - name: flag
+        type: toggle
+        label: "Flag"
+        env: T2_FLAG
+        default: false
+    items:
+      - name: gated
+        type: custom
+        script: ./gated.sh
+        when: option.flag
+      - name: corp
+        type: custom
+        script: ./corp.sh
+        when: wsl_corporate
+      - name: frag
+        type: deploy
+        spec: ./templates/opt
+        idempotent: true
+YAML
+
+# custom scripts: append name to runlog on install (ordering probe), touch .done
+_mk() {  # $1 = topic dir, $2 = name
+    cat > "$1/$2.sh" <<SH
+TAG="$2"; OUT="\${ENGTEST_OUT:?}"
+check()   { [ -f "\$OUT/\$TAG.done" ]; }
+install() { echo "\$TAG" >> "\$OUT/runlog.txt"; : > "\$OUT/\$TAG.done"; }
+verify()  { check; }
 SH
-
-# Set engine context.
-STATE_DIR=$TMP
-export STATE_DIR
-
-# Dry-run must NOT actually invoke install (no file written).
-out=$(MESH_WORKSTATION_DIR=$WS PATH=/usr/bin:/bin bash "$ENGINE" \
-    --manifest "$TMP/items.yaml" --installers-dir "$TMP/installers" \
-    --dry-run 2>&1 || true)
-assert "dry-run: no state file written" "absent" "$(test -f $TMP/installed && echo present || echo absent)"
-
-# Sanity: engine emits a plan line for the item.
-echo "$out" | grep -q 'htop' && \
-    { passed=$((passed+1)); echo "  ✓ dry-run: plan mentions htop"; } || \
-    { failed=$((failed+1)); echo "  ✗ dry-run: plan did not mention htop" >&2; }
-
-# Test 3: failed item propagates correct exit code (regression for fix of $?)
-# A mock driver that always fails install.
-cat > "$TMP/installers/failing-driver.sh" <<'SH'
-failing_driver_check()   { return 1; }
-failing_driver_install() { echo "this fails on purpose"; return 67; }
+    chmod +x "$1/$2.sh"
+}
+_mk "$TD/t1" mk-base
+_mk "$TD/t1" idem
+_mk "$TD/t2" mk-dep
+_mk "$TD/t2" wsl-only
+_mk "$TD/t2" corp
+# gated.sh records the option env value to prove options→env export
+cat > "$TD/t2/gated.sh" <<'SH'
+TAG=gated; OUT="${ENGTEST_OUT:?}"
+check()   { [ -f "$OUT/$TAG.done" ]; }
+install() { echo "gated:T2_FLAG=${T2_FLAG:-unset}" >> "$OUT/runlog.txt"; : > "$OUT/$TAG.done"; }
+verify()  { check; }
 SH
-cat > "$TMP/items-fail.yaml" <<'YAML'
-- name: failing-item
-  type: failing-driver
-  spec: anything
-YAML
-set +e
-bash "$ENGINE" --manifest "$TMP/items-fail.yaml" --installers-dir "$TMP/installers" 2>/dev/null
-rc=$?
-set -e
-# Expect non-zero exit; specifically should be 67 (from the driver) or some non-zero
-if [[ $rc -ne 0 ]]; then
-    passed=$((passed+1)); echo "  ✓ failed item exits non-zero (rc=$rc)"
-else
-    failed=$((failed+1)); echo "  ✗ failed item exited 0 (bug)" >&2
-fi
+chmod +x "$TD/t2/gated.sh"
+# deploy template (auto-mapped bashrc.d fragment)
+mkdir -p "$TD/t2/templates/opt"
+echo '# t2 opt fragment' > "$TD/t2/templates/opt/bashrc.d-77-t2opt.sh"
 
-# Test 4: install() failure routes through rollback (regression for Codex
-# review A-F003 / F-F005, 2026-05-19). Previously `set -euo pipefail`
-# exited the item subshell on install() failure BEFORE rollback could fire,
-# leaving partial state behind.
-mkdir -p "$TMP/installers"
-cat > "$TMP/installers/rollback-driver.sh" <<SH
-rollback_driver_check()    { return 1; }                    # force install
-rollback_driver_install()  { echo install-ran > "$TMP/install-marker"; return 42; }
-rollback_driver_rollback() { touch "$TMP/rollback-sentinel"; }
-SH
-cat > "$TMP/items-rollback.yaml" <<'YAML'
-- name: rollback-item
-  type: rollback-driver
-  spec: anything
-YAML
-rm -f "$TMP/rollback-sentinel" "$TMP/install-marker"
-set +e
-bash "$ENGINE" --manifest "$TMP/items-rollback.yaml" --installers-dir "$TMP/installers" 2>/dev/null
-rc=$?
-set -e
-[[ -f "$TMP/install-marker" ]]  && { passed=$((passed+1)); echo "  ✓ install ran before failing"; } \
-                                || { failed=$((failed+1)); echo "  ✗ install never ran" >&2; }
-[[ -f "$TMP/rollback-sentinel" ]] && { passed=$((passed+1)); echo "  ✓ rollback fired after install() failure (A-F003)"; } \
-                                  || { failed=$((failed+1)); echo "  ✗ rollback was bypassed (A-F003 regression)" >&2; }
-[[ "$rc" -eq 42 ]] && { passed=$((passed+1)); echo "  ✓ engine exited with install rc (42)"; } \
-                  || { failed=$((failed+1)); echo "  ✗ engine rc=$rc, expected 42 from install" >&2; }
+run_engine() {  # extra args after the standard ones
+    ENGTEST_OUT="$OUT" HOME="$HOMEDIR" MESH_INSTALL_STATE_DIR="$ST" \
+        bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac "$@" 2>&1
+}
+reset_state() { rm -rf "$ST" "$OUT" "$HOMEDIR"; mkdir -p "$ST" "$OUT" "$HOMEDIR"; }
 
-# Test 5 (CP4 F-003): manifest `check:` overrides driver _check on pre-install.
-# Driver _check returns 1 (force install) but manifest check: "true" returns 0 →
-# engine should SKIP install honoring the manifest.
-cat > "$TMP/installers/always-install-driver.sh" <<'SH'
-always_install_driver_check()   { return 1; }   # driver says "not installed"
-always_install_driver_install() { touch "$STATE_DIR/install-marker-f003"; }
-SH
-cat > "$TMP/items-f003-pre.yaml" <<'YAML'
-- name: f003-skipped-by-manifest
-  type: always-install-driver
-  spec: anything
-  check: "true"
-YAML
-rm -f "$TMP/install-marker-f003"
-set +e
-out=$(STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-f003-pre.yaml" --installers-dir "$TMP/installers" 2>&1)
-rc=$?
-set -e
-assert "F-003 manifest check: true overrides driver _check (skip)" "0" "$rc"
-[[ ! -f "$TMP/install-marker-f003" ]] && { passed=$((passed+1)); echo "  ✓ F-003 install was skipped (no marker created)"; } \
-                                       || { failed=$((failed+1)); echo "  ✗ F-003 install ran despite manifest check pass" >&2; }
-echo "$out" | grep -q "manifest check" && { passed=$((passed+1)); echo "  ✓ F-003 log message names manifest check"; } \
-                                       || { failed=$((failed+1)); echo "  ✗ F-003 log did not name manifest check" >&2; }
+# ── Test 1: requires_bundles closure + topo order (deps first) ──
+: > "$PARAMS"
+printf 't2/dependent\n' > "$TMP/sel.list"
+reset_state
+out="$(run_engine --selections "$TMP/sel.list" --non-interactive)"
+assert "closure: auto-selects t1/base" "yes" "$(echo "$out" | grep -q 'auto-selecting t1/base' && echo yes || echo no)"
+assert "topo: base bundle (both items) runs before dep" "mk-base
+idem
+mk-dep" "$(cat "$OUT/runlog.txt")"
+assert "platform: wsl-only skipped on mac" "yes" "$(echo "$out" | grep -q 'wsl-only: skip (platforms' && echo yes || echo no)"
 
-# Test 6 (CP4 F-003): manifest `check:` that depends on install effect
-# (pre-install: marker absent → check fails → install runs → post-check passes).
-cat > "$TMP/items-f003-pre-fails-post-passes.yaml" <<'YAML'
-- name: f003-install-runs
-  type: always-install-driver
-  spec: anything
-  check: "test -f $STATE_DIR/install-marker-f003"
-YAML
-rm -f "$TMP/install-marker-f003"
-set +e
-STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-f003-pre-fails-post-passes.yaml" --installers-dir "$TMP/installers" 2>/dev/null
-rc=$?
-set -e
-assert "F-003 manifest check fails pre, install runs, manifest passes post" "0" "$rc"
-[[ -f "$TMP/install-marker-f003" ]] && { passed=$((passed+1)); echo "  ✓ F-003 install ran when manifest check failed pre"; } \
-                                    || { failed=$((failed+1)); echo "  ✗ F-003 install was skipped despite check fail" >&2; }
+# ── Test 2: marker written on success ──
+assert "marker: t1__mk-base.env written" "yes" "$(test -f "$ST/t1__mk-base.env" && echo yes || echo no)"
 
-# Test 7 (CP4 F-003): post-install — if no driver _verify, manifest check
-# is used as the success criterion (fallback before driver _check).
-cat > "$TMP/installers/no-verify-driver.sh" <<'SH'
-no_verify_driver_check()   { return 1; }
-no_verify_driver_install() { touch "$STATE_DIR/post-install-marker"; }
-# Deliberately NO _verify function — fallback to manifest_check / driver_check.
-SH
-cat > "$TMP/items-f003-post.yaml" <<'YAML'
-- name: f003-post-via-manifest
-  type: no-verify-driver
-  spec: anything
-  check: "test -f $STATE_DIR/post-install-marker"
-YAML
-rm -f "$TMP/post-install-marker"
-set +e
-STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-f003-post.yaml" --installers-dir "$TMP/installers" 2>/dev/null
-rc=$?
-set -e
-assert "F-003 manifest check provides post-install verify" "0" "$rc"
-[[ -f "$TMP/post-install-marker" ]] && { passed=$((passed+1)); echo "  ✓ F-003 install ran + post-check via manifest passed"; } \
-                                    || { failed=$((failed+1)); echo "  ✗ F-003 post-check via manifest failed" >&2; }
+# ── Test 3: idempotent always runs; non-idempotent skips via check on re-run ──
+out="$(run_engine --selections "$TMP/sel.list" --non-interactive)"
+assert "re-run: mk-base skipped (already present)" "yes" "$(echo "$out" | grep -q 'mk-base: already present' && echo yes || echo no)"
+assert "re-run: idem runs again (idempotent)" "yes" "$(echo "$out" | grep -q 'idem: running (idempotent)' && echo yes || echo no)"
 
-# Test 8 (CP4 A1-F-001): rollback fires on post-install MANIFEST CHECK failure
-# (previously only driver _verify failure triggered rollback).
-cat > "$TMP/installers/rollback-manifest-driver.sh" <<SH
-rollback_manifest_driver_check()    { return 1; }   # force install
-rollback_manifest_driver_install()  { touch "$TMP/manifest-rollback-install"; }
-rollback_manifest_driver_rollback() { touch "$TMP/manifest-rollback-fired"; }
-# Note: NO _verify function, so manifest_check path is used post-install.
-SH
-cat > "$TMP/items-manifest-rollback.yaml" <<'YAML'
-- name: manifest-rollback-item
-  type: rollback-manifest-driver
-  spec: anything
-  check: "false"
-YAML
-rm -f "$TMP/manifest-rollback-install" "$TMP/manifest-rollback-fired"
-set +e
-STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-manifest-rollback.yaml" --installers-dir "$TMP/installers" 2>/dev/null
-rc=$?
-set -e
-[[ -f "$TMP/manifest-rollback-install" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: install ran"; } \
-                                          || { failed=$((failed+1)); echo "  ✗ A1-F-001: install never ran" >&2; }
-[[ -f "$TMP/manifest-rollback-fired" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: rollback fired on manifest check fallback failure"; } \
-                                        || { failed=$((failed+1)); echo "  ✗ A1-F-001: rollback was bypassed (only _verify path called it before)" >&2; }
-[[ "$rc" -eq 67 ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: engine exits rc=67 (unified verify-failure path)"; } \
-                  || { failed=$((failed+1)); echo "  ✗ A1-F-001: engine rc=$rc, expected 67" >&2; }
+# ── Test 4: when: option.X — off by default (non-interactive), on when set ──
+reset_state
+printf 't2/opt\n' > "$TMP/sel.opt"
+out="$(run_engine --selections "$TMP/sel.opt" --non-interactive)"
+assert "when option off: gated skipped" "yes" "$(echo "$out" | grep -q 'gated: skip (when: option.flag is off)' && echo yes || echo no)"
+reset_state
+printf 'T2_FLAG=1\n' > "$PARAMS"
+out="$(run_engine --selections "$TMP/sel.opt")"
+assert "when option on (params): gated runs" "yes" "$(grep -q 'gated:T2_FLAG=1' "$OUT/runlog.txt" && echo yes || echo no)"
+: > "$PARAMS"
 
-# Test 9 (CP4 A1-F-001): rollback fires on post-install DRIVER CHECK fallback failure
-cat > "$TMP/installers/rollback-driver-check.sh" <<SH
-rollback_driver_check_check()    { test -f "$TMP/never-created"; }   # always fails
-rollback_driver_check_install()  { touch "$TMP/drv-rollback-install"; }
-rollback_driver_check_rollback() { touch "$TMP/drv-rollback-fired"; }
-# No _verify, no manifest check → engine falls through to driver _check
-SH
-cat > "$TMP/items-driver-rollback.yaml" <<'YAML'
-- name: driver-rollback-item
-  type: rollback-driver-check
-  spec: anything
-YAML
-rm -f "$TMP/drv-rollback-install" "$TMP/drv-rollback-fired"
-set +e
-STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-driver-rollback.yaml" --installers-dir "$TMP/installers" 2>/dev/null
-rc=$?
-set -e
-[[ -f "$TMP/drv-rollback-install" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: driver-check path — install ran"; } \
-                                     || { failed=$((failed+1)); echo "  ✗ A1-F-001: driver-check path — install never ran" >&2; }
-[[ -f "$TMP/drv-rollback-fired" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-001: driver-check path — rollback fired"; } \
-                                   || { failed=$((failed+1)); echo "  ✗ A1-F-001: driver-check path — rollback was bypassed" >&2; }
+# ── Test 5: when: named condition (wsl_corporate via test hooks) ──
+reset_state
+out="$(MESH_COND_OS=wsl MESH_WSL_CORPORATE=1 run_engine --selections "$TMP/sel.opt" --non-interactive)"
+assert "when named true: corp runs" "yes" "$(test -f "$OUT/corp.done" && echo yes || echo no)"
+reset_state
+out="$(run_engine --selections "$TMP/sel.opt" --non-interactive)"
+assert "when named false: corp skipped" "yes" "$(echo "$out" | grep -q 'corp: skip (when: wsl_corporate is false)' && echo yes || echo no)"
 
-# Test 10 (CP4 A1-F-003): post: scalar runs after successful install + verify
-cat > "$TMP/installers/post-scalar-driver.sh" <<SH
-post_scalar_driver_check()   { return 1; }   # force install
-post_scalar_driver_install() { touch "$TMP/post-scalar-installed"; }
-post_scalar_driver_verify()  { test -f "$TMP/post-scalar-installed"; }
-SH
-cat > "$TMP/items-post-scalar.yaml" <<'YAML'
-- name: post-scalar-item
-  type: post-scalar-driver
-  spec: anything
-  post: touch "$TMP/post-scalar-ran"
-YAML
-rm -f "$TMP/post-scalar-installed" "$TMP/post-scalar-ran"
-TMP="$TMP" STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-post-scalar.yaml" --installers-dir "$TMP/installers" >/dev/null 2>&1
-[[ -f "$TMP/post-scalar-ran" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-003: post scalar runs after verify"; } \
-                                || { failed=$((failed+1)); echo "  ✗ A1-F-003: post scalar did not run" >&2; }
+# ── Test 6: deploy driver renders the fragment into HOME ──
+assert "deploy: bashrc.d fragment landed" "yes" "$(test -f "$HOMEDIR/.bashrc.d/77-t2opt.sh" && echo yes || echo no)"
 
-# Test 11 (CP4 A1-F-003): post: list runs each command in order
-cat > "$TMP/items-post-list.yaml" <<'YAML'
-- name: post-list-item
-  type: post-scalar-driver
-  spec: anything
-  post:
-    - touch "$TMP/post-list-1"
-    - touch "$TMP/post-list-2"
+# ── Test 7: unknown when: condition → exit 71 ──
+mkdir -p "$TD/tbad"
+cat > "$TD/tbad/manifest.yaml" <<'YAML'
+topic:
+  label: "Bad"
+  order: 30
+bundles:
+  - name: b
+    label: "B"
+    desc: "bad when"
+    items:
+      - name: x
+        type: custom
+        script: ./mk-base.sh
+        when: no_such_condition
 YAML
-rm -f "$TMP/post-scalar-installed" "$TMP/post-list-1" "$TMP/post-list-2"
-TMP="$TMP" STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-post-list.yaml" --installers-dir "$TMP/installers" >/dev/null 2>&1
-if [[ -f "$TMP/post-list-1" && -f "$TMP/post-list-2" ]]; then
-    passed=$((passed+1)); echo "  ✓ A1-F-003: post list runs all entries"
-else
-    failed=$((failed+1)); echo "  ✗ A1-F-003: post list missing entries (1=$([[ -f $TMP/post-list-1 ]]&&echo y||echo n) 2=$([[ -f $TMP/post-list-2 ]]&&echo y||echo n))" >&2
-fi
+cp "$TD/t1/mk-base.sh" "$TD/tbad/mk-base.sh"
+reset_state
+printf 'tbad/b\n' > "$TMP/sel.bad"
+ENGTEST_OUT="$OUT" HOME="$HOMEDIR" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.bad" --non-interactive >/dev/null 2>&1
+assert "unknown when: exit 71" "71" "$?"
 
-# Test 12 (CP4 A1-F-003): post failure → rollback + rc=69
-cat > "$TMP/installers/post-fail-driver.sh" <<SH
-post_fail_driver_check()    { return 1; }
-post_fail_driver_install()  { touch "$TMP/post-fail-installed"; }
-post_fail_driver_verify()   { test -f "$TMP/post-fail-installed"; }
-post_fail_driver_rollback() { touch "$TMP/post-fail-rolled-back"; }
-SH
-cat > "$TMP/items-post-fail.yaml" <<'YAML'
-- name: post-fail-item
-  type: post-fail-driver
-  spec: anything
-  post: "false"
+# ── Test 8: requires_bundles cycle → exit 70 ──
+mkdir -p "$TD/tcyc"
+cat > "$TD/tcyc/manifest.yaml" <<'YAML'
+topic:
+  label: "Cyc"
+  order: 40
+bundles:
+  - name: x
+    label: "X"
+    desc: "cycle x"
+    requires_bundles:
+      - tcyc/y
+    items:
+      - name: i
+        type: custom
+        script: ./mk-base.sh
+  - name: y
+    label: "Y"
+    desc: "cycle y"
+    requires_bundles:
+      - tcyc/x
+    items:
+      - name: j
+        type: custom
+        script: ./mk-base.sh
 YAML
-rm -f "$TMP/post-fail-installed" "$TMP/post-fail-rolled-back"
-set +e
-TMP="$TMP" STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-post-fail.yaml" --installers-dir "$TMP/installers" >/dev/null 2>&1
-rc=$?
-set -e
-[[ "$rc" -eq 69 ]] && { passed=$((passed+1)); echo "  ✓ A1-F-003: post failure → rc=69"; } \
-                  || { failed=$((failed+1)); echo "  ✗ A1-F-003: post failure rc=$rc, expected 69" >&2; }
-[[ -f "$TMP/post-fail-rolled-back" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-003: post failure fires rollback"; } \
-                                      || { failed=$((failed+1)); echo "  ✗ A1-F-003: rollback not called on post failure" >&2; }
+cp "$TD/t1/mk-base.sh" "$TD/tcyc/mk-base.sh"
+printf 'tcyc/x\n' > "$TMP/sel.cyc"
+ENGTEST_OUT="$OUT" HOME="$HOMEDIR" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --platform mac \
+    --selections "$TMP/sel.cyc" --non-interactive >/dev/null 2>&1
+assert "requires_bundles cycle: exit 70" "70" "$?"
 
-# Test 13 (CP4 A1-F-003): post does NOT run when pre-install check passes (skip path)
-cat > "$TMP/installers/post-skip-driver.sh" <<SH
-post_skip_driver_check()   { return 0; }   # already installed → skip
-post_skip_driver_install() { touch "$TMP/post-skip-installed"; }
-post_skip_driver_verify()  { return 0; }
-SH
-cat > "$TMP/items-post-skip.yaml" <<'YAML'
-- name: post-skip-item
-  type: post-skip-driver
-  spec: anything
-  post: touch "$TMP/post-skip-ran"
-YAML
-rm -f "$TMP/post-skip-installed" "$TMP/post-skip-ran"
-TMP="$TMP" STATE_DIR=$TMP bash "$ENGINE" --manifest "$TMP/items-post-skip.yaml" --installers-dir "$TMP/installers" >/dev/null 2>&1
-[[ ! -f "$TMP/post-skip-ran" ]] && { passed=$((passed+1)); echo "  ✓ A1-F-003: post skipped when pre-install check passes"; } \
-                                || { failed=$((failed+1)); echo "  ✗ A1-F-003: post ran on skip path (should not)" >&2; }
-
-echo "Results: $passed passed, $failed failed"
-[[ $failed -eq 0 ]]
+echo ""
+echo "install-engine.test: $passed passed, $failed failed"
+[[ "$failed" -eq 0 ]]

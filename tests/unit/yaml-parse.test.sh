@@ -76,8 +76,13 @@ run_valid "$TOPICS/web/manifest.yaml" '
     [ "$BUNDLE_0_REQUIRES_BUNDLES_COUNT" = 2 ] || exit 1
     [ "$BUNDLE_0_REQUIRES_BUNDLES_0" = "databases/mysql" ] || exit 1
     [ "$BUNDLE_0_REQUIRES_BUNDLES_1" = "databases/redis" ] || exit 1
-    [ "$BUNDLE_0_ITEM_COUNT" = 4 ] || exit 1
+    [ "$BUNDLE_0_ITEM_COUNT" = 5 ] || exit 1
     [ "$BUNDLE_0_ITEM_3_IDEMPOTENT" = 1 ] || exit 1
+    # serve-config: deploy-type item (template render) appended to valet.
+    [ "$BUNDLE_0_ITEM_4_NAME" = "serve-config" ] || exit 1
+    [ "$BUNDLE_0_ITEM_4_TYPE" = "deploy" ] || exit 1
+    [ "$BUNDLE_0_ITEM_4_SPEC" = "./templates/serve" ] || exit 1
+    [ "$BUNDLE_0_ITEM_4_IDEMPOTENT" = 1 ] || exit 1
     [ "$BUNDLE_0_OPTION_COUNT" = 0 ] || exit 1
     # ngrok bundle: secret option scalars only (description skipped).
     [ "$BUNDLE_3_OPTION_COUNT" = 1 ] || exit 1
