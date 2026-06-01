@@ -56,16 +56,11 @@ fi
 
 info "Applying selections..."
 
-while IFS= read -r entry; do
-    [[ -z "$entry" || "$entry" == \#* ]] && continue
-    topic="${entry%%/*}"
-    item="${entry#*/}"
-    manifest="$ROOT/topics/$topic/items.yaml"
-    [[ -f "$manifest" ]] || continue
-    bash "$ROOT/scripts/lib/install-engine.sh" \
-        --manifest "$manifest" \
-        --items="$item" \
-        --platform "$PLATFORM"
-done < "$SELECTIONS_FILE"
+# Manifest v2: the engine consumes the whole selections.list (topic/bundle
+# entries), computes the requires_bundles closure + topological order, and
+# applies them. No per-topic --manifest loop.
+bash "$ROOT/scripts/lib/install-engine.sh" \
+    --selections "$SELECTIONS_FILE" \
+    --platform "$PLATFORM"
 
 info "All selections applied."

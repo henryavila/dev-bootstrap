@@ -256,9 +256,35 @@ while [[ "${#queue[@]}" -gt 0 ]]; do
     done < <(_bundle_requires "$topic" "$idx")
 done
 
+# ─── stable baseline order: (topic.order, bundle index) ───────────────────────
+# Selections may arrive in any order (alpha glob, menu toggle order, hand-edited
+# list). Establish a deterministic baseline so e.g. foundation (order 10) runs
+# before later topics even when nothing declares requires_bundles: foundation.
+# The topo-sort below still overrides this wherever requires_bundles demands it.
+
+_topic_order() {
+    (
+        # shellcheck disable=SC1090
+        . "$WORK/topic__$1.vars"
+        printf '%s' "${TOPIC_ORDER:-9999}"
+    )
+}
+
+_sorted=()
+while IFS= read -r _e; do
+    [[ -n "$_e" ]] && _sorted+=("$_e")
+done < <(
+    for entry in "${SEL_ENTRIES[@]}"; do
+        topic="${entry%%/*}"; bundle="${entry#*/}"
+        idx="$(_bundle_index "$topic" "$bundle")"
+        printf '%06d:%03d\t%s\n' "$(_topic_order "$topic")" "$idx" "$entry"
+    done | sort | cut -f2-
+)
+SEL_ENTRIES=("${_sorted[@]}")
+
 # ─── topological sort (deps first, spec §5.1) ─────────────────────────────────
 # Kahn-style: repeatedly emit any not-yet-emitted node whose every in-set
-# dependency is already emitted. Preserves selection order among ready nodes.
+# dependency is already emitted. Preserves the baseline order among ready nodes.
 # A pass with no progress means a cycle (validator forbids it; defensive here).
 
 ORDERED=()

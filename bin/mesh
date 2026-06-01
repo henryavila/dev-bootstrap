@@ -281,7 +281,7 @@ sub_topic() {
             local repo
             repo="$(_resolve_workstation_repo)" || \
                 _die "mesh-workstation repo not found (set MESH_WORKSTATION_DIR)"
-            exec bash "$repo/setup.sh" --list-topics
+            exec bash "$repo/setup.sh" --list-bundles
             ;;
     esac
 
