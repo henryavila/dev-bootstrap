@@ -9,10 +9,18 @@
 # Usage:
 #   bash install-engine.sh [--selections FILE] [--bundle topic/bundle ...]
 #                          [--topics-dir DIR] [--params FILE] [--secrets FILE]
-#                          [--platform OS] [--non-interactive] [--dry-run]
+#                          [--platform OS] [--non-interactive] [--dry-run] [--update]
 #
 # Selections come from --selections (one `topic/bundle` per line; blank lines
 # and `#` comments ignored) and/or repeated --bundle flags. The two combine.
+#
+# --update (T-600): instead of install-if-missing, run each installed item's
+# version-aware <type>_update (upgrade only if stale), gated by opt-in update
+# categories derived from the topic — agent-clis (ai), runtimes-dbs (languages,
+# databases), cli-tools (everything else). Switches MESH_UPDATE_AGENT_CLIS /
+# MESH_UPDATE_RUNTIMES_DBS / MESH_UPDATE_CLI_TOOLS default OFF (params.env/env).
+# Never installs new items; items without a driver updater (deploy, …) are
+# skipped. `mesh update` invokes this after `git pull`.
 #
 # Per bundle, in topological order:
 #   1. cd into the topic dir (custom `script:` paths are topic-relative).
@@ -77,6 +85,7 @@ SECRETS_FILE_LEGACY="$HOME/.local/state/mesh-workstation/secrets.env"
 SECRETS_OVERRIDE=""
 PLATFORM_OVERRIDE=""
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
+UPDATE_MODE=0
 CLI_BUNDLES=()
 
 while [[ $# -gt 0 ]]; do
@@ -90,6 +99,7 @@ while [[ $# -gt 0 ]]; do
         --platform)         PLATFORM_OVERRIDE="$2"; shift 2 ;;
         --non-interactive)  NON_INTERACTIVE=1; shift ;;
         --dry-run)          DRY_RUN=1; shift ;;
+        --update)           UPDATE_MODE=1; shift ;;
         --help|-h)          sed -n '2,30p' "$0"; exit 0 ;;
         *)                  log_error "unknown arg: $1"; exit 64 ;;
     esac
@@ -128,6 +138,27 @@ if [[ "$PLATFORM" == "mac" ]]; then
     fi
     unset __brew_out
 fi
+
+# ── update mode (T-600): opt-in category gating ──────────────────────────────
+# `mesh update` runs the engine with --update: each installed item is upgraded
+# (version-aware, via the driver's <type>_update) ONLY if its category is opted
+# in. Categories are derived from the topic (granularity C / D-U4); the three
+# opt-in switches default OFF, read from params.env or the environment.
+_update_category() {   # $1 = topic → echoes the category slug
+    case "$1" in
+        ai)                   printf 'agent-clis' ;;
+        languages|databases)  printf 'runtimes-dbs' ;;
+        *)                    printf 'cli-tools' ;;
+    esac
+}
+_update_enabled() {    # $1 = category → rc 0 if the user opted that category in
+    case "$1" in
+        agent-clis)    [[ "${MESH_UPDATE_AGENT_CLIS:-0}"   == 1 || "${MESH_UPDATE_AGENT_CLIS:-0}"   == true ]] ;;
+        runtimes-dbs)  [[ "${MESH_UPDATE_RUNTIMES_DBS:-0}" == 1 || "${MESH_UPDATE_RUNTIMES_DBS:-0}" == true ]] ;;
+        cli-tools)     [[ "${MESH_UPDATE_CLI_TOOLS:-0}"    == 1 || "${MESH_UPDATE_CLI_TOOLS:-0}"    == true ]] ;;
+        *)             return 1 ;;
+    esac
+}
 
 # Resolve which secrets file(s) to source: explicit override wins; otherwise
 # source legacy then new so the canonical (new) location overrides the legacy.
@@ -517,6 +548,39 @@ apply_bundle() {
             # shellcheck disable=SC1090
             . "$driver"
             local prefix="${type//-/_}"
+
+            # update mode (T-600): upgrade an already-installed item via the
+            # driver's version-aware <type>_update, gated by its opt-in category.
+            # Never installs new items; skips items without an updater (e.g.
+            # deploy/config) — those are re-applied by `mesh update`'s apply pass.
+            if [[ "$UPDATE_MODE" -eq 1 ]]; then
+                local _cat; _cat="$(_update_category "$TOPIC")"
+                if ! _update_enabled "$_cat"; then
+                    log_info "$bundle/$name: update skip (category '$_cat' off)"; exit 0
+                fi
+                if ! declare -f "${prefix}_update" >/dev/null 2>&1; then
+                    log_info "$bundle/$name: update skip (no updater for type=$type)"; exit 0
+                fi
+                local _installed=0
+                if [[ -n "$mcheck" ]]; then
+                    bash -c "$mcheck" >/dev/null 2>&1 && _installed=1
+                elif [[ "$idem" == "1" ]]; then
+                    [[ -f "$(install_state_path "$TOPIC" "$name")" ]] && _installed=1
+                elif "${prefix}_check" "$arg" 2>/dev/null; then
+                    _installed=1
+                fi
+                if (( _installed == 0 )); then
+                    log_info "$bundle/$name: update skip (not installed)"; exit 0
+                fi
+                log_info "$bundle/$name: checking for update [$_cat]"
+                local _urc=0
+                "${prefix}_update" "$arg" || _urc=$?
+                if [[ "$_urc" -ne 0 ]]; then
+                    log_warn "$bundle/$name: update failed (rc=$_urc)"; exit "$_urc"
+                fi
+                install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
+                exit 0
+            fi
 
             # idempotent items (spec §11): skip pre-check + post-verify, always run.
             if [[ "$idem" == "1" ]]; then
