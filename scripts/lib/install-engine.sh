@@ -1,35 +1,56 @@
 #!/usr/bin/env bash
-# scripts/lib/install-engine.sh — YAML manifest → driver dispatcher.
+# scripts/lib/install-engine.sh — manifest v2 bundle-granularity install engine.
+#
+# Consumes the hierarchical manifest.yaml v2 schema (topic → bundles → items +
+# options) via yaml-parse.sh v2. The unit of selection is the BUNDLE; items
+# inside a bundle are atomic (spec D-5). Selected bundles are installed in
+# topological order by `requires_bundles:` (deps first, spec §5.1).
+#
 # Usage:
-#   bash install-engine.sh --manifest items.yaml [--installers-dir DIR] [--dry-run] [--platform OS] [--items=a,b,c]
+#   bash install-engine.sh [--selections FILE] [--bundle topic/bundle ...]
+#                          [--topics-dir DIR] [--params FILE] [--secrets FILE]
+#                          [--platform OS] [--non-interactive] [--dry-run]
 #
-# Lifecycle (per spec §C17):
-#   for each item: check → install (if check fails) → verify (fallback check) → post → rollback (no-op if absent)
-# Custom-script dispatch (`type: custom`): runs $script in a subshell with helpers sourced.
-# Subshell isolation: each item runs in `(...)` so functions/vars don't leak across items.
+# Selections come from --selections (one `topic/bundle` per line; blank lines
+# and `#` comments ignored) and/or repeated --bundle flags. The two combine.
 #
-# `post:` hook (CP4 A1-F-003, activated 2026-05-23):
-#   Optional scalar or list of shell command snippets, runs ONLY after a
-#   successful install + verify. Skipped when pre-install check decided
-#   nothing needs to install (no re-trigger of post on idempotent re-runs).
-#   Each snippet executes via `bash -c`; failure routes through rollback
-#   (symmetric with verify failure) and engine exits 69.
-#   Use cases: systemd reload, brew services restart, cache invalidation,
-#   shim regeneration after a binary install.
+# Per bundle, in topological order:
+#   1. cd into the topic dir (custom `script:` paths are topic-relative).
+#   2. Source params.env (resolved non-secret options) + secrets.env, then
+#      export each option's `env`. Under --non-interactive, apply each option's
+#      schema default (toggle/select/text scalar; multiselect default list;
+#      text `default_from:` command) for any value still unset.
+#   3. For each item IN LISTED ORDER:
+#        - gate on `platforms:` (item-level, then inherits nothing — bundle
+#          platforms gate the whole bundle earlier);
+#        - eval `when:` — `option.<x>` resolves the toggle's env value;
+#          a bare name resolves via conditions.sh `cond_eval` (rc 2 = hard error);
+#        - dispatch by `type` (custom → source script + check/install/verify;
+#          driver types → installers/<type>.sh);
+#        - `idempotent: true` items skip the pre-check and post-verify and
+#          always run (spec §11 — e.g. the syncthing apply-pause banner);
+#        - on success write the install marker (install_state_record).
+#
+# Lifecycle per non-idempotent item (spec §C17):
+#   check → install (if check fails) → verify (fallback check) → post → rollback.
+# Subshell isolation: each bundle (and each item within it) runs in `(...)` so
+# functions/vars don't leak across bundles or items.
 #
 # Platform filter:
-#   Current platform resolved from $MESH_OS (export from setup.sh), --platform flag, or detect-os.sh.
-#   Items with non-empty `platforms:` are processed ONLY if the current platform is in the list.
-#   Items with empty/missing `platforms:` apply on every platform (default per spec C17).
+#   Current platform resolved from --platform > $MESH_OS > detect-os.sh.
+#   Bundle/item with non-empty `platforms:` runs ONLY if the current platform is
+#   listed; empty/missing `platforms:` applies everywhere (spec C17).
 #
 # Exit codes:
-#   0  — all items processed successfully
-#   64 — arg error (missing/invalid flag)
+#   0  — all selected bundles processed successfully
+#   64 — arg error (missing/invalid flag, no selections, malformed entry)
 #   65 — yaml-parse failure or missing sentinel (__YAML_PARSE_OK)
-#   66 — no driver found for item type
+#   66 — no driver found for an item type
 #   67 — verify failed (rollback was called if present)
 #   68 — post-install check failed (no verify function defined)
 #   69 — post: hook failed (rollback was called if present)
+#   70 — cycle in requires_bundles among selected bundles
+#   71 — item `when:` references an unknown named condition (conditions.sh rc 2)
 set -euo pipefail
 
 ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,40 +60,41 @@ ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$ENGINE_DIR/env.sh"
 # shellcheck disable=SC1091
 . "$ENGINE_DIR/install-state.sh"
+# shellcheck disable=SC1091
+. "$ENGINE_DIR/conditions.sh"
 
 DRY_RUN=0
-MANIFEST=""
+SELECTIONS_FILE=""
+TOPICS_DIR="$(cd "$ENGINE_DIR/../.." && pwd)/topics"
 INSTALLERS_DIR="$ENGINE_DIR/installers"
+PARAMS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/params.env"
+SECRETS_FILE_NEW="${XDG_STATE_HOME:-$HOME/.local/state}/mesh/secrets.env"
+SECRETS_FILE_LEGACY="$HOME/.local/state/mesh-workstation/secrets.env"
+SECRETS_OVERRIDE=""
 PLATFORM_OVERRIDE=""
-ITEMS_FILTER=""
-TOPIC_OVERRIDE=""
+NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
+CLI_BUNDLES=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --manifest)        MANIFEST="$2"; shift 2 ;;
-        --installers-dir)  INSTALLERS_DIR="$2"; shift 2 ;;
-        --dry-run)         DRY_RUN=1; shift ;;
-        --platform)        PLATFORM_OVERRIDE="$2"; shift 2 ;;
-        --items=*)         ITEMS_FILTER="${1#--items=}"; shift ;;
-        --items)           ITEMS_FILTER="$2"; shift 2 ;;
-        --topic)           TOPIC_OVERRIDE="$2"; shift 2 ;;
-        --help|-h)         sed -n '2,8p' "$0"; exit 0 ;;
-        *)                 log_error "unknown arg: $1"; exit 64 ;;
+        --selections)       SELECTIONS_FILE="$2"; shift 2 ;;
+        --bundle)           CLI_BUNDLES+=("$2"); shift 2 ;;
+        --topics-dir)       TOPICS_DIR="$2"; shift 2 ;;
+        --installers-dir)   INSTALLERS_DIR="$2"; shift 2 ;;
+        --params)           PARAMS_FILE="$2"; shift 2 ;;
+        --secrets)          SECRETS_OVERRIDE="$2"; shift 2 ;;
+        --platform)         PLATFORM_OVERRIDE="$2"; shift 2 ;;
+        --non-interactive)  NON_INTERACTIVE=1; shift ;;
+        --dry-run)          DRY_RUN=1; shift ;;
+        --help|-h)          sed -n '2,30p' "$0"; exit 0 ;;
+        *)                  log_error "unknown arg: $1"; exit 64 ;;
     esac
 done
 
-# Topic name powers per-item install state markers (~/.local/state/mesh/installed/).
-# Topic invocations always `cd "$HERE"` then run the engine, so $PWD's basename
-# is reliable; --topic exists as an explicit override for tests and ad-hoc runs.
-if [[ -n "$TOPIC_OVERRIDE" ]]; then
-    TOPIC="$TOPIC_OVERRIDE"
-elif [[ -n "${MESH_TOPIC:-}" ]]; then
-    TOPIC="$MESH_TOPIC"
-else
-    TOPIC="$(basename "$PWD")"
-fi
+[[ -d "$TOPICS_DIR" ]]     || { log_error "missing topics dir: $TOPICS_DIR"; exit 64; }
+[[ -d "$INSTALLERS_DIR" ]] || { log_error "missing installers dir: $INSTALLERS_DIR"; exit 64; }
 
-# Resolve current platform: --platform > $MESH_OS > detect-os.sh > "unknown"
+# Resolve current platform: --platform > $MESH_OS > detect-os.sh > "unknown".
 if [[ -n "$PLATFORM_OVERRIDE" ]]; then
     PLATFORM="$PLATFORM_OVERRIDE"
 elif [[ -n "${MESH_OS:-}" ]]; then
@@ -84,181 +106,468 @@ elif [[ -r "$ENGINE_DIR/detect-os.sh" ]]; then
 else
     PLATFORM="unknown"
 fi
+export MESH_OS="$PLATFORM"
 
-_item_applies_to_platform() {
-    # Args: $1 = item index. Returns 0 if item should run on $PLATFORM, 1 to skip.
-    local idx="$1" count_var="ITEM_${1}_PLATFORMS_COUNT" count j entry
-    count="${!count_var:-0}"
-    [[ "$count" -gt 0 ]] || return 0   # empty platforms ⇒ run on all
-    for ((j=0; j<count; j++)); do
-        entry_var="ITEM_${idx}_PLATFORMS_${j}"
-        entry="${!entry_var:-}"
-        [[ "$entry" == "$PLATFORM" ]] && return 0
+# Resolve which secrets file(s) to source: explicit override wins; otherwise
+# source legacy then new so the canonical (new) location overrides the legacy.
+SECRETS_FILES=()
+if [[ -n "$SECRETS_OVERRIDE" ]]; then
+    SECRETS_FILES=("$SECRETS_OVERRIDE")
+else
+    [[ -r "$SECRETS_FILE_LEGACY" ]] && SECRETS_FILES+=("$SECRETS_FILE_LEGACY")
+    [[ -r "$SECRETS_FILE_NEW" ]]    && SECRETS_FILES+=("$SECRETS_FILE_NEW")
+fi
+
+# Per-topic parsed-manifest cache (one yaml-parse run per topic, reused across
+# that topic's bundles). Cleaned on exit.
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/mesh-engine.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+
+# ─── selection collection ────────────────────────────────────────────────────
+
+SEL_ENTRIES=()
+
+_add_entry() {
+    # Append "topic/bundle" if not already present. Rejects malformed entries.
+    local e="$1"
+    case "$e" in
+        */*) : ;;
+        *) log_error "malformed selection (need topic/bundle): $e"; exit 64 ;;
+    esac
+    local x
+    for x in "${SEL_ENTRIES[@]+"${SEL_ENTRIES[@]}"}"; do
+        [[ "$x" == "$e" ]] && return 0
     done
+    SEL_ENTRIES+=("$e")
+}
+
+if [[ -n "$SELECTIONS_FILE" ]]; then
+    [[ -r "$SELECTIONS_FILE" ]] || { log_error "unreadable --selections file: $SELECTIONS_FILE"; exit 64; }
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%%#*}"                       # strip trailing comment
+        line="${line#"${line%%[![:space:]]*}"}"  # ltrim
+        line="${line%"${line##*[![:space:]]}"}"  # rtrim
+        [[ -z "$line" ]] && continue
+        _add_entry "$line"
+    done < "$SELECTIONS_FILE"
+fi
+for b in "${CLI_BUNDLES[@]+"${CLI_BUNDLES[@]}"}"; do
+    _add_entry "$b"
+done
+
+if [[ "${#SEL_ENTRIES[@]}" -eq 0 ]]; then
+    log_error "no bundles selected (pass --selections FILE or --bundle topic/bundle)"
+    exit 64
+fi
+
+# ─── manifest accessors (operate on the per-topic vars cache) ─────────────────
+
+_ensure_topic_parsed() {
+    local topic="$1"
+    local vf="$WORK/topic__$topic.vars" mf="$TOPICS_DIR/$topic/manifest.yaml"
+    [[ -f "$vf" ]] && return 0
+    [[ -r "$mf" ]] || { log_error "no manifest for topic: $topic ($mf)"; return 1; }
+    bash "$ENGINE_DIR/yaml-parse.sh" < "$mf" > "$vf" \
+        || { log_error "yaml-parse failed for topic: $topic"; return 1; }
+    grep -q '^__YAML_PARSE_OK=1$' "$vf" \
+        || { log_error "yaml-parse sentinel missing for topic: $topic"; return 1; }
+}
+
+# Echo the 0-based bundle index whose name matches $2 within topic $1, or rc 1.
+_bundle_index() {
+    local topic="$1" want="$2"
+    (
+        # shellcheck disable=SC1090
+        . "$WORK/topic__$topic.vars"
+        local n="${BUNDLE_COUNT:-0}" i nv
+        for ((i=0; i<n; i++)); do
+            nv="BUNDLE_${i}_NAME"
+            [[ "${!nv:-}" == "$want" ]] && { printf '%s' "$i"; exit 0; }
+        done
+        exit 1
+    )
+}
+
+# Echo each requires_bundles entry of topic/idx, one "topic/bundle" per line.
+_bundle_requires() {
+    local topic="$1" idx="$2"
+    (
+        # shellcheck disable=SC1090
+        . "$WORK/topic__$topic.vars"
+        local cv="BUNDLE_${idx}_REQUIRES_BUNDLES_COUNT" c j ev
+        c="${!cv:-0}"
+        for ((j=0; j<c; j++)); do
+            ev="BUNDLE_${idx}_REQUIRES_BUNDLES_${j}"
+            printf '%s\n' "${!ev}"
+        done
+    )
+}
+
+# rc 0 if the bundle's platforms: list is empty or includes $PLATFORM.
+_bundle_applies_platform() {
+    local topic="$1" idx="$2"
+    (
+        # shellcheck disable=SC1090
+        . "$WORK/topic__$topic.vars"
+        local cv="BUNDLE_${idx}_PLATFORMS_COUNT" c j pv
+        c="${!cv:-0}"
+        [[ "$c" -gt 0 ]] || exit 0
+        for ((j=0; j<c; j++)); do
+            pv="BUNDLE_${idx}_PLATFORMS_${j}"
+            [[ "${!pv:-}" == "$PLATFORM" ]] && exit 0
+        done
+        exit 1
+    )
+}
+
+_in_list() {
+    local needle="$1"; shift
+    local x
+    for x in "$@"; do [[ "$x" == "$needle" ]] && return 0; done
     return 1
 }
 
-[[ -n "$MANIFEST" && -r "$MANIFEST" ]] || { log_error "missing or unreadable --manifest"; exit 64; }
-[[ -d "$INSTALLERS_DIR" ]] || { log_error "missing installers dir: $INSTALLERS_DIR"; exit 64; }
+# ─── dependency closure (auto-select required bundles, spec §5.1) ─────────────
+# BFS over requires_bundles. A selected bundle's deps are added to the working
+# set even if not explicitly chosen; the menu surfaces this as an auto-select
+# banner (T-308), but the engine enforces it regardless of how it was invoked.
 
-parsed=$(bash "$ENGINE_DIR/yaml-parse.sh" < "$MANIFEST") || { log_error "yaml-parse failed for $MANIFEST"; exit 65; }
-eval "$parsed"
-[[ "${__YAML_PARSE_OK:-0}" == "1" ]] || { log_error "yaml-parse sentinel missing — parser bug or mutated"; exit 65; }
-
-# Iterate over ITEM_0_*, ITEM_1_*, ...
-processed=0
-skipped_platform=0
-i=0
-while :; do
-    name_var="ITEM_${i}_NAME"
-    [[ -n "${!name_var:-}" ]] || break
-    type_var="ITEM_${i}_TYPE"
-    spec_var="ITEM_${i}_SPEC"
-    check_var="ITEM_${i}_CHECK"
-    name="${!name_var}"
-    type="${!type_var:-}"
-    spec="${!spec_var:-}"
-    manifest_check="${!check_var:-}"
-    [[ -n "$type" ]] || { log_error "item $name missing required 'type' field"; exit 64; }
-
-    # Platform filter: skip items whose platforms: list excludes the current platform.
-    if ! _item_applies_to_platform "$i"; then
-        log_info "$name: skipping (platforms: excludes $PLATFORM)"
-        skipped_platform=$((skipped_platform+1))
-        i=$((i+1))
-        continue
+queue=("${SEL_ENTRIES[@]}")
+while [[ "${#queue[@]}" -gt 0 ]]; do
+    entry="${queue[0]}"
+    queue=("${queue[@]:1}")
+    topic="${entry%%/*}"; bundle="${entry#*/}"
+    _ensure_topic_parsed "$topic" || exit 65
+    if ! idx="$(_bundle_index "$topic" "$bundle")"; then
+        log_error "selected bundle does not exist: $entry"
+        exit 64
     fi
-
-    # Items filter: --items=a,b,c limits which items from the manifest are processed.
-    if [[ -n "$ITEMS_FILTER" ]]; then
-        _in_items_filter=0
-        IFS=',' read -ra _filter_entries <<< "$ITEMS_FILTER"
-        for _fe in "${_filter_entries[@]}"; do
-            [[ "$_fe" == "$name" ]] && { _in_items_filter=1; break; }
-        done
-        if (( _in_items_filter == 0 )); then
-            i=$((i+1))
-            continue
+    while IFS= read -r dep; do
+        [[ -z "$dep" ]] && continue
+        if ! _in_list "$dep" "${SEL_ENTRIES[@]+"${SEL_ENTRIES[@]}"}"; then
+            log_info "auto-selecting $dep (required by $entry)"
+            _add_entry "$dep"
+            queue+=("$dep")
         fi
-    fi
-
-    # Resolve dispatch argument: custom items use script: field, others use spec:
-    if [[ "$type" == "custom" ]]; then
-        script_var="ITEM_${i}_SCRIPT"
-        arg="${!script_var:-}"
-        [[ -n "$arg" ]] || { log_error "item $name: type=custom missing required 'script' field"; exit 64; }
-    else
-        arg="$spec"
-        # CP4 A2-F-002: refuse leading-dash specs for non-custom drivers.
-        # Most package managers parse a leading `-` as an option flag, so
-        # a malicious or malformed manifest could pass `--remove` or
-        # `-rf /` through. Drivers add `--` separators where supported,
-        # but defense-in-depth: reject at the dispatch layer.
-        if [[ "$arg" == -* ]]; then
-            log_error "item $name: spec begins with '-' which would be parsed as a CLI option by the $type driver (refused for safety)"
-            exit 64
-        fi
-    fi
-
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-        log_info "[dry-run] would process: $name ($type) arg=$arg"
-        processed=$((processed+1))
-        i=$((i+1))
-        continue
-    fi
-
-    (   # subshell — isolation per item (P4 validation)
-        driver="$INSTALLERS_DIR/${type}.sh"
-        if [[ ! -r "$driver" ]]; then
-            log_error "no driver for type=$type (item: $name)"
-            exit 66
-        fi
-        # shellcheck disable=SC1090
-        . "$driver"
-        prefix="${type//-/_}"   # brew-formula → brew_formula
-        # Pre-install check. Manifest `check:` (if set) OVERRIDES driver _check —
-        # gives authors a per-item escape hatch (e.g. `command -v rtk` to skip
-        # an npx-style fresh install when the binary is already on PATH).
-        # CP4 F-003: closes the silent-dead-config gap exposed in chunk F.
-        if [[ -n "$manifest_check" ]]; then
-            if bash -c "$manifest_check" >/dev/null 2>&1; then
-                # Backfill the install marker on first sight: the package is
-                # verifiably present, so adopt it as mesh-managed even though
-                # we didn't run the installer. After this, the menu shows it
-                # as steady-state instead of "foreign install".
-                install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
-                log_info "$name: already present (manifest check), skipping"
-                exit 0
-            fi
-        elif "${prefix}_check" "$arg" 2>/dev/null; then
-            install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
-            log_info "$name: already present, skipping"
-            exit 0
-        fi
-        log_info "$name: installing"
-        # Capture install rc explicitly. Codex review 2026-05-19 (A-F003 / F-F005):
-        # `set -euo pipefail` was exiting the subshell on install() failure
-        # BEFORE rollback could fire — leaving partial state behind. The
-        # `cmd || rc=$?` form both (a) suppresses `set -e` on install failure
-        # and (b) captures the actual rc (`if ! cmd; then $?` zeros it).
-        _install_rc=0
-        "${prefix}_install" "$arg" || _install_rc=$?
-        if [[ "$_install_rc" -ne 0 ]]; then
-            log_warn "$name: install failed (rc=$_install_rc); calling rollback if present"
-            declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
-            exit "$_install_rc"
-        fi
-        # Post-install verify. Priority: driver verify > manifest check > driver check.
-        # Manifest check used as verify fallback closes the contract symmetry
-        # with pre-install (CP4 F-003).
-        # CP4 A1-F-001: all 3 failure paths now route through rollback for
-        # symmetry — previously only driver _verify failure called rollback,
-        # leaving partial state for manifest-check/driver-check failures.
-        _post_check_ok=0
-        if declare -f "${prefix}_verify" >/dev/null 2>&1; then
-            "${prefix}_verify" "$arg" && _post_check_ok=1
-        elif [[ -n "$manifest_check" ]]; then
-            bash -c "$manifest_check" >/dev/null 2>&1 && _post_check_ok=1
-        else
-            "${prefix}_check" "$arg" 2>/dev/null && _post_check_ok=1
-        fi
-        if (( _post_check_ok == 0 )); then
-            log_warn "$name: post-install verification failed; calling rollback if present"
-            declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
-            exit 67
-        fi
-        # Record install marker so the menu scanner can answer "did mesh
-        # install this?" without per-driver knowledge. Marker dir lives at
-        # ~/.local/state/mesh/installed/ (overridable via MESH_INSTALL_STATE_DIR).
-        # Soft-fails: a marker-write failure must not abort an otherwise
-        # successful install.
-        install_state_record "$TOPIC" "$name" "$type" "$arg" \
-            || log_warn "$name: failed to record install state marker (continuing)"
-        # CP4 A1-F-003: optional post: hook. Iterates over the list emitted
-        # by yaml-parse (scalar post: foo → POST_COUNT=1 + POST_0=foo; list
-        # form expanded into POST_<n>). Skipped silently when post_count=0.
-        post_count_var="ITEM_${i}_POST_COUNT"
-        post_count="${!post_count_var:-0}"
-        if (( post_count > 0 )); then
-            for ((p=0; p<post_count; p++)); do
-                post_entry_var="ITEM_${i}_POST_${p}"
-                post_cmd="${!post_entry_var:-}"
-                [[ -n "$post_cmd" ]] || continue
-                if ! bash -c "$post_cmd"; then
-                    log_warn "$name: post[$p] failed (cmd: $post_cmd); calling rollback if present"
-                    declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
-                    exit 69
-                fi
-            done
-            log_info "$name: post completed ($post_count command(s))"
-        fi
-    ) || { _rc=$?; log_error "$name: failed (rc=$_rc)"; exit $_rc; }
-    processed=$((processed+1))
-    i=$((i+1))
+    done < <(_bundle_requires "$topic" "$idx")
 done
 
-if (( skipped_platform > 0 )); then
-    log_info "engine: completed $processed items on $PLATFORM ($skipped_platform skipped by platforms: filter)"
+# ─── topological sort (deps first, spec §5.1) ─────────────────────────────────
+# Kahn-style: repeatedly emit any not-yet-emitted node whose every in-set
+# dependency is already emitted. Preserves selection order among ready nodes.
+# A pass with no progress means a cycle (validator forbids it; defensive here).
+
+ORDERED=()
+remaining=("${SEL_ENTRIES[@]}")
+while [[ "${#remaining[@]}" -gt 0 ]]; do
+    progressed=0
+    leftover=()
+    for entry in "${remaining[@]}"; do
+        topic="${entry%%/*}"; bundle="${entry#*/}"
+        idx="$(_bundle_index "$topic" "$bundle")"
+        deps_ok=1
+        while IFS= read -r dep; do
+            [[ -z "$dep" ]] && continue
+            _in_list "$dep" "${SEL_ENTRIES[@]+"${SEL_ENTRIES[@]}"}" || continue
+            _in_list "$dep" "${ORDERED[@]+"${ORDERED[@]}"}" || deps_ok=0
+        done < <(_bundle_requires "$topic" "$idx")
+        if [[ "$deps_ok" -eq 1 ]]; then
+            ORDERED+=("$entry"); progressed=1
+        else
+            leftover+=("$entry")
+        fi
+    done
+    remaining=("${leftover[@]+"${leftover[@]}"}")
+    if [[ "$progressed" -eq 0 ]]; then
+        log_error "cycle in requires_bundles among: ${remaining[*]}"
+        exit 70
+    fi
+done
+
+# ─── per-bundle apply ─────────────────────────────────────────────────────────
+
+apply_bundle() {
+    # Runs in a subshell (caller wraps in (...)). Sources the topic's parsed
+    # vars, exports resolved option env vars, then processes the bundle's items.
+    local topic="$1" bundle="$2"
+    local B; B="$(_bundle_index "$topic" "$bundle")"
+    local TOPIC="$topic"
+
+    cd "$TOPICS_DIR/$topic" || { log_error "$topic: cannot cd into topic dir"; exit 64; }
+
+    # shellcheck disable=SC1090
+    . "$WORK/topic__$topic.vars"
+
+    # ── resolve + export option env vars ──
+    # Source persisted values first (params.env = non-secret, secrets.env =
+    # secret). `set -a` so every sourced KEY=value is exported to item scripts.
+    set -a
+    if [[ -r "$PARAMS_FILE" ]]; then
+        # shellcheck disable=SC1090
+        . "$PARAMS_FILE" || log_warn "$topic: could not source params file"
+    fi
+    local sf
+    for sf in "${SECRETS_FILES[@]+"${SECRETS_FILES[@]}"}"; do
+        # shellcheck disable=SC1090
+        . "$sf" 2>/dev/null || log_warn "$topic: could not source secrets file ($sf)"
+    done
+    set +a
+
+    local optc_var="BUNDLE_${B}_OPTION_COUNT" optc o
+    optc="${!optc_var:-0}"
+    for ((o=0; o<optc; o++)); do
+        local oenv_var="BUNDLE_${B}_OPTION_${o}_ENV"
+        local oenv="${!oenv_var:-}"
+        [[ -n "$oenv" ]] || continue
+        local otype_var="BUNDLE_${B}_OPTION_${o}_TYPE"
+        local otype="${!otype_var:-}"
+        local cur="${!oenv:-}"
+
+        # Normalize an already-present toggle value to 1/0 so `when:` and item
+        # scripts see a consistent boolean regardless of how it was written.
+        if [[ "$otype" == "toggle" && -n "$cur" ]]; then
+            case "$cur" in 1|true|yes|on|TRUE|True|Yes|On) export "$oenv=1" ;; *) export "$oenv=0" ;; esac
+            continue
+        fi
+        [[ -n "$cur" ]] && continue          # already resolved (from params/secrets/env)
+        [[ "$NON_INTERACTIVE" == "1" ]] || continue   # interactive: menu owns prompting
+
+        # ── silent default for --non-interactive ──
+        case "$otype" in
+            toggle)
+                local d_var="BUNDLE_${B}_OPTION_${o}_DEFAULT"
+                local d="${!d_var:-false}"
+                case "$d" in 1|true|yes|on|TRUE|True|Yes|On) export "$oenv=1" ;; *) export "$oenv=0" ;; esac
+                ;;
+            multiselect)
+                local dc_var="BUNDLE_${B}_OPTION_${o}_DEFAULT_COUNT" dc k acc=""
+                dc="${!dc_var:-0}"
+                for ((k=0; k<dc; k++)); do
+                    local dk_var="BUNDLE_${B}_OPTION_${o}_DEFAULT_${k}"
+                    acc="${acc:+$acc }${!dk_var}"
+                done
+                [[ -n "$acc" ]] && export "$oenv=$acc"
+                ;;
+            text)
+                local df_var="BUNDLE_${B}_OPTION_${o}_DEFAULT_FROM"
+                local df="${!df_var:-}"
+                local dv_var="BUNDLE_${B}_OPTION_${o}_DEFAULT"
+                local dv="${!dv_var:-}"
+                local val=""
+                if [[ -n "$df" ]]; then
+                    val="$(bash -c "$df" 2>/dev/null || true)"
+                fi
+                [[ -z "$val" && -n "$dv" ]] && val="$dv"
+                [[ -n "$val" ]] && export "$oenv=$val"
+                ;;
+            select)
+                local sdv_var="BUNDLE_${B}_OPTION_${o}_DEFAULT"
+                local sdv="${!sdv_var:-}"
+                [[ -n "$sdv" ]] && export "$oenv=$sdv"
+                ;;
+            secret) : ;;   # never auto-filled; absent = item handles it / skips
+        esac
+    done
+
+    # Resolve `when: option.<name>` to the toggle's exported env value.
+    # rc 0 = truthy (run), rc 1 = falsy/unknown (skip).
+    _option_is_on() {
+        local oname="$1" oc_var="BUNDLE_${B}_OPTION_COUNT" oc i
+        oc="${!oc_var:-0}"
+        for ((i=0; i<oc; i++)); do
+            local nv="BUNDLE_${B}_OPTION_${i}_NAME"
+            if [[ "${!nv:-}" == "$oname" ]]; then
+                local ev="BUNDLE_${B}_OPTION_${i}_ENV"
+                local e="${!ev:-}"; [[ -n "$e" ]] || return 1
+                case "${!e:-}" in 1|true|yes|on|TRUE|True|Yes|On) return 0 ;; *) return 1 ;; esac
+            fi
+        done
+        return 1
+    }
+
+    # ── item loop ──
+    local icount_var="BUNDLE_${B}_ITEM_COUNT" icount i
+    icount="${!icount_var:-0}"
+    local bundle_processed=0
+    for ((i=0; i<icount; i++)); do
+        local p="BUNDLE_${B}_ITEM_${i}"
+        local name="${p}_NAME";        name="${!name:-}"
+        local type="${p}_TYPE";        type="${!type:-}"
+        local spec="${p}_SPEC";        spec="${!spec:-}"
+        local script="${p}_SCRIPT";    script="${!script:-}"
+        local mcheck="${p}_CHECK";     mcheck="${!mcheck:-}"
+        local when="${p}_WHEN";        when="${!when:-}"
+        local idem="${p}_IDEMPOTENT";  idem="${!idem:-0}"
+        [[ -n "$name" ]] || break
+        [[ -n "$type" ]] || { log_error "$bundle/$name: item missing required 'type'"; exit 64; }
+
+        # item-level platform gate
+        local pc_var="${p}_PLATFORMS_COUNT" pc j ok_platform
+        pc="${!pc_var:-0}"
+        if [[ "$pc" -gt 0 ]]; then
+            ok_platform=0
+            for ((j=0; j<pc; j++)); do
+                local pe_var="${p}_PLATFORMS_${j}"
+                [[ "${!pe_var:-}" == "$PLATFORM" ]] && { ok_platform=1; break; }
+            done
+            if [[ "$ok_platform" -eq 0 ]]; then
+                log_info "$bundle/$name: skip (platforms: excludes $PLATFORM)"
+                continue
+            fi
+        fi
+
+        # when: gate
+        if [[ -n "$when" ]]; then
+            case "$when" in
+                option.*)
+                    if ! _option_is_on "${when#option.}"; then
+                        log_info "$bundle/$name: skip (when: $when is off)"
+                        continue
+                    fi
+                    ;;
+                *)
+                    local _wrc=0
+                    cond_eval "$when" || _wrc=$?
+                    if [[ "$_wrc" -eq 2 ]]; then
+                        log_error "$bundle/$name: when: references unknown condition '$when'"
+                        exit 71
+                    elif [[ "$_wrc" -ne 0 ]]; then
+                        log_info "$bundle/$name: skip (when: $when is false)"
+                        continue
+                    fi
+                    ;;
+            esac
+        fi
+
+        # resolve dispatch arg
+        local arg
+        if [[ "$type" == "custom" ]]; then
+            arg="$script"
+            [[ -n "$arg" ]] || { log_error "$bundle/$name: type=custom missing 'script'"; exit 64; }
+        else
+            arg="$spec"
+            # defense-in-depth: refuse leading-dash specs (would be parsed as a
+            # CLI option by most package managers).
+            if [[ "$arg" == -* ]]; then
+                log_error "$bundle/$name: spec begins with '-' (refused for $type driver)"
+                exit 64
+            fi
+        fi
+
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            local idem_note=""; [[ "$idem" == "1" ]] && idem_note=" idempotent"
+            log_info "[dry-run] would process: $bundle/$name ($type$idem_note) arg=$arg"
+            bundle_processed=$((bundle_processed+1))
+            continue
+        fi
+
+        (   # per-item subshell isolation
+            local driver="$INSTALLERS_DIR/${type}.sh"
+            if [[ ! -r "$driver" ]]; then
+                log_error "no driver for type=$type (item: $bundle/$name)"
+                exit 66
+            fi
+            # shellcheck disable=SC1090
+            . "$driver"
+            local prefix="${type//-/_}"
+
+            # idempotent items (spec §11): skip pre-check + post-verify, always run.
+            if [[ "$idem" == "1" ]]; then
+                log_info "$bundle/$name: running (idempotent)"
+                local _rc=0
+                "${prefix}_install" "$arg" || _rc=$?
+                if [[ "$_rc" -ne 0 ]]; then
+                    log_warn "$bundle/$name: install failed (rc=$_rc); rollback if present"
+                    declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                    exit "$_rc"
+                fi
+                install_state_record "$TOPIC" "$name" "$type" "$arg" \
+                    || log_warn "$bundle/$name: failed to record install marker (continuing)"
+                exit 0
+            fi
+
+            # pre-install check: manifest `check:` overrides driver _check.
+            if [[ -n "$mcheck" ]]; then
+                if bash -c "$mcheck" >/dev/null 2>&1; then
+                    install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
+                    log_info "$bundle/$name: already present (manifest check), skipping"
+                    exit 0
+                fi
+            elif "${prefix}_check" "$arg" 2>/dev/null; then
+                install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
+                log_info "$bundle/$name: already present, skipping"
+                exit 0
+            fi
+
+            log_info "$bundle/$name: installing"
+            local _install_rc=0
+            "${prefix}_install" "$arg" || _install_rc=$?
+            if [[ "$_install_rc" -ne 0 ]]; then
+                log_warn "$bundle/$name: install failed (rc=$_install_rc); rollback if present"
+                declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                exit "$_install_rc"
+            fi
+
+            # post-install verify: driver verify > manifest check > driver check.
+            local _post_ok=0
+            if declare -f "${prefix}_verify" >/dev/null 2>&1; then
+                "${prefix}_verify" "$arg" && _post_ok=1
+            elif [[ -n "$mcheck" ]]; then
+                bash -c "$mcheck" >/dev/null 2>&1 && _post_ok=1
+            else
+                "${prefix}_check" "$arg" 2>/dev/null && _post_ok=1
+            fi
+            if (( _post_ok == 0 )); then
+                log_warn "$bundle/$name: post-install verification failed; rollback if present"
+                declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                exit 67
+            fi
+
+            install_state_record "$TOPIC" "$name" "$type" "$arg" \
+                || log_warn "$bundle/$name: failed to record install marker (continuing)"
+
+            # optional post: hooks (scalar or list, expanded by yaml-parse).
+            local post_count_var="${p}_POST_COUNT" post_count
+            post_count="${!post_count_var:-0}"
+            if (( post_count > 0 )); then
+                local pidx
+                for ((pidx=0; pidx<post_count; pidx++)); do
+                    local pe_var="${p}_POST_${pidx}"
+                    local post_cmd="${!pe_var:-}"
+                    [[ -n "$post_cmd" ]] || continue
+                    if ! bash -c "$post_cmd"; then
+                        log_warn "$bundle/$name: post[$pidx] failed; rollback if present"
+                        declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                        exit 69
+                    fi
+                done
+                log_info "$bundle/$name: post completed ($post_count command(s))"
+            fi
+        ) || { local _rc=$?; log_error "$bundle/$name: failed (rc=$_rc)"; exit $_rc; }
+        bundle_processed=$((bundle_processed+1))
+    done
+
+    log_info "$topic/$bundle: completed ($bundle_processed item(s) on $PLATFORM)"
+}
+
+# ─── drive the ordered bundle list ────────────────────────────────────────────
+
+bundles_done=0
+bundles_skipped=0
+for entry in "${ORDERED[@]}"; do
+    topic="${entry%%/*}"; bundle="${entry#*/}"
+    idx="$(_bundle_index "$topic" "$bundle")"
+    if ! _bundle_applies_platform "$topic" "$idx"; then
+        log_info "$entry: skip bundle (platforms: excludes $PLATFORM)"
+        bundles_skipped=$((bundles_skipped+1))
+        continue
+    fi
+    ( apply_bundle "$topic" "$bundle" ) || { _rc=$?; log_error "$entry: bundle failed (rc=$_rc)"; exit $_rc; }
+    bundles_done=$((bundles_done+1))
+done
+
+if (( bundles_skipped > 0 )); then
+    log_info "engine: applied $bundles_done bundle(s) on $PLATFORM ($bundles_skipped skipped by platforms:)"
 else
-    log_info "engine: completed $processed items on $PLATFORM"
+    log_info "engine: applied $bundles_done bundle(s) on $PLATFORM"
 fi
