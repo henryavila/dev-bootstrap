@@ -303,8 +303,29 @@ fi
 
 # ---------- Detect if sudo will be needed ----------
 
+# A destination needs sudo only when the current user cannot write it — NOT
+# merely because it lives outside $HOME. Homebrew prefixes (custom paths like
+# /Volumes/External/homebrew, or canonical /opt/homebrew on Apple Silicon) are
+# user-owned, so valet's nginx config under $BREW_PREFIX/etc deploys without
+# sudo; genuine system paths (/etc/nginx on WSL) still escalate. Tests the
+# target file if it exists, else its nearest existing ancestor directory.
+# Returns 0 (true) when sudo IS needed, 1 (false) otherwise.
+_dst_needs_sudo() {
+    local d="$1"
+    if [[ -e "$d" ]]; then
+        [[ -w "$d" ]] && return 1 || return 0
+    fi
+    d="$(dirname "$d")"
+    while [[ ! -e "$d" ]]; do
+        local parent; parent="$(dirname "$d")"
+        [[ "$parent" == "$d" ]] && break
+        d="$parent"
+    done
+    [[ -w "$d" ]] && return 1 || return 0
+}
+
 for dst in "${mapping_dst[@]}"; do
-    if [[ "$dst" != "$HOME"/* ]] && [[ "$dst" != "$HOME" ]]; then
+    if _dst_needs_sudo "$dst"; then
         sudo_needed=1
         break
     fi
@@ -340,7 +361,7 @@ deploy_one() {
     dst_dir="$(dirname "$dst")"
 
     local needs_sudo=0
-    if [[ "$dst" != "$HOME"/* ]] && [[ "$dst" != "$HOME" ]]; then
+    if _dst_needs_sudo "$dst"; then
         needs_sudo=1
     fi
 
