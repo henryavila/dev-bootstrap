@@ -51,7 +51,8 @@ function row(key: string, kind: 'install' | 'remove' | 'keep', index: Map<string
 
 export function SummaryConfirm(props: SummaryConfirmProps) {
   const { delta, index } = props;
-  const { rows: termRows } = useStdoutDimensions();
+  const { rows: rawRows } = useStdoutDimensions();
+  const termRows = rawRows >= 10 ? rawRows : 24; // guard a bad/0 resize reading
 
   const rows: ListRowData[] = [
     ...delta.install.map((k) => row(k, 'install', index)),

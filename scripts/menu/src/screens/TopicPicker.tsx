@@ -81,7 +81,10 @@ function bundleStateIntent(scan: BundleScan | undefined): string | undefined {
 export function TopicPicker(props: TopicPickerProps) {
   const { topics, selected, required, scan, banner } = props;
   const [activePane, setActivePane] = useState<Pane2>('topics');
-  const { rows } = useStdoutDimensions();
+  const { rows: rawRows } = useStdoutDimensions();
+  // Guard against a transient bad/0 reading (some stdouts report garbage on a
+  // resize event) collapsing the layout; assume a sane terminal otherwise.
+  const rows = rawRows >= 10 ? rawRows : 24;
 
   const topicNav = useListNavigation({ ids: topics.map((t) => t.id) });
   const focusedTopic = topics.find((t) => t.id === topicNav.focusedId) ?? topics[0];
@@ -188,7 +191,13 @@ export function TopicPicker(props: TopicPickerProps) {
   });
 
   const selectedCount = selected.size;
-  const innerHeight = Math.max(6, rows - 4); // minus header + footer + banner
+  // Explicit middle height leaves room for the header + footer so the footer
+  // is always on-screen (total ≈ rows-1). The detail items are clipped to the
+  // detail pane's share so a bundle with many options/requires can't overflow
+  // and shove the footer off the bottom.
+  const innerHeight = Math.max(6, rows - 4); // minus header (1) + footer (2)
+  const detailMax = Math.max(2, Math.floor(innerHeight * 0.4) - 2);
+  const bundlesListH = Math.max(3, Math.floor((innerHeight - 4) * 0.6));
 
   return (
     <Box flexDirection="column">
@@ -207,11 +216,11 @@ export function TopicPicker(props: TopicPickerProps) {
               rows={bundleRows}
               focusedId={activePane === 'bundles' ? bundleNav.focusedId : null}
               selectedIds={selectedBundleIds}
-              height={Math.max(3, Math.floor((innerHeight - 4) * 0.6))}
+              height={bundlesListH}
             />
           </Pane>
           <Pane title="Detail" flexBasis="40%">
-            <DescriptionList items={detail} gutter={9} />
+            <DescriptionList items={detail.slice(0, detailMax)} gutter={9} />
           </Pane>
         </Box>
       </Box>
