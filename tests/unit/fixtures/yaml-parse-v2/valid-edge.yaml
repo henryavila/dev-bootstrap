@@ -1,0 +1,47 @@
+topic:
+  label: "Languages"
+  hint: "PHP + Node toolchains"
+  required: false
+  order: 60
+  description: |
+    Multi-line topic description that the bash walker must skip entirely.
+    Second line of the block scalar — never emitted as TOPIC_DESCRIPTION.
+
+bundles:
+
+  - name: php
+    label: "PHP"
+    desc: "PHP with multi-version + extensions"
+    requires_bundles:
+      - foundation/base
+    options:
+      - name: versions
+        type: multiselect
+        label: "PHP versions"
+        env: MESH_PHP_VERSIONS
+        source: ./data/php-versions.conf
+        required_min: 1
+        default: [8.4]
+      - name: default-version
+        type: select
+        label: "Default PHP"
+        env: MESH_PHP_DEFAULT
+        derive_from: versions
+      - name: enable-composer
+        type: toggle
+        label: "Install Composer globally"
+        env: MESH_PHP_COMPOSER
+        default: true
+    items:
+      - name: php-stack
+        type: custom
+        script: ./php.sh
+      - name: composer
+        type: custom
+        script: ./composer.sh
+        when: option.enable-composer
+      - name: mosh-path-fix
+        type: custom
+        script: ./mac/mosh.sh
+        platforms: [mac]
+        when: brew_prefix_custom

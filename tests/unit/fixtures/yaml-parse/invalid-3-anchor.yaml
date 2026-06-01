@@ -1,6 +1,0 @@
-- name: foo
-  type: brew
-  spec: &myanchor foo
-- name: bar
-  type: brew
-  spec: *myanchor

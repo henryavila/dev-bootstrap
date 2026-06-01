@@ -1,8 +1,0 @@
-# This is a topic items.yaml
-# Tests comment + inline-comment + 3 quoting styles + scalar post
-
-- name: gh   # GitHub CLI inline comment
-  type: brew
-  spec: 'gh'
-  desc: "GitHub CLI"
-  post: gh auth status

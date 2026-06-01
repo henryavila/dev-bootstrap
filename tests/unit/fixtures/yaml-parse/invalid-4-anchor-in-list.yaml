@@ -1,4 +1,0 @@
-- name: anchor-injection
-  type: brew
-  spec: foo
-  requires: [&anchor node]

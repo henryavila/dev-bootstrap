@@ -1,0 +1,13 @@
+topic:
+  label: "CycleB"
+  order: 20
+bundles:
+  - name: y
+    label: "Y"
+    desc: "y depends on cycle-a/x"
+    requires_bundles:
+      - cycle-a/x
+    items:
+      - name: i
+        type: custom
+        script: ./i.sh

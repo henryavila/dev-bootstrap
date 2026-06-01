@@ -1,5 +1,0 @@
-- name: foo
-  type: brew
-  spec: foo
-  post:
-    key: value

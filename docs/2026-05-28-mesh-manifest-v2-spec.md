@@ -751,6 +751,30 @@ The blink-tui **app** has its own strict TypeScript reader (`manifest-reader.ts`
 T-301) producing typed `Topic[] / Bundle[] / Item[] / Option[]`. Both read the
 same `manifest.yaml`; neither preprocesses for the other (no JS-side bridge).
 
+### 10.4 · Validator META mode (`MESH_YAML_META=1`)
+
+The default engine output skips the `choices` / `derive_from` / `source`
+sub-trees (§10 scope boundary). But `validate-manifest.sh` (§8 rules 11/14/15/16)
+needs to *know they exist* without a 4th-level inline-map tokenizer. So
+`yaml-parse.sh` accepts an opt-in env flag `MESH_YAML_META=1` that additionally
+emits, per option:
+
+```sh
+BUNDLE_<b>_OPTION_<o>_HAS_CHOICES=1            # choices: block present
+BUNDLE_<b>_OPTION_<o>_CHOICE_COUNT=N           # number of '- ' entries under it
+BUNDLE_<b>_OPTION_<o>_CHOICE_DEFAULT_COUNT=M   # entries containing `default: true`
+BUNDLE_<b>_OPTION_<o>_DERIVE_FROM="versions"   # derive_from scalar
+BUNDLE_<b>_OPTION_<o>_SOURCE="./data/x.conf"   # source scalar
+```
+
+The choice meta is produced by **counting** lines while the subtree is skipped
+(no inline-map parsing — the `default: true` substring is matched on the entry
+line, which covers both the inline `{ …, default: true }` and block forms).
+This keeps the bash walker at 3 nesting levels. **The default (engine) output is
+unchanged** — META keys appear only when the flag is set, so the §10.1 contract
+stands for `install-engine.sh` / `uninstall-engine.sh`. The TS reader does its
+own full parse of these sub-trees (§10.3) and ignores META mode.
+
 ---
 
 ## 11 · Syncthing apply-pause (D-10)
@@ -829,3 +853,14 @@ in `--non-interactive` runs the script skips the `read` and only prints.
     (`~/.local/state/mesh/` vs `~/.local/state/mesh-workstation/` vs
     `~/.config/mesh/`) to resolve in T-200/T-303.
   - **§0 Decision Index** added (D-6..D-13 → implementing sections).
+- **2026-06-01** — engine implementation landed (T-200/T-201/T-103):
+  - `yaml-parse.sh` rewritten for the 3-level schema (§10.1 output shape) +
+    behavioural tests; **§10.4 Validator META mode** added (`MESH_YAML_META=1`
+    emits choices/derive_from/source metadata for the validator without a 4th
+    indent level).
+  - `conditions.sh` implements the six named `when:` conditions (§3.1) +
+    `cond_eval`/`cond_is_known`/`cond_list` API.
+  - `validate-manifest.sh` enforces all §8 rules (forward-ref `requires_bundles`
+    tolerated as a warning during migration; `--strict` promotes to error) +
+    `schema/manifest.schema.json` for editor/TS shape hints. Wired into
+    pre-commit (lint L20) and CI.

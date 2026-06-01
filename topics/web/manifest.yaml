@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
 topic:
   label: "Web"
   hint: "Valet/nginx + mailpit + ngrok"

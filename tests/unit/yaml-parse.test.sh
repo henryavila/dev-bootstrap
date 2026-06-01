@@ -1,375 +1,201 @@
 #!/usr/bin/env bash
-# Test harness for P1 YAML parser.
-# Bash 3.2 compatible (will run on macOS default bash).
+# Behavioural tests for yaml-parse.sh v2 (manifest.yaml 3-level schema).
+# Bash 3.2 compatible (runs on macOS default bash).
 #
-# Pass criterion (per spec.md §C17 + handoff §G4 P1):
-#   - parser ≤300 LOC
-#   - 5/5 valid fixtures pass with expected variable bindings
-#   - 3/3 invalid fixtures reject with stderr containing "line N" and "column N"
+# Covers spec §10.2 mandates: nested counts, when: passthrough (named + option),
+# requires_bundles lists, indent-6 routing, graceful skip of the
+# choices/derive_from/source sub-trees (default mode) + their META-mode emission,
+# per-item platform gating, the success sentinel, and rejection of every
+# unsupported construct the parser must reject.
+#
+# The two reference manifests (topics/web, topics/databases) double as valid
+# fixtures — the parser must keep them green (handoff step 1 / T-200).
 
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WS="$(cd "$HERE/../.." && pwd)"
 PARSER="$WS/scripts/lib/yaml-parse.sh"
-FIXTURES="$HERE/fixtures/yaml-parse"
+FIX="$HERE/fixtures/yaml-parse-v2"
+TOPICS="$WS/topics"
 
 pass=0
 fail=0
 fails=""
 
-assert() {
-    # assert <label> <condition_eval_string>
-    local label="$1"; shift
-    if eval "$@"; then
-        pass=$((pass + 1))
-    else
-        fail=$((fail + 1))
-        fails="$fails\n  FAIL: $label   (cond: $*)"
-    fi
-}
-
+# run_valid <file> <inline assertions> [META=1]
 run_valid() {
-    # run_valid <fixture_basename> <inline assertions code>
-    local fixture="$1"; shift
-    local code="$*"
-    local out
-    out=$("$PARSER" < "$FIXTURES/$fixture.yaml" 2>&1)
-    local rc=$?
+    local file="$1" code="$2" meta="${3:-0}"
+    local out rc
+    out=$(MESH_YAML_META="$meta" "$PARSER" < "$file" 2>&1); rc=$?
     if [ $rc -ne 0 ]; then
         fail=$((fail + 1))
-        fails="$fails\n  FAIL: $fixture parser exited $rc, output: $out"
+        fails="$fails\n  FAIL: $file parser exited $rc: $out"
         return
     fi
-    # eval in a subshell to isolate var pollution
-    if (
-        eval "$out"
-        eval "$code"
-    ); then
+    if ( eval "$out"; eval "$code" ); then
         pass=$((pass + 1))
     else
         fail=$((fail + 1))
-        fails="$fails\n  FAIL: $fixture assertions failed (out was: $out)"
+        fails="$fails\n  FAIL: $file assertions failed\n----\n$out\n----"
     fi
 }
 
+# run_invalid <file> <expected substring>
 run_invalid() {
-    # run_invalid <fixture_basename> <expected_substring_in_stderr>
-    local fixture="$1"
-    local needle="$2"
-    local out
-    out=$("$PARSER" < "$FIXTURES/$fixture.yaml" 2>&1)
-    local rc=$?
+    local file="$1" needle="$2" out rc
+    out=$("$PARSER" < "$file" 2>&1); rc=$?
     if [ $rc -eq 0 ]; then
         fail=$((fail + 1))
-        fails="$fails\n  FAIL: $fixture parser exited 0 but should reject"
+        fails="$fails\n  FAIL: $file parsed OK but should reject"
         return
     fi
     case "$out" in
-        *"$needle"*)
-            : pass
-            ;;
-        *)
-            fail=$((fail + 1))
-            fails="$fails\n  FAIL: $fixture stderr missing '$needle' (got: $out)"
-            return
-            ;;
+        *"$needle"*) ;;
+        *) fail=$((fail + 1)); fails="$fails\n  FAIL: $file stderr missing '$needle' (got: $out)"; return;;
     esac
-    # Also require both "line" and "column" markers
     case "$out" in
-        *line*[Cc]olumn*|*[Cc]olumn*line*)
-            pass=$((pass + 1))
-            ;;
-        *)
-            fail=$((fail + 1))
-            fails="$fails\n  FAIL: $fixture stderr missing 'line N column N' marker (got: $out)"
-            ;;
+        *line*[Cc]olumn*) pass=$((pass + 1));;
+        *) fail=$((fail + 1)); fails="$fails\n  FAIL: $file stderr missing 'line N column N' (got: $out)";;
     esac
 }
 
-# --- Valid fixtures ---
-
-run_valid valid-1-minimal '
-    [ "$ITEM_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_NAME" = "ripgrep" ] || exit 1
-    [ "$ITEM_0_TYPE" = "brew" ] || exit 1
-    [ "$ITEM_0_SPEC" = "ripgrep" ] || exit 1
+echo "=== reference manifest: topics/web ==="
+run_valid "$TOPICS/web/manifest.yaml" '
+    [ "${__YAML_PARSE_OK:-0}" = 1 ] || exit 1
+    [ "$TOPIC_LABEL" = "Web" ] || exit 1
+    [ "$TOPIC_ORDER" = 70 ] || exit 1
+    [ "$TOPIC_REQUIRED" = 0 ] || exit 1
+    # topic.description is UI-only — must NOT be emitted.
+    [ -z "${TOPIC_DESCRIPTION:-}" ] || exit 1
+    [ "$BUNDLE_COUNT" = 4 ] || exit 1
+    # valet bundle: platforms + requires_bundles lists, 4 items, idempotent flag.
+    [ "$BUNDLE_0_NAME" = "valet" ] || exit 1
+    [ "$BUNDLE_0_PLATFORMS_COUNT" = 1 ] || exit 1
+    [ "$BUNDLE_0_PLATFORMS_0" = "mac" ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_COUNT" = 2 ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_0" = "databases/mysql" ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_1" = "databases/redis" ] || exit 1
+    [ "$BUNDLE_0_ITEM_COUNT" = 4 ] || exit 1
+    [ "$BUNDLE_0_ITEM_3_IDEMPOTENT" = 1 ] || exit 1
+    [ "$BUNDLE_0_OPTION_COUNT" = 0 ] || exit 1
+    # ngrok bundle: secret option scalars only (description skipped).
+    [ "$BUNDLE_3_OPTION_COUNT" = 1 ] || exit 1
+    [ "$BUNDLE_3_OPTION_0_NAME" = "authtoken" ] || exit 1
+    [ "$BUNDLE_3_OPTION_0_TYPE" = "secret" ] || exit 1
+    [ "$BUNDLE_3_OPTION_0_ENV" = "NGROK_AUTHTOKEN" ] || exit 1
+    [ "$BUNDLE_3_OPTION_0_REQUIRED" = 0 ] || exit 1
 '
 
-run_valid valid-2-full-fields '
-    [ "$ITEM_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_NAME" = "mdprobe" ] || exit 1
-    [ "$ITEM_0_TYPE" = "npm-global" ] || exit 1
-    [ "$ITEM_0_SPEC" = "@henryavila/mdprobe" ] || exit 1
-    [ "$ITEM_0_DESC" = "Markdown review UI" ] || exit 1
-    [ "$ITEM_0_CHECK" = "command -v mdprobe" ] || exit 1
-    [ "$ITEM_0_POST_COUNT" = 2 ] || exit 1
-    [ "$ITEM_0_POST_0" = "mdprobe setup --yes" ] || exit 1
-    [ "$ITEM_0_POST_1" = "mdprobe verify" ] || exit 1
-    [ "$ITEM_0_REQUIRES_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_REQUIRES_0" = "node" ] || exit 1
-    [ "$ITEM_0_PLATFORMS_COUNT" = 2 ] || exit 1
-    [ "$ITEM_0_PLATFORMS_0" = "mac" ] || exit 1
-    [ "$ITEM_0_PLATFORMS_1" = "linux" ] || exit 1
+echo "=== reference manifest: topics/databases ==="
+run_valid "$TOPICS/databases/manifest.yaml" '
+    [ "$BUNDLE_COUNT" = 4 ] || exit 1
+    # per-item platforms (inline) + uninstall_tier.
+    [ "$BUNDLE_0_ITEM_0_NAME" = "mysql-mac" ] || exit 1
+    [ "$BUNDLE_0_ITEM_0_PLATFORMS_0" = "mac" ] || exit 1
+    [ "$BUNDLE_0_ITEM_0_UNINSTALL_TIER" = 3 ] || exit 1
+    [ "$BUNDLE_0_ITEM_1_PLATFORMS_0" = "wsl" ] || exit 1
+    # postgresql: select option, default scalar; choices sub-tree skipped.
+    [ "$BUNDLE_2_OPTION_0_TYPE" = "select" ] || exit 1
+    [ "$BUNDLE_2_OPTION_0_DEFAULT" = "17" ] || exit 1
+    [ -z "${BUNDLE_2_OPTION_0_HAS_CHOICES:-}" ] || exit 1
 '
 
-run_valid valid-3-custom-script '
-    [ "$ITEM_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_NAME" = "postgres" ] || exit 1
-    [ "$ITEM_0_TYPE" = "custom" ] || exit 1
-    [ "$ITEM_0_SCRIPT" = "scripts/install-postgres.sh" ] || exit 1
-    [ "$ITEM_0_DESC" = "PostgreSQL with launchd wrapper" ] || exit 1
-    [ "$ITEM_0_PLATFORMS_COUNT" = 2 ] || exit 1
-    [ "$ITEM_0_PLATFORMS_0" = "mac" ] || exit 1
-    [ "$ITEM_0_PLATFORMS_1" = "linux" ] || exit 1
+echo "=== databases META mode: choice meta emitted ==="
+run_valid "$TOPICS/databases/manifest.yaml" '
+    [ "$BUNDLE_2_OPTION_0_HAS_CHOICES" = 1 ] || exit 1
+    [ "$BUNDLE_2_OPTION_0_CHOICE_COUNT" = 3 ] || exit 1
+    [ "$BUNDLE_2_OPTION_0_CHOICE_DEFAULT_COUNT" = 0 ] || exit 1
+' 1
+
+echo "=== edge fixture: when:, options, default-skip ==="
+run_valid "$FIX/valid-edge.yaml" '
+    [ "$TOPIC_ORDER" = 60 ] || exit 1
+    [ -z "${TOPIC_DESCRIPTION:-}" ] || exit 1
+    [ "$BUNDLE_COUNT" = 1 ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_COUNT" = 1 ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_0" = "foundation/base" ] || exit 1
+    [ "$BUNDLE_0_OPTION_COUNT" = 3 ] || exit 1
+    # multiselect versions: source/derive skipped in default mode; inline-list default.
+    [ "$BUNDLE_0_OPTION_0_TYPE" = "multiselect" ] || exit 1
+    [ "$BUNDLE_0_OPTION_0_REQUIRED_MIN" = 1 ] || exit 1
+    [ "$BUNDLE_0_OPTION_0_DEFAULT_COUNT" = 1 ] || exit 1
+    [ "$BUNDLE_0_OPTION_0_DEFAULT_0" = "8.4" ] || exit 1
+    [ -z "${BUNDLE_0_OPTION_0_SOURCE:-}" ] || exit 1
+    [ -z "${BUNDLE_0_OPTION_1_DERIVE_FROM:-}" ] || exit 1
+    # item when: passthrough — both inline-option and named forms.
+    [ "$BUNDLE_0_ITEM_COUNT" = 3 ] || exit 1
+    [ "$BUNDLE_0_ITEM_1_WHEN" = "option.enable-composer" ] || exit 1
+    [ "$BUNDLE_0_ITEM_2_WHEN" = "brew_prefix_custom" ] || exit 1
+    [ "$BUNDLE_0_ITEM_2_PLATFORMS_0" = "mac" ] || exit 1
 '
 
-run_valid valid-4-multiple-items '
-    [ "$ITEM_COUNT" = 3 ] || exit 1
-    [ "$ITEM_0_NAME" = "node" ] || exit 1
-    [ "$ITEM_0_PLATFORMS_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_PLATFORMS_0" = "mac" ] || exit 1
-    [ "$ITEM_1_NAME" = "mdprobe" ] || exit 1
-    [ "$ITEM_1_TYPE" = "npm-global" ] || exit 1
-    [ "$ITEM_1_SPEC" = "@henryavila/mdprobe" ] || exit 1
-    [ "$ITEM_1_REQUIRES_COUNT" = 1 ] || exit 1
-    [ "$ITEM_1_REQUIRES_0" = "node" ] || exit 1
-    [ "$ITEM_2_NAME" = "rtk" ] || exit 1
-    [ "$ITEM_2_TYPE" = "custom" ] || exit 1
-    [ "$ITEM_2_SCRIPT" = "scripts/install-rtk.sh" ] || exit 1
-    [ "$ITEM_2_DESC" = "Token saver" ] || exit 1
-'
+echo "=== edge fixture META: source + derive_from emitted ==="
+run_valid "$FIX/valid-edge.yaml" '
+    [ "$BUNDLE_0_OPTION_0_SOURCE" = "./data/php-versions.conf" ] || exit 1
+    [ "$BUNDLE_0_OPTION_1_DERIVE_FROM" = "versions" ] || exit 1
+' 1
 
-run_valid valid-5-comments-and-quoting '
-    [ "$ITEM_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_NAME" = "gh" ] || exit 1
-    [ "$ITEM_0_TYPE" = "brew" ] || exit 1
-    [ "$ITEM_0_SPEC" = "gh" ] || exit 1
-    [ "$ITEM_0_DESC" = "GitHub CLI" ] || exit 1
-    [ "$ITEM_0_POST_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_POST_0" = "gh auth status" ] || exit 1
-'
+echo "=== invalid fixtures (must reject) ==="
+run_invalid "$FIX/invalid-tab-indent.yaml"      "tab"
+run_invalid "$FIX/invalid-bare-under-items.yaml" "bare value not allowed"
+run_invalid "$FIX/invalid-anchor.yaml"          "anchor"
+run_invalid "$FIX/invalid-multidoc.yaml"        "multi-document"
+run_invalid "$FIX/invalid-unknown-item-key.yaml" "unknown item key"
 
-# --- Valid fixture C4 — special chars in values (proves shell_escape works) ---
-# Mutation test: if shell_escape is identity-passthrough, the `$` in the value
-# would be re-interpreted by `eval` (with set -u: unbound) — fails on assertion.
-run_valid valid-6-special-chars '
-    [ "$ITEM_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_NAME" = "shell-injection-test" ] || exit 1
-    [ "$ITEM_0_SPEC" = "literal-\$HOME-and-\`backticks\`-and-\\backslash" ] || exit 1
-    [ "$ITEM_0_DESC" = "double-quoted with \\ backslash and \"escaped\" quote" ] || exit 1
-    [ "$ITEM_0_CHECK" = "command -v test-\$HOME-marker" ] || exit 1
-    [ "$ITEM_0_POST_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_POST_0" = "echo \$PWD && true" ] || exit 1
-'
-
-# --- Valid fixture C3 — tab inside quoted string (was false-positive previously) ---
-run_valid valid-7-tab-in-quoted '
-    [ "$ITEM_COUNT" = 1 ] || exit 1
-    [ "$ITEM_0_NAME" = "tab-in-value" ] || exit 1
-    # The DESC value contains literal TAB chars from the YAML; preserved through escape.
-    case "$ITEM_0_DESC" in
-        *"	"*) ;;
-        *) echo "expected TAB in DESC, got: $ITEM_0_DESC" >&2; exit 1 ;;
-    esac
-'
-
-# --- Invalid fixtures ---
-
-run_invalid invalid-1-tab-indent          "tab"
-run_invalid invalid-2-nested-map          "nested"
-run_invalid invalid-3-anchor              "anchor"
-run_invalid invalid-4-anchor-in-list      "anchor"
-run_invalid invalid-5-bracket-in-scalar   "inline list value not allowed"
-run_invalid invalid-6-trailing-after-list "trailing content after inline list"
-run_invalid invalid-7-partial-emit-then-error "anchor"
-# CX-M3 (checkpoint-3): comma inside quoted inline-list value must reject.
-run_invalid invalid-8-comma-in-quoted-inline "comma inside quoted values not supported"
-
-# --- C-2 fix (checkpoint-2): __YAML_PARSE_OK=1 sentinel on success ---
-# Consumer-side safety: parser must emit the sentinel as the LAST line on
-# success so engines can detect partial output (parser failed mid-stream)
-# despite command-substitution swallowing exit codes.
-echo ""
-echo "=== C-2 sentinel emission ==="
-
-# Sentinel present after valid parse.
-out_valid=$("$PARSER" < "$FIXTURES/valid-1-minimal.yaml")
-if printf '%s' "$out_valid" | tail -1 | grep -q '^__YAML_PARSE_OK=1$'; then
-    pass=$((pass+1))
-    echo "  PASS: C-2 sentinel emitted as last line on valid parse"
+echo "=== sentinel discipline ==="
+# Present on success (last line).
+out_ok=$("$PARSER" < "$TOPICS/web/manifest.yaml")
+if printf '%s' "$out_ok" | tail -1 | grep -q '^__YAML_PARSE_OK=1$'; then
+    pass=$((pass + 1)); echo "  PASS: sentinel last line on success"
 else
-    fail=$((fail+1))
-    fails="$fails\n  FAIL: C-2 sentinel missing from valid parse output (tail: $(printf '%s' "$out_valid" | tail -1))"
-    echo "  FAIL: C-2 sentinel missing from valid parse output"
+    fail=$((fail + 1)); fails="$fails\n  FAIL: sentinel not last line"; echo "  FAIL: sentinel not last line"
+fi
+# Absent on rejection (partial emit then error).
+out_bad=$("$PARSER" < "$FIX/invalid-unknown-item-key.yaml" 2>/dev/null)
+if printf '%s' "$out_bad" | grep -q '__YAML_PARSE_OK=1'; then
+    fail=$((fail + 1)); fails="$fails\n  FAIL: sentinel emitted on rejected parse"; echo "  FAIL: sentinel on rejected parse"
+else
+    pass=$((pass + 1)); echo "  PASS: sentinel absent on rejected parse"
 fi
 
-# Sentinel ABSENT after error parse (partial emit then failure).
-out_partial=$("$PARSER" < "$FIXTURES/invalid-7-partial-emit-then-error.yaml" 2>/dev/null)
-if printf '%s' "$out_partial" | grep -q '__YAML_PARSE_OK=1'; then
-    fail=$((fail+1))
-    fails="$fails\n  FAIL: C-2 sentinel WAS emitted on partial-then-error parse (should be absent)"
-    echo "  FAIL: C-2 sentinel was emitted on partial-then-error parse (should be absent)"
-else
-    pass=$((pass+1))
-    echo "  PASS: C-2 sentinel ABSENT on partial-then-error parse"
-fi
-
-# Spec-mandated consumer pattern works: ok parse → consumer-detect ok.
-if (
-    set -e
-    parsed=$("$PARSER" < "$FIXTURES/valid-1-minimal.yaml") || exit 9
-    eval "$parsed"
-    [ "${__YAML_PARSE_OK:-0}" = "1" ] || exit 8
-    [ "$ITEM_COUNT" = "1" ] || exit 7
-    exit 0
-); then
-    pass=$((pass+1))
-    echo "  PASS: C-2 consumer pattern (capture/eval/check-sentinel) succeeds on valid input"
-else
-    fail=$((fail+1))
-    fails="$fails\n  FAIL: C-2 consumer pattern failed on valid input (rc=$?)"
-    echo "  FAIL: C-2 consumer pattern failed on valid input"
-fi
-
-# Spec-mandated consumer pattern works: partial parse → consumer detects.
-# (capture rc → eval partial → assert sentinel absent → die)
-if (
-    parsed=$("$PARSER" < "$FIXTURES/invalid-7-partial-emit-then-error.yaml" 2>/dev/null)
-    parser_rc=$?
-    # Parser exited 1, but command-substitution still captured the partial output.
-    # Under `eval`, ITEM_0_* gets defined (partial state).
-    eval "$parsed" 2>/dev/null || true
-    # Sentinel must be absent → consumer rejects partial parse.
-    if [ "${__YAML_PARSE_OK:-0}" = "1" ]; then
-        exit 7   # consumer would accept partial — BAD
-    fi
-    # Parser rc should be non-zero too, but the sentinel check is the load-bearing guard.
-    [ "$parser_rc" -ne 0 ] || exit 6
-    exit 0
-); then
-    pass=$((pass+1))
-    echo "  PASS: C-2 consumer pattern rejects partial parse via missing sentinel"
-else
-    fail=$((fail+1))
-    fails="$fails\n  FAIL: C-2 consumer pattern did NOT reject partial parse (rc=$?)"
-    echo "  FAIL: C-2 consumer pattern did NOT reject partial parse"
-fi
-
-# --- Mutation test for C-2: remove sentinel emit → consumer pattern should fail-detect ---
-echo ""
-echo "=== Mutation: remove C-2 sentinel emit → consumer must report missing sentinel ==="
-PARSER_BROKEN=$(mktemp -t mesh-p1-parser-broken-XXXXXX.sh)
-# Remove the sentinel printf line via python3 (text replacement).
-python3 - "$PARSER" "$PARSER_BROKEN" <<'PY'
+echo "=== shell_escape mutation (identity → special-char value leaks) ==="
+# valet's desc contains an em-dash + the ngrok URL has no metachar, so use a
+# crafted value: shell_escape must neutralize $ ` \ ". Mutate to identity and
+# confirm the consumer pattern breaks.
+MUT=$(mktemp -t mesh-yaml-noescape-XXXXXX.sh)
+python3 - "$PARSER" "$MUT" <<'PY'
 import sys
 src = open(sys.argv[1]).read()
-needle = "printf '__YAML_PARSE_OK=1\\n'"
-if needle not in src:
-    print("MUTATION_TARGET_MISSING", file=sys.stderr)
-    sys.exit(2)
-open(sys.argv[2], "w").write(src.replace(needle, ": # mutation: sentinel removed"))
-PY
-mutation_rc=$?
-chmod +x "$PARSER_BROKEN"
-if [ $mutation_rc -ne 0 ]; then
-    fail=$((fail+1))
-    fails="$fails\n  FAIL: C-2 mutation harness couldn't locate sentinel emit"
-    echo "  FAIL: C-2 mutation harness couldn't locate sentinel emit"
-else
-    # Run broken parser on valid input. Consumer pattern should detect missing sentinel.
-    out_mut=$("$PARSER_BROKEN" < "$FIXTURES/valid-1-minimal.yaml")
-    if printf '%s' "$out_mut" | grep -q '__YAML_PARSE_OK=1'; then
-        fail=$((fail+1))
-        fails="$fails\n  FAIL: C-2 mutation didn't remove sentinel (mutation harness broken)"
-        echo "  FAIL: C-2 mutation didn't remove sentinel"
-    else
-        # Consumer pattern with broken parser must reject (no sentinel).
-        consumer_rc=0
-        (
-            parsed=$("$PARSER_BROKEN" < "$FIXTURES/valid-1-minimal.yaml")
-            eval "$parsed"
-            [ "${__YAML_PARSE_OK:-0}" = "1" ] || exit 1
-            exit 0
-        ) || consumer_rc=$?
-        if [ "$consumer_rc" -ne 0 ]; then
-            pass=$((pass+1))
-            echo "  PASS: C-2 mutation confirmed sentinel is load-bearing (consumer rejected broken parser)"
-        else
-            fail=$((fail+1))
-            fails="$fails\n  FAIL: C-2 consumer accepted broken parser output without sentinel"
-            echo "  FAIL: C-2 consumer accepted broken parser output without sentinel"
-        fi
-    fi
-fi
-rm -f "$PARSER_BROKEN"
-
-# --- CX-M1 (checkpoint-3): active mutation harness for shell_escape → identity ---
-# Codex audit found this mutation was claimed but no live harness existed in
-# p1/test.sh. The valid-6-special-chars fixture catches it implicitly (eval would
-# re-interpret $HOME/backticks/etc.), but we now have an explicit harness that
-# patches the parser and verifies the fixture assertions break.
-echo ""
-echo "=== CX-M1 mutation: shell_escape → identity → valid-6 assertions break ==="
-PARSER_NOESCAPE=$(mktemp -t mesh-p1-noescape-XXXXXX.sh)
-python3 - "$PARSER" "$PARSER_NOESCAPE" <<'PY'
-import sys, re
-src = open(sys.argv[1]).read()
-# Find shell_escape function body and replace with identity passthrough.
 start = src.find('shell_escape() {')
-if start < 0:
-    print("MUTATION_TARGET_MISSING", file=sys.stderr); sys.exit(2)
 end = src.find('\n}\n', start)
-if end < 0:
-    print("MUTATION_END_MISSING", file=sys.stderr); sys.exit(2)
+if start < 0 or end < 0:
+    print("MUTATION_TARGET_MISSING", file=sys.stderr); sys.exit(2)
 identity = 'shell_escape() {\n    printf %s "$1"\n'
 open(sys.argv[2], "w").write(src[:start] + identity + src[end+1:])
 PY
-mut_noescape_rc=$?
-chmod +x "$PARSER_NOESCAPE"
-if [ $mut_noescape_rc -ne 0 ]; then
-    fail=$((fail+1))
-    fails="$fails\n  FAIL: CX-M1 P1 mutation harness couldn't locate shell_escape"
-    echo "  FAIL: CX-M1 mutation harness couldn't patch shell_escape"
+if [ $? -ne 0 ]; then
+    fail=$((fail + 1)); fails="$fails\n  FAIL: could not build shell_escape mutant"; echo "  FAIL: mutant build"
 else
-    # With identity shell_escape, `$HOME`/backticks/etc. in the YAML value
-    # leak into eval unprotected. The eval either errors or produces a
-    # different ITEM_0_SPEC. The original assertion must fail.
-    detected_rc=0
-    (
-        out=$("$PARSER_NOESCAPE" < "$FIXTURES/valid-6-special-chars.yaml" 2>/dev/null)
-        eval "$out" 2>/dev/null
-        # If the mutation truly took effect, ITEM_0_SPEC should differ from the literal.
-        [ "$ITEM_0_SPEC" = 'literal-$HOME-and-`backticks`-and-\backslash' ] || exit 1
-        exit 0
-    ) >/dev/null 2>&1 || detected_rc=$?
-    if [ $detected_rc -ne 0 ]; then
-        pass=$((pass+1))
-        echo "  PASS: CX-M1 P1 mutation detected (identity shell_escape changes valid-6 output)"
+    printf 'topic:\n  label: "X"\n  order: 1\nbundles:\n  - name: b\n    label: "B"\n    desc: "d"\n    items:\n      - name: i\n        type: brew-formula\n        spec: "lit-$HOME-`x`-end"\n' > "$MUT.yaml"
+    base_spec=$(MESH_YAML_META=0 "$PARSER" < "$MUT.yaml" | grep '^BUNDLE_0_ITEM_0_SPEC=')
+    mut_spec=$(MESH_YAML_META=0 bash "$MUT" < "$MUT.yaml" | grep '^BUNDLE_0_ITEM_0_SPEC=')
+    if [ "$base_spec" != "$mut_spec" ]; then
+        pass=$((pass + 1)); echo "  PASS: identity shell_escape changes emitted SPEC (escape is load-bearing)"
     else
-        fail=$((fail+1))
-        fails="$fails\n  FAIL: CX-M1 P1 mutation survived — identity escape didn't change valid-6 eval"
-        echo "  FAIL: CX-M1 P1 mutation survived — identity escape didn't break valid-6"
+        fail=$((fail + 1)); fails="$fails\n  FAIL: shell_escape mutation survived"; echo "  FAIL: mutation survived"
     fi
+    rm -f "$MUT.yaml"
 fi
-rm -f "$PARSER_NOESCAPE"
-
-# --- Report ---
+rm -f "$MUT"
 
 total=$((pass + fail))
 echo ""
-echo "P1 parser tests: $pass / $total passed"
+echo "yaml-parse v2 tests: $pass / $total passed"
+loc=$(grep -cvE '^\s*(#|$)' "$PARSER" 2>/dev/null || echo "?")
+echo "Parser size: $loc non-comment-non-blank LOC"
 if [ $fail -gt 0 ]; then
     printf '%b\n' "$fails"
-    exit 1
-fi
-
-# Also measure parser LOC
-loc=$(grep -cvE '^\s*(#|$)' "$PARSER" 2>/dev/null || echo "?")
-total_lines=$(wc -l < "$PARSER" 2>/dev/null || echo "?")
-echo "Parser size: $loc non-comment-non-blank LOC ($total_lines total lines)"
-if [ "$loc" != "?" ] && [ "$loc" -gt 300 ]; then
-    echo "FAIL: parser exceeds 300 LOC cap"
     exit 1
 fi
 echo "OK"

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
 topic:
   label: "Databases"
   hint: "MySQL, Redis, PostgreSQL, MS SQL driver"

@@ -1,7 +1,0 @@
-- name: postgres
-  type: custom
-  script: scripts/install-postgres.sh
-  desc: 'PostgreSQL with launchd wrapper'
-  platforms:
-    - mac
-    - linux

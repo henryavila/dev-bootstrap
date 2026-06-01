@@ -1,0 +1,55 @@
+topic:
+  label: "Good"
+  hint: "a clean manifest"
+  order: 10
+  description: |
+    A fully valid manifest used as the negative control — it must produce
+    zero errors and zero warnings.
+
+bundles:
+  - name: core
+    label: "Core"
+    desc: "core tools — always on"
+    required: true
+    items:
+      - name: ripgrep
+        type: brew-formula
+        spec: ripgrep
+      - name: setup
+        type: custom
+        script: ./setup.sh
+
+  - name: php
+    label: "PHP"
+    desc: "PHP toolchain — multi-version"
+    options:
+      - name: versions
+        type: multiselect
+        label: "PHP versions"
+        env: MESH_PHP_VERSIONS
+        required_min: 1
+        choices:
+          - { value: "8.4", label: "8.4", default: true }
+          - { value: "8.3", label: "8.3" }
+      - name: default-version
+        type: select
+        label: "Default PHP"
+        env: MESH_PHP_DEFAULT
+        derive_from: versions
+      - name: enable-composer
+        type: toggle
+        label: "Composer"
+        env: MESH_PHP_COMPOSER
+        default: true
+    items:
+      - name: php-stack
+        type: custom
+        script: ./php.sh
+      - name: composer
+        type: custom
+        script: ./composer.sh
+        when: option.enable-composer
+      - name: mosh-fix
+        type: custom
+        script: ./mosh.sh
+        when: brew_prefix_custom

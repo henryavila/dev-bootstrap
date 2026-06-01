@@ -1,4 +1,0 @@
-- name: tab-in-value
-  type: brew
-  spec: brew-tab-value
-  desc: "header	then	tabs	in	value"

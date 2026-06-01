@@ -1,0 +1,12 @@
+topic:
+  label: "Bad"
+  order: 10
+---
+bundles:
+  - name: x
+    label: "X"
+    desc: "x"
+    items:
+      - name: y
+        type: custom
+        script: ./y.sh

@@ -41,3 +41,10 @@ jobs:
             bash -n "$f"
           done
           printf '✓ all scripts parse cleanly (%d files)\n' "${#scripts[@]}"
+
+      - name: manifest validation
+        run: |
+          # Lint every topics/*/manifest.yaml v2 against the schema (spec §8).
+          # Non-strict: requires_bundles forward-refs to not-yet-migrated topics
+          # are warnings during the F9.6 migration; hard rule breaks fail CI.
+          bash scripts/lib/validate-manifest.sh

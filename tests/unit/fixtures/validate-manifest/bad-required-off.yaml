@@ -1,0 +1,14 @@
+topic:
+  label: "ReqOff"
+  required: true
+  order: 10
+bundles:
+  - name: b
+    label: "B"
+    desc: "b"
+    required: true
+    default_selected: false
+    items:
+      - name: i
+        type: custom
+        script: ./i.sh
