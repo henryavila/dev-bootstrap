@@ -21,7 +21,7 @@
 #      `followup critical` + exit):
 #        Mac canonical prefix → brew services start
 #        Mac custom prefix     → launch_wrapper_install_extbrew (TCC-safe;
-#                                see feedback_tcc_entitlement_spawn_only.md)
+#                                rootfs wrapper preserves entitlement across execve)
 #        Linux                 → pg_lsclusters detection + systemctl;
 #                                WSL-without-systemd path is explicit.
 #   7. Waits up to 30s for the socket to be live (pg_isready). Failure
@@ -382,7 +382,7 @@ else
                     # an actionable followup.
                     launch_wrapper_teardown "$pg_label" || true
                     [[ -f "${pg_brew_plist}.bak" ]] && mv "${pg_brew_plist}.bak" "$pg_brew_plist"
-                    followup critical "launch-wrapper for postgresql@${POSTGRES_VERSION} failed. State rolled back to brew-managed plist. If you saw exit 78 / TCC denial, see feedback_tcc_entitlement_spawn_only.md"
+                    followup critical "launch-wrapper for postgresql@${POSTGRES_VERSION} failed. State rolled back to brew-managed plist. If you saw exit 78 / TCC denial, see launch-wrapper.sh for the TCC workaround"
                     exit 1
                 fi
             else

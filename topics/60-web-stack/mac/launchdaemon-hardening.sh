@@ -2,8 +2,9 @@
 # Custom: harden LaunchDaemons (Standard*Path) against phantom-volume mkdir
 # at boot when BREW_PREFIX is on a noowners volume (/Volumes/External/...).
 #
-# Original incident: 2026-05-02. See dotfiles auto-memory
-# feedback_launchdaemon_phantom_volumes_mkdir_race.md for forensics.
+# Original incident: 2026-05-02. Root cause: launchd loads daemon before
+# external disk mounts; O_CREAT on Standard*Path mkdir's parent on rootfs,
+# colliding with the real mount point and causing disambiguation suffix.
 
 _is_custom_prefix() {
     case "${BREW_PREFIX:-}" in
@@ -15,13 +16,17 @@ _is_custom_prefix() {
 _target_log_for() { printf '%s\n' "/var/log/homebrew/$1.log"; }
 
 check() {
+    # Homebrew LaunchDaemon plists are root:wheel mode 0644 — world-
+    # readable. `test -f` and `PlistBuddy Print` both work without sudo
+    # for these files (verified live 2026-05-28). Keeping check() sudo-
+    # free lets the menu scanner probe state with zero password friction.
     _is_custom_prefix || return 0
     local svc plist current target
     for svc in php nginx dnsmasq; do
         plist="/Library/LaunchDaemons/homebrew.mxcl.${svc}.plist"
-        sudo test -f "$plist" || continue
+        test -f "$plist" || continue
         target="$(_target_log_for "$svc")"
-        current="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null || echo "")"
+        current="$(/usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null || echo "")"
         [[ "$current" == "$target" ]] || return 1
     done
     return 0

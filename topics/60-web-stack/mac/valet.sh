@@ -7,11 +7,12 @@ VALET_BIN="$HOME/.composer/vendor/bin/valet"
 check() {
     [[ -x "$VALET_BIN" ]] || return 1
     [[ -d "$HOME/.config/valet" ]] || return 1
-    "$VALET_BIN" --version >/dev/null 2>&1 || return 1
-    # TLD must be localhost
-    local tld
-    tld="$("$VALET_BIN" tld 2>/dev/null | tr -d '\r' || true)"
-    [[ "$tld" == "localhost" ]]
+    # TLD must be localhost. Read from config.json instead of `valet tld`,
+    # because the CLI invokes sudo internally — the menu scanner stubs
+    # sudo, so any `valet <cmd>` produces no output and fakes "not installed".
+    local cfg="$HOME/.config/valet/config.json"
+    [[ -f "$cfg" ]] || return 1
+    grep -q '"tld"[[:space:]]*:[[:space:]]*"localhost"' "$cfg"
 }
 
 install() {

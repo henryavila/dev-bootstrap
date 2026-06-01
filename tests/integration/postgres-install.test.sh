@@ -9,7 +9,7 @@
 #
 #   - Anchored regexes that can only match the load-bearing line, not
 #     a comment or sibling string elsewhere in the file (mutation-
-#     resistant per feedback_test_fixture_pitfalls.md).
+#     resistant — anchored regexes prevent false-positive matches on comments or sibling strings).
 #   - Layer 2 EXECUTION assertions: run the script in a subshell with
 #     controlled inputs and assert exit codes / side-effects. Targets
 #     the top-of-script guards (version validation, $USER sanitization,

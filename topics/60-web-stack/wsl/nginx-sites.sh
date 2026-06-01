@@ -8,9 +8,13 @@ NGINX_SNIPPET_DIR="${NGINX_SNIPPET_DIR:-/etc/nginx/snippets}"
 NGINX_MAP_DIR="${NGINX_MAP_DIR:-/etc/nginx/conf.d}"
 
 check() {
+    # /etc/nginx/sites-enabled/ is root:root mode 0755 — world-searchable.
+    # `test -L` only needs +x on the parent dir, never read on the link
+    # target. Keeping check() sudo-free lets the menu scanner probe state
+    # with zero password friction.
     local site
     for site in catchall-php.conf catchall-proxy.conf; do
-        sudo test -L "$NGINX_ENABLED_DIR/$site" || return 1
+        test -L "$NGINX_ENABLED_DIR/$site" || return 1
     done
     return 0
 }

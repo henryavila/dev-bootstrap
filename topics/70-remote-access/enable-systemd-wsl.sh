@@ -3,7 +3,11 @@
 # Requires `wsl --shutdown` from PowerShell to apply.
 
 check() {
-    sudo grep -q '^\s*systemd\s*=\s*true' /etc/wsl.conf 2>/dev/null
+    # /etc/wsl.conf is root:root mode 0644 on every Ubuntu/Debian WSL
+    # image — world-readable, so sudo is unnecessary here. Keeping the
+    # check sudo-free lets the menu scanner probe state with zero
+    # password friction.
+    grep -q '^[[:space:]]*systemd[[:space:]]*=[[:space:]]*true' /etc/wsl.conf 2>/dev/null
 }
 
 install() {

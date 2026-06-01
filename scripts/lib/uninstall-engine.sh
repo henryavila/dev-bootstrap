@@ -22,11 +22,14 @@ ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$ENGINE_DIR/env.sh"
 # shellcheck disable=SC1091
 . "$ENGINE_DIR/uninstall-handlers.sh"
+# shellcheck disable=SC1091
+. "$ENGINE_DIR/install-state.sh"
 
 DRY_RUN=0
 MANIFEST=""
 ITEMS_FILTER=""
 PLATFORM_OVERRIDE=""
+TOPIC_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -35,10 +38,21 @@ while [[ $# -gt 0 ]]; do
         --items)       ITEMS_FILTER="$2"; shift 2 ;;
         --dry-run)     DRY_RUN=1; shift ;;
         --platform)    PLATFORM_OVERRIDE="$2"; shift 2 ;;
+        --topic)       TOPIC_OVERRIDE="$2"; shift 2 ;;
         --help|-h)     sed -n '2,8p' "$0"; exit 0 ;;
         *)             log_error "unknown arg: $1"; exit 64 ;;
     esac
 done
+
+# Topic name powers install-state marker cleanup. Same resolution rule as
+# install-engine: --topic > $MESH_TOPIC > basename "$PWD".
+if [[ -n "$TOPIC_OVERRIDE" ]]; then
+    TOPIC="$TOPIC_OVERRIDE"
+elif [[ -n "${MESH_TOPIC:-}" ]]; then
+    TOPIC="$MESH_TOPIC"
+else
+    TOPIC="$(basename "$PWD")"
+fi
 
 if [[ -n "$PLATFORM_OVERRIDE" ]]; then
     PLATFORM="$PLATFORM_OVERRIDE"
@@ -137,6 +151,12 @@ while :; do
             warn "$name: no uninstall handler for type=$type"
             ;;
     esac
+
+    # Clear install marker so the menu reflects removal. Handlers are
+    # idempotent and best-effort; we drop the marker unconditionally on the
+    # handler's behalf, because the user's intent (uninstall) is recorded
+    # via this engine regardless of whether the package was already gone.
+    install_state_remove "$TOPIC" "$name" 2>/dev/null || true
 
     processed=$((processed+1))
     i=$((i+1))

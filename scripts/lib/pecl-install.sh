@@ -16,11 +16,9 @@
 #   for sqlsrv/pdo_sqlsrv, and any future topic that adds PECL extras.
 #   Duplicating the implementation invites the next regression.
 #
-# The fix itself is documented in
-#   dotfiles/.ai/memory/feedback_pecl_wsl_requires_pear_env_vars.md
-# which covers every known failure mode discovered during the
-# 2026-04-23 saga (5 successive commits to converge on a working
-# implementation).
+# The fix overrides four PEAR env vars (PHP_PEAR_PHP_BIN, BIN_DIR,
+# EXTENSION_DIR, METADATA_DIR) to pin pecl to the target PHP version,
+# covering every known failure mode from the 2026-04-23 saga.
 
 # Guard against double-source
 if declare -F pecl_install_for_version_linux >/dev/null 2>&1; then

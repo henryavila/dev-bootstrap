@@ -238,6 +238,7 @@
 - name: drift-cleanup
   type: custom
   script: "./drift-cleanup.sh"
+  idempotent: true   # cleanup script — no stable post-install signal
 
 - name: shipped-configs
   type: custom
@@ -246,15 +247,18 @@
 - name: generate-zsh-completions
   type: custom
   script: "./generate-completions.sh"
+  idempotent: true   # regenerates completion cache on every run
 
 # ─── Mac-only extras ──────────────────────────────────────────────
 - name: iterm2-font-config
   type: custom
   script: "./mac/iterm2-font.sh"
   platforms: [mac]
+  idempotent: true   # font defaults write — no post-config signal
 
 # ─── WSL-only extras ──────────────────────────────────────────────
 - name: windows-terminal-config
   type: custom
   script: "./wsl/windows-terminal-config.sh"
   platforms: [wsl]
+  idempotent: true   # jq-merge into settings.json — no signal

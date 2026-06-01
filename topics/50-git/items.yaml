@@ -7,6 +7,7 @@
 - name: gitconfig-apply
   type: custom
   script: "./gitconfig-apply.sh"
+  idempotent: true   # `git config --global` is itself idempotent
   desc: "Apply data/gitconfig.keys + unset removed + env GIT_NAME/GIT_EMAIL"
 
 - name: gpg-signing

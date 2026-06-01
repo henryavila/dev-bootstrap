@@ -13,11 +13,15 @@ EOF
 }
 
 check() {
+    # systemd drop-ins in /etc/systemd/system/*.service.d/ are root:root
+    # mode 0644 by default — world-readable, so sudo is unnecessary for
+    # the read. Keeping check() sudo-free lets the menu scanner probe
+    # state with zero password friction.
     local f want got
     f="$(_dropin_file)"
     [[ -f "$f" ]] || return 1
     want="$(_dropin_content)"
-    got="$(sudo cat "$f" 2>/dev/null || true)"
+    got="$(cat "$f" 2>/dev/null || true)"
     [[ "$want" == "$got" ]]
 }
 

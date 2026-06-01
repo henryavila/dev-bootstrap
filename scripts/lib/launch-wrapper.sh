@@ -8,8 +8,7 @@
 # (~/.local/bin or /usr/local/bin) passes the spawn-time TCC check; the
 # subsequent `exec` into the external binary preserves the granted
 # entitlement. Empirically validated 2026-05-03 (Mac M2, Sequoia, brew in
-# /Volumes/External/homebrew). See dotfiles/.ai/memory/
-# feedback_tcc_entitlement_spawn_only.md for the full finding.
+# /Volumes/External/homebrew).
 #
 # Source from a topic; do not execute directly.
 # On non-Mac, all public functions noop and return 0, except dry-run tests
@@ -83,8 +82,8 @@ _launch_wrapper_write_script() {
 #
 # Why this exists: macOS TCC sandbox blocks user-scope LaunchAgents whose
 # ProgramArguments path is in /Volumes/<noowners>. Wrapper in rootfs passes
-# TCC's spawn-time check; subsequent exec preserves entitlement.
-# See feedback_tcc_entitlement_spawn_only.md.
+# TCC's spawn-time check; entitlement is preserved across execve into the
+# external binary.
 
 set -u
 target='__BREW_BIN__'

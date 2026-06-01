@@ -29,7 +29,7 @@
 #       so recovery scripts find brew even if the disambiguation already
 #       happened (path with space).
 #
-# Full forensic in feedback_launchdaemon_phantom_volumes_mkdir_race.md.
+# Root cause: launchd loads daemon before external disk mounts; O_CREAT on Standard*Path mkdir's the parent on rootfs, colliding with the real mount point.
 
 set -uo pipefail
 
@@ -131,8 +131,7 @@ assert_pattern_present "$DETECT" 'shopt -s nullglob' \
     "lib/detect-brew.sh — sets nullglob before glob iteration"
 
 # Bash 3.2 safe: does NOT use `shopt -p` capture pattern (exits 1 for unset
-# options on bash 3.2 + `set -e` aborts silently). See
-# feedback_bash32_compat_macos.md.
+# options on bash 3.2 + `set -e` aborts silently).
 assert_pattern_absent "$DETECT" 'shopt -p nullglob' \
     "lib/detect-brew.sh — avoids 'shopt -p' capture (bash 3.2 + set -e abort hazard)"
 

@@ -124,7 +124,7 @@ Then reopen Moshi — the header should now show "Mosh" and the connection survi
 
 ### References
 
-See feedback memory `feedback_mosh_ssh_exec_path_mac.md` in the personal dotfiles for the broader "non-interactive PATH on Mac" pattern that affects any other brew binary accessed via `ssh user@mac '<cmd>'`.
+The broader pattern: non-interactive SSH on macOS (`ssh user@mac '<cmd>'`) doesn't source `.zshrc`/`.bashrc`, so any brew-installed binary outside `/usr/bin` requires `/etc/paths.d/` or `/etc/zprofile` to call `path_helper`. This affects any brew binary accessed via SSH, not just mosh.
 
 ---
 

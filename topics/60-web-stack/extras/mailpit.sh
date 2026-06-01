@@ -3,7 +3,10 @@
 # Delegates to scripts/install-mailpit.sh which keeps its existing logic.
 
 check() {
-    [[ "${INCLUDE_MAILPIT:-0}" == "1" ]] || return 0
+    # Probe system state unconditionally — the menu scanner needs a real
+    # answer regardless of whether INCLUDE_MAILPIT is exported. The gate
+    # stays in install() for back-compat with the legacy non-menu flow;
+    # the menu's --items= filter is the authoritative opt-in path now.
     command -v mailpit >/dev/null 2>&1
 }
 

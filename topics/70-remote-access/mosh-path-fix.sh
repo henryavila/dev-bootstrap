@@ -17,11 +17,15 @@ check() {
     esac
     # Non-standard: both paths must be in /etc/paths.d/60-extbrew AND
     # mosh-server must be reachable via /usr/local/bin.
+    #
+    # /etc/paths.d/* files are root:wheel mode 0644 — world-readable, so
+    # the grep doesn't need sudo. Keeping check() sudo-free lets the menu
+    # scanner probe state with zero password friction.
     local f
     f="$(_paths_file)"
     [[ -f "$f" ]] || return 1
-    sudo grep -q -F "$BREW_PREFIX/bin"  "$f" || return 1
-    sudo grep -q -F "$BREW_PREFIX/sbin" "$f" || return 1
+    grep -q -F "$BREW_PREFIX/bin"  "$f" || return 1
+    grep -q -F "$BREW_PREFIX/sbin" "$f" || return 1
     [[ -x /usr/local/bin/mosh-server ]] || return 1
     return 0
 }

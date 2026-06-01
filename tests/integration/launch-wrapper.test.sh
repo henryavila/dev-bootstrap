@@ -4,7 +4,7 @@
 # Validates lib/launch-wrapper.sh — the user-scope LaunchAgent generator
 # that wraps brew binaries living in non-canonical (e.g. /Volumes/External)
 # prefixes. Workaround for the TCC sandbox exit-78 bug; empirical mechanism
-# documented in dotfiles/.ai/memory/feedback_tcc_entitlement_spawn_only.md.
+# TCC entitlement is granted at spawn and preserved across execve; rootfs wrapper bypasses noowners volume exit 78.
 #
 # Two layers of coverage:
 #   (1) lib/launch-wrapper.sh unit-style: exercise public API in DRY_RUN
@@ -86,8 +86,8 @@ if [[ -f "$WRAPPER" ]]; then
     # Tells future readers WHY this exists (anti-rot)
     assert_pattern_present "$WRAPPER" 'TCC sandbox' \
         "wrapper documents WHY (TCC sandbox)"
-    assert_pattern_present "$WRAPPER" 'feedback_tcc_entitlement_spawn_only.md' \
-        "wrapper points to memory file with empirical proof"
+    assert_pattern_present "$WRAPPER" 'preserved across execve' \
+        "wrapper documents the empirical TCC finding"
 
     # Honest exit code if target permanently absent
     assert_pattern_present "$WRAPPER" 'exit 78' \

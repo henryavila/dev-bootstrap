@@ -6,9 +6,15 @@ WILDCARD_PEM="$CERT_DIR/wildcard-localhost.pem"
 WILDCARD_KEY="$CERT_DIR/wildcard-localhost-key.pem"
 
 check() {
+    # `test -f` only needs stat() on the file path, which requires +x on
+    # every parent dir but NOT read on the file itself. /etc/nginx/certs/
+    # is created mode 0755 by `mkdir -p` (default umask), so the test
+    # works as any user even though wildcard-localhost-key.pem is mode
+    # 0640 root:root. Keeping check() sudo-free lets the menu scanner
+    # probe state with zero password friction.
     command -v mkcert >/dev/null 2>&1 || return 1
-    sudo test -f "$WILDCARD_PEM" || return 1
-    sudo test -f "$WILDCARD_KEY" || return 1
+    test -f "$WILDCARD_PEM" || return 1
+    test -f "$WILDCARD_KEY" || return 1
     return 0
 }
 

@@ -4,15 +4,22 @@
 #   e.g. "@henryavila/claudebar@latest install"
 #         "@scope/tool config --flag"
 #
-# check():    returns 1 (always run). Use manifest `check:` in items.yaml
-#             for items that need idempotent skip (engine evaluates check:
-#             BEFORE the driver's _check, so it acts as an override).
+# Detection model (2026-05-28):
+#   npx leaves no on-disk footprint we can probe afterwards. Menu detection
+#   is satisfied by the engine-level install marker
+#   (~/.local/state/mesh/installed/<topic>__<name>.env, written by
+#   install-engine.sh on successful install/verify). Drivers stay agnostic
+#   of the marker; the scanner reads it directly.
+#
+# check():    returns 1 (always run). The engine's "skip if check passes"
+#             gate does not apply to npx by design — most npx items are
+#             intentionally run-every-time (atomic-skills, claudebar setup,
+#             …). For items that need a "run once then skip" semantic, set
+#             `check:` in items.yaml; manifest check overrides driver check.
 # install():  runs `npx -y <spec>` (word-split intentional — spec carries
 #             subcommand + args).
 # verify():   extracts <package> from spec, runs `npx -y <package> doctor`.
-#             If doctor exits non-zero or doesn't exist, falls back to
-#             exit code 0 (trust install). Manifest `check:` also serves
-#             as verify fallback per engine contract.
+#             If doctor exits non-zero or doesn't exist, trusts install.
 # rollback(): extracts <package> from spec, runs `npx -y <package> uninstall`.
 #             Best-effort — swallows failure if uninstall subcommand is absent.
 

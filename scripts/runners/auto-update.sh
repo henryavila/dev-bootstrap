@@ -595,8 +595,8 @@ process_repo() {
     # "exec-shell-advice" is special — sets SHELL_RC_CHANGED instead of running.
     # bash 3.2 quirk: under `set -u`, "${AUTO_UPDATE_RELOAD[@]}" aborts when
     # the array is empty (e.g. test fixtures with a minimal conf). The
-    # ${arr[@]+...} substitution checks set-ness before expansion. Same
-    # pattern as scripts/runners/doctor.sh; see feedback_bash32_compat_macos.md.
+    # ${arr[@]+...} substitution checks set-ness before expansion (bash 3.2
+    # lacks the empty-array-is-set semantic that bash 4+ has).
     local entry glob cmd path
     for entry in "${AUTO_UPDATE_RELOAD[@]+"${AUTO_UPDATE_RELOAD[@]}"}"; do
         glob="${entry%%:*}"

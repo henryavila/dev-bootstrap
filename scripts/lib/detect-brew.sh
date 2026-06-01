@@ -23,7 +23,7 @@ candidates=(
 # external disk mounts, diskarbitrationd falls back to mounting the
 # real disk at `/Volumes/External 1` (or `External 2`, etc). Without
 # this glob, recovery scripts that depend on detect-brew.sh fail to
-# locate brew and abort. See feedback_launchdaemon_phantom_*.md.
+# locate brew and abort.
 #
 # Bash 3.2 quirk (Mac default): `shopt -p <option_off>` exits 1, which
 # combined with `set -e` aborts the script. Use `shopt -q` to detect

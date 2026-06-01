@@ -37,12 +37,15 @@ ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$ENGINE_DIR/log.sh"
 # shellcheck disable=SC1091
 . "$ENGINE_DIR/env.sh"
+# shellcheck disable=SC1091
+. "$ENGINE_DIR/install-state.sh"
 
 DRY_RUN=0
 MANIFEST=""
 INSTALLERS_DIR="$ENGINE_DIR/installers"
 PLATFORM_OVERRIDE=""
 ITEMS_FILTER=""
+TOPIC_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -52,10 +55,22 @@ while [[ $# -gt 0 ]]; do
         --platform)        PLATFORM_OVERRIDE="$2"; shift 2 ;;
         --items=*)         ITEMS_FILTER="${1#--items=}"; shift ;;
         --items)           ITEMS_FILTER="$2"; shift 2 ;;
+        --topic)           TOPIC_OVERRIDE="$2"; shift 2 ;;
         --help|-h)         sed -n '2,8p' "$0"; exit 0 ;;
         *)                 log_error "unknown arg: $1"; exit 64 ;;
     esac
 done
+
+# Topic name powers per-item install state markers (~/.local/state/mesh/installed/).
+# Topic invocations always `cd "$HERE"` then run the engine, so $PWD's basename
+# is reliable; --topic exists as an explicit override for tests and ad-hoc runs.
+if [[ -n "$TOPIC_OVERRIDE" ]]; then
+    TOPIC="$TOPIC_OVERRIDE"
+elif [[ -n "${MESH_TOPIC:-}" ]]; then
+    TOPIC="$MESH_TOPIC"
+else
+    TOPIC="$(basename "$PWD")"
+fi
 
 # Resolve current platform: --platform > $MESH_OS > detect-os.sh > "unknown"
 if [[ -n "$PLATFORM_OVERRIDE" ]]; then
@@ -167,10 +182,16 @@ while :; do
         # CP4 F-003: closes the silent-dead-config gap exposed in chunk F.
         if [[ -n "$manifest_check" ]]; then
             if bash -c "$manifest_check" >/dev/null 2>&1; then
+                # Backfill the install marker on first sight: the package is
+                # verifiably present, so adopt it as mesh-managed even though
+                # we didn't run the installer. After this, the menu shows it
+                # as steady-state instead of "foreign install".
+                install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
                 log_info "$name: already present (manifest check), skipping"
                 exit 0
             fi
         elif "${prefix}_check" "$arg" 2>/dev/null; then
+            install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
             log_info "$name: already present, skipping"
             exit 0
         fi
@@ -206,6 +227,13 @@ while :; do
             declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
             exit 67
         fi
+        # Record install marker so the menu scanner can answer "did mesh
+        # install this?" without per-driver knowledge. Marker dir lives at
+        # ~/.local/state/mesh/installed/ (overridable via MESH_INSTALL_STATE_DIR).
+        # Soft-fails: a marker-write failure must not abort an otherwise
+        # successful install.
+        install_state_record "$TOPIC" "$name" "$type" "$arg" \
+            || log_warn "$name: failed to record install state marker (continuing)"
         # CP4 A1-F-003: optional post: hook. Iterates over the list emitted
         # by yaml-parse (scalar post: foo → POST_COUNT=1 + POST_0=foo; list
         # form expanded into POST_<n>). Skipped silently when post_count=0.

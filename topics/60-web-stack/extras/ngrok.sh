@@ -2,7 +2,10 @@
 # Custom wrapper: ngrok (gated by INCLUDE_NGROK=1).
 
 check() {
-    [[ "${INCLUDE_NGROK:-0}" == "1" ]] || return 0
+    # Probe system state unconditionally — the menu scanner needs a real
+    # answer regardless of whether INCLUDE_NGROK is exported. The gate
+    # stays in install() for back-compat with the legacy non-menu flow;
+    # the menu's --items= filter is the authoritative opt-in path now.
     command -v ngrok >/dev/null 2>&1
 }
 

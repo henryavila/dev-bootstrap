@@ -173,7 +173,7 @@ check_markers() {
 # daemon before the external volume mounts. The phantom collides with
 # the real mount point, causing diskarbitrationd to disambiguate the
 # mount path (e.g. `/Volumes/External 1`), breaking everything on the
-# external volume. See feedback_launchdaemon_phantom_volumes_mkdir_race.md.
+# external volume.
 #
 # Plists in /Library/LaunchDaemons/ are mode 0644 (world-readable), so
 # this check needs no sudo. We use grep -A1 to find the key + adjacent

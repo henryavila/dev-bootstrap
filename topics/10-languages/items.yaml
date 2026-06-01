@@ -33,4 +33,5 @@
   script: "./mac/orphan-ini-cleanup.sh"
   platforms: [mac]
   requires: [php-stack-mac]
+  idempotent: true   # silent when no orphans to remove
   desc: "Remove orphan PECL extension .ini files from old wrong-path bug (mac)"

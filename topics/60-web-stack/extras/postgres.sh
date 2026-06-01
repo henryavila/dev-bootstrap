@@ -2,7 +2,10 @@
 # Custom wrapper: PostgreSQL (gated by INCLUDE_POSTGRES=1).
 
 check() {
-    [[ "${INCLUDE_POSTGRES:-0}" == "1" ]] || return 0
+    # Probe system state unconditionally — the menu scanner needs a real
+    # answer regardless of whether INCLUDE_POSTGRES is exported. The gate
+    # stays in install() for back-compat with the legacy non-menu flow.
+    #
     # Codex review 2026-05-19 (C-F001): `command -v postgres` fails after a
     # supported install because brew formula `postgresql@17` puts the
     # binary in $BREW_PREFIX/opt/postgresql@17/bin (not on PATH by default)

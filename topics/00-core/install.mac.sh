@@ -34,7 +34,7 @@ source "$HERE/../../scripts/lib/state.sh"
 
 # Emit a structural warning enumerating the implications of a custom
 # Homebrew prefix. Sources of cumulative tech debt are referenced by their
-# decision IDs in dotfiles/.ai/memory/PROJECT_STATUS.md §5.
+# decision IDs tracked in mesh-identity (see decision history there).
 #
 # In TTY: prints the warning and prompts y/N. Returns 0 on yes / 1 on no.
 # Non-TTY: prints the warning and returns 0 (proceeds without blocking —
