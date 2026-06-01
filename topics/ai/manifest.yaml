@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "AI"
+  hint: "Claude Code, Moshi Hook, agent CLI tools"
+  required: false
+  order: 110
+  description: |
+    AI development tooling: the Claude Code CLI (+ Bun for claude-mem and the
+    claudebar statusline), the Moshi Hook bridge to the Moshi mobile app, and
+    a set of agent CLI tools (mdprobe, atomic-skills, rtk).
+
+bundles:
+
+  - name: claude-code
+    label: "Claude Code"
+    desc: "Claude Code CLI + Bun + claudebar statusline"
+    icon_name: claude
+    items:
+      - name: bun
+        type: custom
+        script: ./install-bun.sh
+      - name: claude-code-cli
+        type: custom
+        script: ./install-claude.sh
+      - name: claudebar
+        type: npx
+        spec: "@henryavila/claudebar@latest install"
+        check: "test -f $HOME/.config/claudebar/statusline.sh && jq -e '.statusLine.command | test(\"claudebar\")' $HOME/.claude/settings.json >/dev/null 2>&1"
+
+  - name: moshi-hook
+    label: "Moshi Hook"
+    desc: "AI agent bridge to the Moshi mobile app"
+    icon_name: phone
+    items:
+      - name: moshi-hook-mac
+        type: brew-formula
+        spec: rjyo/moshi/moshi-hook
+        platforms: [mac]
+      - name: moshi-hook-mac-service
+        type: custom
+        script: ./moshi-hook-service-mac.sh
+        platforms: [mac]
+      - name: moshi-hook-linux
+        type: custom
+        script: ./install-moshi-hook.sh
+        platforms: [wsl]
+      - name: moshi-hook-wsl-service
+        type: custom
+        script: ./moshi-hook-service-wsl.sh
+        platforms: [wsl]
+
+  - name: agent-tools
+    label: "Agent CLI tools"
+    desc: "mdprobe + atomic-skills + rtk"
+    icon_name: tools
+    items:
+      - name: mdprobe
+        type: npm-global
+        spec: "@henryavila/mdprobe"
+        check: "command -v mdprobe"
+      - name: atomic-skills
+        type: npx
+        spec: "@henryavila/atomic-skills@1.7.0 install --yes --all-detected --lang pt"
+      - name: rtk
+        type: custom
+        script: ./install-rtk.sh

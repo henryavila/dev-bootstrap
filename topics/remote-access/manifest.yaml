@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Remote Access"
+  hint: "sshd + Tailscale + mosh + code-server"
+  required: false
+  order: 90
+  description: |
+    Reach this machine from anywhere: sshd, Tailscale (with the MTU fix that
+    keeps SSH-over-Tailscale from hanging), and mosh for flaky links. The
+    optional code-server bundle serves VS Code over your tailnet.
+
+bundles:
+
+  - name: ssh
+    label: "SSH server"
+    desc: "sshd — Remote Login (mac) / openssh-server (WSL)"
+    icon_name: lock
+    items:
+      - name: remote-login-mac
+        type: custom
+        script: ./enable-remote-login.sh
+        platforms: [mac]
+      - name: systemd-wsl
+        type: custom
+        script: ./enable-systemd-wsl.sh
+        platforms: [wsl]
+      - name: openssh-server-wsl
+        type: apt
+        spec: openssh-server
+        platforms: [wsl]
+
+  - name: tailscale
+    label: "Tailscale"
+    desc: "Tailscale mesh VPN + SSH-over-tailnet MTU fix"
+    icon_name: globe
+    items:
+      - name: tailscale-mac
+        type: custom
+        script: ./install-tailscale-mac.sh
+        platforms: [mac]
+      - name: tailscale-wsl
+        type: custom
+        script: ./install-tailscale-wsl.sh
+        platforms: [wsl]
+      - name: tailscale-mtu-wsl
+        type: custom
+        script: ./tailscale-mtu-fix-wsl.sh
+        platforms: [wsl]
+
+  - name: mosh
+    label: "mosh"
+    desc: "Mobile shell — survives roaming & flaky links"
+    icon_name: terminal
+    items:
+      - name: mosh-mac
+        type: brew-formula
+        spec: mosh
+        platforms: [mac]
+      - name: mosh-wsl
+        type: apt
+        spec: mosh
+        platforms: [wsl]
+      - name: mosh-path-mac
+        type: custom
+        script: ./mosh-path-fix.sh
+        platforms: [mac]
+        when: brew_prefix_custom
+
+  - name: code-server
+    label: "code-server"
+    desc: "VS Code in the browser over your tailnet (opt-in)"
+    platforms: [mac]
+    default_selected: false
+    icon_name: code
+    requires_bundles:
+      - remote-access/tailscale
+    items:
+      - name: code-server
+        type: custom
+        script: ./mac/code-server.sh
+        platforms: [mac]
+        uninstall_tier: 2

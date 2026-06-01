@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Syncthing"
+  hint: "P2P file sync across your machines"
+  required: false
+  order: 100
+  description: |
+    Syncthing converges curated files (e.g. parts of ~/.claude) peer-to-peer
+    across your machines. The apply phase pauses with the admin URL so you can
+    pair devices before continuing.
+
+bundles:
+
+  - name: syncthing
+    label: "Syncthing"
+    desc: "Syncthing P2P sync + device-pairing pause"
+    icon_name: sync
+    items:
+      - name: syncthing-binary-mac
+        type: brew-formula
+        spec: syncthing
+        platforms: [mac]
+        uninstall_tier: 2
+      - name: syncthing-service-mac
+        type: custom
+        script: ./syncthing-service-mac.sh
+        platforms: [mac]
+        uninstall_tier: 1
+      - name: syncthing-binary-wsl
+        type: apt
+        spec: syncthing
+        platforms: [wsl]
+        uninstall_tier: 2
+      - name: syncthing-service-wsl
+        type: custom
+        script: ./syncthing-service-wsl.sh
+        platforms: [wsl]
+        uninstall_tier: 1
+      - name: post-install-banner
+        type: custom
+        script: ./post-install-banner.sh
+        idempotent: true
