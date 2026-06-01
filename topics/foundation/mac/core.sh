@@ -20,13 +20,17 @@
 #
 # After installing, the user's choice is persisted via state.env so this
 # whole ladder is skipped on subsequent runs.
-set -euo pipefail
+#
+# Custom item contract — the engine sources this and calls check()/install()/
+# verify(). `set -euo pipefail` lives inside install()'s subshell, not at top
+# level, so the original strict-mode behaviour is preserved without leaking
+# into the engine that sources this file.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/log.sh"
+source "$HERE/../../../scripts/lib/log.sh"
 # shellcheck disable=SC1091
-source "$HERE/../../scripts/lib/state.sh"
+source "$HERE/../../../scripts/lib/state.sh"
 
 # ----------------------------------------------------------------------
 # Helpers — prefix decision + custom install
@@ -146,7 +150,7 @@ install_brew_at_custom_prefix() {
 decide_brew_prefix() {
     # 1. Already installed on disk — detect-brew.sh wins.
     local detect_out
-    if detect_out="$(bash "$HERE/../../scripts/lib/detect-brew.sh" 2>/dev/null)"; then
+    if detect_out="$(bash "$HERE/../../../scripts/lib/detect-brew.sh" 2>/dev/null)"; then
         # Pass through BREW_BIN= and BREW_PREFIX= unchanged so the caller
         # eval populates them — same contract as lib/detect-brew.sh.
         printf '%s\n' "$detect_out"
@@ -211,8 +215,32 @@ EOF
 }
 
 # ----------------------------------------------------------------------
-# Main flow
+# Contract
 # ----------------------------------------------------------------------
+
+# Brew present (any prefix) + all core formulae installed.
+check() {
+    local out
+    out="$(bash "$HERE/../../../scripts/lib/detect-brew.sh" 2>/dev/null)" || return 1
+    eval "$out"
+    local p
+    for p in git curl wget gnupg jq unzip gettext; do
+        "$BREW_BIN" list --formula "$p" >/dev/null 2>&1 || return 1
+    done
+    return 0
+}
+
+verify() { check; }
+
+rollback() {
+    # Homebrew + core tooling underpin every later topic — never auto-remove.
+    :
+}
+
+# The brew-bootstrap state machine runs inside a strict-mode subshell so its
+# `exit N` paths become this item's failure code without killing the engine.
+install() { (
+    set -euo pipefail
 
 # Decide the prefix BEFORE attempting to install. The decision function
 # also detects "brew already installed" and short-circuits.
@@ -257,7 +285,7 @@ elif [[ "$BREW_DECISION_METHOD" == "state_replay" ]]; then
         install_brew_at_custom_prefix "$chosen_prefix"
     fi
     # Re-detect after install
-    if out=$(bash "$HERE/../../scripts/lib/detect-brew.sh"); then
+    if out=$(bash "$HERE/../../../scripts/lib/detect-brew.sh"); then
         eval "$out"
     else
         fail "brew install completed but detect-brew.sh still cannot find it"
@@ -267,7 +295,7 @@ elif [[ "$BREW_DECISION_METHOD" == "state_replay" ]]; then
 elif [[ "$is_canonical" == "1" ]]; then
     info "installing Homebrew at $chosen_prefix (canonical — official installer)"
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    if out=$(bash "$HERE/../../scripts/lib/detect-brew.sh"); then
+    if out=$(bash "$HERE/../../../scripts/lib/detect-brew.sh"); then
         eval "$out"
     else
         fail "brew install completed but detect-brew.sh still cannot find it"
@@ -336,7 +364,8 @@ done
 envsubst_path="$BREW_PREFIX/opt/gettext/bin/envsubst"
 if [[ -x "$envsubst_path" ]] && ! command -v envsubst >/dev/null 2>&1; then
     warn "envsubst installed but not in PATH; add $BREW_PREFIX/opt/gettext/bin to PATH"
-    warn "topic 30-shell handles this via bashrc.d/zshrc.d fragments"
+    warn "shell-terminal handles this via bashrc.d/zshrc.d fragments"
 fi
 
-ok "00-core done"
+ok "foundation/base done"
+) }

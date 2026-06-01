@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# dotfiles-personal/apply: clone $MESH_IDENTITY_REPO + run its install.sh.
+# Custom item contract — engine sources this and calls check()/install()/verify().
+# Marked idempotent in the manifest: dotfiles are re-applied on every run
+# (identity_ensure_repo pulls, the fork's install.sh is itself idempotent).
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$HERE/../../scripts/lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/../../scripts/lib/identity-repo.sh"
+# shellcheck disable=SC1091
+source "$HERE/../../scripts/lib/topic-cleanup.sh"
+
+check() {
+    # Idempotent apply — always run (manifest idempotent: true). The dotfiles
+    # fork's own install.sh handles the "already applied" fast paths.
+    return 1
+}
+
+install() { (
+    set -euo pipefail
+
+    : "${MESH_IDENTITY_REPO:?MESH_IDENTITY_REPO not set (the menu should not have selected this bundle)}"
+    : "${MESH_IDENTITY_DIR:=$HOME/mesh-identity}"
+
+    identity_ensure_repo "$MESH_IDENTITY_REPO" "$MESH_IDENTITY_DIR"
+
+    if [[ -f "$MESH_IDENTITY_DIR/install.sh" ]]; then
+        info "running $MESH_IDENTITY_DIR/install.sh"
+        MESH_NPM_GLOBAL="${MESH_NPM_GLOBAL:-0}" bash "$MESH_IDENTITY_DIR/install.sh"
+    else
+        warn "$MESH_IDENTITY_DIR/install.sh not found — dotfiles cloned but not applied"
+    fi
+
+    # Drift cleanup: artifacts the dotfiles fork used to install but no longer
+    # does. Reads data/uninstall.list and removes each entry. Idempotent.
+    uninstall_apply "$HERE/data/uninstall.list"
+
+    ok "dotfiles-personal done"
+) }
+
+verify() {
+    [ -d "${MESH_IDENTITY_DIR:-$HOME/mesh-identity}" ]
+}
+
+rollback() {
+    # Never auto-remove the user's applied dotfiles.
+    :
+}

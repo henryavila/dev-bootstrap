@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Personal dotfiles"
+  hint: "clone + apply your mesh-identity repo"
+  required: true
+  order: 30
+  description: |
+    Clones your private mesh-identity repo and runs its install.sh to apply
+    personal dotfiles, then prunes drift artifacts the fork no longer ships.
+    Required — this is what makes the machine yours.
+
+bundles:
+
+  - name: dotfiles
+    label: "Personal dotfiles"
+    desc: "Clone + apply your mesh-identity repo"
+    required: true
+    icon_name: home
+    items:
+      - name: apply
+        type: custom
+        script: ./apply.sh
+        idempotent: true
