@@ -139,16 +139,23 @@ secrets_crypt_guard() {
     local repo="$1"
     # Files staged under secrets/ in this commit, minus the always-cleartext
     # ones (the registry manifest + .gitattributes carry no secrets).
+    # Newline-delimited iteration via `while IFS= read` — robust regardless of
+    # the caller's inherited IFS (a `for f in $staged` split breaks if IFS lacks
+    # newline, which silently glues multiple staged paths into one).
     local staged must_encrypt="" f
     staged="$( cd "$repo" && git diff --cached --name-only -- 'secrets/' 2>/dev/null )"
-    for f in $staged; do
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
         case "$f" in
             secrets/manifest.yaml|secrets/.gitattributes) continue ;;
-            *) must_encrypt="$must_encrypt $f" ;;
+            *) must_encrypt="$must_encrypt$f
+" ;;
         esac
-    done
+    done <<EOF
+$staged
+EOF
     # Only cleartext files (or nothing) staged → safe, no git-crypt needed.
-    [ -n "${must_encrypt# }" ] || return 0
+    [ -n "$must_encrypt" ] || return 0
 
     # Real secrets staged ⇒ the encryption rule must exist...
     if ! secrets_crypt_attr_ok "$repo"; then
@@ -169,7 +176,8 @@ secrets_crypt_guard() {
     # Authoritative check: git-crypt status must report every real secret as
     # encrypted.
     local line
-    for f in $must_encrypt; do
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
         line="$( cd "$repo" && git-crypt status -- "$f" 2>/dev/null )"
         case "$line" in
             *"not encrypted"*|"")
@@ -177,6 +185,8 @@ secrets_crypt_guard() {
                 return 1
                 ;;
         esac
-    done
+    done <<EOF
+$must_encrypt
+EOF
     return 0
 }

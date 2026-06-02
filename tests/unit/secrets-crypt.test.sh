@@ -78,6 +78,31 @@ if ! secrets_crypt_available; then
     secrets_crypt_guard "$R3" >/dev/null 2>&1 && no "guard must BLOCK when git-crypt absent" || ok
 fi
 
+# --- guard regression: multiple always-cleartext files staged under a HOSTILE
+#     IFS (no newline) → still safe. A `for f in $staged` split would glue the
+#     paths and misclassify them; the while-read loop is IFS-independent. ---
+R5="$TMP/r5"; mkrepo "$R5"; secrets_crypt_attr_ensure "$R5"
+mkdir -p "$R5/secrets"
+printf 'version: 1\n' > "$R5/secrets/manifest.yaml"
+printf '* -text\n'   > "$R5/secrets/.gitattributes"
+( cd "$R5" && git add -f secrets/manifest.yaml secrets/.gitattributes )
+( IFS=':'; secrets_crypt_guard "$R5" ) && ok || no "guard rc0 with cleartext-only files under hostile IFS"
+
+# --- guard end-to-end with REAL git-crypt (only where installed): two encrypted
+#     secrets staged → safe (rc0), even under a hostile IFS. ---
+if secrets_crypt_available; then
+    R6="$TMP/r6"; mkrepo "$R6"; secrets_crypt_attr_ensure "$R6"
+    ( cd "$R6" && git-crypt init ) >/dev/null 2>&1
+    mkdir -p "$R6/secrets/sub"
+    printf 'TOKEN=aaa\n' > "$R6/secrets/a.env"
+    printf 'TOKEN=bbb\n' > "$R6/secrets/sub/b.env"
+    printf 'version: 1\n'  > "$R6/secrets/manifest.yaml"
+    ( cd "$R6" && git add -f secrets/ )
+    # both real secrets must be encrypted in the index
+    [ "$(cd "$R6" && git show :secrets/a.env | head -c 9 | tr -d '\000')" = "GITCRYPT" ] && ok || no "real: a.env staged encrypted"
+    ( IFS=':'; secrets_crypt_guard "$R6" ) && ok || no "real: guard rc0 with two encrypted secrets (hostile IFS)"
+fi
+
 # --- summary ---
 total=$((pass + fail))
 if [ "$fail" -eq 0 ]; then
