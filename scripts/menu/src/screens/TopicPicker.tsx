@@ -23,6 +23,7 @@ import {
   DescriptionList,
   Footer,
   Banner,
+  useGlyph,
   useListNavigation,
   useStdoutDimensions,
   type ListRowData,
@@ -82,9 +83,19 @@ export function TopicPicker(props: TopicPickerProps) {
   const { topics, selected, required, scan, banner } = props;
   const [activePane, setActivePane] = useState<Pane2>('topics');
   const { rows: rawRows } = useStdoutDimensions();
+  const g = useGlyph();
   // Guard against a transient bad/0 reading (some stdouts report garbage on a
   // resize event) collapsing the layout; assume a sane terminal otherwise.
   const rows = rawRows >= 10 ? rawRows : 24;
+
+  // Always-visible quick legend for the two badge columns. Built from the same
+  // glyph names the List rows use (selectionIntents + stateIntents), via
+  // useGlyph() so it tracks the active icon set (nerd/unicode/ascii) instead of
+  // hardcoding unicode. Kept terse to survive the 60-col mobile fallback — the
+  // full prose legend lives in the `?` help.
+  const legend =
+    `${g('checkboxOn')} sel  ${g('checkboxOff')} off  ${g('checkboxLock')} req` +
+    `   ${g('check')} inst  ${g('half')} part  ${g('cross')} none`;
 
   const topicNav = useListNavigation({ ids: topics.map((t) => t.id) });
   const focusedTopic = topics.find((t) => t.id === topicNav.focusedId) ?? topics[0];
@@ -195,14 +206,16 @@ export function TopicPicker(props: TopicPickerProps) {
   // A frame exactly as tall as the terminal forces Ink onto a full-screen-clear
   // redraw that scrolls the bottom row — the footer — out of view on a real TTY
   // (pyte/ink-testing-library don't model the scroll, so it looks fine there).
-  // The header, a *permanently reserved* banner row, and the footer are fixed
-  // 1-row bands; the panes flex to fill the slack. Reserving the banner row even
-  // when empty keeps the total height CONSTANT — so toggling a notice (e.g. the
-  // auto-select banner on Space) never reflows the frame across that boundary,
-  // which is the exact trigger that used to drop the footer. flexbox owns the
-  // geometry: no per-line arithmetic decides whether the footer survives.
+  // The header, a fixed legend row, a *permanently reserved* banner row, and the
+  // footer are fixed 1-row bands; the panes flex to fill the slack. The legend
+  // is ALWAYS rendered (constant height) and the banner row is reserved even
+  // when empty, so toggling a notice (e.g. the auto-select banner on Space)
+  // never reflows the frame across that boundary — the exact trigger that used
+  // to drop the footer. flexbox owns the geometry: no per-line arithmetic
+  // decides whether the footer survives. Any band added here MUST be subtracted
+  // from innerHeight below or the frame grows back into the footer-drop hazard.
   const screenH = Math.max(8, rows - 1);
-  const innerHeight = Math.max(6, screenH - 3); // header (1) + banner (1) + footer (1)
+  const innerHeight = Math.max(6, screenH - 4); // header + legend + banner + footer
   const detailMax = Math.max(2, Math.floor(innerHeight * 0.4) - 2);
   const bundlesListH = Math.max(3, Math.floor((innerHeight - 4) * 0.6));
 
@@ -237,6 +250,12 @@ export function TopicPicker(props: TopicPickerProps) {
           notice) so the frame height never changes and the footer stays put. */}
       <Box height={1} flexShrink={0} overflow="hidden">
         {banner ? <Banner tone="info" text={banner} /> : null}
+      </Box>
+      {/* Always-visible quick legend for the badge columns — sits in the bottom
+          reference strip, right above the keybar (fixed 1-row band, counted in
+          innerHeight). Full prose legend is in the `?` help. */}
+      <Box height={1} flexShrink={0} overflow="hidden">
+        <Banner tone="info" text={legend} />
       </Box>
       <Box flexShrink={0} flexDirection="column">
         <Footer keys={FOOTER_KEYS} marginTop={0} />

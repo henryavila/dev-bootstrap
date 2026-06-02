@@ -56,6 +56,18 @@ describe('TopicPicker screen', () => {
     expect(f).toContain('apply'); // the `c` action
     unmount();
   });
+
+  it('renders the always-visible badge legend (both columns explained)', async () => {
+    const { lastFrame, unmount } = renderApp();
+    await delay(80);
+    const f = lastFrame()!;
+    // Quick legend band — the T-500 finding. These tokens appear ONLY in the
+    // legend, never in the nav footer, so they pin the band's presence.
+    expect(f).toContain('inst'); // installed
+    expect(f).toContain('part'); // partial
+    expect(f).toContain('none'); // not installed
+    unmount();
+  });
 });
 
 describe('UpdatesScreen', () => {
@@ -130,6 +142,11 @@ describe('Help dialog', () => {
     const f = lastFrame()!;
     expect(f).toContain('how to use');
     expect(f).toContain('Choose the bundles');
+    // Full prose legend for both badge columns (T-500 finding).
+    expect(f).toContain('Status');
+    expect(f).toContain('installed');
+    expect(f).toContain('partial');
+    expect(f).toContain('required');
     unmount();
   });
 });

@@ -15,7 +15,7 @@
  */
 import { useMemo, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
-import { Dialog, type FormValues, type DialogAction } from '@henryavila/blink-tui';
+import { Dialog, useGlyph, type FormValues, type DialogAction } from '@henryavila/blink-tui';
 import { detectPlatform } from './core/platform.js';
 import {
   readAllManifests,
@@ -235,14 +235,23 @@ const HELP_LINES = [
   'Options   Enter         edit a bundle’s options',
   'Updates   u             what `mesh update` upgrades',
   'Finish    c  apply       ·    q  cancel',
-  'Bundles marked ▣ are required (always installed).',
 ];
 
 function HelpDialog({ onClose }: { onClose: () => void }) {
   useInput(() => onClose());
+  // Legend built from the active icon set (not hardcoded unicode) so the glyphs
+  // shown here match exactly what the TopicPicker rows + quick legend render.
+  // Mirrors blink's selectionIntents (checkbox*) + stateIntents (check/half/cross).
+  const g = useGlyph();
+  const lines = [
+    ...HELP_LINES,
+    '',
+    `Status    ${g('checkboxOn')} selected   ${g('checkboxOff')} off   ${g('checkboxLock')} required`,
+    `          ${g('check')} installed   ${g('half')} partial   ${g('cross')} not installed`,
+  ];
   return (
     <Box flexDirection="column">
-      <Dialog title="how to use" tone="default" lines={HELP_LINES} actions={[{ key: 'any', label: 'close' }]} width={62} />
+      <Dialog title="how to use" tone="default" lines={lines} actions={[{ key: 'any', label: 'close' }]} width={62} />
     </Box>
   );
 }
