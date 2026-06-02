@@ -10,6 +10,7 @@ import {
   appliesToPlatform,
   ManifestError,
 } from '../src/core/manifest-reader.js';
+import { registerDomainGlyphs, resolveDomain } from '../src/glyphs.js';
 import { tmp } from './helpers.js';
 
 describe('readAllManifests (real repo manifests)', () => {
@@ -38,6 +39,30 @@ describe('readAllManifests (real repo manifests)', () => {
     const opts = php.bundle.options!;
     expect(opts.find((o) => o.name === 'versions')!.type).toBe('multiselect');
     expect(opts.find((o) => o.name === 'default-version')!.derive_from).toBe('versions');
+  });
+});
+
+describe('manifest icon coverage (no icon gap)', () => {
+  // Every icon_name a manifest declares must resolve to a registered blink glyph
+  // after registerDomainGlyphs() — otherwise that bundle renders with no domain
+  // glyph. This guards the 12-name gap that was closed upstream in blink (the
+  // SYSTEM pack + claude). A new manifest icon_name with no blink glyph fails here.
+  registerDomainGlyphs();
+  const topics = readAllManifests();
+  const iconNames = [
+    ...new Set(
+      flattenBundles(topics)
+        .map((r) => r.bundle.icon_name)
+        .filter((n): n is string => Boolean(n)),
+    ),
+  ].sort();
+
+  it('has icon_names to check (guards against the manifests dropping them silently)', () => {
+    expect(iconNames.length).toBeGreaterThan(10);
+  });
+
+  it.each(iconNames)('icon_name %s resolves to a blink glyph', (name) => {
+    expect(resolveDomain(name), `icon_name "${name}" has no blink glyph`).toBeTruthy();
   });
 });
 

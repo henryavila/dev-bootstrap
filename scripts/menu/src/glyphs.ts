@@ -7,11 +7,11 @@
  * onto an existing blink glyph; anything blink lacks resolves to `undefined`
  * (the List/ProgressList `domain` column is optional → graceful no-glyph).
  *
- * GAP REPORTED TO BLINK (icon_names used by manifests that blink has no glyph
- * for yet — to be added to blink's packs upstream):
- *   claude, code, globe, home, key, mail, package, phone, sync, terminal,
- *   text, tools
- * Until blink ships them, those bundles render without a domain glyph.
+ * The five packs below cover every icon_name used across the 12 manifests. The
+ * SYSTEM pack + the `claude` glyph (in COMPANIES) were the 12-name gap that was
+ * reported to — and added upstream in — blink (terminal, code, globe, home,
+ * key, mail, phone, package, sync, text, tools, claude). The
+ * `manifest icon coverage` test guards that none regresses to a no-glyph.
  */
 import {
   registerGlyphs,
@@ -20,6 +20,8 @@ import {
   CLOUD,
   FRAMEWORKS,
   FILES,
+  SYSTEM,
+  COMPANIES,
 } from '@henryavila/blink-tui';
 
 let registered = false;
@@ -31,6 +33,8 @@ export function registerDomainGlyphs(): void {
   registerGlyphs(CLOUD); // nginx …
   registerGlyphs(FRAMEWORKS); // laravel …
   registerGlyphs(FILES); // lock …
+  registerGlyphs(SYSTEM); // terminal, code, globe, home, key, mail, phone, package, sync, text, tools
+  registerGlyphs(COMPANIES); // claude (+ github, …)
   registered = true;
 }
 
