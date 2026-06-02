@@ -432,8 +432,8 @@ process_repo() {
             # longer has scripts/runners/doctor.sh (workstation owns it).
             # Use the WORKSTATION doctor relative to this auto-update
             # script ($HERE = scripts/runners/, so doctor.sh is a peer),
-            # passing MESH_IDENTITY_DIR=$repo so MAPPINGS resolve to
-            # the just-applied identity tree.
+            # passing MESH_IDENTITY_DIR=$repo so the deploy.map resolves
+            # to the just-applied identity tree.
             local doctor_path="$HERE/doctor.sh"
             if [[ -f "$doctor_path" ]]; then
                 local doctor_out doctor_rc=0

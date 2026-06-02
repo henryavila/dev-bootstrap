@@ -36,12 +36,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 # shellcheck disable=SC1091
 . "$REPO/scripts/lib/managed-block.sh"
-# MAPPINGS live in identity's install.sh (post-restructure: workstation
-# has no top-level install.sh; mappings remain identity-owned data per
-# spec D-B3 / §C18). Resolve identity via MESH_IDENTITY_DIR with the
-# usual fallback chain.
+# shellcheck disable=SC1091
+. "$REPO/scripts/lib/deploy.sh"   # deploy_map_emit() — shared deploy.map parser
+# The deploy set lives in identity's deploy.map data file (post-restructure:
+# workstation has no top-level install.sh; the set is identity-owned DATA per
+# spec D-B3 / §C18, and as of audit T-001 is a deploy.map, not a MAPPINGS array
+# in install.sh). Resolve identity via MESH_IDENTITY_DIR with the usual fallback.
 IDENTITY="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
-INSTALL="$IDENTITY/install.sh"
+DEPLOY_MAP="$IDENTITY/deploy.map"
 
 QUIET=0
 JSON=0
@@ -69,28 +71,16 @@ count_launchd_phantom=0 count_composer_phar=0
 drift_items=() missing_items=() marker_miss_items=()
 launchd_phantom_items=() composer_phar_items=()
 
-# ─── Parse MAPPINGS from install.sh ────────────────────────────────
-# Pulls lines between `MAPPINGS=(` and the closing `)`, strips quotes,
-# expands $HOME, feeds each `src|dst[|mode]` triple through the checker.
+# ─── Parse the deploy.map (shared parser) ──────────────────────────
+# Emits one normalized "src|dst|mode|perms" row per entry via deploy_map_emit —
+# the SAME parser deploy.sh uses to deploy, so the drift check can never disagree
+# with what install actually wrote (audit T-001: single source of truth for the
+# grammar). dst arrives already expanded + trimmed.
 parse_mappings() {
-    # Silent when INSTALL is absent (clean install or identity not deployed);
+    # Silent when the map is absent (clean install or identity not deployed);
     # downstream loop sees zero rows, exits at the JSON/text rendering step.
-    [[ -f "$INSTALL" ]] || return 0
-    awk '
-        /^MAPPINGS=\(/ { inside=1; next }
-        inside && /^\)/ { inside=0; next }
-        # Skip whitespace-only and comment lines inside the array. Without
-        # this, a comment containing a "|" would be passed downstream as if
-        # it were a real mapping triple. None today carry "|", but blocks
-        # like `# Plugin replication trio (manifest-based; alternative to ...)`
-        # could grow into trouble; cheaper to filter at the source.
-        inside && /^[ \t]*#/ { next }
-        inside {
-            gsub(/^[ \t]*"/, "")
-            gsub(/"[ \t]*$/, "")
-            if ($0 != "") print
-        }
-    ' "$INSTALL"
+    [[ -f "$DEPLOY_MAP" ]] || return 0
+    deploy_map_emit "$DEPLOY_MAP" 2>/dev/null
 }
 
 check_mapping() {
@@ -98,8 +88,7 @@ check_mapping() {
     local src dst mode perms
     IFS='|' read -r src dst mode perms <<< "$raw"
     mode="${mode:-overwrite}"
-    # Expand $HOME literally (install.sh does the same)
-    dst="${dst//\$HOME/$HOME}"
+    # dst is already expanded + trimmed by deploy_map_emit (shared parser).
     local src_abs="$IDENTITY/$src"
 
     # Skip entries whose src is a placeholder we haven't filled in

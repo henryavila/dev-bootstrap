@@ -5,7 +5,8 @@
 #   Deploys files from a topic's templates/ directory (old DEPLOY-file / auto-map system).
 #
 # SOURCE (sourced by install-engine):  . lib/deploy.sh
-#   Provides C6 deploy_one() dispatcher for the MAPPINGS-based install engine.
+#   Provides the C6 deploy_one() dispatcher + deploy_map()/deploy_map_emit(), the
+#   data-file front end identity's install.sh uses (deploy.map → deploy_one).
 #   Entry format: "src-rel|dst-abs|mode|perms"  (mode: overwrite | once | managed_block)
 #
 # Standalone behavior:
@@ -116,6 +117,65 @@ deploy_one() {
             echo "[deploy] unknown mode: $mode" >&2; return 64
             ;;
     esac
+}
+
+# Trim leading + trailing whitespace (bash 3.2-safe; no ${v//} surprises).
+_deploy_trim() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+# deploy_map_emit <map-file>
+#   Parse a `deploy.map` data file and emit one normalized entry per valid line
+#   as "src|dst|mode|perms" (empty mode/perms → deploy_one applies its defaults;
+#   dst is fully expanded; all fields trimmed). Blank lines and #-comments are
+#   skipped; a malformed line is warned + skipped.
+#
+#   This is the SINGLE SOURCE OF TRUTH for the deploy.map grammar. Both consumers
+#   read through it so the parse can never fork: deploy_map() (deploys) and
+#   doctor.sh (drift-checks). The sourced deploy_one expects a pre-expanded dst
+#   (unlike the standalone expand_dst path), so this expands the tokens a human
+#   naturally writes in a data file: `~`, `$HOME`/`${HOME}`, `$USER`/`${USER}`.
+#   Destinations live under $HOME, so that set suffices; extend here if needed.
+deploy_map_emit() {
+    local map="$1"
+    [[ -r "$map" ]] || { echo "[deploy] deploy.map not readable: $map" >&2; return 1; }
+    local line trimmed src dst mode perms
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "$trimmed" || "$trimmed" == '#'* ]] && continue
+        IFS='|' read -r src dst mode perms <<< "$line"
+        src="$(_deploy_trim "$src")";   dst="$(_deploy_trim "$dst")"
+        mode="$(_deploy_trim "$mode")"; perms="$(_deploy_trim "$perms")"
+        if [[ -z "$src" || -z "$dst" ]]; then
+            echo "[deploy] malformed deploy.map line (need at least src|dst): $line" >&2
+            continue
+        fi
+        dst="${dst/#\~/$HOME}"
+        dst="${dst//\$\{HOME\}/$HOME}"; dst="${dst//\$HOME/$HOME}"
+        dst="${dst//\$\{USER\}/$USER}"; dst="${dst//\$USER/$USER}"
+        printf '%s|%s|%s|%s\n' "$src" "$dst" "$mode" "$perms"
+    done < "$map"
+}
+
+# deploy_map <map-file> <src-base>
+#   Data-file front end to deploy_one: deploy every entry in a deploy.map. This
+#   is what lets a human add a replicated file by editing DATA, never code
+#   (human-without-AI rule, [[human-manageable-manifest-default]]): identity's
+#   install.sh reduces to `deploy_map deploy.map .`.
+#
+#   Returns non-zero if the map is unreadable, or if ANY entry failed (every
+#   entry is still attempted, so one bad line never silently skips the rest).
+deploy_map() {
+    local map="$1" src_base="$2" rc=0 entry
+    [[ -r "$map" ]] || { echo "[deploy] deploy.map not readable: $map" >&2; return 1; }
+    while IFS= read -r entry; do
+        deploy_one "$entry" "$src_base" || rc=1
+    done < <(deploy_map_emit "$map")
+    return "$rc"
 }
 
 # Return when sourced — do not execute standalone script logic.

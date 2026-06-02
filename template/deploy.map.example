@@ -1,0 +1,45 @@
+# deploy.map — your personal files to replicate across machines.
+#
+# This is DATA, not code. To replicate a file on every machine:
+#   1. commit the file somewhere in your mesh-identity repo,
+#   2. add ONE line below,
+#   3. run `mesh install`.
+# No script editing, no AI needed. (Scaffolded from mesh-workstation/template/.)
+#
+# ── Line format ───────────────────────────────────────────────────────────
+#   src | dst | mode | perms
+#
+#   src    Path RELATIVE to your identity repo — the file you committed.
+#   dst    Absolute destination. `~`, `$HOME` and `$USER` are expanded.
+#   mode   How to write dst (default: overwrite):
+#            overwrite      replace dst every install; backs up a changed file
+#                           first; refuses to clobber an unmanaged rc file.
+#            once           write only if dst does NOT exist — a seed you own.
+#            managed_block  merge ONLY between the mesh markers; preserve the rest.
+#   perms  Octal mode, default 0644. 0600 for secrets-adjacent, 0755 for bin.
+#
+# Only `src | dst` is required; leave a field empty to take its default (keep the
+# pipe so later fields line up):
+#   shell/zshrc.local | ~/.zshrc.local                     → overwrite, 0644
+#   ssh/config        | ~/.ssh/config        | | 0600      → overwrite, 0600
+#   ssh/authorized_keys | ~/.ssh/authorized_keys | managed_block | 0600
+#
+# Blank lines and #-comments are ignored.
+#
+# Real secret-bearing config (api tokens, auth.json, npmrc) does NOT go here —
+# it goes through the encrypted secrets layer:
+#   `mesh secret add`  to capture, `mesh secret deploy` to place.
+#
+# The entries below are a STARTER set matching the files template/ scaffolds.
+# Delete the ones you don't use; add your own.
+# ────────────────────────────────────────────────────────────────────────────
+
+ssh/authorized_keys | ~/.ssh/authorized_keys | managed_block | 0600
+
+git/gitconfig.local | ~/.gitconfig.local     | once
+git/gitignore_global | ~/.config/git/ignore
+
+shell/bashrc.local  | ~/.bashrc.local        | once
+shell/zshrc.local   | ~/.zshrc.local         | once
+shell/aliases.sh    | ~/.zshrc.d/99-personal-aliases.sh
+shell/aliases.sh    | ~/.bashrc.d/99-personal-aliases.sh

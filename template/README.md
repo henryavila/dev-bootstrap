@@ -26,7 +26,8 @@ structure.
 
 | File | Mode | Purpose |
 |---|---|---|
-| `install.sh.example` | deploy script | thin wrapper around `deploy_one`; defines MAPPINGS |
+| `install.sh.example` | deploy script | thin glue; calls `deploy_map deploy.map .` |
+| `deploy.map.example` | deploy data | editable `src\|dst\|mode\|perms` set (add files here, not in code) |
 | `CLAUDE.md.example` | agent rules | hard gate for template parity + repo routing |
 | `shell/aliases.sh.example` | personal shell | git/ls/nav aliases (overwrite mode) |
 | `git/gitconfig.local.example` | identity config | `[user]` block with placeholders (once mode) |
