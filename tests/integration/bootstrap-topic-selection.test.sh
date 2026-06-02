@@ -23,7 +23,7 @@ assert_contains "$list_out" "82  82-ai-tools" \
     "bootstrap --list-topics includes the AI tools topic"
 assert_contains "$list_out" "82  82-ai-tools  opt-in: INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=<url>  AI review prompts + token-saving CLI tools" \
     "bootstrap --list-topics explains topic 82 beyond the gate variables"
-if [[ ! -e "$TESTROOT/home-list/.local/state/mesh-workstation" ]]; then
+if [[ ! -e "$TESTROOT/home-list/.local/state/mesh" ]]; then
     pass "bootstrap --list-topics is read-only and does not create runtime state"
 else
     fail "bootstrap --list-topics should not create runtime state"

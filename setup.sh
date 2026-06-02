@@ -124,26 +124,20 @@ if [[ "$LIST_BUNDLES" == "1" ]]; then
 fi
 
 # ─── persistent state + secrets (sourced before the engine) ──────────────────
-export BOOTSTRAP_STATE_DIR="$HOME/.local/state/mesh-workstation"
-if [[ "$DRY_RUN" != "1" ]]; then
-    mkdir -p "$BOOTSTRAP_STATE_DIR"
-    # Migrate state from the old dir name (dev-bootstrap → mesh-workstation).
-    _old_state="$HOME/.local/state/dev-bootstrap"
-    if [[ -d "$_old_state" && "$_old_state" != "$BOOTSTRAP_STATE_DIR" ]]; then
-        for _f in "$_old_state"/*; do
-            [[ -f "$_f" ]] || continue
-            _base="${_f##*/}"
-            [[ -f "$BOOTSTRAP_STATE_DIR/$_base" ]] || cp "$_f" "$BOOTSTRAP_STATE_DIR/$_base"
-        done
-    fi
-    unset _old_state _f _base
-fi
+# Canonical state dir is ~/.local/state/mesh; finish the dev-bootstrap →
+# mesh-workstation → mesh rename one-shot before anything reads state (T-004).
+# shellcheck disable=SC1091
+source "$HERE/scripts/lib/state-dir.sh"
+[[ "$DRY_RUN" != "1" ]] && mesh_migrate_legacy_state
+BOOTSTRAP_STATE_DIR="$(mesh_state_dir)"; export BOOTSTRAP_STATE_DIR
+[[ "$DRY_RUN" != "1" ]] && mkdir -p "$BOOTSTRAP_STATE_DIR"
 
 # Secrets (input-only tokens). Sourced so item scripts read them via env; the
 # engine also sources them per bundle. See lib/secrets.sh for the key taxonomy.
+# BOOTSTRAP_STATE_DIR is already the canonical mesh dir, so secrets.sh resolves
+# BOOTSTRAP_SECRETS_FILE there (the legacy override removed — fixed T-004 F2).
 # shellcheck disable=SC1091
 source "$HERE/scripts/lib/secrets.sh"
-secrets_migrate_legacy   # one-shot: pre-rename secrets.env → canonical path (T-003)
 secrets_load || warn "secrets file present but could not be sourced — continuing without it"
 
 # Persisted decisions (e.g. a previously chosen BREW_PREFIX). See lib/state.sh.

@@ -38,8 +38,8 @@
 #   $BOOTSTRAP_SECRETS_FILE (default $XDG_STATE_HOME/mesh/secrets.env, i.e.
 #   ~/.local/state/mesh/secrets.env). This is the SAME path `mesh secret deploy`
 #   writes, so there is one canonical secrets.env per host. The pre-rename
-#   location (~/.local/state/mesh-workstation/secrets.env) is migrated one-shot
-#   by secrets_migrate_legacy() and never read again (audit T-003).
+#   location (~/.local/state/mesh-workstation/secrets.env) is migrated as part
+#   of the whole-state-dir move in lib/state-dir.sh (audit T-004).
 #
 # What belongs here:
 #   NGROK_AUTHTOKEN, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
@@ -66,23 +66,10 @@
 : "${BOOTSTRAP_SECRETS_FILE:=$BOOTSTRAP_STATE_DIR/secrets.env}"
 export BOOTSTRAP_STATE_DIR BOOTSTRAP_SECRETS_FILE
 
-# One-shot migration of the pre-rename secrets.env into the canonical path.
-# Idempotent + safe: only moves when the legacy file exists and the canonical
-# one does not, so it never clobbers a deployed secrets.env. NOT called at
-# source time (tests source this file with the real $HOME) — production entry
-# points (setup.sh, install-engine) call it explicitly before reading secrets.
-secrets_migrate_legacy() {
-    local legacy="$HOME/.local/state/mesh-workstation/secrets.env"
-    [ -f "$legacy" ] || return 0
-    [ "$legacy" = "$BOOTSTRAP_SECRETS_FILE" ] && return 0
-    [ -e "$BOOTSTRAP_SECRETS_FILE" ] && return 0
-    mkdir -p "$BOOTSTRAP_STATE_DIR" 2>/dev/null
-    chmod 0700 "$BOOTSTRAP_STATE_DIR" 2>/dev/null || true
-    if mv "$legacy" "$BOOTSTRAP_SECRETS_FILE" 2>/dev/null; then
-        chmod 0600 "$BOOTSTRAP_SECRETS_FILE" 2>/dev/null || true
-        warn "migrated legacy secrets.env → $BOOTSTRAP_SECRETS_FILE — these are local-only tokens; run 'mesh secret add' to encrypt + replicate them"
-    fi
-}
+# The pre-rename secrets.env is migrated as part of the whole-state-dir move in
+# lib/state-dir.sh (mesh_migrate_legacy_state), which setup.sh + install-engine
+# run before any secret is read (audit T-004). No secrets-specific migration
+# lives here — the state dir is migrated as a unit.
 
 # Fallback logging — when sourced standalone (tests), lib/log.sh may
 # not be in scope. Define minimal no-color info/warn so every public

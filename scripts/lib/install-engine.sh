@@ -74,6 +74,8 @@ export MESH_LIB_DIR="$ENGINE_DIR"
 . "$ENGINE_DIR/install-state.sh"
 # shellcheck disable=SC1091
 . "$ENGINE_DIR/conditions.sh"
+# shellcheck disable=SC1091
+. "$ENGINE_DIR/state-dir.sh"
 
 DRY_RUN=0
 SELECTIONS_FILE=""
@@ -81,7 +83,6 @@ TOPICS_DIR="$(cd "$ENGINE_DIR/../.." && pwd)/topics"
 INSTALLERS_DIR="$ENGINE_DIR/installers"
 PARAMS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/params.env"
 SECRETS_FILE_NEW="${XDG_STATE_HOME:-$HOME/.local/state}/mesh/secrets.env"
-SECRETS_FILE_LEGACY="$HOME/.local/state/mesh-workstation/secrets.env"
 SECRETS_OVERRIDE=""
 PLATFORM_OVERRIDE=""
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
@@ -160,20 +161,13 @@ _update_enabled() {    # $1 = category → rc 0 if the user opted that category 
     esac
 }
 
-# One-shot migration of the pre-rename secrets.env → canonical path (audit
-# T-003). Mirrors secrets_migrate_legacy() in lib/secrets.sh; needed here too
+# Finish the legacy state-dir rename one-shot (audit T-004). Needed here too
 # because auto-update invokes the engine directly, without sourcing setup.sh.
-# Idempotent + safe: only moves when legacy exists and canonical does not.
-if [[ -f "$SECRETS_FILE_LEGACY" && ! -e "$SECRETS_FILE_NEW" ]]; then
-    mkdir -p "$(dirname "$SECRETS_FILE_NEW")" 2>/dev/null
-    if mv "$SECRETS_FILE_LEGACY" "$SECRETS_FILE_NEW" 2>/dev/null; then
-        chmod 0600 "$SECRETS_FILE_NEW" 2>/dev/null || true
-        log_info "migrated legacy secrets.env → $SECRETS_FILE_NEW"
-    fi
-fi
+# Moves the whole pre-rename state dir (incl. secrets.env) into ~/.local/state/mesh.
+mesh_migrate_legacy_state
 
 # Resolve which secrets file to source: explicit override wins; otherwise the
-# single canonical location (legacy read dropped post-migration, T-003).
+# single canonical location (legacy read dropped post-migration, T-003/T-004).
 SECRETS_FILES=()
 if [[ -n "$SECRETS_OVERRIDE" ]]; then
     SECRETS_FILES=("$SECRETS_OVERRIDE")

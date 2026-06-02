@@ -19,11 +19,11 @@
 #   0  no work, or successful apply across all repos
 #   1  fatal error (config missing, etc.)
 #
-# Side effects:
-#   ~/.local/state/mesh-workstation/last-applied-<repo>  SHA aplicada por repo
-#   ~/.local/state/mesh-workstation/update.lock          flock mutex
-#   ~/.local/state/mesh-workstation/pending-sudo-<repo>  marker se sudo cancelado
-#   ~/.local/state/mesh-workstation/auth-failed-<repo>   marker se git fetch deu 401/403
+# Side effects (state dir = ~/.local/state/mesh; legacy mesh-workstation migrated):
+#   $STATE_DIR/last-applied-<repo>  SHA aplicada por repo
+#   $STATE_DIR/update.lock          flock mutex
+#   $STATE_DIR/pending-sudo-<repo>  marker se sudo cancelado
+#   $STATE_DIR/auth-failed-<repo>   marker se git fetch deu 401/403
 
 set -uo pipefail
 # NOTE: not -e — we handle per-repo failures gracefully; lib funcs return non-zero
@@ -44,7 +44,12 @@ if [[ -z "$CONF" ]]; then
         CONF="$HERE/../auto-update.conf"
     fi
 fi
-STATE_DIR="${AUTO_UPDATE_STATE_DIR:-$HOME/.local/state/mesh-workstation}"
+# Canonical state dir is ~/.local/state/mesh. auto-update runs without setup.sh,
+# so finish the legacy rename one-shot here too before touching markers (T-004).
+# shellcheck disable=SC1091
+. "$HERE/../lib/state-dir.sh"
+mesh_migrate_legacy_state
+STATE_DIR="${AUTO_UPDATE_STATE_DIR:-$(mesh_state_dir)}"
 # (Legacy `LOCK="$STATE_DIR/update.lock"` removed — see LOCK_DIR below;
 # the mkdir-based mutex superseded the file-based one and the unused
 # variable was tripping shellcheck SC2034.)

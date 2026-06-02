@@ -666,10 +666,12 @@ machine, if any, takes precedence over this answer." \
     ok "configuration captured — starting bootstrap"
 
     # Persist the answers so next run pre-fills the same values instead
-    # of falling back to first-run defaults. Written to
-    # $BOOTSTRAP_STATE_CONFIG (default: ~/.local/state/mesh-workstation/config.env).
-    # Plain shell-sourceable file — readable, diff-able, editable by hand.
-    # Delete to reset.
+    # of falling back to first-run defaults. Written to $BOOTSTRAP_STATE_CONFIG
+    # (canonical state dir ~/.local/state/mesh/config.env). Plain shell-sourceable
+    # file — readable, diff-able, editable by hand. Delete to reset.
+    # NOTE: this whole run_menu / _persist_menu_state path is the dead F9.5
+    # whiptail flow (superseded by the Ink TUI's selections.list); slated for
+    # removal in audit T-005.
     _persist_menu_state
 }
 
