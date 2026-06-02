@@ -176,15 +176,6 @@ write_state_file() {
     mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
 }
 
-# OS suffix used by mesh-workstation install.<suffix>.sh convention.
-_uname_suffix() {
-    case "$(uname -s)" in
-        Linux*)  echo "wsl" ;;
-        Darwin*) echo "mac" ;;
-        *)       echo "" ;;
-    esac
-}
-
 # Canonical retry hint for user-facing messages. The old `bup`/`dotup`
 # wrappers were retired in D41 (mesh-cli refactor); messages now point at
 # the unified `mesh update -o <repo>` form so the suggestion matches what
@@ -264,6 +255,30 @@ _only_matches() {
         mesh-workstation) _is_workstation_repo "$repo" && return 0 ;;
     esac
     return 1
+}
+
+# Given newline-separated git diff paths ($1) and the contents of
+# selections.list ($2), echo the selected `topic/bundle` lines whose topic had
+# a file change. Manifest v2 topics are `topics/<name>/...` (the NN- prefix was
+# dropped in the F9.6 migration); the engine drives them from selections.list,
+# so the incremental re-apply re-runs the engine for exactly the changed,
+# still-selected bundles. Pure: no side effects, deterministic, unit-tested.
+_affected_selected_bundles() {
+    local diff_paths="$1" selections="$2"
+    local affected
+    # v2 path shape: topics/<name>/...  (NOT topics/NN-name/...)
+    affected="$(printf '%s\n' "$diff_paths" | sed -n 's#^topics/\([^/]*\)/.*#\1#p' | sort -u)"
+    [[ -n "$affected" ]] || return 0
+    local line topic
+    while IFS= read -r line; do
+        line="${line%%#*}"                # strip trailing comment
+        line="${line//[[:space:]]/}"      # strip whitespace (topic/bundle has none)
+        [[ -n "$line" ]] || continue
+        topic="${line%%/*}"
+        if printf '%s\n' "$affected" | grep -qxF "$topic"; then
+            printf '%s\n' "$line"
+        fi
+    done <<< "$selections"
 }
 
 # ─── Accumulators ───────────────────────────────────────────────────
@@ -529,33 +544,32 @@ process_repo() {
         return 1
     fi
 
-    # ─── Apply: re-run install scripts of affected topics (mesh-workstation) ──
+    # ─── Apply: re-apply changed topics via the engine (mesh-workstation) ──
+    # Manifest v2 has no per-topic install.sh — topics are driven by
+    # install-engine.sh from the saved selections.list. So re-run the engine for
+    # the SELECTED bundles of the topics whose files changed: idempotent items
+    # re-apply (configs/deploys land), skip-if-present items no-op. The package
+    # *version* upgrade pass is run_update_phase (post-pull, opt-in), separate.
+    # Guarded: no selections.list, or no changed topic in it → clean no-op.
     if (( ! skip_install )) && [[ "$name" == "mesh-workstation" ]]; then
-        local affected_topics
-        affected_topics="$(echo "$diff_paths" | grep -oE '^topics/[0-9]+-[^/]+' | sort -u || true)"
-        if [[ -n "$affected_topics" ]]; then
-            local suffix
-            suffix="$(_uname_suffix)"
-            local topic installer
-            while IFS= read -r topic; do
-                installer=""
-                for cand in \
-                    "$repo/$topic/install.${suffix}.sh" \
-                    "$repo/$topic/install.sh"; do
-                    if [[ -f "$cand" ]]; then
-                        installer="$cand"
-                        break
-                    fi
-                done
-                if [[ -n "$installer" ]]; then
-                    dbg "$name: re-running $installer"
-                    if ! bash "$installer" 2>&1 | sed 's/^/    /'; then
-                        warn "$name: $topic install falhou (continuando)"
-                    fi
-                else
-                    dbg "$name: $topic — no install script for suffix=$suffix"
+        local sel_file="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/selections.list"
+        if [[ -r "$sel_file" ]]; then
+            local affected_sel
+            affected_sel="$(_affected_selected_bundles "$diff_paths" "$(cat "$sel_file")")"
+            if [[ -n "$affected_sel" ]]; then
+                local tmp_sel; tmp_sel="$(mktemp)"
+                printf '%s\n' "$affected_sel" > "$tmp_sel"
+                dbg "$name: re-applying changed topics via engine:"$'\n'"$affected_sel"
+                if ! bash "$repo/scripts/lib/install-engine.sh" \
+                        --non-interactive --selections "$tmp_sel" 2>&1 | sed 's/^/    /'; then
+                    warn "$name: engine re-apply of changed topics returned non-zero (continuando)"
                 fi
-            done <<< "$affected_topics"
+                rm -f "$tmp_sel"
+            else
+                dbg "$name: changed topics not selected in selections.list — nothing to re-apply"
+            fi
+        else
+            dbg "$name: no selections.list — skipping incremental topic re-apply"
         fi
     fi
 
