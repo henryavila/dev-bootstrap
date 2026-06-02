@@ -6,10 +6,9 @@
 # under "skip namespaces" (personal/host-specific) are exempt in BOTH
 # directions: parity is a structural contract, not a content contract.
 #
-# Skip namespaces (superset of §2.4 hard-pins + per-host data files):
-#   PREFIXES: .git/, tests/, docs/, .ai/memory/, claude/, .claude/, npm/
-#   EXACT:    codex/config.toml, git/gitconfig.local,
-#             ssh/authorized_keys, ssh/config
+# Skip namespaces are defined ONLY by the SKIP_PREFIXES / SKIP_EXACT arrays
+# below — they are the single source of truth (this comment intentionally does
+# not re-list them, to avoid the doc/code drift the audit found, T-002 F2).
 #
 # Exit codes:
 #   0   parity (or hook installed successfully)
@@ -46,6 +45,10 @@ SKIP_PREFIXES=(
     ".claude/"
     "npm/"
     "extensions/"
+    # config/ holds tool dotfiles the user edits in place (btop/eza/nvim themes,
+    # lazygit, htop, claudebar, the mesh-status seed). Treated as per-user data:
+    # low scaffold value, and shipping .example copies would only create parity
+    # churn. Blanket-skip is deliberate, not expedient (T-002 F3).
     "config/"
     # secrets/ holds git-crypt-encrypted per-user data + the per-user manifest;
     # encrypted blobs cannot have a public .example (unlike shareable-structure
@@ -139,10 +142,8 @@ Env:
   MESH_TEMPLATE_DIR   template source (default $WS_ROOT/template)
   MESH_IDENTITY_DIR   identity dir    (default $HOME/mesh-identity)
 
-Skip namespaces (no parity required, both directions):
-  prefixes: .git/, tests/, docs/, .ai/memory/, claude/, .claude/, npm/
-  exact:    codex/config.toml, git/gitconfig.local,
-            ssh/authorized_keys, ssh/config
+Skip namespaces (no parity required, both directions) are defined by the
+SKIP_PREFIXES / SKIP_EXACT arrays in this script — the single source of truth.
 EOF
 }
 
