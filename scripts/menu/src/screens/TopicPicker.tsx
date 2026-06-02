@@ -191,22 +191,31 @@ export function TopicPicker(props: TopicPickerProps) {
   });
 
   const selectedCount = selected.size;
-  // Explicit middle height leaves room for the header + footer so the footer
-  // is always on-screen (total ≈ rows-1). The detail items are clipped to the
-  // detail pane's share so a bundle with many options/requires can't overflow
-  // and shove the footer off the bottom.
-  const innerHeight = Math.max(6, rows - 4); // minus header (1) + footer (2)
+  // Pin the whole screen one row UNDER the terminal (blink's documented tip).
+  // A frame exactly as tall as the terminal forces Ink onto a full-screen-clear
+  // redraw that scrolls the bottom row — the footer — out of view on a real TTY
+  // (pyte/ink-testing-library don't model the scroll, so it looks fine there).
+  // The header, a *permanently reserved* banner row, and the footer are fixed
+  // 1-row bands; the panes flex to fill the slack. Reserving the banner row even
+  // when empty keeps the total height CONSTANT — so toggling a notice (e.g. the
+  // auto-select banner on Space) never reflows the frame across that boundary,
+  // which is the exact trigger that used to drop the footer. flexbox owns the
+  // geometry: no per-line arithmetic decides whether the footer survives.
+  const screenH = Math.max(8, rows - 1);
+  const innerHeight = Math.max(6, screenH - 3); // header (1) + banner (1) + footer (1)
   const detailMax = Math.max(2, Math.floor(innerHeight * 0.4) - 2);
   const bundlesListH = Math.max(3, Math.floor((innerHeight - 4) * 0.6));
 
   return (
-    <Box flexDirection="column">
-      <Header
-        title="mesh setup"
-        subtitle={`${props.platform} · ${topics.length} topics`}
-        right={`${selectedCount} bundles selected`}
-      />
-      <Box flexDirection="row" height={innerHeight}>
+    <Box flexDirection="column" height={screenH}>
+      <Box flexShrink={0} flexDirection="column">
+        <Header
+          title="mesh setup"
+          subtitle={`${props.platform} · ${topics.length} topics`}
+          right={`${selectedCount} bundles selected`}
+        />
+      </Box>
+      <Box flexDirection="row" flexGrow={1} minHeight={0} overflow="hidden">
         <Pane title="Topics" tone={activePane === 'topics' ? 'focus' : 'resting'} flexBasis="32%">
           <List rows={topicRows} focusedId={activePane === 'topics' ? topicNav.focusedId : null} height={innerHeight - 2} />
         </Pane>
@@ -224,8 +233,14 @@ export function TopicPicker(props: TopicPickerProps) {
           </Pane>
         </Box>
       </Box>
-      {banner ? <Banner tone="info" text={banner} /> : null}
-      <Footer keys={FOOTER_KEYS} />
+      {/* Reserved 1-row banner slot — always present (empty when there's no
+          notice) so the frame height never changes and the footer stays put. */}
+      <Box height={1} flexShrink={0} overflow="hidden">
+        {banner ? <Banner tone="info" text={banner} /> : null}
+      </Box>
+      <Box flexShrink={0} flexDirection="column">
+        <Footer keys={FOOTER_KEYS} marginTop={0} />
+      </Box>
     </Box>
   );
 }

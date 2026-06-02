@@ -71,16 +71,28 @@ export function SummaryConfirm(props: SummaryConfirmProps) {
 
   const summary = `+${delta.install.length}  ~${delta.keep.length}  -${delta.remove.length}`;
   const nothing = delta.install.length === 0 && delta.remove.length === 0;
-  const innerHeight = Math.max(6, termRows - 5);
+  // Same full-screen contract as TopicPicker: pin to rows-1, fixed header/banner/
+  // footer bands, the list pane flexes. The banner row is reserved even when
+  // empty so the frame height stays constant and the footer never drifts.
+  const screenH = Math.max(8, termRows - 1);
+  const innerHeight = Math.max(6, screenH - 3); // header (1) + banner (1) + footer (1)
 
   return (
-    <Box flexDirection="column">
-      <Header title="apply plan" subtitle={props.applyLabel} right={summary} />
-      <Pane title="install · keep · remove" tone="focus" height={innerHeight}>
-        <List rows={rows} focusedId={nav.focusedId} height={innerHeight - 2} />
-      </Pane>
-      {nothing ? <Banner tone="info" text="No install/remove changes — selection matches current state." /> : null}
-      <Footer keys={FOOTER_KEYS} right={`${rows.length} bundles`} />
+    <Box flexDirection="column" height={screenH}>
+      <Box flexShrink={0} flexDirection="column">
+        <Header title="apply plan" subtitle={props.applyLabel} right={summary} />
+      </Box>
+      <Box flexGrow={1} minHeight={0} overflow="hidden" flexDirection="column">
+        <Pane title="install · keep · remove" tone="focus" flexGrow={1}>
+          <List rows={rows} focusedId={nav.focusedId} height={innerHeight - 2} />
+        </Pane>
+      </Box>
+      <Box height={1} flexShrink={0} overflow="hidden">
+        {nothing ? <Banner tone="info" text="No install/remove changes — selection matches current state." /> : null}
+      </Box>
+      <Box flexShrink={0} flexDirection="column">
+        <Footer keys={FOOTER_KEYS} marginTop={0} right={`${rows.length} bundles`} />
+      </Box>
     </Box>
   );
 }
