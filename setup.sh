@@ -129,13 +129,13 @@ fi
 # shellcheck disable=SC1091
 source "$HERE/scripts/lib/state-dir.sh"
 [[ "$DRY_RUN" != "1" ]] && mesh_migrate_legacy_state
-BOOTSTRAP_STATE_DIR="$(mesh_state_dir)"; export BOOTSTRAP_STATE_DIR
-[[ "$DRY_RUN" != "1" ]] && mkdir -p "$BOOTSTRAP_STATE_DIR"
+MESH_STATE_DIR="$(mesh_state_dir)"; export MESH_STATE_DIR
+[[ "$DRY_RUN" != "1" ]] && mkdir -p "$MESH_STATE_DIR"
 
 # Secrets (input-only tokens). Sourced so item scripts read them via env; the
 # engine also sources them per bundle. See lib/secrets.sh for the key taxonomy.
-# BOOTSTRAP_STATE_DIR is already the canonical mesh dir, so secrets.sh resolves
-# BOOTSTRAP_SECRETS_FILE there (the legacy override removed — fixed T-004 F2).
+# MESH_STATE_DIR is already the canonical mesh dir, so secrets.sh resolves
+# MESH_SECRETS_FILE there (the legacy override removed — fixed T-004 F2).
 # shellcheck disable=SC1091
 source "$HERE/scripts/lib/secrets.sh"
 secrets_load || warn "secrets file present but could not be sourced — continuing without it"
@@ -204,9 +204,9 @@ if [[ ( "$OS" == "wsl" || "$OS" == "linux" ) && "$DRY_RUN" != "1" ]]; then
 fi
 
 # Consolidated follow-up summary file (item scripts append via `followup`).
-BOOTSTRAP_FOLLOWUP_FILE="$(mktemp -t mesh-workstation-followup.XXXXXX 2>/dev/null || mktemp)"
-export BOOTSTRAP_FOLLOWUP_FILE
-trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}"' EXIT
+MESH_FOLLOWUP_FILE="$(mktemp -t mesh-workstation-followup.XXXXXX 2>/dev/null || mktemp)"
+export MESH_FOLLOWUP_FILE
+trap 'rm -f "${MESH_FOLLOWUP_FILE:-}"' EXIT
 
 # ─── resolve the selection ───────────────────────────────────────────────────
 SELECTIONS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mesh"
@@ -247,7 +247,7 @@ if [[ ! -f "$SELECTIONS_FILE" ]]; then
     if [[ "$DRY_RUN" == "1" ]]; then
         # Don't write under --dry-run; feed the engine via a temp file.
         SELECTIONS_FILE="$(mktemp -t mesh-selections.XXXXXX)"
-        trap 'rm -f "${BOOTSTRAP_FOLLOWUP_FILE:-}" "'"$SELECTIONS_FILE"'"' EXIT
+        trap 'rm -f "${MESH_FOLLOWUP_FILE:-}" "'"$SELECTIONS_FILE"'"' EXIT
     fi
     {
         echo "# mesh selections — auto-generated default (every bundle except default_selected:false)"

@@ -82,7 +82,7 @@ assert_pattern_present "$INSTALL" 'read -r -s first </dev/tty' \
     "interactive install prompts for hidden password"
 assert_pattern_present "$INSTALL" 'Confirm code-server password' \
     "interactive password prompt asks for confirmation"
-assert_pattern_present "$INSTALL" 'BOOTSTRAP_FOLLOWUP_FILE' \
+assert_pattern_present "$INSTALL" 'MESH_FOLLOWUP_FILE' \
     "generated password is deferred to bootstrap final summary"
 assert_pattern_present "$INSTALL" 'Deliberately bypass followup\(\)' \
     "generated password is not printed through tee'd topic logs"

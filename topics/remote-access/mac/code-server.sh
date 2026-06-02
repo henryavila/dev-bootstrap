@@ -147,8 +147,8 @@ fetch_latest_code_server_version() {
 
 record_code_server_final_info() {
     local msg="$1"
-    if [[ -n "${BOOTSTRAP_FOLLOWUP_FILE:-}" ]]; then
-        printf '%s\x1f%s\x1e' "info" "$msg" >> "$BOOTSTRAP_FOLLOWUP_FILE" 2>/dev/null || true
+    if [[ -n "${MESH_FOLLOWUP_FILE:-}" ]]; then
+        printf '%s\x1f%s\x1e' "info" "$msg" >> "$MESH_FOLLOWUP_FILE" 2>/dev/null || true
     else
         info "$msg"
     fi
@@ -261,7 +261,7 @@ install_code_server_standalone() {
 record_generated_password_final() {
     [[ -n "$CODE_SERVER_GENERATED_PASSWORD" ]] || return 0
 
-    if [[ -n "${BOOTSTRAP_FOLLOWUP_FILE:-}" ]]; then
+    if [[ -n "${MESH_FOLLOWUP_FILE:-}" ]]; then
         # Deliberately bypass followup(): that helper prints inline while the
         # topic is piped through tee into /tmp/mesh-workstation-*.log. The final
         # summary is rendered after the topic pipeline, so the generated
@@ -270,7 +270,7 @@ record_generated_password_final() {
     $CODE_SERVER_GENERATED_PASSWORD
 
 It is also stored in $CODE_SERVER_CONFIG_FILE (mode 0600). If you miss this
-summary, read the password from that file on this host." >> "$BOOTSTRAP_FOLLOWUP_FILE" 2>/dev/null || true
+summary, read the password from that file on this host." >> "$MESH_FOLLOWUP_FILE" 2>/dev/null || true
     else
         info "generated code-server password for this first install: $CODE_SERVER_GENERATED_PASSWORD"
         info "it is also stored in $CODE_SERVER_CONFIG_FILE (mode 0600)"

@@ -17,7 +17,7 @@
 #   recommended path. See docs/2026-06-02-secrets-layer-spec.md.
 #
 # Public API (all functions are safe to call multiple times):
-#   secrets_init               create $BOOTSTRAP_SECRETS_FILE with
+#   secrets_init               create $MESH_SECRETS_FILE with
 #                              header comment if missing; parent dir
 #                              0700, file 0600.
 #   secrets_load               source the file if present + safe.
@@ -35,7 +35,7 @@
 #   secrets_set for atomicity.
 #
 # Path:
-#   $BOOTSTRAP_SECRETS_FILE (default $XDG_STATE_HOME/mesh/secrets.env, i.e.
+#   $MESH_SECRETS_FILE (default $XDG_STATE_HOME/mesh/secrets.env, i.e.
 #   ~/.local/state/mesh/secrets.env). This is the SAME path `mesh secret deploy`
 #   writes, so there is one canonical secrets.env per host. The pre-rename
 #   location (~/.local/state/mesh-workstation/secrets.env) is migrated as part
@@ -60,11 +60,14 @@
 # the ones that DO.
 
 # Canonical state dir (audit T-003): unified ~/.local/state/mesh, shared with
-# `mesh secret deploy`. The legacy ~/.local/state/mesh-workstation path is no
-# longer a default — it is migrated by secrets_migrate_legacy() below.
-: "${BOOTSTRAP_STATE_DIR:=${XDG_STATE_HOME:-$HOME/.local/state}/mesh}"
-: "${BOOTSTRAP_SECRETS_FILE:=$BOOTSTRAP_STATE_DIR/secrets.env}"
-export BOOTSTRAP_STATE_DIR BOOTSTRAP_SECRETS_FILE
+# `mesh secret deploy`. The legacy ~/.local/state/mesh-workstation path is
+# migrated by lib/state-dir.sh (mesh_migrate_legacy_state), run by setup.sh +
+# install-engine before secrets are read. MESH_STATE_DIR is the same override
+# var lib/state-dir.sh's mesh_state_dir() reads, so both agree (audit T-004/T-011
+# renamed the old BOOTSTRAP_STATE_DIR / BOOTSTRAP_SECRETS_FILE to MESH_*).
+: "${MESH_STATE_DIR:=${XDG_STATE_HOME:-$HOME/.local/state}/mesh}"
+: "${MESH_SECRETS_FILE:=$MESH_STATE_DIR/secrets.env}"
+export MESH_STATE_DIR MESH_SECRETS_FILE
 
 # The pre-rename secrets.env is migrated as part of the whole-state-dir move in
 # lib/state-dir.sh (mesh_migrate_legacy_state), which setup.sh + install-engine
@@ -96,8 +99,8 @@ _secrets_mode() {
 }
 
 secrets_init() {
-    local dir="$BOOTSTRAP_STATE_DIR"
-    local file="$BOOTSTRAP_SECRETS_FILE"
+    local dir="$MESH_STATE_DIR"
+    local file="$MESH_SECRETS_FILE"
     local prev_umask
     prev_umask="$(umask)"
     # umask 077 → any file/dir created inside this block is owner-only.
@@ -131,7 +134,7 @@ EOF
 }
 
 secrets_load() {
-    local file="$BOOTSTRAP_SECRETS_FILE"
+    local file="$MESH_SECRETS_FILE"
     [[ ! -f "$file" ]] && return 0
 
     local mode
@@ -149,7 +152,7 @@ secrets_load() {
 }
 
 secrets_set() {
-    local key="$1" value="$2" file="$BOOTSTRAP_SECRETS_FILE"
+    local key="$1" value="$2" file="$MESH_SECRETS_FILE"
     if [[ -z "$key" ]]; then
         warn "secrets_set: empty key — ignoring"
         return 1
@@ -187,6 +190,6 @@ secrets_has() {
     if [[ -n "${!key:-}" ]]; then
         return 0
     fi
-    [[ ! -f "$BOOTSTRAP_SECRETS_FILE" ]] && return 1
-    grep -qE "^export ${key}=" "$BOOTSTRAP_SECRETS_FILE" 2>/dev/null
+    [[ ! -f "$MESH_SECRETS_FILE" ]] && return 1
+    grep -qE "^export ${key}=" "$MESH_SECRETS_FILE" 2>/dev/null
 }

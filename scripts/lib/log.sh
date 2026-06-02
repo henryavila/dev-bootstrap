@@ -30,7 +30,7 @@ fail()   { printf '%s✗%s %s\n' "$_C_RED" "$_C_RST" "$*" >&2; }
 banner() { printf '\n%s== %s ==%s\n' "$_C_BLD" "$*" "$_C_RST"; }
 
 # followup — record a post-bootstrap action that needs human attention.
-# Writes one line per entry to $BOOTSTRAP_FOLLOWUP_FILE (setup.sh
+# Writes one line per entry to $MESH_FOLLOWUP_FILE (setup.sh
 # creates this file at start and prints a consolidated summary at the
 # end). Each entry has a severity that shapes how the summary renders.
 #
@@ -63,19 +63,19 @@ followup() {
     # Persist to the follow-up file if setup.sh set one up. Topics
     # invoked directly (ONLY_TOPICS) or outside the runner get the
     # inline output but no consolidated summary — that's fine.
-    if [[ -n "${BOOTSTRAP_FOLLOWUP_FILE:-}" ]]; then
+    if [[ -n "${MESH_FOLLOWUP_FILE:-}" ]]; then
         # Use a unit separator + record separator so multi-line messages
         # round-trip cleanly through a single file.
-        printf '%s\x1f%s\x1e' "$severity" "$msg" >> "$BOOTSTRAP_FOLLOWUP_FILE" 2>/dev/null || true
+        printf '%s\x1f%s\x1e' "$severity" "$msg" >> "$MESH_FOLLOWUP_FILE" 2>/dev/null || true
     fi
 }
 
-# render_followup_summary — read $BOOTSTRAP_FOLLOWUP_FILE and print
+# render_followup_summary — read $MESH_FOLLOWUP_FILE and print
 # a grouped, human-readable summary. Called by setup.sh right
 # before exit so the user sees all pending actions in one place,
 # not scattered across topic output.
 render_followup_summary() {
-    local f="${BOOTSTRAP_FOLLOWUP_FILE:-}"
+    local f="${MESH_FOLLOWUP_FILE:-}"
     [[ -z "$f" ]] && return 0
     [[ ! -s "$f" ]] && return 0
 
