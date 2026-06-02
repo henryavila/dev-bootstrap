@@ -103,6 +103,14 @@ if ! MESH_IDENTITY_DIR="\$identity_root" "${mesh_bin}" template-check --quiet 2>
     echo "Then update \$MESH_WORKSTATION_DIR/template/ to match + commit there." >&2
     exit 1
 fi
+# Secrets layer: refuse to commit a Tier-2 secret in cleartext (fail-closed).
+# No-op unless files under secrets/ are staged.
+if ! MESH_IDENTITY_DIR="\$identity_root" "${mesh_bin}" secret guard; then
+    echo "" >&2
+    echo "Commit blocked by the secrets encryption guard (see above)." >&2
+    echo "Run: ${mesh_bin} secret doctor" >&2
+    exit 1
+fi
 HOOK
     chmod +x "$hook" \
         || _die "chmod +x $hook failed"

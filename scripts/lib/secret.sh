@@ -378,6 +378,12 @@ secret_guard_staged() {
     return 1
 }
 
+# Pre-commit guard entry: rc0 safe, rc1 block. Used by the identity pre-commit
+# hook so a misconfiguration can never commit a Tier-2 secret in cleartext.
+secret_guard() {
+    secrets_crypt_guard "$ID_DIR"
+}
+
 secret_set() {
     local id="${1:-}"
     [ -n "$id" ] || { fail "usage: mesh secret set <id>"; return 1; }
@@ -444,6 +450,7 @@ case "$verb" in
     doctor)  secret_doctor "$@" ;;
     deploy)  secret_deploy "$@" ;;
     push)    secret_push "$@" ;;
+    guard)   secret_guard "$@" ;;
     -h|--help|help) _usage ;;
     *) fail "unknown verb '$verb'"; _usage; exit 1 ;;
 esac
