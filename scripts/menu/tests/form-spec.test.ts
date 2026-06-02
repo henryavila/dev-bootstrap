@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildFormSpec, applyFormValues } from '../src/core/form-spec.js';
+import { buildFormSpec, applyFormValues, resolveSelectedDefaults } from '../src/core/form-spec.js';
 import { readAllManifests, flattenBundles, indexByKey } from '../src/core/manifest-reader.js';
+import type { BundleRef } from '../src/types.js';
 
 const index = indexByKey(flattenBundles(readAllManifests()));
 
@@ -58,5 +59,29 @@ describe('buildFormSpec — git/config (default_from runs a command)', () => {
     expect(spec.envByName.get('user-name')!.env).toBe('GIT_NAME');
     // default_from value is whatever `git config` returns (possibly ''), a string
     expect(typeof spec.values['user-name']).toBe('string');
+  });
+});
+
+describe('resolveSelectedDefaults — persist defaults without opening the form (T-500 footgun)', () => {
+  const makeRef = (options: unknown[]): BundleRef =>
+    ({ key: 't/b', topic: { id: 't', dir: '/tmp' }, bundle: { name: 'b', options } }) as unknown as BundleRef;
+  const modeOpt = { name: 'mode', type: 'select', label: 'Mode', env: 'X_MODE', default: 'fast' };
+
+  it('fills a selected bundle option default into params', () => {
+    const params = new Map<string, string>();
+    resolveSelectedDefaults([makeRef([modeOpt])], params);
+    expect(params.get('X_MODE')).toBe('fast');
+  });
+
+  it('never overwrites a value the user already set', () => {
+    const params = new Map([['X_MODE', 'slow']]);
+    resolveSelectedDefaults([makeRef([modeOpt])], params);
+    expect(params.get('X_MODE')).toBe('slow');
+  });
+
+  it('is a no-op for a bundle with no options', () => {
+    const params = new Map<string, string>();
+    resolveSelectedDefaults([makeRef([])], params);
+    expect(params.size).toBe(0);
   });
 });

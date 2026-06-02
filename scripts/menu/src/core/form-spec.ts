@@ -13,7 +13,7 @@ import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ChoiceInput, FieldSpec, FieldValue, FormValues } from '@henryavila/blink-tui';
-import type { Bundle, Option } from '../types.js';
+import type { Bundle, BundleRef, Option } from '../types.js';
 import { serializeOptionValue } from './selections-io.js';
 
 function readSourceChoices(topicDir: string, source: string): ChoiceInput[] {
@@ -125,6 +125,30 @@ export function applyFormValues(
     const serial = serializeOptionValue(type, values[name]);
     if (serial === null) params.delete(env);
     else params.set(env, serial);
+  }
+  return params;
+}
+
+/**
+ * Pre-resolve every selected bundle's option defaults (static + default_from)
+ * into `params`, without overwriting values the user already set. Run on
+ * confirm so an option with a default lands in params.env even when the user
+ * never opened that bundle's options form — otherwise the engine (interactive
+ * mode = "menu owns prompting") never sees it. Mutates + returns `params`.
+ *
+ * buildFormSpec already folds existing params over the defaults, so re-applying
+ * its resolved `values` is idempotent for already-set keys and only fills the
+ * gaps. (e.g. personal/repo's default_from = the existing identity origin → its
+ * MESH_IDENTITY_REPO is persisted without the user touching the form.)
+ */
+export function resolveSelectedDefaults(
+  refs: BundleRef[],
+  params: Map<string, string>,
+): Map<string, string> {
+  for (const ref of refs) {
+    if (!ref.bundle.options?.length) continue;
+    const spec = buildFormSpec(ref.bundle, ref.topic.dir, params);
+    applyFormValues(spec, spec.values, params);
   }
   return params;
 }

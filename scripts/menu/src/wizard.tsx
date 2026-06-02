@@ -27,7 +27,7 @@ import { scanAll } from './core/scanner.js';
 import { initialSelection, requiredKeys } from './core/init.js';
 import { closeRequires, dependentsOf, computeDelta } from './core/delta.js';
 import { writeSelections, writeParams, readParams } from './core/selections-io.js';
-import { buildFormSpec, applyFormValues, type BundleFormSpec } from './core/form-spec.js';
+import { buildFormSpec, applyFormValues, resolveSelectedDefaults, type BundleFormSpec } from './core/form-spec.js';
 import { TopicPicker } from './screens/TopicPicker.js';
 import { OptionsForm } from './screens/OptionsForm.js';
 import { SummaryConfirm } from './screens/SummaryConfirm.js';
@@ -75,8 +75,16 @@ export function App({ dryRun, onExit }: AppProps) {
 
   const finish = (code: number) => {
     if (code === 0 && !dryRun) {
+      // Persist resolved option defaults for every selected bundle, not just the
+      // ones whose options form was opened — otherwise a default_from value
+      // (e.g. personal/repo → MESH_IDENTITY_REPO) never reaches params.env and
+      // the engine fails on it. Copy params so the resolve doesn't mutate state.
+      const selectedRefs = [...selected]
+        .map((k) => index.get(k))
+        .filter((r): r is BundleRef => r !== undefined);
+      const resolved = resolveSelectedDefaults(selectedRefs, new Map(params));
       writeSelections([...selected]);
-      writeParams(params);
+      writeParams(resolved);
     }
     onExit(code);
     ink.exit();
