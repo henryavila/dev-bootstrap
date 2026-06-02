@@ -21,7 +21,7 @@ check() {
 install() { (
     set -euo pipefail
 
-    : "${MESH_IDENTITY_REPO:?MESH_IDENTITY_REPO not set (the menu should not have selected this bundle)}"
+    : "${MESH_IDENTITY_REPO:?set the mesh-identity repo in the 'Personal identity' options (or export MESH_IDENTITY_REPO). Create-from-template onboarding is pending — see initiative.}"
     : "${MESH_IDENTITY_DIR:=$HOME/mesh-identity}"
 
     identity_ensure_repo "$MESH_IDENTITY_REPO" "$MESH_IDENTITY_DIR"

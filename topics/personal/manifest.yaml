@@ -16,6 +16,12 @@ bundles:
     desc: "Clone + apply your mesh-identity repo"
     required: true
     icon_name: home
+    options:
+      - name: repo
+        type: text
+        label: "mesh-identity repo (URL or owner/name)"
+        env: MESH_IDENTITY_REPO
+        default_from: "git -C \"$HOME/mesh-identity\" remote get-url origin 2>/dev/null"
     items:
       - name: apply
         type: custom
