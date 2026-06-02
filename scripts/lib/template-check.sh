@@ -47,6 +47,11 @@ SKIP_PREFIXES=(
     "npm/"
     "extensions/"
     "config/"
+    # secrets/ holds git-crypt-encrypted per-user data + the per-user manifest;
+    # encrypted blobs cannot have a public .example (unlike shareable-structure
+    # files). Treated as per-user data like npm/ + config/. The shareable part —
+    # an empty manifest — still ships as template/secrets/manifest.yaml.example.
+    "secrets/"
 )
 SKIP_EXACT=(
     "codex/config.toml"
