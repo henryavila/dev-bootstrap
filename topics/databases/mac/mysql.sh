@@ -1,24 +1,223 @@
 #!/usr/bin/env bash
-# Custom: MySQL 8 on macOS (brew formula with Oracle DMG fallback).
+# Custom: MySQL 9 on macOS.
+#
+# Install strategy, decided by the brew prefix:
+#
+#   1. Pre-existing Oracle install at /usr/local/mysql (user put it there via
+#      the .dmg/.pkg, or we did via path 3) → respect it: register PATH +
+#      ensure the run layer. Never re-download.
+#
+#   2. Canonical brew prefix (/opt/homebrew, /usr/local) → `brew install mysql`.
+#      The unversioned `mysql` formula is the 9.x GA and its bottle's cellar
+#      matches, so the prebuilt bottle pours. Run via `brew services`.
+#
+#   3. Non-canonical brew prefix (e.g. /Volumes/External/homebrew) → Oracle
+#      binary tarball to /usr/local/mysql, GPG-verified. Rationale: the mysql
+#      bottle is pinned to /opt/homebrew/Cellar (non-relocatable), so on any
+#      other prefix brew force-builds from source — which currently FAILS
+#      (protobuf 35 / abseil link in the mysqlxtest test binary, an upstream
+#      Homebrew formula bug). Oracle's tarball is a prebuilt binary, so it
+#      sidesteps the broken build entirely. It lands on rootfs (/usr/local),
+#      so the TCC launch-wrapper workaround isn't strictly required, but we
+#      still drive the run layer through lib/launch-wrapper.sh for a uniform,
+#      idempotent LaunchAgent + teardown (same as redis/postgres).
+#
+# Run layer: a user-scope LaunchAgent running `mysqld_safe --datadir=<dir>`.
+# verify()/check() require the server to actually be running, not just present.
 
-ORACLE_MYSQL_BIN="/usr/local/mysql/bin/mysql"
+# ---- Pinned coordinates (bump these to move the Oracle-tarball version) ----
+MYSQL_VER="9.7.0"                       # 9.7 LTS — parity with WSL (mysql-9.7-lts)
+MYSQL_SERIES="9.7"
+MYSQL_OS_TAG="macos15"                  # Oracle's current macOS build target
+# MySQL Release Engineering <mysql-build@oss.oracle.com> — the signing key is
+# the real trust anchor (stable across the 2023/2025 key-file renewals). The
+# key FILE url may need bumping over time; the FINGERPRINT must always match.
+MYSQL_GPG_FPR="BCA43417C3B485DD128EC6D4B7B3B788A8D3785C"
+MYSQL_GPG_KEY_URL="https://repo.mysql.com/RPM-GPG-KEY-mysql-2025"
+# Optional second integrity gate: pin the tarball SHA256 (per arch) and it is
+# checked after the GPG verify. Empty = skip (GPG signature is authoritative).
+MYSQL_SHA256_arm64="81d0c55227093e2ebdffb424452c458b0b4a39ddff76c5bcc25e93085ab7a912"
+MYSQL_SHA256_x86_64=""
 
+ORACLE_PREFIX="/usr/local/mysql"
+ORACLE_MYSQL_BIN="${ORACLE_PREFIX}/bin/mysql"
+ORACLE_DATADIR="${ORACLE_PREFIX}/data"
+MYSQL_SVC="mysql"
+MYSQL_LABEL="com.${USER}.mysql"
+
+# ---------------------------------------------------------------- predicates
+_prefix_is_canonical() {
+    case "${BREW_PREFIX:-}" in
+        /opt/homebrew|/usr/local) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# A running server: a live mysqld(_safe), our managed unit, or brew services.
+_server_running() {
+    pgrep -u "$USER" -f 'mysqld' >/dev/null 2>&1 && return 0
+    launchctl print "gui/$(id -u)/${MYSQL_LABEL}" 2>/dev/null \
+        | grep -qE 'state[[:space:]]*=[[:space:]]*running' && return 0
+    "${BREW_BIN:-brew}" services list 2>/dev/null \
+        | awk -v s="$MYSQL_SVC" '$1==s{print $2}' | grep -qx 'started'
+}
+
+_source_launch_wrapper() {
+    local root="${MESH_WORKSTATION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+    # shellcheck disable=SC1091
+    . "${root}/scripts/lib/launch-wrapper.sh"
+}
+
+# --------------------------------------------------------------- run layer
+# Install/refresh the user LaunchAgent that runs the given mysqld_safe with the
+# given datadir. Idempotent — launch_wrapper regenerates + re-bootstraps.
+_run_layer_install() {
+    local exec_bin="$1" basedir="$2" datadir="$3"
+    _source_launch_wrapper
+    launch_wrapper_install_extbrew \
+        --svc "$MYSQL_SVC" \
+        --label "$MYSQL_LABEL" \
+        --brew-bin "$exec_bin" \
+        --workdir "$basedir" \
+        -- --datadir="$datadir"
+}
+
+# ---------------------------------------------------- Oracle-tarball helpers
+_oracle_file() {
+    printf 'mysql-%s-%s-%s.tar.gz' "$MYSQL_VER" "$MYSQL_OS_TAG" "$(uname -m)"
+}
+
+# Register /usr/local/mysql/bin on the system PATH (needs sudo).
+_register_oracle_path() {
+    local paths_file="/etc/paths.d/61-oracle-mysql"
+    if ! sudo grep -q "^${ORACLE_PREFIX}/bin$" "$paths_file" 2>/dev/null; then
+        echo "${ORACLE_PREFIX}/bin" | sudo tee "$paths_file" >/dev/null
+    fi
+}
+
+# Download tarball + .asc into outdir and verify. No sudo, no extraction — so
+# this is independently testable. Echoes the verified tarball path on success.
+_fetch_verify_oracle() {
+    local outdir="$1"
+    local file url keyfile arch sha_pin got
+    file="$(_oracle_file)"
+    # CDN serves both the tarball and the detached .asc at a version-pinned
+    # path. (The dev.mysql.com/get/ redirector only fronts the tarball — its
+    # .asc 404s — so we hit the CDN directly: deterministic, no redirect hop.)
+    url="https://cdn.mysql.com/Downloads/MySQL-${MYSQL_SERIES}/${file}"
+
+    echo "mysql(mac): downloading ${file}" >&2
+    curl -fL --retry 3 --connect-timeout 30 -o "${outdir}/${file}" "$url" \
+        || { echo "mysql: download failed: $url" >&2; return 1; }
+    curl -fL --retry 3 --connect-timeout 30 -o "${outdir}/${file}.asc" "${url}.asc" \
+        || { echo "mysql: signature download failed: ${url}.asc" >&2; return 1; }
+
+    # GPG: import the published key into a throwaway keyring, assert its
+    # fingerprint matches the pinned one, then verify the detached signature.
+    keyfile="${outdir}/mysql-release.key"
+    curl -fsSL "$MYSQL_GPG_KEY_URL" -o "$keyfile" \
+        || { echo "mysql: GPG key download failed" >&2; return 1; }
+    export GNUPGHOME="${outdir}/gnupg"; mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
+    gpg --batch --import "$keyfile" 2>/dev/null \
+        || { echo "mysql: GPG key import failed" >&2; return 1; }
+    if ! gpg --batch --list-keys --with-colons 2>/dev/null | grep -q "$MYSQL_GPG_FPR"; then
+        echo "mysql: imported key fingerprint != pinned ${MYSQL_GPG_FPR} — refusing" >&2
+        return 1
+    fi
+    if ! gpg --batch --verify "${outdir}/${file}.asc" "${outdir}/${file}" 2>/dev/null; then
+        echo "mysql: GPG signature verification FAILED for ${file}" >&2
+        return 1
+    fi
+    echo "mysql(mac): GPG signature OK (MySQL Release Engineering)" >&2
+
+    # Optional pinned-SHA256 gate (per arch).
+    arch="$(uname -m)"
+    case "$arch" in
+        arm64)  sha_pin="$MYSQL_SHA256_arm64" ;;
+        x86_64) sha_pin="$MYSQL_SHA256_x86_64" ;;
+        *)      sha_pin="" ;;
+    esac
+    if [[ -n "$sha_pin" ]]; then
+        got="$(shasum -a 256 "${outdir}/${file}" | cut -d' ' -f1)"
+        [[ "$got" == "$sha_pin" ]] \
+            || { echo "mysql: SHA256 mismatch (${got} != ${sha_pin})" >&2; return 1; }
+        echo "mysql(mac): SHA256 OK" >&2
+    fi
+
+    printf '%s/%s\n' "$outdir" "$file"
+}
+
+# Initialize the datadir once, owned by $USER (the LaunchAgent runs as $USER).
+_oracle_datadir_init() {
+    [[ -f "${ORACLE_DATADIR}/auto.cnf" ]] && return 0   # already initialized
+    sudo mkdir -p "$ORACLE_DATADIR" || return 1
+    sudo chown "$USER" "$ORACLE_DATADIR" || return 1
+    echo "mysql(mac): initializing datadir ${ORACLE_DATADIR}" >&2
+    "${ORACLE_PREFIX}/bin/mysqld" --initialize-insecure \
+        --basedir="$ORACLE_PREFIX" --datadir="$ORACLE_DATADIR" \
+        || { echo "mysql: datadir initialize failed" >&2; return 1; }
+}
+
+# Full path-3 install: fetch+verify → extract to /usr/local → symlink → datadir.
+_install_oracle_tarball() {
+    local tmp tarball dir arch
+    tmp="$(mktemp -d)" || return 1
+    trap 'rm -rf "$tmp"' RETURN
+
+    tarball="$(_fetch_verify_oracle "$tmp")" || return 1
+
+    arch="$(uname -m)"
+    dir="mysql-${MYSQL_VER}-${MYSQL_OS_TAG}-${arch}"
+    echo "mysql(mac): extracting to /usr/local/${dir} (sudo)" >&2
+    sudo tar -xzf "$tarball" -C /usr/local \
+        || { echo "mysql: extraction failed" >&2; return 1; }
+    sudo ln -sfn "/usr/local/${dir}" "$ORACLE_PREFIX" || return 1
+
+    _oracle_datadir_init || return 1
+}
+
+# ---------------------------------------------------------------- contract
 check() {
-    [[ -x "$ORACLE_MYSQL_BIN" ]] && return 0
-    "${BREW_BIN:-brew}" list --formula mysql@8.0 >/dev/null 2>&1
+    if [[ -x "$ORACLE_MYSQL_BIN" ]]; then
+        # Installed at /usr/local/mysql. If a user LaunchDaemon/.pkg manages
+        # it, that's their server — presence is enough. Otherwise require our
+        # run layer to be live so install() (re)bootstraps a stopped agent.
+        [[ -f /Library/LaunchDaemons/com.oracle.oss.mysql.mysqld.plist ]] && return 0
+        _server_running
+        return
+    fi
+    if _prefix_is_canonical; then
+        "${BREW_BIN:-brew}" list --formula "$MYSQL_SVC" >/dev/null 2>&1 || return 1
+        _server_running
+        return
+    fi
+    return 1   # non-canonical prefix, no Oracle install yet
 }
 
 install() {
+    # Path 1 — pre-existing Oracle install.
     if [[ -x "$ORACLE_MYSQL_BIN" ]]; then
-        local paths_file="/etc/paths.d/61-oracle-mysql"
-        if ! sudo grep -q "^/usr/local/mysql/bin$" "$paths_file" 2>/dev/null; then
-            echo "/usr/local/mysql/bin" | sudo tee "$paths_file" >/dev/null
+        _register_oracle_path
+        # Respect a .pkg/.dmg system daemon; otherwise drive our run layer.
+        if [[ ! -f /Library/LaunchDaemons/com.oracle.oss.mysql.mysqld.plist ]]; then
+            _oracle_datadir_init || return 1
+            _run_layer_install "${ORACLE_PREFIX}/bin/mysqld_safe" "$ORACLE_PREFIX" "$ORACLE_DATADIR"
         fi
         return 0
     fi
-    "${BREW_BIN:-brew}" install mysql@8.0 || return 1
-    "${BREW_BIN:-brew}" link --force --overwrite mysql@8.0 >/dev/null 2>&1 || true
-    "${BREW_BIN:-brew}" services start mysql@8.0 >/dev/null 2>&1 || true
+
+    # Path 2 — canonical brew prefix: the bottle pours.
+    if _prefix_is_canonical; then
+        "${BREW_BIN:-brew}" list --formula "$MYSQL_SVC" >/dev/null 2>&1 \
+            || "${BREW_BIN:-brew}" install "$MYSQL_SVC" || return 1
+        "${BREW_BIN:-brew}" services start "$MYSQL_SVC" >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    # Path 3 — non-canonical prefix: Oracle tarball (brew would build & fail).
+    _install_oracle_tarball || return 1
+    _register_oracle_path
+    _run_layer_install "${ORACLE_PREFIX}/bin/mysqld_safe" "$ORACLE_PREFIX" "$ORACLE_DATADIR"
 }
 
 verify() {
@@ -26,6 +225,12 @@ verify() {
 }
 
 rollback() {
-    # Don't auto-uninstall MySQL — data loss risk if user has dbs.
-    :
+    # Stop/teardown the run layer only — never uninstall the formula, remove
+    # /usr/local/mysql, or touch the datadir (data-loss risk).
+    if _prefix_is_canonical && [[ ! -x "$ORACLE_MYSQL_BIN" ]]; then
+        "${BREW_BIN:-brew}" services stop "$MYSQL_SVC" 2>/dev/null || true
+    else
+        _source_launch_wrapper
+        launch_wrapper_teardown "$MYSQL_LABEL" 2>/dev/null || true
+    fi
 }

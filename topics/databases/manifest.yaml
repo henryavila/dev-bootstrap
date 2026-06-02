@@ -13,7 +13,7 @@ bundles:
 
   - name: mysql
     label: "MySQL"
-    desc: "MySQL 8 server — the default relational store for dev"
+    desc: "MySQL 9 server — the default relational store for dev"
     icon_name: mysql
     items:
       - name: mysql-mac
