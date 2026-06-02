@@ -216,27 +216,24 @@ _run_with_timeout() {
 # subshell scopes the unsets so the parent env stays untouched.
 run_setup_interactive() {
     local repo="$1"
-    # CP4 chunk D finding D-F-003: should_show_menu (scripts/lib/menu.sh)
-    # treats ANY pre-set INCLUDE_* / MESH_* / PHP_* / POSTGRES_* /
-    # GIT_NAME/GIT_EMAIL as "automation mode" and suppresses the
-    # interactive menu. Hard-coding the unset list got out of sync —
-    # newer gates (INCLUDE_AI_TOOLS, INCLUDE_CODE_SERVER,
-    # INCLUDE_IDENTITY, INCLUDE_NPM_GLOBAL, MESH_NPM_GLOBAL,
-    # MESH_AI_PACKAGES) silently leaked through and defeated the
-    # wrapper's whole purpose.
+    # CP4 chunk D finding D-F-003: setup.sh treats ANY pre-set INCLUDE_* /
+    # MESH_* / PHP_* / POSTGRES_* / GIT_NAME/GIT_EMAIL as "automation mode" and
+    # suppresses the interactive (Ink) menu. Hard-coding the unset list got out
+    # of sync — newer gates (INCLUDE_AI_TOOLS, INCLUDE_CODE_SERVER,
+    # INCLUDE_IDENTITY, INCLUDE_NPM_GLOBAL, MESH_NPM_GLOBAL, MESH_AI_PACKAGES)
+    # silently leaked through and defeated the wrapper's whole purpose.
     #
-    # Defense: unset EVERY menu-owned gate that should_show_menu reads.
-    # If a new gate gets added to menu.sh, update this list too. L18
-    # lint candidate: assert this list ⊇ should_show_menu's gates.
+    # Defense: unset EVERY automation gate the menu treats as "skip me". If a new
+    # gate is added to the menu/selection layer, update this list too.
     (
         unset NON_INTERACTIVE CI ONLY_TOPICS DRY_RUN
-        # All INCLUDE_* gates per should_show_menu (menu.sh:37-49).
+        # All INCLUDE_* automation gates.
         unset INCLUDE_DOCKER INCLUDE_WEBSTACK INCLUDE_LARAVEL INCLUDE_REMOTE
         unset INCLUDE_AI_TOOLS INCLUDE_CODE_SERVER INCLUDE_EDITOR
         unset INCLUDE_IDENTITY INCLUDE_MAILPIT INCLUDE_NGROK
         unset INCLUDE_MSSQL INCLUDE_POSTGRES INCLUDE_FRONTEND_PROXY
         unset INCLUDE_NPM_GLOBAL
-        # MESH_* automation gates (menu.sh:49-50).
+        # MESH_* automation gates.
         unset MESH_NPM_GLOBAL MESH_AI_PACKAGES MESH_IDENTITY_REPO
         # PHP / POSTGRES version pins (PHP_VERSIONS triggers automation mode).
         unset PHP_VERSIONS PHP_DEFAULT POSTGRES_VERSION

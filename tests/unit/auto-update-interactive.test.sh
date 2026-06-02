@@ -31,8 +31,8 @@ eval "$func_src"
 mkdir -p "$TMP/repo"
 cat > "$TMP/repo/setup.sh" <<EOF
 #!/usr/bin/env bash
-# Dump each tracked var; "" means unset OR empty (both are "menu OK" from
-# should_show_menu's perspective).
+# Dump each tracked var; "" means unset OR empty (both are "show the menu" from
+# the interactive-menu gate's perspective).
 {
     printf 'NON_INTERACTIVE=%s\n' "\${NON_INTERACTIVE:-}"
     printf 'CI=%s\n' "\${CI:-}"

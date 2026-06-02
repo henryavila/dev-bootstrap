@@ -25,7 +25,6 @@ tests/
 ├── lib/
 │   └── assert.sh              ← assertion helpers (source this in every test)
 ├── unit/
-│   └── menu.test.sh           ← should_show_menu env-var gates + data/ parsing
 ├── integration/
 │   ├── lint.test.sh           ← bash -n every shell + jq parse every .json
 │   └── templates.test.sh      ← envsubst renders every .template cleanly;
@@ -77,9 +76,6 @@ instead of just the first).
 | Layer | Covered | How |
 |---|---|---|
 | `lib/deploy.sh` — envsubst + marker | ✓ | `deploy-smoke.sh` (7 scenarios) |
-| `lib/menu.sh` — automation gates | ✓ | `unit/menu.test.sh` (12 env vars) |
-| `data/php-versions.conf` parses | ✓ | `unit/menu.test.sh` |
-| `data/php-extensions-pecl.txt` structure | ✓ | `unit/menu.test.sh` |
 | Shell syntax (every `*.sh` + shell template) | ✓ | `integration/lint.test.sh` |
 | JSON syntax (every `*.json`) | ✓ | `integration/lint.test.sh` |
 | Templates render with `ENVSUBST_ALLOWLIST` | ✓ | `integration/templates.test.sh` |
@@ -113,5 +109,4 @@ Each bug below produced a test so it can't come back silently:
   any template that references a non-allowlisted var.
 - `share-project` could print help and still exit 0 when ngrok is
   missing → `cli/share-project.test.sh` locks the non-zero exit.
-- `should_show_menu` used to miss newer `INCLUDE_*` vars → `unit/menu.test.sh`
   enumerates all 12 gates.

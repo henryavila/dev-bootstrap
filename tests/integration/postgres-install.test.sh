@@ -37,7 +37,6 @@ source "$ROOT/tests/lib/assert.sh"
 PG_SCRIPT="$ROOT/topics/60-web-stack/scripts/install-postgres.sh"
 MAC_INSTALL="$ROOT/topics/60-web-stack/extras/postgres.sh"
 WSL_INSTALL="$ROOT/topics/60-web-stack/extras/postgres.sh"
-MENU="$ROOT/scripts/lib/menu.sh"
 PG_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/postgres-install-test.XXXXXX")"
 trap 'rm -rf "$PG_TEST_ROOT"' EXIT INT TERM
 
@@ -587,106 +586,6 @@ assert_pattern_present "$WSL_INSTALL" 'INCLUDE_POSTGRES' \
     "extras/postgres.sh: gates on INCLUDE_POSTGRES (same file, both platforms)"
 assert_pattern_present "$WSL_INSTALL" 'bash .*install-postgres\.sh' \
     "extras/postgres.sh: invokes scripts/install-postgres.sh (same file, both platforms)"
-
-echo
-echo "═══ Layer 4 — lib/menu.sh (anchored against fixture pitfalls) ═══"
-
-# Anchor the checklist row uniquely so a mutation that renames it
-# (e.g. "postgres" → "postgresZZ") fails. Previous '"postgres"' regex
-# matched 7+ unrelated occurrences elsewhere in the file.
-assert_pattern_present "$MENU" '^[[:space:]]*"postgres"[[:space:]]+"PostgreSQL.*\$pg_tag"[[:space:]]+"\$pg_state"' \
-    "menu checklist row for postgres present (anchored to row syntax)"
-
-# Case map row (this exports INCLUDE_POSTGRES — the dispatch).
-assert_pattern_present "$MENU" 'postgres\) export INCLUDE_POSTGRES=1' \
-    "menu case map exports INCLUDE_POSTGRES"
-
-# Version prompt — gated on INCLUDE_POSTGRES=1, prompts only if env
-# pre-seed is empty.
-assert_pattern_present "$MENU" 'INCLUDE_POSTGRES:-0\}" == "1" \]\] && \[\[ -z "\$\{POSTGRES_VERSION:-\}" \]\]' \
-    "version prompt fires ONLY when postgres opted-in AND POSTGRES_VERSION not pre-seeded"
-
-assert_pattern_present "$MENU" 'whiptail --title "60-web-stack :: postgres version"' \
-    "version prompt has its own whiptail screen"
-
-assert_pattern_present "$MENU" 'export POSTGRES_VERSION' \
-    "menu exports POSTGRES_VERSION downstream"
-
-# Pre-seed signals shorten should_show_menu.
-assert_pattern_present "$MENU" 'INCLUDE_POSTGRES:-0\}" == "1" \]\] *&& return 1' \
-    "should_show_menu treats INCLUDE_POSTGRES as pre-seed signal"
-
-assert_pattern_present "$MENU" '\-n "\$\{POSTGRES_VERSION:-\}" \]\] *&& return 1' \
-    "should_show_menu treats POSTGRES_VERSION as pre-seed signal"
-
-echo
-echo "═══ Layer 4b — _persist_menu_state round-trips INCLUDE_POSTGRES + POSTGRES_VERSION ═══"
-
-# Without persistence, every `mesh update --full` (which calls setup.sh
-# --non-interactive) silently runs with INCLUDE_POSTGRES=0 + the default
-# version 17, even when the user previously checked the box and typed 16
-# in the interactive menu. Persisting closes that gap.
-#
-# Strategy: source lib/menu.sh in an isolated subshell, set the env vars
-# we expect the user's menu run to have produced, call _persist_menu_state,
-# then source the written file and assert what survives.
-_test_persist_menu_state() {
-    local include_pg="$1" pg_ver="$2"
-    bash -c "
-        set -uo pipefail
-        TMP=\$(mktemp -d)
-        export BOOTSTRAP_STATE_CONFIG=\"\$TMP/config.env\"
-        export INCLUDE_POSTGRES='$include_pg'
-        export POSTGRES_VERSION='$pg_ver'
-        # Stub the shellcheck-target log helpers _persist_menu_state may rely on.
-        # The function itself doesn't call any of them, but lib/menu.sh sources
-        # them at the top — provide harmless defs.
-        ok()   { :; }
-        info() { :; }
-        warn() { :; }
-        fail() { :; }
-        # shellcheck disable=SC1091
-        source '$ROOT/scripts/lib/menu.sh' 2>/dev/null || true
-        _persist_menu_state
-        cat \"\$BOOTSTRAP_STATE_CONFIG\" 2>/dev/null
-        rm -rf \"\$TMP\"
-    "
-}
-
-# Case A: postgres ON + explicit version → both round-trip.
-config_out="$(_test_persist_menu_state 1 16)"
-if echo "$config_out" | grep -qE '^export INCLUDE_POSTGRES=1$'; then
-    pass "_persist_menu_state writes INCLUDE_POSTGRES=1 when opted in"
-else
-    fail "_persist_menu_state did NOT write INCLUDE_POSTGRES=1 (got: ${config_out:0:200})"
-fi
-if echo "$config_out" | grep -qE '^export POSTGRES_VERSION=16$'; then
-    pass "_persist_menu_state writes POSTGRES_VERSION=16 when opted in"
-else
-    fail "_persist_menu_state did NOT write POSTGRES_VERSION=16 (got: ${config_out:0:200})"
-fi
-
-# Case B: postgres OFF → neither key written (avoids ghost POSTGRES_VERSION).
-config_out="$(_test_persist_menu_state 0 17)"
-if ! echo "$config_out" | grep -qE 'INCLUDE_POSTGRES'; then
-    pass "_persist_menu_state omits INCLUDE_POSTGRES when not opted in"
-else
-    fail "_persist_menu_state wrote INCLUDE_POSTGRES even though opt-in was 0"
-fi
-if ! echo "$config_out" | grep -qE 'POSTGRES_VERSION'; then
-    pass "_persist_menu_state omits POSTGRES_VERSION when not opted in (no ghost version)"
-else
-    fail "_persist_menu_state leaked POSTGRES_VERSION while opt-in was off"
-fi
-
-# Case C: postgres ON but version unset → INCLUDE persisted alone.
-config_out="$(_test_persist_menu_state 1 '')"
-if echo "$config_out" | grep -qE '^export INCLUDE_POSTGRES=1$' \
-   && ! echo "$config_out" | grep -qE 'POSTGRES_VERSION'; then
-    pass "_persist_menu_state handles ON-but-no-version (caller forgot to ask)"
-else
-    fail "_persist_menu_state mishandled ON+no-version (got: ${config_out:0:200})"
-fi
 
 echo
 echo "═══ Layer 5 — README + SPEC docs ═══"

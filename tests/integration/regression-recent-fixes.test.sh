@@ -18,8 +18,10 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$ROOT/tests/lib/assert.sh"
 
 BOOTSTRAP="$ROOT/setup.sh"
-MENU="$ROOT/scripts/lib/menu.sh"
 LOG="$ROOT/scripts/lib/log.sh"
+# NOTE: the old lib/menu.sh (F9.5 whiptail flow) was deleted in audit T-005 —
+# the interactive menu is now the Ink TUI in scripts/menu/ (its own JS tests).
+# Assertions that probed menu.sh were removed here.
 
 # Post-migration each topic's logic is split across multiple custom .sh files
 # under mac/, wsl/, and extras/. We bundle each topic's customs into a single
@@ -514,21 +516,8 @@ else
     fail "INCLUDE_LARAVEL alias must come before INCLUDE_WEBSTACK default (alias=$alias_line, export=$export_line)"
 fi
 
-# Menu uses webstack keyword (not legacy 'laravel')
-assert_pattern_present "$MENU" '"webstack"' \
-    "lib/menu.sh — menu keyword renamed to 'webstack'"
-
-assert_pattern_absent "$MENU" 'export INCLUDE_LARAVEL=1' \
-    "lib/menu.sh — does NOT export legacy INCLUDE_LARAVEL (write canonical name only)"
-
-echo
-echo "═══ State file persists canonical INCLUDE_WEBSTACK only ═══"
-
-assert_pattern_present "$MENU" "echo 'export INCLUDE_WEBSTACK=1'" \
-    "lib/menu.sh — state file persists canonical INCLUDE_WEBSTACK"
-
-assert_pattern_absent "$MENU" "echo 'export INCLUDE_LARAVEL=1'" \
-    "lib/menu.sh — state file does NOT persist legacy INCLUDE_LARAVEL"
+# (menu.sh webstack-keyword + state-persistence assertions removed with the dead
+# F9.5 menu in T-005; the Ink TUI owns selection state via selections.list.)
 
 echo
 echo "═══ 2026-04-23 : auto-chsh + secrets.env scaffold ═══"
@@ -659,32 +648,20 @@ assert_pattern_present "$BOOTSTRAP" 'source "\$HERE/scripts/lib/secrets.sh"' \
 assert_pattern_present "$BOOTSTRAP" 'secrets_load' \
     "setup.sh — calls secrets_load"
 
-# Order check: secrets must be loaded before menu is sourced/run so the
-# menu's secrets_has NGROK_AUTHTOKEN gate behaves correctly.
+# Order check: secrets_load must run before the interactive (Ink) menu so item
+# scripts and `when:` see the tokens. setup.sh sources secrets right after the
+# state-dir setup and before run_menu_if_available.
 secrets_line=$(grep -n 'secrets_load' "$BOOTSTRAP" | head -1 | cut -d: -f1)
-menu_line=$(grep -n 'source "\$HERE/scripts/lib/menu.sh"' "$BOOTSTRAP" | head -1 | cut -d: -f1)
+menu_line=$(grep -n 'run_menu_if_available' "$BOOTSTRAP" | head -1 | cut -d: -f1)
 if [[ -n "$secrets_line" && -n "$menu_line" ]] && [[ "$secrets_line" -lt "$menu_line" ]]; then
-    pass "setup.sh — secrets_load runs before menu is sourced (line $secrets_line < $menu_line)"
+    pass "setup.sh — secrets_load runs before the menu (line $secrets_line < $menu_line)"
 else
-    fail "setup.sh — secrets_load must run before menu (secrets=$secrets_line, menu=$menu_line)"
+    fail "setup.sh — secrets_load must run before the menu (secrets=$secrets_line, menu=$menu_line)"
 fi
 
-# Menu: only checks whether the ngrok token is already known when selected.
-assert_pattern_present "$MENU" 'secrets_has NGROK_AUTHTOKEN' \
-    "lib/menu.sh — gates ngrok hint on secrets_has"
-
-# Audit T-003: the old local-only ngrok capture (passwordbox → secrets_set into
-# the unreplicated legacy secrets.env) was Pattern-B and is RETIRED. The token is
-# now a tier-2 env-token added via `mesh secret add` (encrypted + replicated).
-assert_pattern_absent "$MENU" 'secrets_set NGROK_AUTHTOKEN' \
-    "lib/menu.sh — no local-only secrets_set capture for ngrok (Pattern-B retired)"
-
-assert_pattern_present "$MENU" 'mesh secret add' \
-    "lib/menu.sh — ngrok hint points at 'mesh secret add' (replicated path)"
-
-# secrets.env must NOT be written by _persist_menu_state (wrong file + mode).
-assert_pattern_absent "$MENU" 'echo .export NGROK_AUTHTOKEN' \
-    "lib/menu.sh — _persist_menu_state does NOT echo NGROK_AUTHTOKEN into config.env"
+# (ngrok-capture assertions removed with the dead menu.sh in T-005 — the ngrok
+# authtoken is now a tier-2 env-token added via `mesh secret add`, not captured
+# locally by any menu.)
 
 # Taxonomy check: secrets.sh header must document forbidden keys so a future
 # contributor can't "just add GITHUB_TOKEN" without reading the rationale.

@@ -176,7 +176,7 @@ Full output of every run is written to `/tmp/mesh-workstation-<os>-<timestamp>.l
 ```
 mesh-workstation/
 ├── setup.sh              # runner — OS detection, interactive menu, sudo warmup, topic orchestration
-├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh, menu.sh
+├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh, state-dir.sh
 ├── topics/NN-<name>/         # idempotent installation units
 │   ├── install.$OS.sh        # WSL or Mac
 │   ├── templates/            # files deployed via lib/deploy.sh

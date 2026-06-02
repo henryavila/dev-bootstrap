@@ -10,7 +10,6 @@ source "$ROOT/tests/lib/assert.sh"
 
 INSTALL="$ROOT/topics/85-code-server/mac/code-server.sh"
 VERIFY="$ROOT/topics/85-code-server/verify.sh"
-MENU="$ROOT/scripts/lib/menu.sh"
 BOOTSTRAP="$ROOT/setup.sh"
 
 echo
@@ -36,12 +35,8 @@ assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_UPGRADE="\$\{CODE_SERVER_UPGRAD
 assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_CHECK_UPDATES="\$\{CODE_SERVER_CHECK_UPDATES:-1\}"' \
     "bootstrap checks for code-server updates by default"
 
-assert_pattern_present "$MENU" 'INCLUDE_CODE_SERVER' \
-    "menu handles INCLUDE_CODE_SERVER automation/state"
-assert_pattern_present "$MENU" 'code-server\)' \
-    "menu has code-server default-state detection"
-assert_pattern_present "$MENU" '85-code-server: VS Code in browser via Tailscale' \
-    "menu checklist includes code-server item"
+# (menu.sh code-server checklist/state assertions removed with the dead F9.5 menu
+# in T-005; the Ink TUI in scripts/menu/ owns the code-server bundle item.)
 
 echo
 echo "═══ 85-code-server installer contract ═══"
