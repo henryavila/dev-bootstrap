@@ -3,10 +3,16 @@
 # lib/secrets.sh — mesh-workstation shared secrets file (sourced, not executed).
 #
 # Purpose:
-#   Central place for input-only tokens that tools need but cannot
-#   discover themselves (ngrok authtoken, LLM API keys, Tailscale
-#   auth-key, etc). Populated once; bootstrap sources it before any
-#   topic runs, so downstream installers see the right env vars.
+#   Runtime loader + format for the secrets.env env-token store the install
+#   engine sources before running topics (so installers see ngrok authtoken,
+#   LLM API keys, Tailscale auth-key, etc).
+#
+#   NOTE (secrets layer, 2026-06): the canonical, REPLICATED source of these
+#   tokens is now the git-crypt-encrypted secrets/secrets.env in the identity
+#   repo, managed via `mesh secret add/set` and deployed here by `mesh secret
+#   deploy`. This file stays the runtime mechanism + format; secrets_set is
+#   still used for local-only captures (e.g. the menu ngrok prompt) until those
+#   migrate to `mesh secret`. See docs/2026-06-02-secrets-layer-spec.md.
 #
 # Public API (all functions are safe to call multiple times):
 #   secrets_init               create $BOOTSTRAP_SECRETS_FILE with

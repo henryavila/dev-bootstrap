@@ -1,5 +1,0 @@
-# mesh-secrets: git-crypt (managed — do not edit between markers)
-secrets/** filter=git-crypt diff=git-crypt
-secrets/manifest.yaml !filter !diff
-secrets/.gitattributes !filter !diff
-# mesh-secrets: end

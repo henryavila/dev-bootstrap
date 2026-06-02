@@ -37,7 +37,8 @@ ID_DIR="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
 SECRETS_DIR="$ID_DIR/secrets"
 MANIFEST="$SECRETS_DIR/manifest.yaml"
 ENV_SRC="$SECRETS_DIR/secrets.env"     # encrypted env-token store (Tier 2)
-ENV_DST="${BOOTSTRAP_SECRETS_FILE:-$HOME/.local/state/mesh-workstation/secrets.env}"
+# Runtime path the install engine sources (install-engine.sh SECRETS_FILE_NEW).
+ENV_DST="${XDG_STATE_HOME:-$HOME/.local/state}/mesh/secrets.env"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -243,12 +244,25 @@ secret_deploy() {
             case "$type" in
                 file)  _deploy_file "$i" ;;
                 login) _deploy_login "$i" ;;
-                env-token) : ;;  # the secrets-env file entry carries the actual deploy
+                env-token) : ;;  # deployed as a set via _deploy_env_store below
                 *) warn "$(_f "$i" ID): unknown type '$type'" ;;
             esac
         fi
         i=$((i + 1))
     done
+    _deploy_env_store
+}
+
+# Deploy the encrypted env-token store to the runtime path the install engine
+# sources, so env-token secrets actually reach the tools that read them.
+_deploy_env_store() {
+    [ -f "$ENV_SRC" ] || return 0
+    if _is_ciphertext "$ENV_SRC"; then
+        warn "secrets.env still encrypted — run 'mesh secret unlock' first"; return 0
+    fi
+    mkdir -p "$(dirname "$ENV_DST")"
+    # deploy_one needs a repo-relative source; ENV_SRC is "$ID_DIR/secrets/secrets.env".
+    deploy_one "secrets/secrets.env|$ENV_DST|overwrite|0600" "$ID_DIR" && ok "env-tokens → $ENV_DST"
 }
 
 secret_list() {

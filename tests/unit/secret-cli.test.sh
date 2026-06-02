@@ -35,8 +35,13 @@ integrations:
     type: login
     check: false
     login: echo would-run-login
+  anthropic:
+    tier: 2
+    type: env-token
+    key: ANTHROPIC_API_KEY
 EOF
 printf '{"http-basic":{}}\n' > "$ID/secrets/composer/auth.json"
+printf '# env-token store\nexport ANTHROPIC_API_KEY=sk-test-xyz\n' > "$ID/secrets/secrets.env"
 
 # Fake composer (first on PATH) returns a controlled home with NO side effects,
 # so the composer-home resolver is deterministic regardless of the host's real
@@ -62,6 +67,11 @@ run deploy >/dev/null 2>&1
 DEST="$FAKE_HOME/.composer/auth.json"
 [ -f "$DEST" ] && ok || no "deploy created $DEST"
 [ "$(cat "$DEST" 2>/dev/null)" = '{"http-basic":{}}' ] && ok || no "deployed content matches"
+# env-token store deployed to the engine's runtime path
+EDST="$FAKE_HOME/.local/state/mesh/secrets.env"
+[ -f "$EDST" ] && ok || no "deploy wrote env-token store to $EDST"
+grep -q "ANTHROPIC_API_KEY" "$EDST" 2>/dev/null && ok || no "deployed env store contains the token"
+
 # idempotent re-deploy: identical content → no .bak created
 run deploy >/dev/null 2>&1
 [ -z "$(ls "$FAKE_HOME/.composer/"*.bak-* 2>/dev/null)" ] && ok || no "idempotent deploy made no backup"
