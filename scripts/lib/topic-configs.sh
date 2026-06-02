@@ -2,8 +2,8 @@
 #
 # Single source of truth for the C15 "ship default configs" mechanism
 # introduced in Phase 3 Task 3.5 (commit f7dad21). Was originally
-# duplicated across topics/20-terminal-ux/install.mac.sh,
-# topics/50-git/install.sh, and topics/90-editor/install.sh (Review B
+# duplicated across topics/shell-terminal/install.mac.sh,
+# topics/git/install.sh, and topics/shell-terminal/install.sh (nvim bundle) (Review B
 # finding B5). Centralized here so:
 #   - Symlink semantics live in one place (Review B finding B4 fix).
 #   - Future config additions touch one helper.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # C15: 5 shipped default configs (p10k, btop, btop theme, eza, htop).
-# Identity overrides win on conflict (95-dotfiles-personal MAPPINGS run later).
+# Identity overrides win on conflict (the personal topic's deploy.map runs later).
 
 _pairs() {
     cat <<'EOF'

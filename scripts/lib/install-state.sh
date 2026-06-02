@@ -5,7 +5,7 @@
 #   $MESH_INSTALL_STATE_DIR/<topic>__<name>.env  (default: ~/.local/state/mesh/installed/)
 #
 # Format is shell-sourceable key=value so it can be read without jq:
-#   MESH_ITEM_TOPIC=70-remote-access
+#   MESH_ITEM_TOPIC=remote-access
 #   MESH_ITEM_NAME=remote-login-mac
 #   MESH_ITEM_TYPE=custom
 #   MESH_ITEM_SPEC="./enable-remote-login.sh"

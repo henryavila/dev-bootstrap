@@ -445,7 +445,7 @@ deploy_one() {
         # our 'managed by mesh-workstation' marker. Fragments in *.d/ dirs and
         # scripts in .local/bin/ are considered bootstrap-owned by convention
         # and skip the check. Escape hatch: ALLOW_OVERWRITE_UNMANAGED=1.
-        # Context: prevents the 30-shell regression where a user's handcrafted
+        # Context: prevents the shell-terminal regression where a user's handcrafted
         # .zshrc with a custom Homebrew block was overwritten by the template
         # on first bootstrap run, silently losing the override.
         local needs_header_check=1

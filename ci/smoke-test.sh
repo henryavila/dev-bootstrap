@@ -24,16 +24,16 @@ TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
 
 # Default SKIP list.
 #
-# 05-identity          — `gh auth login --web` needs a real TTY for the
-#                        device-code flow. Mocking gh is out of scope; see
-#                        ci/README.md for how to add coverage.
-# 95-dotfiles-personal — clones a private repo over SSH. No credentials in
-#                        the container.
+# identity  — `gh auth login --web` needs a real TTY for the device-code flow.
+#             Mocking gh is out of scope; see ci/README.md for how to add coverage.
+# personal  — clones a private repo over SSH. No credentials in the container.
 #
-# 60-web-stack / 70-remote-access / 90-editor are NOT in this list —
-# they auto-skip because their INCLUDE_* opt-in vars default to 0. Letting
-# setup.sh's own gate handle them keeps that path exercised too.
-DEFAULT_SKIP="05-identity 95-dotfiles-personal"
+# web / remote-access opt-in bundles are NOT in this list — they auto-skip because
+# their INCLUDE_* opt-in vars default to 0. Letting setup.sh's own gate handle them
+# keeps that path exercised too.
+# NOTE (audit T-009): setup.sh/engine no longer honor SKIP_TOPICS — this skip is
+# currently a no-op; restoring skip support is tracked separately.
+DEFAULT_SKIP="identity personal"
 SKIP_TOPICS="${DEFAULT_SKIP}${EXTRA_SKIP:+ $EXTRA_SKIP}"
 
 BUILD_ARGS=()

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Custom installer: link lazygit default config (C15).
-# Identity (95-dotfiles-personal MAPPINGS) wins on conflict — that topic
+# Identity (the personal topic's deploy.map) wins on conflict — that topic
 # runs AFTER this one.
 
 _src() {

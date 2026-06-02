@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# dotfiles-personal/apply: clone $MESH_IDENTITY_REPO + run its install.sh.
+# personal/apply: clone $MESH_IDENTITY_REPO + run its install.sh.
 # Custom item contract — engine sources this and calls check()/install()/verify().
-# Marked idempotent in the manifest: dotfiles are re-applied on every run
+# Marked idempotent in the manifest: the identity repo is re-applied on every run
 # (identity_ensure_repo pulls, the fork's install.sh is itself idempotent).
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,7 +13,7 @@ source "$HERE/../../scripts/lib/identity-repo.sh"
 source "$HERE/../../scripts/lib/topic-cleanup.sh"
 
 check() {
-    # Idempotent apply — always run (manifest idempotent: true). The dotfiles
+    # Idempotent apply — always run (manifest idempotent: true). The identity
     # fork's own install.sh handles the "already applied" fast paths.
     return 1
 }
@@ -30,14 +30,14 @@ install() { (
         info "running $MESH_IDENTITY_DIR/install.sh"
         MESH_NPM_GLOBAL="${MESH_NPM_GLOBAL:-0}" bash "$MESH_IDENTITY_DIR/install.sh"
     else
-        warn "$MESH_IDENTITY_DIR/install.sh not found — dotfiles cloned but not applied"
+        warn "$MESH_IDENTITY_DIR/install.sh not found — identity repo cloned but not applied"
     fi
 
-    # Drift cleanup: artifacts the dotfiles fork used to install but no longer
+    # Drift cleanup: artifacts the identity fork used to install but no longer
     # does. Reads data/uninstall.list and removes each entry. Idempotent.
     uninstall_apply "$HERE/data/uninstall.list"
 
-    ok "dotfiles-personal done"
+    ok "personal identity done"
 ) }
 
 verify() {
@@ -45,6 +45,6 @@ verify() {
 }
 
 rollback() {
-    # Never auto-remove the user's applied dotfiles.
+    # Never auto-remove the user's applied identity layer.
     :
 }

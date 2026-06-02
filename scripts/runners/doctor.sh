@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# doctor.sh — status + drift detector for the dotfiles deploy surface.
+# doctor.sh — status + drift detector for the identity deploy surface.
 #
 # What it checks:
 #   1. For each mapping in install.sh (src|dst[|mode]):
@@ -310,7 +310,7 @@ if [[ "$JSON" == 1 ]]; then
     printf ']}\n'
 else
     if [[ "$QUIET" == 0 ]]; then
-        echo "${C_DIM}dotfiles doctor :: $REPO${C_RESET}"
+        echo "${C_DIM}mesh doctor :: $REPO${C_RESET}"
         echo "  ${C_OK}✓${C_RESET} up-to-date     : $count_ok"
         echo "  ${C_WARN}!${C_RESET} missing        : $count_missing"
         echo "  ${C_ERR}✗${C_RESET} drift          : $count_drift"
@@ -341,7 +341,7 @@ else
         echo
         echo "${C_ERR}LaunchDaemon Standard*Path inside /Volumes/* — phantoms on next boot:${C_RESET}"
         for p in "${launchd_phantom_items[@]}"; do echo "  ✗ $p"; done
-        echo "  ${C_DIM}fix: re-run setup.sh (60-web-stack hardens the plists), or${C_RESET}"
+        echo "  ${C_DIM}fix: re-run setup.sh (web hardens the plists), or${C_RESET}"
         echo "  ${C_DIM}     manually rewrite Standard*Path → /var/log/homebrew/<svc>.log${C_RESET}"
     fi
     if (( count_composer_phar > 0 )); then

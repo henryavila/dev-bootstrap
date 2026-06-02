@@ -25,7 +25,7 @@
 # bootstrap antes desta data, esses 4 binários ainda estão em
 # ~/.local/bin/ — install.sh do dotfiles atual não os redeploya, mas
 # tampouco os apaga. Esta lista cobre o gap: na próxima vez que
-# bootstrap rodar (ou auto-update reaplicar 95-dotfiles-personal), os
+# bootstrap rodar (ou auto-update reaplicar o tópico personal), os
 # 4 binários antigos somem.
 user-bin:bup
 user-bin:dotup

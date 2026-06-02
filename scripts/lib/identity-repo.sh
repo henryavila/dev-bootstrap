@@ -12,7 +12,7 @@ identity_ensure_repo() {
     # Optional create-from-template flow (gated by menu.sh). When the user
     # answered "yes" to the template prompt, $CREATE_IDENTITY_FROM_TEMPLATE=1
     # and the *_NEW_REPO_* vars carry the inputs. We invoke `gh repo create`
-    # from here because gh CLI is installed + authed by 05-identity before any
+    # from here because gh CLI is installed + authed by identity before any
     # identity-backed opt-in topic runs.
     if [[ "${CREATE_IDENTITY_FROM_TEMPLATE:-0}" == "1" ]] && [[ ! -d "$repo_dir/.git" ]]; then
         : "${MESH_IDENTITY_TEMPLATE_REPO:?CREATE_IDENTITY_FROM_TEMPLATE=1 but MESH_IDENTITY_TEMPLATE_REPO unset}"
@@ -21,8 +21,8 @@ identity_ensure_repo() {
 
         if ! command -v gh >/dev/null 2>&1; then
             followup critical "create-from-template requested, but \`gh\` CLI is not on PATH.
-05-identity should have installed it earlier — re-run bootstrap with the
-05-identity topic enabled, or run 'gh auth login' manually then:
+identity should have installed it earlier — re-run bootstrap with the
+identity topic enabled, or run 'gh auth login' manually then:
     gh repo create $MESH_IDENTITY_NEW_REPO_OWNER/$MESH_IDENTITY_NEW_REPO_NAME \\
         --template $MESH_IDENTITY_TEMPLATE_REPO --clone --directory $repo_dir"
             return 1

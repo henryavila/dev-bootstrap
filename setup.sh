@@ -17,7 +17,7 @@
 # Env vars (primarily for automation/CI):
 #   NON_INTERACTIVE=1     skip the menu even on a TTY
 #   DRY_RUN=1             print what the engine would do without executing
-#   MESH_IDENTITY_REPO    identity repo URL (used by ai / dotfiles-personal)
+#   MESH_IDENTITY_REPO    identity repo URL (used by ai / personal topics)
 #   MESH_IDENTITY_DIR     where to clone the identity repo (default ~/mesh-identity)
 #   CODE_DIR              project root (default ~/code/web)
 #   NO_COLOR=1            disable colored output (auto if not a TTY)
@@ -193,7 +193,7 @@ fi
 if [[ "$DRY_RUN" != "1" ]]; then
     sudo -v 2>/dev/null || warn "sudo cache warmup failed (non-fatal — items will prompt individually)"
 fi
-# Pre-v2026-04-22 70-remote-access left a permanent NOPASSWD sudoers entry.
+# Pre-v2026-04-22 remote-access left a permanent NOPASSWD sudoers entry.
 # Clean it up unconditionally so forks inherit the fix.
 if [[ ( "$OS" == "wsl" || "$OS" == "linux" ) && "$DRY_RUN" != "1" ]]; then
     legacy_nopasswd="/etc/sudoers.d/10-${USER}-nopasswd"
