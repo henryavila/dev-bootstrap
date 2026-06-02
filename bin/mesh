@@ -109,6 +109,7 @@ Usage:
   mesh template-check [flags]       Verify template/ ↔ identity parity (C16.1)
   mesh personal-clone [flags]       Clone personal repos from identity catalog
   mesh menu [--apply]               Interactive item selector (standalone or with apply)
+  mesh secret <verb>                Manage replicated personal secrets (git-crypt 2-tier)
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -1107,6 +1108,13 @@ sub_personal_clone() {
     exec bash "$lib" "$@"
 }
 
+sub_secret() {
+    local lib
+    lib="$(_resolve_companion "lib/secret.sh")"
+    [[ -n "$lib" ]] || _die "lib/secret.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$lib" "$@"
+}
+
 sub_menu() {
     local runner apply=0
     runner="$(_resolve_companion "runners/menu.sh")"
@@ -1183,6 +1191,10 @@ case "${1:-status}" in
     menu)
         shift
         sub_menu "$@"
+        ;;
+    secret)
+        shift
+        sub_secret "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.
