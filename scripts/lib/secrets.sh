@@ -9,10 +9,12 @@
 #
 #   NOTE (secrets layer, 2026-06): the canonical, REPLICATED source of these
 #   tokens is now the git-crypt-encrypted secrets/secrets.env in the identity
-#   repo, managed via `mesh secret add/set` and deployed here by `mesh secret
-#   deploy`. This file stays the runtime mechanism + format; secrets_set is
-#   still used for local-only captures (e.g. the menu ngrok prompt) until those
-#   migrate to `mesh secret`. See docs/2026-06-02-secrets-layer-spec.md.
+#   repo, managed via `mesh secret add` and deployed here by `mesh secret
+#   deploy`. This file is now ONLY the runtime loader + on-disk format.
+#   `secrets_set` is RETIRED for new captures (audit T-003): to add a token use
+#   `mesh secret add` (encrypted + replicated), never a local-only write. The
+#   function is kept so existing callers + the format round-trip, not as the
+#   recommended path. See docs/2026-06-02-secrets-layer-spec.md.
 #
 # Public API (all functions are safe to call multiple times):
 #   secrets_init               create $BOOTSTRAP_SECRETS_FILE with
@@ -33,8 +35,11 @@
 #   secrets_set for atomicity.
 #
 # Path:
-#   $BOOTSTRAP_SECRETS_FILE (default ~/.local/state/mesh-workstation/secrets.env).
-#   Lives alongside config.env so there's a single state dir per host.
+#   $BOOTSTRAP_SECRETS_FILE (default $XDG_STATE_HOME/mesh/secrets.env, i.e.
+#   ~/.local/state/mesh/secrets.env). This is the SAME path `mesh secret deploy`
+#   writes, so there is one canonical secrets.env per host. The pre-rename
+#   location (~/.local/state/mesh-workstation/secrets.env) is migrated one-shot
+#   by secrets_migrate_legacy() and never read again (audit T-003).
 #
 # What belongs here:
 #   NGROK_AUTHTOKEN, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
@@ -54,9 +59,30 @@
 # file is a last resort for tools that DON'T, so we don't undermine
 # the ones that DO.
 
-: "${BOOTSTRAP_STATE_DIR:=$HOME/.local/state/mesh-workstation}"
+# Canonical state dir (audit T-003): unified ~/.local/state/mesh, shared with
+# `mesh secret deploy`. The legacy ~/.local/state/mesh-workstation path is no
+# longer a default — it is migrated by secrets_migrate_legacy() below.
+: "${BOOTSTRAP_STATE_DIR:=${XDG_STATE_HOME:-$HOME/.local/state}/mesh}"
 : "${BOOTSTRAP_SECRETS_FILE:=$BOOTSTRAP_STATE_DIR/secrets.env}"
 export BOOTSTRAP_STATE_DIR BOOTSTRAP_SECRETS_FILE
+
+# One-shot migration of the pre-rename secrets.env into the canonical path.
+# Idempotent + safe: only moves when the legacy file exists and the canonical
+# one does not, so it never clobbers a deployed secrets.env. NOT called at
+# source time (tests source this file with the real $HOME) — production entry
+# points (setup.sh, install-engine) call it explicitly before reading secrets.
+secrets_migrate_legacy() {
+    local legacy="$HOME/.local/state/mesh-workstation/secrets.env"
+    [ -f "$legacy" ] || return 0
+    [ "$legacy" = "$BOOTSTRAP_SECRETS_FILE" ] && return 0
+    [ -e "$BOOTSTRAP_SECRETS_FILE" ] && return 0
+    mkdir -p "$BOOTSTRAP_STATE_DIR" 2>/dev/null
+    chmod 0700 "$BOOTSTRAP_STATE_DIR" 2>/dev/null || true
+    if mv "$legacy" "$BOOTSTRAP_SECRETS_FILE" 2>/dev/null; then
+        chmod 0600 "$BOOTSTRAP_SECRETS_FILE" 2>/dev/null || true
+        warn "migrated legacy secrets.env → $BOOTSTRAP_SECRETS_FILE — these are local-only tokens; run 'mesh secret add' to encrypt + replicate them"
+    fi
+}
 
 # Fallback logging — when sourced standalone (tests), lib/log.sh may
 # not be in scope. Define minimal no-color info/warn so every public

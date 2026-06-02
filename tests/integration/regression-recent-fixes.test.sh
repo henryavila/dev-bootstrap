@@ -669,15 +669,18 @@ else
     fail "setup.sh — secrets_load must run before menu (secrets=$secrets_line, menu=$menu_line)"
 fi
 
-# Menu: prompts for ngrok token only when selected and not already known.
+# Menu: only checks whether the ngrok token is already known when selected.
 assert_pattern_present "$MENU" 'secrets_has NGROK_AUTHTOKEN' \
-    "lib/menu.sh — gates ngrok prompt on secrets_has"
+    "lib/menu.sh — gates ngrok hint on secrets_has"
 
-assert_pattern_present "$MENU" 'passwordbox' \
-    "lib/menu.sh — ngrok token uses --passwordbox (masked input)"
+# Audit T-003: the old local-only ngrok capture (passwordbox → secrets_set into
+# the unreplicated legacy secrets.env) was Pattern-B and is RETIRED. The token is
+# now a tier-2 env-token added via `mesh secret add` (encrypted + replicated).
+assert_pattern_absent "$MENU" 'secrets_set NGROK_AUTHTOKEN' \
+    "lib/menu.sh — no local-only secrets_set capture for ngrok (Pattern-B retired)"
 
-assert_pattern_present "$MENU" 'secrets_set NGROK_AUTHTOKEN' \
-    "lib/menu.sh — persists ngrok token via secrets_set (NOT config.env)"
+assert_pattern_present "$MENU" 'mesh secret add' \
+    "lib/menu.sh — ngrok hint points at 'mesh secret add' (replicated path)"
 
 # secrets.env must NOT be written by _persist_menu_state (wrong file + mode).
 assert_pattern_absent "$MENU" 'echo .export NGROK_AUTHTOKEN' \

@@ -143,6 +143,7 @@ fi
 # engine also sources them per bundle. See lib/secrets.sh for the key taxonomy.
 # shellcheck disable=SC1091
 source "$HERE/scripts/lib/secrets.sh"
+secrets_migrate_legacy   # one-shot: pre-rename secrets.env → canonical path (T-003)
 secrets_load || warn "secrets file present but could not be sourced — continuing without it"
 
 # Persisted decisions (e.g. a previously chosen BREW_PREFIX). See lib/state.sh.

@@ -160,14 +160,25 @@ _update_enabled() {    # $1 = category → rc 0 if the user opted that category 
     esac
 }
 
-# Resolve which secrets file(s) to source: explicit override wins; otherwise
-# source legacy then new so the canonical (new) location overrides the legacy.
+# One-shot migration of the pre-rename secrets.env → canonical path (audit
+# T-003). Mirrors secrets_migrate_legacy() in lib/secrets.sh; needed here too
+# because auto-update invokes the engine directly, without sourcing setup.sh.
+# Idempotent + safe: only moves when legacy exists and canonical does not.
+if [[ -f "$SECRETS_FILE_LEGACY" && ! -e "$SECRETS_FILE_NEW" ]]; then
+    mkdir -p "$(dirname "$SECRETS_FILE_NEW")" 2>/dev/null
+    if mv "$SECRETS_FILE_LEGACY" "$SECRETS_FILE_NEW" 2>/dev/null; then
+        chmod 0600 "$SECRETS_FILE_NEW" 2>/dev/null || true
+        log_info "migrated legacy secrets.env → $SECRETS_FILE_NEW"
+    fi
+fi
+
+# Resolve which secrets file to source: explicit override wins; otherwise the
+# single canonical location (legacy read dropped post-migration, T-003).
 SECRETS_FILES=()
 if [[ -n "$SECRETS_OVERRIDE" ]]; then
     SECRETS_FILES=("$SECRETS_OVERRIDE")
-else
-    [[ -r "$SECRETS_FILE_LEGACY" ]] && SECRETS_FILES+=("$SECRETS_FILE_LEGACY")
-    [[ -r "$SECRETS_FILE_NEW" ]]    && SECRETS_FILES+=("$SECRETS_FILE_NEW")
+elif [[ -r "$SECRETS_FILE_NEW" ]]; then
+    SECRETS_FILES=("$SECRETS_FILE_NEW")
 fi
 
 # Per-topic parsed-manifest cache (one yaml-parse run per topic, reused across
