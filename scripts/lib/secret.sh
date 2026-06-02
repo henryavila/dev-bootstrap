@@ -387,8 +387,41 @@ secret_guard() {
 secret_set() {
     local id="${1:-}"
     [ -n "$id" ] || { fail "usage: mesh secret set <id>"; return 1; }
-    fail "mesh secret set: not yet implemented (use 'mesh secret rm $id' + 'mesh secret add')"
-    return 1
+    [ -e /dev/tty ] || { fail "mesh secret set is interactive (needs a terminal)"; return 1; }
+    _manifest_load || return 1
+    local i found=-1 type
+    i=0
+    while [ "$i" -lt "${INTEGRATION_COUNT:-0}" ]; do
+        [ "$(_f "$i" ID)" = "$id" ] && { found="$i"; break; }
+        i=$((i + 1))
+    done
+    [ "$found" -ge 0 ] || { fail "no such integration: $id (add it with 'mesh secret add')"; return 1; }
+    type="$(_f "$found" TYPE)"
+    [ "$type" = "login" ] && { fail "'$id' is a login integration — no stored value (use 'mesh secret rm' + 'add' to change commands)"; return 1; }
+    _require_git_crypt_ready || return 1
+    secrets_crypt_unlocked "$ID_DIR" || { fail "repo is locked — run 'mesh secret unlock' first"; return 1; }
+    if [ "$type" = "env-token" ]; then
+        local key val
+        key="$(_f "$found" KEY)"
+        val="$(_ask_secret "New value for $key (hidden): ")"
+        [ -n "$val" ] || { fail "empty value"; return 1; }
+        [ -f "$ENV_SRC" ] || printf '# mesh secrets env-token store (git-crypt encrypted)\n' > "$ENV_SRC"
+        grep -v "^export $key=" "$ENV_SRC" 2>/dev/null > "$ENV_SRC.tmp" || true
+        printf 'export %s=%q\n' "$key" "$val" >> "$ENV_SRC.tmp"
+        mv "$ENV_SRC.tmp" "$ENV_SRC"; chmod 600 "$ENV_SRC"
+        git -C "$ID_DIR" add -f secrets/secrets.env
+    else
+        local src seed
+        src="$(_f "$found" SOURCE)"
+        seed="$(_ask 'Path to the new file contents: ')"
+        [ -f "$seed" ] || { fail "no such file: $seed"; return 1; }
+        cp "$seed" "$ID_DIR/$src" || { fail "copy failed"; return 1; }
+        git -C "$ID_DIR" add -f "$src"
+    fi
+    info "Updated '$id'. This will be ENCRYPTED with git-crypt and PUSHED to $(_remote_url)."
+    secret_guard_staged || return 1
+    _yn 'Continue?' || { warn "aborted (staged changes left in place)"; return 1; }
+    _commit_and_push "secret(set): $id"
 }
 
 secret_rm() {
