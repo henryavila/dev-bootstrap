@@ -73,20 +73,22 @@ secrets_crypt_unlocked() {
 
 # --- init / unlock -----------------------------------------------------------
 
-# Initialize git-crypt in <repo> and export the symmetric key to <keyout>.
-# <keyout> is the ROOT secret — the caller must tell the user to store it in a
-# password manager and must NOT leave it inside the repo.
+# Initialize git-crypt in <repo>. The key lives in the repo keystore
+# (.git/git-crypt/keys/default) — retrievable any time via `git-crypt export-key`
+# — so no lingering key file is written by default. Pass an optional <keyout>
+# only if a binary key file is explicitly wanted (it is the ROOT secret).
 secrets_crypt_init() {
-    local repo="$1" keyout="$2"
+    local repo="$1" keyout="${2:-}"
     secrets_crypt_available || { echo "secrets-crypt: git-crypt not installed" >&2; return 1; }
-    [ -n "$keyout" ] || { echo "secrets-crypt: init needs a key output path" >&2; return 1; }
     if secrets_crypt_initialized "$repo"; then
         echo "secrets-crypt: already initialized in $repo" >&2
         return 0
     fi
     ( cd "$repo" && git-crypt init ) >&2 || return 1
-    ( cd "$repo" && git-crypt export-key "$keyout" ) >&2 || return 1
-    chmod 600 "$keyout" 2>/dev/null || true
+    if [ -n "$keyout" ]; then
+        ( cd "$repo" && git-crypt export-key "$keyout" ) >&2 || return 1
+        chmod 600 "$keyout" 2>/dev/null || true
+    fi
 }
 
 secrets_crypt_unlock() {

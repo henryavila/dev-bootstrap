@@ -128,14 +128,14 @@ secret_init() {
     if secrets_crypt_initialized "$ID_DIR"; then
         ok "git-crypt already initialized"
     else
-        local keyout="$HOME/mesh-secrets.key"
-        secrets_crypt_init "$ID_DIR" "$keyout" || return 1
-        ok "git-crypt initialized. Root key (binary) exported to: $keyout"
-        warn "SAVE THE KEY IN YOUR PASSWORD MANAGER — it unlocks every secret on every machine."
-        warn "Most managers are text-only, so store the base64 form:"
-        warn "    mesh secret export-key            # prints a text key to copy"
-        warn "Then delete the binary file:  rm $keyout"
-        warn "On a new machine:  mesh secret unlock   (paste the base64 key)"
+        # No lingering key file: the key lives in the repo keystore and is
+        # retrievable via `mesh secret export-key` whenever needed.
+        secrets_crypt_init "$ID_DIR" || return 1
+        ok "git-crypt initialized."
+        warn "SAVE YOUR ROOT KEY NOW — it unlocks every secret on every machine."
+        warn "Most password managers are text-only, so store the base64 form:"
+        warn "    mesh secret export-key       # prints one base64 line to copy"
+        warn "On a new machine:  mesh secret unlock   (paste that base64 key)"
     fi
     [ -f "$MANIFEST" ] || printf 'version: 1\nintegrations:\n' > "$MANIFEST"
     git -C "$ID_DIR" add .gitattributes secrets/manifest.yaml 2>/dev/null || true
