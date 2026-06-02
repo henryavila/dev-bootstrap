@@ -130,9 +130,12 @@ secret_init() {
     else
         local keyout="$HOME/mesh-secrets.key"
         secrets_crypt_init "$ID_DIR" "$keyout" || return 1
-        ok "git-crypt initialized. Root key exported to: $keyout"
-        warn "STORE THIS KEY IN YOUR PASSWORD MANAGER, then delete the file:"
-        warn "  it unlocks every secret on every other machine (mesh secret unlock)."
+        ok "git-crypt initialized. Root key (binary) exported to: $keyout"
+        warn "SAVE THE KEY IN YOUR PASSWORD MANAGER — it unlocks every secret on every machine."
+        warn "Most managers are text-only, so store the base64 form:"
+        warn "    mesh secret export-key            # prints a text key to copy"
+        warn "Then delete the binary file:  rm $keyout"
+        warn "On a new machine:  mesh secret unlock   (paste the base64 key)"
     fi
     [ -f "$MANIFEST" ] || printf 'version: 1\nintegrations:\n' > "$MANIFEST"
     git -C "$ID_DIR" add .gitattributes secrets/manifest.yaml 2>/dev/null || true
@@ -142,15 +145,54 @@ secret_init() {
     ok "Secrets layer ready. Add your first secret with: mesh secret add"
 }
 
+# Portable base64 decode (BSD/macOS + GNU).
+_b64_decode() {
+    base64 -d 2>/dev/null || base64 --decode 2>/dev/null || base64 -D 2>/dev/null
+}
+
 secret_unlock() {
-    local keyfile="${1:-}"
-    [ -n "$keyfile" ] || { fail "usage: mesh secret unlock <keyfile>"; return 1; }
+    local arg="${1:-}"
     if ! secrets_crypt_available; then
         info "git-crypt not found — installing…"
         secrets_crypt_install || { fail "could not install git-crypt"; return 1; }
     fi
-    secrets_crypt_unlock "$ID_DIR" "$keyfile" || { fail "unlock failed"; return 1; }
+    local keyfile cleanup=0
+    if [ -n "$arg" ] && [ -f "$arg" ]; then
+        # A real key file was given.
+        keyfile="$arg"
+    else
+        # Base64 key (text-friendly for password managers): take it as the arg,
+        # or prompt for a hidden paste. Decoded to a temp file, used, shredded.
+        local b64="$arg"
+        if [ -z "$b64" ]; then
+            [ -e /dev/tty ] || { fail "usage: mesh secret unlock <keyfile> | <base64> (or run interactively to paste)"; return 1; }
+            b64="$(_ask_secret 'Paste the base64 git-crypt key (from your password manager): ')"
+        fi
+        [ -n "$b64" ] || { fail "no key provided"; return 1; }
+        keyfile="$(mktemp)"; cleanup=1
+        if ! printf '%s' "$b64" | _b64_decode > "$keyfile" 2>/dev/null || [ ! -s "$keyfile" ]; then
+            rm -f "$keyfile"; fail "could not decode base64 key (paste the full string)"; return 1
+        fi
+    fi
+    if ! secrets_crypt_unlock "$ID_DIR" "$keyfile"; then
+        [ "$cleanup" = 1 ] && rm -f "$keyfile"
+        fail "unlock failed"; return 1
+    fi
+    [ "$cleanup" = 1 ] && rm -f "$keyfile"
     ok "Repo unlocked. Replicate secrets to this machine with: mesh secret deploy"
+}
+
+# Print the root key as a single base64 line for storage in a (text-only)
+# password manager. Run in a PRIVATE terminal — it prints a secret.
+secret_export_key() {
+    _require_git_crypt_ready || return 1
+    secrets_crypt_unlocked "$ID_DIR" || { fail "repo is locked — nothing to export"; return 1; }
+    warn "This prints the ROOT KEY (base64). Anyone with it can decrypt every secret."
+    warn "Copy it into your password manager as a secure note; do NOT paste it anywhere shared."
+    local tmp; tmp="$(mktemp)"
+    if ! ( cd "$ID_DIR" && git-crypt export-key "$tmp" ); then rm -f "$tmp"; fail "export failed"; return 1; fi
+    base64 < "$tmp" | tr -d '\n'; printf '\n'
+    rm -f "$tmp"
 }
 
 secret_push() {
@@ -457,7 +499,10 @@ _usage() {
 Usage: mesh secret <verb>
 
   init                 Set up git-crypt + the secrets layer (first machine).
-  unlock <keyfile>     Decrypt this machine's repo with the root key.
+  unlock [keyfile|b64] Decrypt this machine's repo. Pass a key file, a base64
+                       key string, or run with no arg to paste the base64 key.
+  export-key           Print the root key as base64 (text) for a password
+                       manager. Run in a private terminal — prints a secret.
   add                  Add an integration (guided: login | file | env token).
   set <id>             Update a stored value.
   rm <id>              Remove an integration.
@@ -484,6 +529,7 @@ case "$verb" in
     deploy)  secret_deploy "$@" ;;
     push)    secret_push "$@" ;;
     guard)   secret_guard "$@" ;;
+    export-key) secret_export_key "$@" ;;
     -h|--help|help) _usage ;;
     *) fail "unknown verb '$verb'"; _usage; exit 1 ;;
 esac

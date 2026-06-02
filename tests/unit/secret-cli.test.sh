@@ -92,6 +92,27 @@ run --help 2>&1 | grep -q "Usage: mesh secret" && ok || no "help prints usage"
 EMPTY="$TMP/empty"; mkdir -p "$EMPTY/secrets"; printf 'version: 1\nintegrations:\n' > "$EMPTY/secrets/manifest.yaml"
 HOME="$FAKE_HOME" MESH_IDENTITY_DIR="$EMPTY" PATH="/usr/bin:/bin:$GITDIR" bash "$SECRET" list 2>&1 | grep -qi "no integrations" && ok || no "empty manifest friendly message"
 
+# --- base64 key export + unlock round-trip (real git-crypt only) ---
+# The headline UX: password managers are text-only, so the key travels as base64.
+if command -v git-crypt >/dev/null 2>&1; then
+    . "$WS/scripts/lib/secrets-crypt.sh"
+    A="$TMP/repoA"; mkdir -p "$A"
+    ( cd "$A" && git init -q && git config user.email t@t && git config user.name t )
+    secrets_crypt_attr_ensure "$A" >/dev/null
+    ( cd "$A" && git-crypt init ) >/dev/null 2>&1
+    mkdir -p "$A/secrets"; printf 'SECRET=topsecret\n' > "$A/secrets/k.env"
+    ( cd "$A" && git add -f . && git commit -q -m seed )
+    # export the key as base64 (stdout only; warnings go to stderr)
+    B64="$(MESH_IDENTITY_DIR="$A" bash "$SECRET" export-key 2>/dev/null | tail -1)"
+    [ -n "$B64" ] && ok || no "export-key produced a base64 string"
+    # a fresh clone is LOCKED (secret is ciphertext)
+    B="$TMP/repoB"; git clone -q "$A" "$B" 2>/dev/null
+    [ "$(head -c 9 "$B/secrets/k.env" 2>/dev/null | tr -d '\000')" = "GITCRYPT" ] && ok || no "fresh clone is locked (ciphertext)"
+    # unlock the clone with ONLY the base64 string → working tree becomes cleartext
+    MESH_IDENTITY_DIR="$B" bash "$SECRET" unlock "$B64" >/dev/null 2>&1
+    grep -q "SECRET=topsecret" "$B/secrets/k.env" 2>/dev/null && ok || no "unlock from base64 decrypted the clone"
+fi
+
 # --- summary ---
 total=$((pass + fail))
 if [ "$fail" -eq 0 ]; then
