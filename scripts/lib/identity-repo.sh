@@ -6,8 +6,13 @@ identity_ensure_repo() {
     local repo_url="$1"
     local repo_dir="$2"
 
-    : "${repo_url:?identity_ensure_repo requires a repository URL}"
     : "${repo_dir:?identity_ensure_repo requires a destination directory}"
+    # repo_url may legitimately be empty when (a) creating from a template
+    # (CREATE_IDENTITY_FROM_TEMPLATE=1, inputs in *_NEW_REPO_*) or (b) the repo is
+    # already cloned at repo_dir (we just pull). Only the fresh-clone path needs it.
+    if [[ "${CREATE_IDENTITY_FROM_TEMPLATE:-0}" != "1" && ! -d "$repo_dir/.git" ]]; then
+        : "${repo_url:?identity_ensure_repo requires a repository URL (or an existing checkout / CREATE_IDENTITY_FROM_TEMPLATE=1)}"
+    fi
 
     # Optional create-from-template flow (gated by menu.sh). When the user
     # answered "yes" to the template prompt, $CREATE_IDENTITY_FROM_TEMPLATE=1
