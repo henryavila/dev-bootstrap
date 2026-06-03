@@ -7,6 +7,14 @@
 #
 # Also handles first-time pairing + agent hook installation.
 
+# Source log.sh defensively so info()/followup() resolve even when this script
+# is sourced/run outside the engine (which pre-loads log.sh at top level).
+# Mirrors moshi-hook-service-wsl.sh / install-moshi-hook.sh. log.sh is
+# source-only (no side effects beyond defining functions), so re-sourcing is safe.
+_MOSHI_WS_DIR="${MESH_WORKSTATION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck disable=SC1091
+. "$_MOSHI_WS_DIR/scripts/lib/log.sh"
+
 _use_wrapper() {
     case "${BREW_PREFIX:-}" in
         /opt/homebrew|/usr/local|"") return 1 ;;

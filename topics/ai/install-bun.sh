@@ -8,9 +8,15 @@ check() {
 }
 
 install() {
-    curl -fsSL https://bun.sh/install | bash
-    # Make immediately verifiable in this shell.
-    PATH="$HOME/.bun/bin:$PATH"; export PATH
+    # Report a failed download/install as install-failed (rc 1), not as a
+    # confusing post-verify rc67. `set -o pipefail` makes this self-contained
+    # (the curl rc, not bash's rc on empty stdin, drives the result) instead of
+    # relying on the engine's inherited pipefail. check() tests the absolute
+    # path, so no in-shell PATH export is needed here.
+    set -o pipefail
+    if ! curl -fsSL https://bun.sh/install | bash; then
+        return 1
+    fi
 }
 
 verify() {

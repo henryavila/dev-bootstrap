@@ -16,24 +16,32 @@ check() {
 }
 
 install() {
+    # Resolve moshi-hook by absolute path: it installs to ~/.local/bin (not on
+    # the engine item-subshell PATH on a fresh bootstrap). An empty --exec would
+    # make user_service_install return 1, which aborts install() under set -e.
+    local bin
+    bin="$(command -v moshi-hook || true)"
+    [ -n "$bin" ] || bin="$HOME/.local/bin/moshi-hook"
+    [ -x "$bin" ] || { echo "moshi-hook not found (expected $bin)" >&2; return 1; }
+
     user_service_install \
         --name moshi-hook \
-        --exec "$(command -v moshi-hook)" \
+        --exec "$bin" \
         --args "serve" \
         --description "Moshi Hook — AI agent bridge daemon"
 
     sleep 2
 
-    if ! moshi-hook status 2>/dev/null | grep -qi "paired\|connected"; then
+    if ! "$bin" status 2>/dev/null | grep -qi "paired\|connected"; then
         if [[ -n "${MOSHI_PAIRING_TOKEN:-}" ]]; then
             info "pairing moshi-hook with token from secrets.env"
-            moshi-hook pair --token "$MOSHI_PAIRING_TOKEN" || true
+            "$bin" pair --token "$MOSHI_PAIRING_TOKEN" || true
         else
             followup manual "Run: moshi-hook pair --token <TOKEN> (from Moshi app → Settings → Integrations)"
         fi
     fi
 
-    moshi-hook install 2>/dev/null || true
+    "$bin" install 2>/dev/null || true
 }
 
 verify() {

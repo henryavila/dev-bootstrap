@@ -9,7 +9,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../../scripts/lib/log.sh"
 
 check() {
-    command -v moshi-hook >/dev/null 2>&1
+    command -v moshi-hook >/dev/null 2>&1 || [[ -x "$HOME/.local/bin/moshi-hook" ]]
 }
 
 install() {
@@ -18,7 +18,7 @@ install() {
 }
 
 verify() {
-    command -v moshi-hook >/dev/null 2>&1
+    command -v moshi-hook >/dev/null 2>&1 || [[ -x "$HOME/.local/bin/moshi-hook" ]]
 }
 
 rollback() {

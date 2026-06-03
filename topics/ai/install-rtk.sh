@@ -28,8 +28,11 @@ readonly RTK_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/mesh/rtk-installe
 check() {
     # Collision guard: the real rtk responds to `rtk gain` (Rust Type Kit
     # does not). Re-checked after install via verify().
-    command -v rtk >/dev/null 2>&1 || return 1
-    rtk gain >/dev/null 2>&1
+    # ~/.local/bin is not on the engine item-subshell PATH on a fresh
+    # bootstrap, so fall back to the absolute binary (bun/claude do the same)
+    # and run the guard against it to avoid a spurious rc67 whole-run abort.
+    command -v rtk >/dev/null 2>&1 || [[ -x "$RTK_BINARY" ]] || return 1
+    "$RTK_BINARY" gain >/dev/null 2>&1 || rtk gain >/dev/null 2>&1
 }
 
 verify() {
@@ -53,8 +56,10 @@ _rtk_latest_tag() {
         return 0
     fi
     local v
+    # awk IGNORECASE is gawk-only; match case-insensitively for BSD awk too so
+    # the no-rate-limit redirect path works on macOS (curl -sSI emits `Location:`).
     v="$(curl -fsSI "https://github.com/${RTK_REPO}/releases/latest" 2>/dev/null \
-        | awk 'BEGIN{IGNORECASE=1} /^location:/' \
+        | awk 'tolower($0) ~ /^location:/' \
         | sed -E 's|.*/tag/([^[:space:]]+).*|\1|' \
         | tr -d '\r')"
     if [[ -z "$v" ]]; then
