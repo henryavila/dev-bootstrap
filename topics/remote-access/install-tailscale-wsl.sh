@@ -6,7 +6,15 @@ check() {
 }
 
 install() {
-    curl -fsSL https://tailscale.com/install.sh | sh
+    # Capture the installer first so a curl failure (network/DNS/4xx) becomes the
+    # install rc — piping straight into `sh` masks it (sh exits 0 on empty stdin).
+    local tmp
+    tmp="$(mktemp)" || return 1
+    curl -fsSL https://tailscale.com/install.sh -o "$tmp" || { rm -f "$tmp"; return 1; }
+    sh "$tmp"
+    local rc=$?
+    rm -f "$tmp"
+    return $rc
 }
 
 verify() {

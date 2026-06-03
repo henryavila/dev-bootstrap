@@ -745,15 +745,39 @@ write_code_server_service_wrapper
 migrate_legacy_launchagents
 write_launchagent_plist
 bootstrap_launchagent
-wait_for_healthz
-verify_local_only_listener
+
+# Runtime-health gate. wait_for_healthz / verify_local_only_listener `return 1`
+# (not exit) on failure; without set -e the original flat sequence let a
+# non-listening / non-loopback server fall straight through to `ok` and be
+# recorded as a SUCCESSFUL install (the files on disk that check()/verify()
+# assert are all written before this point). Capture their result and report a
+# real install failure at the end so the engine surfaces "install failed"
+# (not a misleading post-verify rc=67, and not a false success). Best-effort
+# config steps still run so they are not skipped on a transient health blip.
+local _cs_fail=0
+wait_for_healthz || _cs_fail=1
+verify_local_only_listener || _cs_fail=1
+
 deploy_user_settings_from_identity
 maybe_configure_tailscale_serve
 
+if [[ "$_cs_fail" -ne 0 ]]; then
+    warn "85-code-server: server did not come up healthy and loopback-only — reporting install failure (see the messages above)"
+    return 1
+fi
 ok "85-code-server done"
 }
 
-verify() { check; }
+verify() {
+    # Kept to check() (binary + plist + config on disk). A live healthz/listener
+    # assertion here would need detect_code_server_env's CODE_SERVER_* vars
+    # re-resolved in this separate verify subshell (they are set only inside
+    # install()); getting that wrong would rc=67 a healthy install. install()
+    # now reports a real failure when the server does not come up (see _cs_fail),
+    # which covers the fresh-install case; ongoing liveness is owned by
+    # `mesh code-server status` / `mesh code-server verify`.
+    check
+}
 rollback() {
     :   # code-server carries user state (workspace settings); no auto-uninstall
 }
