@@ -14,8 +14,11 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 
 # shellcheck disable=SC1091
 . "$ROOT/scripts/lib/log.sh"
-# shellcheck disable=SC1091
-. "$ROOT/scripts/lib/detect-os.sh" 2>/dev/null && PLATFORM="$OS" || PLATFORM="unknown"
+# detect-os.sh PRINTS the platform (mac|wsl|linux|unknown) to stdout — it does
+# NOT set an $OS variable. Run it and capture stdout, exactly as the engines do
+# (install-engine.sh / uninstall-engine.sh). Sourcing it and reading $OS tripped
+# `set -u` ("OS: unbound variable") and crashed `mesh menu` before launch.
+PLATFORM="$(bash "$ROOT/scripts/lib/detect-os.sh" 2>/dev/null || echo unknown)"
 
 APPLY=0
 while [[ $# -gt 0 ]]; do
