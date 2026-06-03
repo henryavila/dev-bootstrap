@@ -40,6 +40,14 @@ describe('readAllManifests (real repo manifests)', () => {
     expect(opts.find((o) => o.name === 'versions')!.type).toBe('multiselect');
     expect(opts.find((o) => o.name === 'default-version')!.derive_from).toBe('versions');
   });
+
+  it('no bundle desc uses screen-position wording (options live behind Enter, not "below")', () => {
+    // "pick … below"/"above" contradicts the menu model: options are a level-3
+    // form opened with Enter, not laid out under the description.
+    for (const r of flattenBundles(topics)) {
+      expect(/\b(below|above)\b/i.test(r.bundle.desc), `${r.key}: "${r.bundle.desc}"`).toBe(false);
+    }
+  });
 });
 
 describe('manifest icon coverage (no icon gap)', () => {

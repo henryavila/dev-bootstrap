@@ -45,7 +45,7 @@ bundles:
 
   - name: postgresql
     label: "PostgreSQL"
-    desc: "PostgreSQL server — pick the major version below"
+    desc: "PostgreSQL server — selectable major version"
     icon_name: postgres
     options:
       - name: version

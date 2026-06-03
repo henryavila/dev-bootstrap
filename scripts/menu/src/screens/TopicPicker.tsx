@@ -147,10 +147,11 @@ export function TopicPicker(props: TopicPickerProps) {
   const detail: DescriptionItem[] = useMemo(() => {
     const b = focusedBundle;
     const sc = scan.get(focusedKey);
-    const items: DescriptionItem[] = [{ value: b.desc, muted: true }];
+    const items: DescriptionItem[] = [{ value: b.desc, muted: true }, { value: ' ' }];
     // Level-3 affordance: make it obvious from the detail (pane 2) whether this
     // bundle has a third level (options) and how to open it — kept right under
-    // the description so detail.slice() never truncates it.
+    // the description (with a blank spacer above) so it reads as its own line
+    // and detail.slice() never truncates it.
     const optCount = b.options?.length ?? 0;
     if (optCount > 0) {
       items.push({ value: `press Enter to configure ${optCount} option${optCount > 1 ? 's' : ''}`, state: 'info' });
