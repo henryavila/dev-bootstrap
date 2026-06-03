@@ -214,17 +214,20 @@ SELECTIONS_FILE="$SELECTIONS_DIR/selections.list"
 MENU_DIR="$HERE/scripts/menu"
 
 run_menu_if_available() {
-    # Returns 0 if the blink-tui menu ran and produced a selections file.
-    [[ -f "$MENU_DIR/index.js" || -f "$MENU_DIR/dist/index.js" ]] || return 1
-    command -v node >/dev/null 2>&1 || { warn "Node.js not found — cannot run the setup menu"; return 1; }
+    # Propagates the menu's exit status so the caller can tell apart:
+    #   0   = applied (wrote selections.list)         → use the selection
+    #   130 = user quit / Ctrl-C (EXIT_CANCEL)         → abort the whole run
+    #   2   = menu not present / Node missing          → fall back to default
+    #   *   = no TTY (app.tsx) / crashed               → fall back to default
+    [[ -f "$MENU_DIR/index.js" || -f "$MENU_DIR/dist/index.js" ]] || return 2
+    command -v node >/dev/null 2>&1 || { warn "Node.js not found — cannot run the setup menu"; return 2; }
     info "launching the bundle menu…"
     if [[ ! -d "$MENU_DIR/node_modules" ]]; then
         # --install-links: pack the file: blink-tui dep as a real copy (dist only,
         # no bundled React) so React dedupes to one instance (else: invalid-hook).
         (cd "$MENU_DIR" && npm install --omit=dev --install-links --no-audit --no-fund --silent 2>/dev/null) || true
     fi
-    node "$MENU_DIR/index.js" || return 1
-    [[ -f "$SELECTIONS_FILE" ]]
+    node "$MENU_DIR/index.js"
 }
 
 should_run_menu() {
@@ -234,11 +237,19 @@ should_run_menu() {
 }
 
 if should_run_menu; then
-    if ! run_menu_if_available; then
-        # The Ink menu (F9.6 T-300+) is not built yet, or it was cancelled.
+    run_menu_if_available; menu_rc=$?
+    if [[ "$menu_rc" -eq 130 ]]; then
+        # The user explicitly quit the menu (q / Ctrl-C). Honour it: apply
+        # nothing, do NOT silently fall back to the default selection.
+        info "menu cancelled — nothing was applied."
+        exit 130
+    elif [[ "$menu_rc" -ne 0 ]]; then
+        # Menu not built / Node missing / no TTY / crashed — fall back to the
+        # saved or default selection (e.g. an automation/bootstrap run).
         warn "interactive bundle menu unavailable — falling back to the saved/default selection"
         NON_INTERACTIVE=1; export NON_INTERACTIVE
     fi
+    # menu_rc == 0 → selections.list was written; proceed with it.
 fi
 
 if [[ ! -f "$SELECTIONS_FILE" ]]; then

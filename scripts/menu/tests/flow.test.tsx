@@ -94,7 +94,7 @@ describe('full wizard flow (ink-testing-library)', () => {
     }
   });
 
-  it('quit cancels with exit 1 and writes nothing new', async () => {
+  it('quit cancels with EXIT_CANCEL (130) so setup.sh aborts instead of applying defaults', async () => {
     const cfg = tmp();
     process.env.XDG_CONFIG_HOME = cfg;
     process.env.MESH_PLATFORM = 'mac';
@@ -103,7 +103,7 @@ describe('full wizard flow (ink-testing-library)', () => {
     await delay(80);
     stdin.write('q');
     await delay(40);
-    expect(code).toBe(1);
+    expect(code).toBe(130);
     unmount();
   });
 });

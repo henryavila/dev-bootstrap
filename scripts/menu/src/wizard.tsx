@@ -56,6 +56,12 @@ function ghLogin(): string {
 
 type Screen = 'picker' | 'options' | 'identity' | 'summary' | 'updates' | 'help' | 'confirmRemove';
 
+/** Exit code when the user leaves the menu WITHOUT applying (quit / Ctrl-C).
+ *  Distinct from a launch failure (setup.sh treats 1/2 as "menu unavailable" and
+ *  falls back to the default selection) so an explicit cancel ABORTS the run
+ *  instead of silently installing defaults the user never chose. */
+export const EXIT_CANCEL = 130;
+
 interface Editing {
   ref: BundleRef;
   spec: BundleFormSpec;
@@ -276,7 +282,7 @@ export function App({ dryRun, onExit }: AppProps) {
         applyLabel={dryRun ? 'dry-run (nothing written)' : 'writes selections.list + params.env'}
         onConfirm={() => finish(0)}
         onBack={() => setScreen('picker')}
-        onQuit={() => finish(1)}
+        onQuit={() => finish(EXIT_CANCEL)}
       />
     );
   }
@@ -322,7 +328,7 @@ export function App({ dryRun, onExit }: AppProps) {
       onContinue={tryContinue}
       onUpdates={openUpdates}
       onHelp={() => setScreen('help')}
-      onQuit={() => finish(1)}
+      onQuit={() => finish(EXIT_CANCEL)}
     />
   );
 }

@@ -1,14 +1,18 @@
 /**
  * app.tsx — bootstrap entry for the mesh setup wizard (loaded by index.js via
  * tsx). Detects the icon set, registers the domain glyph packs, renders <App/>,
- * and exits with the App's code (0 = wrote selections + applied; 1 = cancelled,
- * caller falls back to saved/default). The App component lives in wizard.tsx so
- * it stays side-effect-free and testable.
+ * and exits with the App's code:
+ *   0   = wrote selections + applied (setup.sh proceeds with them)
+ *   130 = user left without applying (quit / Ctrl-C) → setup.sh ABORTS
+ *   1   = could not launch (no TTY) → setup.sh falls back to saved/default
+ * The default is EXIT_CANCEL, so a crash/Ctrl-C mid-render aborts rather than
+ * silently installing defaults the user never chose. The App component lives in
+ * wizard.tsx so it stays side-effect-free and testable.
  */
 import { render } from 'ink';
 import { ThemeProvider, detectIconSet } from '@henryavila/blink-tui';
 import { registerDomainGlyphs } from './glyphs.js';
-import { App } from './wizard.js';
+import { App, EXIT_CANCEL } from './wizard.js';
 
 async function main() {
   // The wizard is keyboard-interactive (Ink raw mode), which needs a real TTY.
@@ -29,7 +33,7 @@ async function main() {
   const dryRun = process.argv.slice(2).includes('--dry-run');
   const iconSet = await detectIconSet();
 
-  let code = 1;
+  let code = EXIT_CANCEL;
   const { waitUntilExit } = render(
     <ThemeProvider iconSet={iconSet}>
       <App dryRun={dryRun} onExit={(c) => (code = c)} />
