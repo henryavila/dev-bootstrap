@@ -1,6 +1,14 @@
 # HANDOFF — implement all custom-script audit corrections
 
-> **Status:** review DONE (this session); implementation PENDING (next session).
+> **Status:** review DONE + **IMPLEMENTATION DONE 2026-06-03** (all 43 findings fixed,
+> 10 commits `55c632e` + `cf681fe..94b9fc9`, NOT pushed — user reviews + pushes).
+> Wave 1 = engine `$HOME/.local/bin` PATH prepend + `engine-localbin-path` regression test;
+> Waves 2-4 = 33 scripts via targeted failure-flags / abs-path fallbacks (NOT blanket `set -e`,
+> to preserve the passing mac/crc runtime). Gates green (bash -n ×33, mesh lint, validate --strict,
+> L05, engine 13/13, uninstall 6/6, localbin+brew regression); metal repro on
+> `/Volumes/External/homebrew`: postgresql `check()` rc=0 (was rc127), bun/claude rc=0 under minimal PATH.
+> The 4 judgment-heavy files (php-stack ×2, code-server, identity-setup) hand-done; the other 29 via a
+> Workflow (one agent/file + adversarial verify, 58 agents) then triaged (4 real defects + 2 robustness fixed).
 > **Repo:** all fixes are in `mesh-workstation` (this repo). Branch `refactor/install-engine` (F9.6).
 > **Tracked by:** initiative `mesh-restructure-f96-tui-rebuild` (in `mesh-identity/.atomic-skills/`).
 
