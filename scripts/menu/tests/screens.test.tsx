@@ -206,3 +206,68 @@ describe('TopicPicker — Space on the Topics pane (T-500 toggle-all wiring)', (
     unmount();
   });
 });
+
+describe('TopicPicker — level-3 affordance in the detail (pane 2)', () => {
+  const stubProps = {
+    platform: 'mac' as const,
+    selected: new Set<string>(),
+    required: new Set<string>(),
+    scan: new Map(),
+    banner: null,
+    onToggle: vi.fn(),
+    onToggleTopic: vi.fn(),
+    onSelectAll: vi.fn(),
+    onSelectNone: vi.fn(),
+    onEditOptions: vi.fn(),
+    onContinue: vi.fn(),
+    onUpdates: vi.fn(),
+    onHelp: vi.fn(),
+    onQuit: vi.fn(),
+  };
+
+  it('shows "press Enter to configure" when the focused bundle has options', async () => {
+    const topics = [
+      {
+        id: 'languages',
+        header: { label: 'Languages', order: 60 },
+        dir: '/tmp/languages',
+        bundles: [
+          {
+            name: 'php',
+            label: 'PHP',
+            desc: 'PHP runtime',
+            items: [],
+            options: [{ name: 'versions', type: 'multiselect', label: 'Versions', env: 'PHP_VERSIONS' }],
+          },
+        ],
+      },
+    ] as unknown as Topic[];
+    const { lastFrame, unmount } = render(
+      <ThemeProvider iconSet="unicode">
+        <TopicPicker {...stubProps} topics={topics} />
+      </ThemeProvider>,
+    );
+    await delay(40);
+    expect(lastFrame()).toContain('press Enter to configure');
+    unmount();
+  });
+
+  it('shows "no options" when the focused bundle has none', async () => {
+    const topics = [
+      {
+        id: 'foundation',
+        header: { label: 'Foundation', order: 10 },
+        dir: '/tmp/foundation',
+        bundles: [{ name: 'base', label: 'Base', desc: 'Core tooling', items: [] }],
+      },
+    ] as unknown as Topic[];
+    const { lastFrame, unmount } = render(
+      <ThemeProvider iconSet="unicode">
+        <TopicPicker {...stubProps} topics={topics} />
+      </ThemeProvider>,
+    );
+    await delay(40);
+    expect(lastFrame()).toContain('no options');
+    unmount();
+  });
+});

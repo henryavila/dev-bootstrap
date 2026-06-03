@@ -148,6 +148,15 @@ export function TopicPicker(props: TopicPickerProps) {
     const b = focusedBundle;
     const sc = scan.get(focusedKey);
     const items: DescriptionItem[] = [{ value: b.desc, muted: true }];
+    // Level-3 affordance: make it obvious from the detail (pane 2) whether this
+    // bundle has a third level (options) and how to open it — kept right under
+    // the description so detail.slice() never truncates it.
+    const optCount = b.options?.length ?? 0;
+    if (optCount > 0) {
+      items.push({ value: `press Enter to configure ${optCount} option${optCount > 1 ? 's' : ''}`, state: 'info' });
+    } else {
+      items.push({ value: 'no options — nothing to configure', muted: true });
+    }
     if (sc) {
       items.push({ term: 'state', value: `${sc.state} (${sc.installed}/${sc.total})`, state: bundleStateIntent(sc) });
     }
