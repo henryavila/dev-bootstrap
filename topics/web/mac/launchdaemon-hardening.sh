@@ -34,6 +34,9 @@ check() {
 
 install() {
     _is_custom_prefix || { echo "[launchdaemon-hardening] standard brew prefix — no-op"; return 0; }
+    # Prime the sudo cache (every step below needs root). Matches valet.sh /
+    # mkcert.sh — keeps --non-interactive runs from blocking on a password.
+    sudo -v 2>/dev/null || true
     sudo mkdir -p /var/log/homebrew
     local svc plist target current_err current_out changed=0 found=0
     for svc in php nginx dnsmasq; do
@@ -44,8 +47,15 @@ install() {
         current_err="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null || echo "")"
         current_out="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardOutPath"   "$plist" 2>/dev/null || echo "")"
         if [[ "$current_err" != "$target" ]]; then
-            sudo /usr/libexec/PlistBuddy -c "Set :StandardErrorPath $target" "$plist" 2>/dev/null \
-                || sudo /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string $target" "$plist"
+            # The edit is the load-bearing step verify() asserts. If Set AND
+            # Add both fail (TCC/SIP write deny, sudo not cached), the path is
+            # never written — fail loudly here instead of returning 0 and
+            # letting post-verify surface it as an opaque engine rc67.
+            if ! sudo /usr/libexec/PlistBuddy -c "Set :StandardErrorPath $target" "$plist" 2>/dev/null \
+                && ! sudo /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string $target" "$plist"; then
+                echo "[launchdaemon-hardening] failed to set StandardErrorPath on $plist" >&2
+                return 1
+            fi
             changed=1
         fi
         if [[ -n "$current_out" && "$current_out" != "$target" ]]; then

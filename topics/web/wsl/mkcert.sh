@@ -39,16 +39,28 @@ install() {
         || echo "[mkcert] mkcert -install had issues — Firefox profile may need a TTY" >&2
 
     # Generate wildcard cert if missing.
+    # This block is load-bearing for verify()=check() (asserts both PEMs
+    # exist). Guard each step and return 1 on real failure so the engine
+    # reports a clean 'mkcert install failed' instead of a confusing rc67
+    # post-verify abort that masks the real cause.
     sudo mkdir -p "$CERT_DIR"
     if ! sudo test -f "$WILDCARD_PEM" || ! sudo test -f "$WILDCARD_KEY"; then
         local tmp
         tmp="$(mktemp -d)"
-        ( cd "$tmp" && mkcert \
+        if ! ( cd "$tmp" && mkcert \
             -cert-file "wildcard-localhost.pem" \
             -key-file  "wildcard-localhost-key.pem" \
-            "*.localhost" "localhost" "*.front.localhost" "127.0.0.1" "::1" )
-        sudo install -m 0644 -o root -g root "$tmp/wildcard-localhost.pem"     "$WILDCARD_PEM"
-        sudo install -m 0640 -o root -g root "$tmp/wildcard-localhost-key.pem" "$WILDCARD_KEY"
+            "*.localhost" "localhost" "*.front.localhost" "127.0.0.1" "::1" ); then
+            echo "[mkcert] wildcard cert generation failed" >&2
+            rm -rf "$tmp"
+            return 1
+        fi
+        if ! sudo install -m 0644 -o root -g root "$tmp/wildcard-localhost.pem"     "$WILDCARD_PEM" \
+           || ! sudo install -m 0640 -o root -g root "$tmp/wildcard-localhost-key.pem" "$WILDCARD_KEY"; then
+            echo "[mkcert] failed to install wildcard cert into $CERT_DIR" >&2
+            rm -rf "$tmp"
+            return 1
+        fi
         rm -rf "$tmp"
     fi
 
