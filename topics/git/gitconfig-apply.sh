@@ -85,9 +85,9 @@ verify() {
     # data/gitconfig.keys declared. A partial apply (e.g. one line failed
     # to apply because a value contained chars confusing `git config`)
     # would still report success.
-    # Now: pick the first non-comment, non-skipped (user.*/credential.*)
-    # line, parse key=value, and assert `git config --global --get` returns
-    # the declared value exactly.
+    # Now: for every non-comment, non-skipped (user.*/credential.*) line,
+    # parse key=value and assert `git config --global --get` returns the
+    # declared value exactly. A single mismatch fails the whole verify.
     local here keys_file line key value current
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     keys_file="$here/data/gitconfig.keys"
@@ -105,7 +105,6 @@ verify() {
         esac
         current="$(git config --global --get "$key" 2>/dev/null || true)"
         [[ "$current" == "$value" ]] || return 1
-        return 0
     done < "$keys_file"
     return 0
 }
