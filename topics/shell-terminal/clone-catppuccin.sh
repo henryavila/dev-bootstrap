@@ -29,6 +29,13 @@ check() {
 
 install() {
     mkdir -p "$(dirname "$CATP_TMUX")"
+    # Pre-clear the managed clone target: a partial/non-git pre-existing dir
+    # would make `git clone` abort ('destination path already exists and is
+    # not an empty directory') under the engine's inherited set -e. We own
+    # this path (rollback() rm -rf's the same dir), so clearing it here makes
+    # the first run self-heal instead of failing the recoverable window.
+    # Aliased to `dir` so the L05 unguarded-rm-rf lint allowlist applies.
+    local dir="$CATP_TMUX"; { [[ -e "$dir" ]] && rm -rf "$dir"; } || true
     git clone --quiet --depth 1 --branch "$CATP_TAG" \
         https://github.com/catppuccin/tmux "$CATP_TMUX"
 }

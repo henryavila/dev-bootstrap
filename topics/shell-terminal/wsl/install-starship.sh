@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 check()   { command -v starship >/dev/null 2>&1; }
-install() { curl -fsSL https://starship.rs/install.sh | sh -s -- --yes; }
+install() { set -o pipefail; curl -fsSL https://starship.rs/install.sh | sh -s -- --yes; }
 verify()  { check; }
 rollback() {
-    [[ -x /usr/local/bin/starship ]] && sudo rm -f /usr/local/bin/starship
+    # Resolve the real install path (BIN_DIR may differ from /usr/local/bin);
+    # fall back to the installer's Linux default.
+    local p; p=$(command -v starship 2>/dev/null) || p=/usr/local/bin/starship
+    [[ -x "$p" ]] && sudo rm -f "$p"
 }
