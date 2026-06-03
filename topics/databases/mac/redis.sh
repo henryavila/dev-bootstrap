@@ -32,11 +32,20 @@ install() {
             --workdir "${BREW_PREFIX}/var" \
             -- "${BREW_PREFIX}/etc/redis.conf"
     else
-        "${BREW_BIN:-brew}" services start redis >/dev/null 2>&1 || true
+        # Surface a real start failure as an install failure (clearer than a
+        # post-verify rc67 whole-run abort). Stale plist / already-loaded is fine.
+        "${BREW_BIN:-brew}" services start redis >/dev/null 2>&1 || return 1
     fi
 }
 
 verify() {
+    # Brief readiness wait: a daemon still spawning right after `services start`
+    # would be misread as failed by an immediate check(). Retry up to ~3s.
+    local i
+    for i in 1 2 3 4 5 6; do
+        check && return 0
+        sleep 0.5
+    done
     check
 }
 

@@ -62,6 +62,18 @@ _server_running() {
         | awk -v s="$MYSQL_SVC" '$1==s{print $2}' | grep -qx 'started'
 }
 
+# Poll _server_running for ~3s. A freshly-started daemon (first-boot datadir
+# init, slow socket bind) can lag behind `brew services start` returning — so a
+# single check right after start races and misreads it as not-running.
+_wait_server_running() {
+    local i
+    for i in 1 2 3 4 5 6; do
+        _server_running && return 0
+        sleep 0.5
+    done
+    return 1
+}
+
 _source_launch_wrapper() {
     local root="${MESH_WORKSTATION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
     # shellcheck disable=SC1091
@@ -210,7 +222,15 @@ install() {
     if _prefix_is_canonical; then
         "${BREW_BIN:-brew}" list --formula "$MYSQL_SVC" >/dev/null 2>&1 \
             || "${BREW_BIN:-brew}" install "$MYSQL_SVC" || return 1
+        # Start (non-fatal: brew returns non-zero when already started), then
+        # WAIT for the server to actually come up: check() requires
+        # _server_running, and a single check right after start races a daemon
+        # still doing first-boot datadir init. The readiness wait is the real
+        # gate — a server that never comes up is surfaced here as a clean
+        # install-failed rather than letting post-verify abort with rc67.
         "${BREW_BIN:-brew}" services start "$MYSQL_SVC" >/dev/null 2>&1 || true
+        _wait_server_running \
+            || { echo "mysql: brew service did not come up" >&2; return 1; }
         return 0
     fi
 

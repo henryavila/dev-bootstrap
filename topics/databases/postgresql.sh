@@ -13,12 +13,20 @@ check() {
     # version-specific package the installer would install, then probe
     # pg_isready for liveness.
     local ver="${POSTGRES_VERSION:-17}"
+    local pgready="pg_isready"
     if [[ "$(uname -s)" == "Darwin" ]]; then
         "${BREW_BIN:-brew}" list --formula "postgresql@${ver}" >/dev/null 2>&1 || return 1
+        # postgresql@N is keg-only on macOS: brew does NOT symlink pg_isready
+        # into $BREW_PREFIX/bin, so a bare `pg_isready` is not found and the
+        # engine post-verify aborts the whole run (rc 67) even after a correct
+        # install. Resolve the keg-only binary via its version-specific opt path
+        # (same location install-postgres.sh uses), falling back to PATH.
+        command -v pg_isready >/dev/null 2>&1 \
+            || pgready="${BREW_PREFIX:-/opt/homebrew}/opt/postgresql@${ver}/bin/pg_isready"
     else
         dpkg -s "postgresql-${ver}" >/dev/null 2>&1 || return 1
     fi
-    pg_isready -q 2>/dev/null
+    "$pgready" -q 2>/dev/null
 }
 
 install() {
