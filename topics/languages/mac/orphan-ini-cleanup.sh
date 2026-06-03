@@ -11,15 +11,20 @@ check() {
 
 install() {
     : "${BREW_PREFIX:?BREW_PREFIX not set}"
+    # Stable, mesh-managed quarantine dir under the state area. Created
+    # lazily only when the first orphan is actually moved — so the
+    # no-op path (the common case for this idempotent item) leaves
+    # nothing behind, and the move path quarantines into a single
+    # known location instead of a fresh per-run mktemp dir in /tmp
+    # that would never be cleaned up.
+    local quarantine_root="$(mesh_state_dir)/orphan-ini-quarantine"
+    local moved=0
     local php_ver_dir php_etc_path
     for php_ver_dir in "${BREW_PREFIX}/etc/php"/*/; do
         [[ -d "$php_ver_dir" ]] || continue
         php_etc_path="${php_ver_dir%/}/conf.d"
         [[ -d "$php_etc_path" ]] || continue
-        # Move any 99-*.ini lines pointing at a nonexistent .so into
-        # /tmp/orphan-ini-cleanup-$$ for inspection.
-        local cleanup_dir
-        cleanup_dir="$(mktemp -d -t orphan-ini-cleanup.XXXXXX)"
+        # Quarantine any 99-*.ini lines pointing at a nonexistent .so.
         local ini path
         for ini in "$php_etc_path"/99-*.ini; do
             [[ -f "$ini" ]] || continue
@@ -34,13 +39,17 @@ install() {
             # paths as orphan candidates. Bare module names are PHP's
             # responsibility to resolve and we leave them alone.
             if [[ "$path" == /*.so ]] && [[ ! -e "$path" ]]; then
-                mv "$ini" "$cleanup_dir/" \
-                    && echo "[orphan-ini] moved $ini → $cleanup_dir/" >&2
+                mkdir -p "$quarantine_root"
+                mv "$ini" "$quarantine_root/" \
+                    && { moved=1; echo "[orphan-ini] moved $ini → $quarantine_root/" >&2; }
             fi
         done
-        # Remove cleanup dir if empty
-        rmdir "$cleanup_dir" 2>/dev/null || true
     done
+    # Surface the quarantine location so the user knows where the moved
+    # inis went (and can delete them once satisfied).
+    if [[ "$moved" -eq 1 ]]; then
+        followup info "orphan PECL .ini files were quarantined to $quarantine_root — review and remove once satisfied."
+    fi
 }
 
 verify() { return 0; }

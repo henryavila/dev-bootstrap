@@ -34,6 +34,11 @@ install() {
     . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/log.sh"
 
     BREW_INSTALL_FAILED=()
+    # Track failures of CRITICAL steps (php versions, composer, python) so a
+    # partial install reports a real failure at the end instead of the trailing
+    # `ok` (rc 0) masking it. Soft build-dep failures stay tolerated — they
+    # drive the BREW_INSTALL_FAILED followup summary and must not fail the topic.
+    _phpstack_fail=0
 
 
 brew_install_if_missing() {
@@ -160,7 +165,7 @@ install_composer() {
         if composer_has_broken_phar_signature; then
             warn "composer PHAR signature is broken — reinstalling from source to avoid bottle relocation"
             "$BREW_BIN" reinstall --build-from-source composer
-            composer_is_usable || fail "composer reinstall completed but composer --version still fails"
+            composer_is_usable || { fail "composer reinstall completed but composer --version still fails"; return 1; }
             ok "composer reinstalled from source"
             return 0
         fi
@@ -171,12 +176,12 @@ install_composer() {
 
     if brew_prefix_is_default; then
         brew_install_if_missing composer
-        composer_is_usable || fail "composer install completed but composer --version still fails"
+        composer_is_usable || { fail "composer install completed but composer --version still fails"; return 1; }
         return 0
     else
         info "brew install --build-from-source composer"
         if "$BREW_BIN" install --build-from-source composer; then
-            composer_is_usable || fail "composer install completed but composer --version still fails"
+            composer_is_usable || { fail "composer install completed but composer --version still fails"; return 1; }
             return 0
         fi
 
@@ -188,10 +193,11 @@ install_composer() {
         if composer_has_broken_phar_signature; then
             warn "composer installed from bottle with broken PHAR signature — reinstalling from source"
             "$BREW_BIN" reinstall --build-from-source composer
-            composer_is_usable || fail "composer reinstall completed but composer --version still fails"
+            composer_is_usable || { fail "composer reinstall completed but composer --version still fails"; return 1; }
             return 0
         fi
         fail "composer install completed but composer --version still fails"
+        return 1
     fi
 }
 # ─── PHP versions (multi) ──────────────────────────────────────────────
@@ -205,7 +211,7 @@ info "PHP versions to install: $PHP_VERSIONS (default: $PHP_DEFAULT)"
 export PHP_DEFAULT
 
 for ver in $PHP_VERSIONS; do
-    brew_install_if_missing "php@${ver}"
+    brew_install_if_missing "php@${ver}" || _phpstack_fail=1
 done
 
 # Link the default, unlink all others so `php` on PATH is unambiguous
@@ -460,8 +466,8 @@ pecl_install_for_mac() {
 }
 
 # ─── Composer + Python ───────────────────────────────────────────────
-install_composer
-brew_install_if_missing python@3.13
+install_composer || _phpstack_fail=1
+brew_install_if_missing python@3.13 || _phpstack_fail=1
 
 # ─── Per-version composer wrappers ──────────────────────────────────
 # `composer` (no suffix) always uses $PHP_DEFAULT (via `php` on PATH).
@@ -546,11 +552,21 @@ if [[ "${#BREW_INSTALL_FAILED[@]}" -gt 0 ]]; then
   falling back to source builds."
 fi
 
+if [[ "$_phpstack_fail" -ne 0 ]]; then
+    fail "10-languages: a critical install step failed (php / composer / python — see above) — reporting install failure"
+    return 1
+fi
 ok "10-languages done — PHP default: $PHP_DEFAULT"
 }
 
 verify() {
-    command -v php >/dev/null 2>&1 && command -v composer >/dev/null 2>&1
+    # Mirror check() (composer + python3 + every declared php@${ver}) so a
+    # partial install (missing version, or a brew-composer with a broken PHAR
+    # signature) does not read as "installed". Also assert composer actually
+    # runs — `command -v` passing is not enough for the broken-bottle case
+    # install_composer guards against.
+    check || return 1
+    composer --version >/dev/null 2>&1
 }
 
 rollback() {

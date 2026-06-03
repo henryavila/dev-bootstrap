@@ -7,9 +7,19 @@ NPM_GLOBAL_BIN="$HOME/.npm-global/bin"
 NPM_GLOBAL_PREFIX_NPMRC='prefix=${HOME}/.npm-global'
 NPM_GLOBAL_FRAGMENT_NAME="20-npm-global.sh"
 
+NPM_GLOBAL_FRAGMENT_MARKER='# Managed by topic 10-languages: optional npm global prefix.'
+
 check() {
     [[ -f "$HOME/.npmrc" ]] || return 1
-    grep -qxF "$NPM_GLOBAL_PREFIX_NPMRC" "$HOME/.npmrc"
+    grep -qxF "$NPM_GLOBAL_PREFIX_NPMRC" "$HOME/.npmrc" || return 1
+    # install() also writes PATH fragments to both rc.d dirs; require them too so
+    # a removed fragment triggers a real re-install (Wave 4 idempotency-asymmetry).
+    local f
+    for f in "$HOME/.bashrc.d/$NPM_GLOBAL_FRAGMENT_NAME" \
+             "$HOME/.zshrc.d/$NPM_GLOBAL_FRAGMENT_NAME"; do
+        [[ -f "$f" ]] || return 1
+        grep -qxF "$NPM_GLOBAL_FRAGMENT_MARKER" "$f" || return 1
+    done
 }
 
 _path_fragment() {

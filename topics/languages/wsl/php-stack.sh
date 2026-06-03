@@ -31,6 +31,11 @@ install() {
     # shellcheck disable=SC1091
     . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/log.sh"
     export DEBIAN_FRONTEND=noninteractive
+    # Track non-fatal failures of load-bearing steps so a partial install
+    # surfaces as a real install failure at the end, instead of the trailing
+    # `ok` (rc 0) masking it as success. PECL extension failures are
+    # deliberately tolerated by lib/pecl-install.sh and excluded here.
+    local _phpstack_fail=0
 
 # ─── PHP versions (multi) ──────────────────────────────────────────────
 # PHP_VERSIONS can come from env (menu or automation). If unset, install all
@@ -86,12 +91,15 @@ install_php_version() {
     # On crc 2026-04-24 this dragged apache2 onto the corporate machine and
     # left nginx in `failed` for 22h. Our pkgs[] is exhaustive — Recommends
     # only ADD packages we did not request, so suppressing them is safe.
-    sudo apt-get install -y -qq --no-install-recommends "${missing[@]}"
+    if ! sudo apt-get install -y -qq --no-install-recommends "${missing[@]}"; then
+        fail "PHP $ver: apt install failed"
+        return 1
+    fi
     ok "PHP $ver installed"
 }
 
 for ver in $PHP_VERSIONS; do
-    install_php_version "$ver"
+    install_php_version "$ver" || _phpstack_fail=1
 done
 
 # ─── PHP default via update-alternatives ──────────────────────────────
@@ -140,14 +148,16 @@ for p in "${combined_deps[@]}"; do
 done
 if [[ "${#missing_deps[@]}" -gt 0 ]]; then
     info "installing PECL build deps: ${missing_deps[*]}"
-    sudo apt-get install -y -qq --no-install-recommends "${missing_deps[@]}"
+    sudo apt-get install -y -qq --no-install-recommends "${missing_deps[@]}" \
+        || { fail "PECL build deps: apt install failed"; _phpstack_fail=1; }
 fi
 
 # Also need per-version dev headers to compile .so for that PHP
 for ver in $PHP_VERSIONS; do
     if ! dpkg -s "php${ver}-dev" >/dev/null 2>&1; then
         info "installing php${ver}-dev (headers for PECL build)"
-        sudo apt-get install -y -qq --no-install-recommends "php${ver}-dev"
+        sudo apt-get install -y -qq --no-install-recommends "php${ver}-dev" \
+            || { fail "php${ver}-dev: apt install failed"; _phpstack_fail=1; }
     fi
 done
 
@@ -176,7 +186,10 @@ if ! command -v composer >/dev/null 2>&1; then
         rm -f /tmp/composer-setup.php
         exit 1
     fi
-    sudo php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer --quiet
+    if ! sudo php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer --quiet; then
+        fail "Composer install failed"
+        _phpstack_fail=1
+    fi
     rm -f /tmp/composer-setup.php
 else
     ok "Composer already installed ($(composer --version --no-ansi 2>/dev/null | head -1 || true))"
@@ -236,16 +249,26 @@ unset _compose_wrapper_dir _php_bin _wrapper
 # ─── Python ────────────────────────────────────────────────────────────
 if ! command -v python3 >/dev/null 2>&1; then
     info "installing python3"
-    sudo apt-get install -y -qq python3 python3-pip python3-venv
+    sudo apt-get install -y -qq python3 python3-pip python3-venv \
+        || { fail "python3 install failed"; _phpstack_fail=1; }
 else
     ok "python3 already installed ($(python3 --version))"
 fi
 
+if [[ "$_phpstack_fail" -ne 0 ]]; then
+    fail "10-languages: one or more install steps failed (see above) — reporting install failure"
+    return 1
+fi
 ok "10-languages done — PHP default: $PHP_DEFAULT"
 }
 
 verify() {
-    command -v php >/dev/null 2>&1 && command -v composer >/dev/null 2>&1
+    # Mirror check() (composer + python3 + every declared php${ver}-fpm via
+    # dpkg) so post-verify and the next run's idempotency pre-check agree on
+    # what "installed" means — a partial install (missing version / PECL) no
+    # longer reads as done. Also assert composer actually runs.
+    check || return 1
+    composer --version >/dev/null 2>&1
 }
 
 rollback() {
