@@ -136,6 +136,18 @@ if [[ "$PLATFORM" == "mac" ]]; then
     if [[ -n "$__brew_out" ]]; then
         eval "$__brew_out"
         export BREW_BIN BREW_PREFIX
+        # Put Homebrew's bin/sbin on PATH for EVERY item subshell so the package
+        # drivers (brew_formula_check runs `brew list`, …) AND custom scripts can
+        # resolve brew-installed tools (brew, fnm, node, cargo…) by BARE name,
+        # consistently — independent of how setup.sh was invoked or whether the
+        # prefix is standard (/opt/homebrew, /usr/local) or custom (e.g.
+        # /Volumes/External/homebrew). Without this a bare `fnm`/`brew` lookup
+        # fails whenever the invoking shell's PATH lacks the prefix, and a custom
+        # verify() then reports rc=67 although the tool is in fact installed.
+        # Idempotent (skip when already on PATH).
+        if [[ -n "${BREW_PREFIX:-}" && ":$PATH:" != *":$BREW_PREFIX/bin:"* ]]; then
+            PATH="$BREW_PREFIX/bin:$BREW_PREFIX/sbin:$PATH"; export PATH
+        fi
     fi
     unset __brew_out
 fi
