@@ -55,7 +55,11 @@ install() {
         curl -sf -o /dev/null --max-time 1 http://127.0.0.1:8384 2>/dev/null && return 0
         sleep 1
     done
+    # UI not up yet — but the service may still be coming up (cold start, slow
+    # disk, pending TCC prompt). Succeed as long as it is registered/running;
+    # leave authoritative pass/fail to verify(). Only fail if not running at all.
     echo "[syncthing-service-mac] launched but UI not on :8384 after 20s — inspect launchctl/brew services" >&2
+    _is_running && return 0
     return 1
 }
 
