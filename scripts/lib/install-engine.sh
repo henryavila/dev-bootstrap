@@ -152,6 +152,18 @@ if [[ "$PLATFORM" == "mac" ]]; then
     unset __brew_out
 fi
 
+# Standard user bin: many non-brew installers (rtk, moshi-hook, github-release
+# binaries, the WSL rust bins, pip --user) drop executables in ~/.local/bin.
+# Put it on PATH for EVERY item subshell — on mac AND wsl, not just mac — so a
+# bare-name verify()/check() resolves a correctly-installed tool there, the same
+# rationale as the Homebrew prepend above. Without it a custom verify() reports
+# rc=67 (which aborts the WHOLE run) although the binary is in fact installed.
+# Idempotent (skip when already on PATH). Per-script absolute fallbacks remain
+# the belt-and-suspenders for tools outside this dir (~/.atuin/bin, fnm shims).
+if [[ -d "$HOME/.local/bin" && ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    PATH="$HOME/.local/bin:$PATH"; export PATH
+fi
+
 # ── update mode (T-600): opt-in category gating ──────────────────────────────
 # `mesh update` runs the engine with --update: each installed item is upgraded
 # (version-aware, via the driver's <type>_update) ONLY if its category is opted
