@@ -27,7 +27,7 @@ import { scanAll } from './core/scanner.js';
 import { initialSelection, requiredKeys } from './core/init.js';
 import { closeRequires, dependentsOf, computeDelta, toggleTopicSelection } from './core/delta.js';
 import { writeSelections, writeParams, readParams } from './core/selections-io.js';
-import { buildFormSpec, applyFormValues, resolveSelectedDefaults, type BundleFormSpec } from './core/form-spec.js';
+import { buildFormSpec, applyFormValues, resolveSelectedDefaults, incompleteRequired, type BundleFormSpec } from './core/form-spec.js';
 import { TopicPicker } from './screens/TopicPicker.js';
 import { OptionsForm } from './screens/OptionsForm.js';
 import { SummaryConfirm } from './screens/SummaryConfirm.js';
@@ -40,6 +40,8 @@ interface Editing {
   ref: BundleRef;
   spec: BundleFormSpec;
   values: FormValues;
+  /** Set when opened by the required-option gate — the reason banner to show. */
+  notice?: string;
 }
 
 interface AppProps {
@@ -73,21 +75,45 @@ export function App({ dryRun, onExit }: AppProps) {
   const [updateValues, setUpdateValues] = useState<FormValues>({});
   const [confirm, setConfirm] = useState<{ key: string; deps: string[] } | null>(null);
 
+  // Selected bundles as refs — shared by the default resolver and the required-
+  // option gate (recomputed when the selection changes).
+  const selectedRefs = useMemo(
+    () => [...selected].map((k) => index.get(k)).filter((r): r is BundleRef => r !== undefined),
+    [selected, index],
+  );
+
   const finish = (code: number) => {
     if (code === 0 && !dryRun) {
       // Persist resolved option defaults for every selected bundle, not just the
       // ones whose options form was opened — otherwise a default_from value
       // (e.g. personal/repo → MESH_IDENTITY_REPO) never reaches params.env and
       // the engine fails on it. Copy params so the resolve doesn't mutate state.
-      const selectedRefs = [...selected]
-        .map((k) => index.get(k))
-        .filter((r): r is BundleRef => r !== undefined);
       const resolved = resolveSelectedDefaults(selectedRefs, new Map(params));
       writeSelections([...selected]);
       writeParams(resolved);
     }
     onExit(code);
     ink.exit();
+  };
+
+  // Apply-time gate (Option A): a selected bundle with an unfilled REQUIRED
+  // option can't advance to the summary — the interactive menu owns prompting
+  // (the engine does not ask in interactive mode), so route the user straight to
+  // the first offender's options form with a banner. secret-type required
+  // options are exempt (collected via secrets.env, not the menu).
+  const tryContinue = () => {
+    const missing = incompleteRequired(selectedRefs, params);
+    if (missing.length === 0) {
+      setScreen('summary');
+      return;
+    }
+    const first = missing[0];
+    const reason =
+      missing.length === 1
+        ? `${first.bundle.label} needs a required value before you can apply`
+        : `${missing.length} bundles need a required value — starting with ${first.bundle.label}`;
+    setBanner(reason);
+    editOptions(first, reason);
   };
 
   // ── selection handlers (closure + auto-select banner + dependent guard) ──
@@ -145,9 +171,9 @@ export function App({ dryRun, onExit }: AppProps) {
     setBanner(null);
   };
 
-  const editOptions = (ref: BundleRef) => {
+  const editOptions = (ref: BundleRef, notice?: string) => {
     const spec = buildFormSpec(ref.bundle, ref.topic.dir, params);
-    setEditing({ ref, spec, values: spec.values });
+    setEditing({ ref, spec, values: spec.values, notice });
     setScreen('options');
   };
   const closeOptions = (saved: boolean) => {
@@ -185,6 +211,7 @@ export function App({ dryRun, onExit }: AppProps) {
         bundleLabel={editing.ref.bundle.label}
         fields={editing.spec.fields}
         values={editing.values}
+        notice={editing.notice}
         onChange={(v) => setEditing((e) => (e ? { ...e, values: v } : e))}
         onClose={closeOptions}
       />
@@ -241,7 +268,7 @@ export function App({ dryRun, onExit }: AppProps) {
       onSelectAll={selectAll}
       onSelectNone={selectNone}
       onEditOptions={editOptions}
-      onContinue={() => setScreen('summary')}
+      onContinue={tryContinue}
       onUpdates={openUpdates}
       onHelp={() => setScreen('help')}
       onQuit={() => finish(1)}

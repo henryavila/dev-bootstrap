@@ -12,6 +12,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { validateForm } from '@henryavila/blink-tui';
 import type { ChoiceInput, FieldSpec, FieldValue, FormValues } from '@henryavila/blink-tui';
 import type { Bundle, BundleRef, Option } from '../types.js';
 import { serializeOptionValue } from './selections-io.js';
@@ -151,4 +152,54 @@ export function resolveSelectedDefaults(
     applyFormValues(spec, spec.values, params);
   }
   return params;
+}
+
+/**
+ * A field the OptionsForm can actually collect a value for. A select/multiselect
+ * with no resolvable choices (e.g. an empty `source:` file, or no `choices`/
+ * `derive_from`) is uncollectable — it must not gate, or the user would be
+ * trapped in a form they cannot satisfy. text/toggle are always collectable;
+ * secret is filtered out earlier (collected via secrets.env, not the menu).
+ */
+function isCollectable(f: FieldSpec): boolean {
+  if (f.kind === 'select' || f.kind === 'multiselect') {
+    return (f.choices?.length ?? 0) > 0 || f.optionsFrom != null;
+  }
+  return true;
+}
+
+/**
+ * Of the given (selected) bundles, the ones that still have an UNFILLED required
+ * option — the menu's apply-time gate (Option A). A bundle gates only if it
+ * declares a non-secret option that is `required` or carries a `required_min`
+ * (matching exactly what the OptionsForm's save-time validateForm enforces); that
+ * cheap manifest check runs BEFORE the possibly-shelling-out buildFormSpec, so a
+ * bundle with only optional/default_from options (e.g. git/config, personal) pays
+ * nothing. Each gating bundle is then resolved with buildFormSpec (existing
+ * params > default_from > static default) and blink's validateForm flags an empty
+ * required field / unmet min.
+ *
+ * Exemptions — the menu can't collect these, so they never gate (apply.sh or the
+ * secrets layer surface them instead): `secret`-type options, and select/
+ * multiselect options with no resolvable choices. Read-only on `params` (never
+ * mutates it). Offenders are returned in input order so the caller can route the
+ * user to the first one's options form.
+ */
+export function incompleteRequired(
+  refs: BundleRef[],
+  params: Map<string, string> = new Map(),
+): BundleRef[] {
+  const out: BundleRef[] = [];
+  for (const ref of refs) {
+    const gating = (ref.bundle.options ?? []).filter(
+      (o) => o.type !== 'secret' && (o.required || typeof o.required_min === 'number'),
+    );
+    if (gating.length === 0) continue;
+    const gatingNames = new Set(gating.map((o) => o.name));
+    const spec = buildFormSpec(ref.bundle, ref.topic.dir, params);
+    const fields = spec.fields.filter((f) => gatingNames.has(f.name) && isCollectable(f));
+    if (fields.length === 0) continue;
+    if (!validateForm(fields, spec.values).ok) out.push(ref);
+  }
+  return out;
 }

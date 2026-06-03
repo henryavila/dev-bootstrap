@@ -17,6 +17,7 @@ import {
   Footer,
   Pane,
   Form,
+  Banner,
   useFormNavigation,
   type FieldSpec,
   type FormValues,
@@ -36,6 +37,9 @@ export interface OptionsFormProps {
   bundleLabel: string;
   fields: FieldSpec[];
   values: FormValues;
+  /** Optional reason banner — shown when the form was opened by the apply-time
+   *  required-option gate, so the forced redirect has an on-screen explanation. */
+  notice?: string;
   onChange: (next: FormValues) => void;
   /** Called on save (true, validated) or cancel (false). */
   onClose: (saved: boolean) => void;
@@ -85,6 +89,7 @@ export function OptionsForm(props: OptionsFormProps) {
   return (
     <Box flexDirection="column">
       <Header title="options" subtitle={props.bundleLabel} right={props.bundleKey} />
+      {props.notice ? <Banner tone="warn" text={props.notice} /> : null}
       <Pane title="Options" tone="focus">
         <Form fields={fields} values={values} focusId={nav.focusId} errors={errors} />
       </Pane>
