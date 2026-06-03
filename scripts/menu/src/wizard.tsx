@@ -13,6 +13,7 @@
  * BLINK-ONLY (feedback_mesh_ink_app_blink_only): every visible element is a
  * blink component; Ink Box/Text are layout + the unavoidable plain-text leaves.
  */
+import { execSync } from 'node:child_process';
 import { useMemo, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import { Dialog, useGlyph, type FormValues, type DialogAction } from '@henryavila/blink-tui';
@@ -32,9 +33,28 @@ import { TopicPicker } from './screens/TopicPicker.js';
 import { OptionsForm } from './screens/OptionsForm.js';
 import { SummaryConfirm } from './screens/SummaryConfirm.js';
 import { UpdatesScreen, UPDATE_ENV, updateValuesFromParams } from './screens/UpdatesScreen.js';
-import type { BundleRef } from './types.js';
+import { IdentityOnboarding, IDENTITY_ENV, type IdentityResult } from './screens/IdentityOnboarding.js';
+import type { Bundle, BundleRef } from './types.js';
 
-type Screen = 'picker' | 'options' | 'summary' | 'updates' | 'help' | 'confirmRemove';
+/** The personal-identity bundle gets the dedicated create-or-adopt onboarding
+ *  screen instead of the generic options form — recognised by the option that
+ *  carries the identity-repo env (the stable identity contract), so no manifest
+ *  flag or hard-coded topic/bundle name is needed. */
+export function isIdentityOnboarding(bundle: Bundle): boolean {
+  return (bundle.options ?? []).some((o) => o.env === IDENTITY_ENV.repo);
+}
+
+/** Best-effort GitHub login to pre-fill the create-from-template owner (the same
+ *  default apply.sh derives from `gh api user`); '' when gh is absent/unauthed. */
+function ghLogin(): string {
+  try {
+    return execSync('gh api user -q .login', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
+type Screen = 'picker' | 'options' | 'identity' | 'summary' | 'updates' | 'help' | 'confirmRemove';
 
 interface Editing {
   ref: BundleRef;
@@ -72,6 +92,7 @@ export function App({ dryRun, onExit }: AppProps) {
   const [params, setParams] = useState<Map<string, string>>(() => readParams());
   const [banner, setBanner] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [identity, setIdentity] = useState<{ notice?: string; defaultOwner: string } | null>(null);
   const [updateValues, setUpdateValues] = useState<FormValues>({});
   const [confirm, setConfirm] = useState<{ key: string; deps: string[] } | null>(null);
 
@@ -172,9 +193,29 @@ export function App({ dryRun, onExit }: AppProps) {
   };
 
   const editOptions = (ref: BundleRef, notice?: string) => {
+    // The identity bundle's value (existing repo xor create-from-template) can't
+    // be a flat option form — route it to the dedicated onboarding screen.
+    if (isIdentityOnboarding(ref.bundle)) {
+      setIdentity({ notice, defaultOwner: ghLogin() });
+      setScreen('identity');
+      return;
+    }
     const spec = buildFormSpec(ref.bundle, ref.topic.dir, params);
     setEditing({ ref, spec, values: spec.values, notice });
     setScreen('options');
+  };
+  const closeIdentity = (result: IdentityResult | null) => {
+    if (result) {
+      const next = new Map(params);
+      for (const [env, val] of Object.entries(result.params)) {
+        if (val === null) next.delete(env);
+        else next.set(env, val);
+      }
+      setParams(next);
+      setBanner('Saved identity repo');
+    }
+    setIdentity(null);
+    setScreen('picker');
   };
   const closeOptions = (saved: boolean) => {
     if (saved && editing) {
@@ -214,6 +255,16 @@ export function App({ dryRun, onExit }: AppProps) {
         notice={editing.notice}
         onChange={(v) => setEditing((e) => (e ? { ...e, values: v } : e))}
         onClose={closeOptions}
+      />
+    );
+  }
+  if (screen === 'identity' && identity) {
+    return (
+      <IdentityOnboarding
+        initial={params}
+        notice={identity.notice}
+        defaultOwner={identity.defaultOwner}
+        onClose={closeIdentity}
       />
     );
   }

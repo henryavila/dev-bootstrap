@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render } from 'ink-testing-library';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ThemeProvider } from '@henryavila/blink-tui';
 import { App } from '../src/wizard.js';
@@ -24,6 +24,11 @@ describe('full wizard flow (ink-testing-library)', () => {
     const cfg = tmp();
     process.env.XDG_CONFIG_HOME = cfg;
     process.env.MESH_PLATFORM = 'mac';
+    // personal/repo is `required` → seed it so the apply-time gate doesn't divert
+    // to the identity onboarding; this test exercises the updates→summary→apply
+    // path (the divert path has its own test below).
+    mkdirSync(path.join(cfg, 'mesh'), { recursive: true });
+    writeFileSync(path.join(cfg, 'mesh', 'params.env'), 'MESH_IDENTITY_REPO=git@github.com:test/mesh-identity.git\n');
 
     let code = -1;
     const { stdin, lastFrame, unmount } = renderApp((c) => (code = c));
@@ -51,6 +56,42 @@ describe('full wizard flow (ink-testing-library)', () => {
     expect(params).toContain('MESH_UPDATE_AGENT_CLIS=1');
     expect(params).toContain('MESH_UPDATE_CLI_TOOLS=0');
     unmount();
+  });
+
+  it('required personal/repo unresolved → c diverts to identity onboarding, then applies', async () => {
+    const cfg = tmp();
+    const home = tmp(); // empty HOME → personal/repo default_from (git -C $HOME/mesh-identity) is empty
+    const origHome = process.env.HOME;
+    process.env.XDG_CONFIG_HOME = cfg;
+    process.env.HOME = home;
+    process.env.MESH_PLATFORM = 'mac';
+    try {
+      let code = -1;
+      const { stdin, lastFrame, unmount } = renderApp((c) => (code = c));
+      await delay(80);
+      stdin.write('c'); // try to apply — gate must divert (personal/repo required + empty)
+      await delay(40);
+      expect(lastFrame()).toContain('identity');
+      expect(lastFrame()).toContain('Do you already have');
+      stdin.write('\r'); // pick "adopt"
+      await delay(20);
+      stdin.write('git@github.com:me/mesh-identity.git');
+      await delay(20);
+      stdin.write('\r'); // save → back to picker
+      await delay(20);
+      stdin.write('c'); // now resolved → summary
+      await delay(20);
+      expect(lastFrame()).toContain('apply plan');
+      stdin.write('y'); // apply
+      await delay(80);
+      expect(code).toBe(0);
+      const params = readFileSync(path.join(cfg, 'mesh', 'params.env'), 'utf8');
+      expect(params).toContain('MESH_IDENTITY_REPO=git@github.com:me/mesh-identity.git');
+      unmount();
+    } finally {
+      if (origHome === undefined) delete process.env.HOME;
+      else process.env.HOME = origHome;
+    }
   });
 
   it('quit cancels with exit 1 and writes nothing new', async () => {

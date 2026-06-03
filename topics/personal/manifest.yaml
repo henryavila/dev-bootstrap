@@ -21,6 +21,11 @@ bundles:
         type: text
         label: "mesh-identity repo (URL or owner/name)"
         env: MESH_IDENTITY_REPO
+        # Required → the apply-time gate routes a fresh machine (empty
+        # default_from) to the IdentityOnboarding screen (adopt URL or create
+        # from a template) before apply, instead of failing later. On a
+        # provisioned machine default_from fills it, so the gate stays quiet.
+        required: true
         default_from: "git -C \"$HOME/mesh-identity\" remote get-url origin 2>/dev/null"
     items:
       - name: apply

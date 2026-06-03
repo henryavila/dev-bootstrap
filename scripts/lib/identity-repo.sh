@@ -72,7 +72,21 @@ Re-run bootstrap with the same answers, or invoke gh manually."
             fail "$repo_dir exists and is not a git repo — move or delete it first"
             return 1
         fi
-        info "cloning $repo_url → $repo_dir"
-        git clone "$repo_url" "$repo_dir"
+        # The onboarding UI advertises "URL or owner/name", but `git clone
+        # owner/name` is not a valid transport. Expand a bare owner/name: prefer
+        # `gh repo clone` (honors the user's gh auth + ssh/https preference), else
+        # the public https URL. A real URL / scp form is cloned as-is.
+        if [[ "$repo_url" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+            if command -v gh >/dev/null 2>&1; then
+                info "cloning $repo_url (gh) → $repo_dir"
+                gh repo clone "$repo_url" "$repo_dir"
+            else
+                info "cloning https://github.com/$repo_url.git → $repo_dir"
+                git clone "https://github.com/$repo_url.git" "$repo_dir"
+            fi
+        else
+            info "cloning $repo_url → $repo_dir"
+            git clone "$repo_url" "$repo_dir"
+        fi
     fi
 }
