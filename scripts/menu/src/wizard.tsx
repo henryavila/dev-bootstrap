@@ -25,7 +25,7 @@ import {
 } from './core/manifest-reader.js';
 import { scanAll } from './core/scanner.js';
 import { initialSelection, requiredKeys } from './core/init.js';
-import { closeRequires, dependentsOf, computeDelta } from './core/delta.js';
+import { closeRequires, dependentsOf, computeDelta, toggleTopicSelection } from './core/delta.js';
 import { writeSelections, writeParams, readParams } from './core/selections-io.js';
 import { buildFormSpec, applyFormValues, resolveSelectedDefaults, type BundleFormSpec } from './core/form-spec.js';
 import { TopicPicker } from './screens/TopicPicker.js';
@@ -120,6 +120,20 @@ export function App({ dryRun, onExit }: AppProps) {
     setBanner(`Removed ${confirm.key} + ${confirm.deps.length} dependent(s)`);
     setConfirm(null);
     setScreen('picker');
+  };
+
+  // Space while the Topics pane is focused → toggle ALL of the topic's bundles
+  // (not just its first one). Standard toggle-all: fills if any are off, else
+  // clears the selectable ones.
+  const toggleTopic = (topicId: string) => {
+    const topic = topics.find((t) => t.id === topicId);
+    if (!topic) return;
+    const keys = topic.bundles.map((b) => `${topicId}/${b.name}`);
+    const res = toggleTopicSelection(keys, required, selected, index);
+    setSelected(res.selected);
+    if (res.added.length) setBanner(`Auto-selected: ${res.added.join(', ')}`);
+    else if (res.removed.length) setBanner(`${topic.header.label}: deselected ${res.removed.length} bundle(s)`);
+    else setBanner(`${topic.header.label}: all selected`);
   };
 
   const selectAll = () => {
@@ -223,6 +237,7 @@ export function App({ dryRun, onExit }: AppProps) {
       scan={scan}
       banner={banner}
       onToggle={toggle}
+      onToggleTopic={toggleTopic}
       onSelectAll={selectAll}
       onSelectNone={selectNone}
       onEditOptions={editOptions}

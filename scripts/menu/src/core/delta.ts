@@ -70,6 +70,40 @@ export function dependentsOf(
   return found;
 }
 
+/**
+ * Toggle every selectable (non-required) bundle of a topic as a group — the
+ * Space action while the Topics pane is focused (Space on a topic = toggle-all,
+ * NOT toggle just its first bundle). If all selectable bundles are already
+ * selected, deselect them (plus any now-dangling dependents); otherwise select
+ * them all (plus their requires_bundles closure). Required/locked bundles are
+ * never touched. Pure: returns a new set + what the action added/removed.
+ */
+export function toggleTopicSelection(
+  topicKeys: string[],
+  required: Set<string>,
+  selected: Set<string>,
+  index: Map<string, BundleRef>,
+): { selected: Set<string>; added: string[]; removed: string[] } {
+  const selectable = topicKeys.filter((k) => !required.has(k));
+  if (selectable.length === 0) return { selected: new Set(selected), added: [], removed: [] };
+
+  const allOn = selectable.every((k) => selected.has(k));
+  if (allOn) {
+    const next = new Set(selected);
+    const removed: string[] = [];
+    for (const k of selectable) {
+      if (!next.has(k)) continue;
+      for (const dep of dependentsOf(k, next, index)) next.delete(dep);
+      next.delete(k);
+      removed.push(k);
+    }
+    return { selected: next, added: [], removed };
+  }
+
+  const { selected: closed, added } = closeRequires([...selected, ...selectable], index);
+  return { selected: closed, added, removed: [] };
+}
+
 export interface Delta {
   /** Newly selected — not installed/kept before. */
   install: string[];

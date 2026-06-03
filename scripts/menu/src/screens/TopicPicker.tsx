@@ -46,6 +46,8 @@ export interface TopicPickerProps {
   /** A transient notice line under the panes (auto-select / cascade messages). */
   banner: string | null;
   onToggle: (key: string) => void;
+  /** Toggle every selectable bundle of a topic (Space while the Topics pane is focused). */
+  onToggleTopic: (topicId: string) => void;
   onSelectAll: () => void;
   onSelectNone: () => void;
   onEditOptions: (ref: BundleRef) => void;
@@ -184,7 +186,10 @@ export function TopicPicker(props: TopicPickerProps) {
       return;
     }
     if (input === ' ') {
-      if (!required.has(focusedKey)) props.onToggle(focusedKey);
+      // Topics pane: Space toggles the WHOLE topic (toggle-all), not just its
+      // first bundle. Bundles pane: Space toggles the focused bundle.
+      if (activePane === 'topics') props.onToggleTopic(focusedTopic.id);
+      else if (!required.has(focusedKey)) props.onToggle(focusedKey);
       return;
     }
     if (key.return) {

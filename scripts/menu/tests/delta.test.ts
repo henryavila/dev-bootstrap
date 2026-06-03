@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { closeRequires, dependentsOf, computeDelta } from '../src/core/delta.js';
+import { closeRequires, dependentsOf, computeDelta, toggleTopicSelection } from '../src/core/delta.js';
 import { makeIndex } from './helpers.js';
 
 const index = makeIndex({
@@ -60,5 +60,61 @@ describe('computeDelta', () => {
     const d = computeDelta([], ['x', 'y']);
     expect(d.install).toEqual(['x', 'y']);
     expect(d.remove).toEqual([]);
+  });
+});
+
+describe('toggleTopicSelection (Space on a topic = toggle-all, not toggle-first)', () => {
+  const idx = makeIndex({
+    'db/mysql': {},
+    'db/redis': {},
+    'web/valet': { requires: ['db/mysql', 'db/redis'] },
+    'shell/zsh': { requires: ['shell/cli'] },
+    'shell/cli': {},
+  });
+  const dbKeys = ['db/mysql', 'db/redis'];
+
+  it('selects ALL bundles of the topic when none are selected (the bug: only the first toggled)', () => {
+    const res = toggleTopicSelection(dbKeys, new Set(), new Set(), idx);
+    expect([...res.selected].sort()).toEqual(['db/mysql', 'db/redis']);
+    expect(res.removed).toEqual([]);
+  });
+
+  it('fills the rest when the topic is only partially selected', () => {
+    const res = toggleTopicSelection(dbKeys, new Set(), new Set(['db/mysql']), idx);
+    expect([...res.selected].sort()).toEqual(['db/mysql', 'db/redis']);
+  });
+
+  it('deselects ALL bundles of the topic when every one is already selected', () => {
+    const res = toggleTopicSelection(dbKeys, new Set(), new Set(['db/mysql', 'db/redis']), idx);
+    expect([...res.selected]).toEqual([]);
+    expect(res.removed.sort()).toEqual(['db/mysql', 'db/redis']);
+  });
+
+  it('pulls the requires_bundles closure when selecting a topic', () => {
+    const res = toggleTopicSelection(['shell/zsh'], new Set(), new Set(), idx);
+    expect([...res.selected].sort()).toEqual(['shell/cli', 'shell/zsh']);
+    expect(res.added).toEqual(['shell/cli']);
+  });
+
+  it('removes dangling dependents when deselecting a depended-on topic', () => {
+    const sel = new Set(['db/mysql', 'db/redis', 'web/valet']);
+    const res = toggleTopicSelection(dbKeys, new Set(), sel, idx);
+    expect(res.selected.has('web/valet')).toBe(false); // valet needs db/* → dropped
+    expect(res.selected.has('db/mysql')).toBe(false);
+    expect(res.selected.has('db/redis')).toBe(false);
+  });
+
+  it('never toggles required/locked bundles', () => {
+    // db/mysql is required (locked); only db/redis is selectable.
+    const res = toggleTopicSelection(dbKeys, new Set(['db/mysql']), new Set(['db/mysql', 'db/redis']), idx);
+    expect(res.selected.has('db/mysql')).toBe(true); // untouched
+    expect(res.selected.has('db/redis')).toBe(false); // the only selectable → toggled off
+  });
+
+  it('is a no-op when the topic has only required bundles', () => {
+    const res = toggleTopicSelection(['db/mysql'], new Set(['db/mysql']), new Set(['db/mysql']), idx);
+    expect([...res.selected]).toEqual(['db/mysql']);
+    expect(res.added).toEqual([]);
+    expect(res.removed).toEqual([]);
   });
 });

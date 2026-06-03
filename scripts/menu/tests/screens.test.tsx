@@ -15,10 +15,12 @@
  * was, even when the bug hid it); the live TTY walk (T-500) remains the gate
  * for the scroll behaviour.
  */
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { ThemeProvider } from '@henryavila/blink-tui';
 import { App } from '../src/wizard.js';
+import { TopicPicker } from '../src/screens/TopicPicker.js';
+import type { Topic } from '../src/types.js';
 import { OptionsForm } from '../src/screens/OptionsForm.js';
 import { UpdatesScreen } from '../src/screens/UpdatesScreen.js';
 import { registerDomainGlyphs, resolveDomain } from '../src/glyphs.js';
@@ -156,5 +158,51 @@ describe('domain glyphs render in a screen (icon gap closed)', () => {
     // git/config has icon_name git → now resolves to a blink glyph.
     const index = indexByKey(flattenBundles(readAllManifests()));
     expect(resolveDomain(index.get('git/config')!.bundle.icon_name)).toBeTruthy();
+  });
+});
+
+describe('TopicPicker — Space on the Topics pane (T-500 toggle-all wiring)', () => {
+  const topics = [
+    {
+      id: 'git',
+      header: { label: 'Git', order: 40 },
+      dir: '/tmp/git',
+      bundles: [
+        { name: 'config', label: 'Config', desc: 'c', items: [] },
+        { name: 'lazygit', label: 'Lazygit', desc: 'l', items: [] },
+      ],
+    },
+  ] as unknown as Topic[];
+
+  it('Space toggles the WHOLE topic (onToggleTopic), not just the first bundle (onToggle)', async () => {
+    const onToggle = vi.fn();
+    const onToggleTopic = vi.fn();
+    const { stdin, unmount } = render(
+      <ThemeProvider iconSet="unicode">
+        <TopicPicker
+          topics={topics}
+          platform="mac"
+          selected={new Set()}
+          required={new Set()}
+          scan={new Map()}
+          banner={null}
+          onToggle={onToggle}
+          onToggleTopic={onToggleTopic}
+          onSelectAll={vi.fn()}
+          onSelectNone={vi.fn()}
+          onEditOptions={vi.fn()}
+          onContinue={vi.fn()}
+          onUpdates={vi.fn()}
+          onHelp={vi.fn()}
+          onQuit={vi.fn()}
+        />
+      </ThemeProvider>,
+    );
+    await delay(40);
+    stdin.write(' '); // Topics pane is focused by default
+    await delay(20);
+    expect(onToggleTopic).toHaveBeenCalledWith('git');
+    expect(onToggle).not.toHaveBeenCalled();
+    unmount();
   });
 });
