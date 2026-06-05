@@ -197,3 +197,10 @@ rollback() {
     fi
     rm -f "$recorded_path" "$RTK_STATE_FILE"
 }
+
+uninstall() {
+    # Bundle deselection / `mesh uninstall`: same removal as rollback (binary +
+    # state file), keeping the sha256 guard so we never delete a different
+    # vendor's `rtk` or an externally-upgraded binary.
+    rollback
+}

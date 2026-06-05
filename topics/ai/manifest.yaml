@@ -53,10 +53,12 @@ bundles:
         script: ./moshi-hook-service-wsl.sh
         platforms: [wsl]
 
-  - name: agent-tools
-    label: "Agent CLI tools"
-    desc: "mdprobe + atomic-skills + rtk"
-    icon_name: tools
+  # Each agent CLI tool is its own bundle (level 2) so it can be selected /
+  # deselected individually — they are independent tools, not an atomic set.
+  - name: mdprobe
+    label: "mdprobe"
+    desc: "Markdown preview & review in the browser"
+    icon_name: text
     items:
       - name: mdprobe
         type: npm-global
@@ -65,9 +67,21 @@ bundles:
         # job of the opt-in version-aware update mode (`mesh update`), NOT of
         # reinstalling every run — see docs/…-version-aware-update-spec.md.
         check: "command -v mdprobe"
+
+  - name: atomic-skills
+    label: "atomic-skills"
+    desc: "Project-status & agent skills toolkit"
+    icon_name: package
+    items:
       - name: atomic-skills
         type: npx
         spec: "@henryavila/atomic-skills@1.7.0 install --yes --all-detected --lang pt"
+
+  - name: rtk
+    label: "rtk"
+    desc: "Rust Token Killer — token-saving CLI proxy"
+    icon_name: terminal
+    items:
       - name: rtk
         type: custom
         script: ./install-rtk.sh
