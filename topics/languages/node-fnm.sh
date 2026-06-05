@@ -11,11 +11,27 @@ _ensure_fnm_path() {
     return 1
 }
 
+# True if `fnm list` shows at least one installed Node version (vX.Y.Z).
+#
+# IMPORTANT — do NOT rewrite this as `fnm list | grep -q ...`. The engine runs
+# drivers under `set -o pipefail`. `grep -q` exits on the first match and closes
+# the pipe; `fnm` is a Rust binary that IGNORES SIGPIPE, so its next write hits
+# EPIPE and it PANICS (exit 101). pipefail then adopts that 101 as the pipeline's
+# rc even though grep matched — an intermittent (~50%) false negative that makes
+# check()/install() wrongly report "no Node version present". Capturing the
+# output into a variable reads stdout to EOF (no early close → no panic → no
+# race). `=~` uses ERE and must NOT contain `\b` (bash 3.2 reads `\b` as a
+# literal backspace, so it would never match).
+_fnm_has_node() {
+    local _v; _v="$(fnm list 2>/dev/null)"
+    [[ "$_v" =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]
+}
+
 check() {
     _ensure_fnm_path || return 1
     # `fnm list` only sees installed node versions after `fnm env` is evaluated.
     eval "$(fnm env 2>/dev/null || true)"
-    fnm list 2>/dev/null | grep -qE '\bv[0-9]+\.[0-9]+\.[0-9]+'
+    _fnm_has_node
 }
 
 install() {
@@ -30,18 +46,25 @@ install() {
     fi
     _ensure_fnm_path || true
     eval "$(fnm env 2>/dev/null || true)"
-    if ! fnm list 2>/dev/null | grep -qE '\bv[0-9]+\.[0-9]+\.[0-9]+'; then
+    if ! _fnm_has_node; then
         if ! fnm install --lts; then
             echo "node-fnm: 'fnm install --lts' failed — no Node version installed" >&2
             return 1
         fi
-        local default_ver
-        default_ver="$(fnm list | awk '/^\s*v[0-9]/ {print $NF}' | tail -1 || true)"
+        # Set the just-installed (highest) version as the default. Capture the
+        # list once and extract the version with sed BRE: the old
+        # `awk '/^\s*v[0-9]/ {print $NF}'` never matched (fnm rows start with
+        # `* `, not whitespace+v, and $NF is the alias, not the version), so the
+        # default was silently never set; BSD awk also lacks `\s`.
+        local _list default_ver
+        _list="$(fnm list 2>/dev/null)"
+        default_ver="$(printf '%s\n' "$_list" \
+            | sed -n 's/.*\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | tail -1)"
         [[ -n "$default_ver" ]] && fnm default "$default_ver" || true
     fi
     # Re-assert a Node version actually exists before reporting success, so a
     # silent install failure surfaces as a truthful install rc (not a post-verify rc67).
-    if ! fnm list 2>/dev/null | grep -qE '\bv[0-9]+\.[0-9]+\.[0-9]+'; then
+    if ! _fnm_has_node; then
         echo "node-fnm: no Node version present after install" >&2
         return 1
     fi
