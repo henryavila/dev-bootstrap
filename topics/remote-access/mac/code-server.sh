@@ -11,9 +11,28 @@ check() {
     local label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
     local plist="${HOME}/Library/LaunchAgents/${label}.plist"
     local config="${HOME}/.config/code-server/config.yaml"
-    { [[ -x "$bin" ]] || [[ -x "$alt" ]]; } \
-        && [[ -f "$plist" ]] \
-        && [[ -f "$config" ]]
+
+    # F9.6 §D filesystem hardening (2026-06-03): `[[ -x ]]` on the
+    # ~/.local/bin/code-server symlink follows the link, but a present exec
+    # bit on a half-installed / corrupt standalone bundle (e.g. an aborted
+    # version-dir swap, a wrong-arch binary, or a broken bundled node) still
+    # passed the bare check — the engine then KEEPs an unrunnable install.
+    # Content sentinel: assert the binary actually executes `--version`,
+    # exactly the success gate install_code_server_standalone() already uses
+    # (line "$CODE_SERVER_BIN" --version >/dev/null). sudo-free, bash-3.2
+    # safe; a healthy install runs --version in well under a second.
+    local found=""
+    if [[ -x "$bin" ]]; then
+        found="$bin"
+    elif [[ -x "$alt" ]]; then
+        found="$alt"
+    fi
+    [[ -n "$found" ]] || return 1
+    "$found" --version >/dev/null 2>&1 || return 1
+
+    [[ -f "$plist" ]] || return 1
+    [[ -f "$config" ]] || return 1
+    return 0
 }
 
 install() {

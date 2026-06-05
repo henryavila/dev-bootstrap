@@ -23,13 +23,27 @@ _use_wrapper() {
 }
 
 _is_running() {
-    pgrep -u "$USER" -f 'moshi-hook serve' >/dev/null 2>&1 && return 0
+    # Authoritative signal = the service-manager state install() actually
+    # establishes (launchd wrapper, or `brew services`), NOT a loose
+    # `pgrep -f 'moshi-hook serve'` substring (which any unrelated process —
+    # a tail/editor/log line — could satisfy, and which would let an
+    # unmanaged hand-started daemon masquerade as the supervised service).
+    # All probes below are sudo-free.
     if ! _use_wrapper; then
         "${BREW_BIN:-brew}" services list 2>/dev/null \
             | awk '$1=="moshi-hook"{print $2}' | grep -qx 'started' && return 0
-    else
-        launchctl print "gui/$(id -u)/com.${USER}.moshi-hook" 2>/dev/null \
-            | grep -qE 'state[[:space:]]*=[[:space:]]*running' && return 0
+        return 1
+    fi
+    # Custom prefix: assert the launchd job is loaded AND in the running state.
+    if launchctl print "gui/$(id -u)/com.${USER}.moshi-hook" 2>/dev/null \
+        | grep -qE 'state[[:space:]]*=[[:space:]]*running'; then
+        return 0
+    fi
+    # Fallback only when launchctl cannot answer (e.g. invoked outside a GUI
+    # session, where `gui/<uid>` is unreachable): corroborate via pgrep so we
+    # don't false-fail a genuinely-running daemon in that narrow context.
+    if ! launchctl print "gui/$(id -u)/com.${USER}.moshi-hook" >/dev/null 2>&1; then
+        pgrep -u "$USER" -f 'moshi-hook serve' >/dev/null 2>&1 && return 0
     fi
     return 1
 }
@@ -83,6 +97,19 @@ install() {
 }
 
 verify() {
+    # Confirm the supervised service-manager state install() establishes
+    # (launchd job loaded+running, or `brew services started`) — the same
+    # authoritative probe as check(), now hardened away from the loose
+    # `pgrep -f` substring.
+    #
+    # Pairing is deliberately NOT asserted here. install() only *attempts*
+    # pairing (`pair || true`) and otherwise emits a manual followup when no
+    # MOSHI_PAIRING_TOKEN is present — "service up, awaiting manual pairing"
+    # is a legitimate, expected post-install state. Gating verify() on
+    # _is_paired would make the engine treat that healthy state as a failure,
+    # run rollback() (tearing the service back down) and exit 67. That is the
+    # exact false-fail this hardening must avoid (repair plan §3.D risk note),
+    # so functional pairing stays a manual/followup concern, not a verify gate.
     _is_running
 }
 

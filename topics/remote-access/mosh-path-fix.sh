@@ -26,7 +26,18 @@ check() {
     [[ -f "$f" ]] || return 1
     grep -q -F "$BREW_PREFIX/bin"  "$f" || return 1
     grep -q -F "$BREW_PREFIX/sbin" "$f" || return 1
-    [[ -x /usr/local/bin/mosh-server ]] || return 1
+    # mosh-server reachable via /usr/local/bin AND its dylibs actually resolve.
+    # A bare `-x` passed even when the symlink target was broken (e.g. mosh not
+    # yet rebuilt after a protobuf major-bump → dyld abort) — the audit's
+    # filesystem false-keep. The static Mach-O resolver reports that as broken;
+    # it is fixed transitively when mosh-mac reinstalls first. Falls back to -x
+    # when the resolver helper is unavailable (e.g. invoked outside the engine).
+    local resolver="${MESH_LIB_DIR:-}/mach-o-resolvable.sh"
+    if [[ -n "${MESH_LIB_DIR:-}" && -r "$resolver" ]]; then
+        bash "$resolver" /usr/local/bin/mosh-server || return 1
+    else
+        [[ -x /usr/local/bin/mosh-server ]] || return 1
+    fi
     return 0
 }
 
@@ -53,6 +64,14 @@ install() {
 
 verify() {
     check
+}
+
+repair() {
+    # Engine --repair sweep: re-register the paths.d entries + re-symlink
+    # mosh-server. A broken dylib target is fixed transitively by mosh-mac
+    # reinstalling first in the same sweep; this re-links to the healthy binary.
+    # Idempotent and safe to re-run.
+    install
 }
 
 rollback() {

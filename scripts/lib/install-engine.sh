@@ -9,7 +9,8 @@
 # Usage:
 #   bash install-engine.sh [--selections FILE] [--bundle topic/bundle ...]
 #                          [--topics-dir DIR] [--params FILE] [--secrets FILE]
-#                          [--platform OS] [--non-interactive] [--dry-run] [--update]
+#                          [--platform OS] [--non-interactive] [--dry-run]
+#                          [--update | --repair]
 #
 # Selections come from --selections (one `topic/bundle` per line; blank lines
 # and `#` comments ignored) and/or repeated --bundle flags. The two combine.
@@ -21,6 +22,16 @@
 # MESH_UPDATE_RUNTIMES_DBS / MESH_UPDATE_CLI_TOOLS default OFF (params.env/env).
 # Never installs new items; items without a driver updater (deploy, …) are
 # skipped. `mesh update` invokes this after `git pull`.
+#
+# --repair (verify/operational plan §C): a precise verify+repair sweep over the
+# selected/installed bundles. For each non-idempotent INSTALLED item (install
+# marker present) it runs the item's STRONGEST probe (driver verify > manifest
+# check > driver check) — NOT the weak keep/skip check — and, when that fails,
+# runs ONE repair through the installer (driver <type>_repair, else <type>_install;
+# brew is reinstall-aware; custom only if it defines repair()) then re-probes.
+# A failure is recorded and the sweep CONTINUES (reports every broken item in one
+# pass) — rc 67 if any item is left unresolved, rc 0 on a healthy tree. Mutually
+# exclusive with --update. `mesh doctor --fix` / `setup --repair` invoke it.
 #
 # Per bundle, in topological order:
 #   1. cd into the topic dir (custom `script:` paths are topic-relative).
@@ -87,6 +98,7 @@ SECRETS_OVERRIDE=""
 PLATFORM_OVERRIDE=""
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 UPDATE_MODE=0
+REPAIR_MODE=0
 CLI_BUNDLES=()
 
 while [[ $# -gt 0 ]]; do
@@ -101,10 +113,19 @@ while [[ $# -gt 0 ]]; do
         --non-interactive)  NON_INTERACTIVE=1; shift ;;
         --dry-run)          DRY_RUN=1; shift ;;
         --update)           UPDATE_MODE=1; shift ;;
-        --help|-h)          sed -n '2,30p' "$0"; exit 0 ;;
+        --repair)           REPAIR_MODE=1; shift ;;
+        --help|-h)          sed -n '2,40p' "$0"; exit 0 ;;
         *)                  log_error "unknown arg: $1"; exit 64 ;;
     esac
 done
+
+# --repair and --update are mutually exclusive: --update exits before the normal
+# lifecycle (it upgrades versions), --repair runs an operational verify+fix pass.
+# Combining them is a usage error (plan §3.C / Codex finding #7).
+if [[ "$REPAIR_MODE" -eq 1 && "$UPDATE_MODE" -eq 1 ]]; then
+    log_error "--repair and --update are mutually exclusive"
+    exit 64
+fi
 
 [[ -d "$TOPICS_DIR" ]]     || { log_error "missing topics dir: $TOPICS_DIR"; exit 64; }
 [[ -d "$INSTALLERS_DIR" ]] || { log_error "missing installers dir: $INSTALLERS_DIR"; exit 64; }
@@ -203,6 +224,13 @@ fi
 # that topic's bundles). Cleaned on exit.
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/mesh-engine.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
+
+# --repair bookkeeping: per-item subshells append to these so the parent can
+# tally the sweep (subshells can't set parent vars). One "topic/bundle/name"
+# per healthy/fixed line; "topic/bundle/name<TAB>reason" per unresolved item.
+REPAIR_OK_FILE="$WORK/repair-ok"
+REPAIR_FIXED_FILE="$WORK/repair-fixed"
+REPAIR_FAIL_FILE="$WORK/repair-failures"
 
 # ─── selection collection ────────────────────────────────────────────────────
 
@@ -578,6 +606,66 @@ apply_bundle() {
             . "$driver"
             local prefix="${type//-/_}"
 
+            # repair mode (verify/operational plan §C): verify each installed
+            # item with its STRONGEST probe; on failure attempt ONE repair through
+            # the installer, then re-probe. Failures are RECORDED (not aborting)
+            # so one pass reports every broken item. Idempotent / no-probe items
+            # are re-applied by `mesh update`, not here — skipped.
+            if [[ "$REPAIR_MODE" -eq 1 ]]; then
+                if [[ "$idem" == "1" ]]; then
+                    log_info "$bundle/$name: repair skip (idempotent — re-applied by mesh update)"; exit 0
+                fi
+                _repair_probe() {   # driver verify > manifest check > driver check
+                    if declare -f "${prefix}_verify" >/dev/null 2>&1; then
+                        "${prefix}_verify" "$arg"
+                    elif [[ -n "$mcheck" ]]; then
+                        bash -c "$mcheck" >/dev/null 2>&1
+                    elif declare -f "${prefix}_check" >/dev/null 2>&1; then
+                        "${prefix}_check" "$arg" 2>/dev/null
+                    else
+                        return 2   # no probe available
+                    fi
+                }
+                local _probe_rc=0
+                _repair_probe || _probe_rc=$?
+                if [[ "$_probe_rc" -eq 2 ]]; then
+                    log_info "$bundle/$name: repair skip (no probe — re-applied by mesh update)"; exit 0
+                fi
+                if [[ "$_probe_rc" -eq 0 ]]; then
+                    printf '%s\n' "$bundle/$name" >> "$REPAIR_OK_FILE" 2>/dev/null || true
+                    log_info "$bundle/$name: ok"; exit 0
+                fi
+                # probe failed → only repair what mesh actually installed (marker
+                # present). A no-marker probe-fail is "not installed here" → skip;
+                # collision-safe because we iterate THIS bundle's items in context.
+                if [[ ! -f "$(install_state_path "$TOPIC" "$name")" ]]; then
+                    log_info "$bundle/$name: repair skip (probe fails, no install marker — not installed here)"; exit 0
+                fi
+                log_warn "$bundle/$name: BROKEN (strong probe failed) → attempting repair"
+                local _rrc=0
+                if declare -f "${prefix}_repair" >/dev/null 2>&1; then
+                    "${prefix}_repair" "$arg" || _rrc=$?
+                else
+                    "${prefix}_install" "$arg" || _rrc=$?
+                fi
+                if [[ "$_rrc" -eq 75 ]]; then
+                    printf '%s\t(no safe auto-repair — define repair())\n' "$bundle/$name" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
+                    log_error "$bundle/$name: no safe auto-repair available — manual fix needed"; exit 0
+                elif [[ "$_rrc" -ne 0 ]]; then
+                    printf '%s\t(repair action failed rc=%s)\n' "$bundle/$name" "$_rrc" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
+                    log_error "$bundle/$name: repair action failed (rc=$_rrc)"; exit 0
+                fi
+                local _reverc=0
+                _repair_probe || _reverc=$?
+                if [[ "$_reverc" -eq 0 ]]; then
+                    install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
+                    printf '%s\n' "$bundle/$name" >> "$REPAIR_FIXED_FILE" 2>/dev/null || true
+                    log_info "$bundle/$name: repaired ✓"; exit 0
+                fi
+                printf '%s\t(still broken after repair)\n' "$bundle/$name" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
+                log_error "$bundle/$name: still broken after repair — manual intervention required"; exit 0
+            fi
+
             # update mode (T-600): upgrade an already-installed item via the
             # driver's version-aware <type>_update, gated by its opt-in category.
             # Never installs new items; skips items without an updater (e.g.
@@ -705,6 +793,23 @@ for entry in "${ORDERED[@]}"; do
     ( apply_bundle "$topic" "$bundle" ) || { _rc=$?; log_error "$entry: bundle failed (rc=$_rc)"; exit $_rc; }
     bundles_done=$((bundles_done+1))
 done
+
+# ─── repair-mode summary (verify/operational plan §C) ─────────────────────────
+# In repair mode item subshells exit 0 and record their outcome to files; tally
+# them here. rc 67 if any item is left unresolved, rc 0 on a healthy/fixed tree.
+if [[ "$REPAIR_MODE" -eq 1 ]]; then
+    _r_ok=0; _r_fixed=0; _r_fail=0
+    [[ -s "$REPAIR_OK_FILE" ]]    && _r_ok="$(grep -c . "$REPAIR_OK_FILE")"
+    [[ -s "$REPAIR_FIXED_FILE" ]] && _r_fixed="$(grep -c . "$REPAIR_FIXED_FILE")"
+    [[ -s "$REPAIR_FAIL_FILE" ]]  && _r_fail="$(grep -c . "$REPAIR_FAIL_FILE")"
+    log_info "repair sweep on $PLATFORM: $_r_ok healthy, $_r_fixed repaired, $_r_fail unresolved"
+    if (( _r_fail > 0 )); then
+        log_error "repair: $_r_fail item(s) could not be repaired:"
+        while IFS= read -r _l; do [[ -n "$_l" ]] && log_error "  - $_l"; done < "$REPAIR_FAIL_FILE"
+        exit 67
+    fi
+    exit 0
+fi
 
 if (( bundles_skipped > 0 )); then
     log_info "engine: applied $bundles_done bundle(s) on $PLATFORM ($bundles_skipped skipped by platforms:)"

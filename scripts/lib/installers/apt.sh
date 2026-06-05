@@ -27,6 +27,16 @@ apt_install() {
     sudo -E apt-get install -y -o Dpkg::Options::=--force-confold -- "$1"
 }
 
+# Repair (engine --repair sweep): force-reinstall an installed-but-broken package.
+# Plain `apt-get install` no-ops when the package is already the right version,
+# so a repair needs --reinstall to actually re-lay the files.
+apt_repair() {
+    export DEBIAN_FRONTEND=noninteractive
+    _apt_update_if_stale
+    echo "apt: reinstalling $1 (repair)" >&2
+    sudo -E apt-get install -y --reinstall -o Dpkg::Options::=--force-confold -- "$1"
+}
+
 # Version-aware update (T-600): refresh the index, then upgrade only if a newer
 # candidate exists. `apt-get -s install --only-upgrade` simulates and prints an
 # `Inst <pkg> ...` line exactly when it would actually upgrade.

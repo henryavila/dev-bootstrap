@@ -64,6 +64,26 @@ custom_update() {
         fi
     )
 }
+# Repair (engine --repair sweep): run the script's own repair() if it defines
+# one. We deliberately do NOT blindly re-run install() — many custom installers
+# are stateful or destructive (the escape hatch is exactly where such scripts
+# live). A custom item opts into auto-repair by defining repair() (typically a
+# forced re-run of install()). Exit 75 is the no-safe-repair sentinel: it tells
+# the engine to report the item for manual fix rather than treat it as a hard
+# repair failure.
+custom_repair() {
+    local script="$1"
+    [[ -r "$script" ]] || { echo "custom: script not readable: $script" >&2; return 1; }
+    (
+        . "$script"
+        if declare -f repair >/dev/null; then
+            repair
+        else
+            echo "custom: $script defines no repair() — no safe auto-repair (define repair() to enable)" >&2
+            exit 75
+        fi
+    )
+}
 custom_rollback() {
     # CP4 A2-F-008: surface rollback failure rather than swallowing it
     # with `|| true`. If rollback explicitly fails, the caller (engine)

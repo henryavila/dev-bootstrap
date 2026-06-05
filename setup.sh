@@ -37,15 +37,22 @@ cd "$HERE"
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 LIST_BUNDLES=0
+REPAIR_MODE=0
 for arg in "$@"; do
     case "$arg" in
         --help|-h)        SHOW_HELP=1 ;;
         --non-interactive) NON_INTERACTIVE=1 ;;
         --dry-run)        DRY_RUN=1 ;;
         --list-bundles)   LIST_BUNDLES=1 ;;
+        --repair)         REPAIR_MODE=1 ;;
         *) echo "setup.sh: unknown arg: $arg (try --help)" >&2; exit 64 ;;
     esac
 done
+# --repair (verify/operational plan §C, via `mesh doctor --fix`): a verify+repair
+# sweep, never the menu. Force non-interactive so the menu is skipped and any
+# unset option falls back to its silent default; the engine repairs only items
+# with an install marker (so the selection just scopes the sweep).
+[[ "$REPAIR_MODE" == "1" ]] && NON_INTERACTIVE=1
 export NON_INTERACTIVE DRY_RUN
 
 # shellcheck disable=SC1091
@@ -64,6 +71,8 @@ Automation / CI mode:
   DRY_RUN=1 bash setup.sh           print what the engine would do, don't execute
   bash setup.sh --dry-run           same, flag form
   bash setup.sh --list-bundles      list every topic/bundle + default selection
+  bash setup.sh --repair            verify+repair installed-but-broken items only
+                                    (no menu; engine --repair; = mesh doctor --fix)
 
 Selection lives in ~/.config/mesh/selections.list (one topic/bundle per line);
 resolved non-secret options in ~/.config/mesh/params.env. Delete selections.list
@@ -255,8 +264,10 @@ fi
 if [[ ! -f "$SELECTIONS_FILE" ]]; then
     info "no selections.list — computing the default selection"
     mkdir -p "$SELECTIONS_DIR"
-    if [[ "$DRY_RUN" == "1" ]]; then
-        # Don't write under --dry-run; feed the engine via a temp file.
+    if [[ "$DRY_RUN" == "1" || "$REPAIR_MODE" == "1" ]]; then
+        # Don't persist a selections.list as a side effect of --dry-run or a
+        # --repair sweep; feed the engine via a temp file (repair only touches
+        # marker-present items anyway, so the default set merely scopes it).
         SELECTIONS_FILE="$(mktemp -t mesh-selections.XXXXXX)"
         trap 'rm -f "${MESH_FOLLOWUP_FILE:-}" "'"$SELECTIONS_FILE"'"' EXIT
     fi
@@ -275,6 +286,7 @@ info "full log: $LOG"
 engine_args=(--selections "$SELECTIONS_FILE" --platform "$OS")
 [[ "$NON_INTERACTIVE" == "1" ]] && engine_args+=(--non-interactive)
 [[ "$DRY_RUN" == "1" ]] && engine_args+=(--dry-run)
+[[ "$REPAIR_MODE" == "1" ]] && engine_args+=(--repair)
 
 set +e
 bash "$HERE/scripts/lib/install-engine.sh" "${engine_args[@]}" 2>&1 | tee -a "$LOG"

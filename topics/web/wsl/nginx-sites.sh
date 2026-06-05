@@ -8,13 +8,25 @@ NGINX_SNIPPET_DIR="${NGINX_SNIPPET_DIR:-/etc/nginx/snippets}"
 NGINX_MAP_DIR="${NGINX_MAP_DIR:-/etc/nginx/conf.d}"
 
 check() {
-    # /etc/nginx/sites-enabled/ is root:root mode 0755 — world-searchable.
-    # `test -L` only needs +x on the parent dir, never read on the link
-    # target. Keeping check() sudo-free lets the menu scanner probe state
-    # with zero password friction.
+    # /etc/nginx/sites-enabled/ is root:root mode 0755 — world-searchable —
+    # and the sites-available targets land at 0644 (world-readable, deploy's
+    # default perms). So both `test -L` (needs only +x on the parent dir) and
+    # the content grep (follows the link, reads the 0644 target) work without
+    # sudo. Keeping check() sudo-free lets the menu scanner probe state with
+    # zero password friction.
+    #
+    # Hardening (§D filesystem): bare `test -L` passed on a DANGLING symlink
+    # (deploy removed/never wrote the sites-available target) and on a corrupt
+    # or truncated config — a half-installed false-keep. We now require the
+    # link to be a symlink, its target to RESOLVE (`-e` follows the link), and
+    # the resolved config to still carry its mesh-managed sentinel comment
+    # (template header line 1, a plain comment untouched by envsubst). grep on
+    # a dangling/absent target also fails, covering the `-e` case transitively.
     local site
     for site in catchall-php.conf catchall-proxy.conf; do
-        test -L "$NGINX_ENABLED_DIR/$site" || return 1
+        test -L "$NGINX_ENABLED_DIR/$site"  || return 1
+        test -e "$NGINX_ENABLED_DIR/$site"  || return 1
+        grep -qi "managed by mesh-workstation" "$NGINX_ENABLED_DIR/$site" 2>/dev/null || return 1
     done
     return 0
 }
@@ -87,6 +99,14 @@ install() {
 
 verify() {
     check
+}
+
+repair() {
+    # Engine --repair sweep: re-run install() to relink a dangling/corrupt
+    # symlink. install() is idempotent (gated `ln -sf` on `[[ -f $src ]]`, the
+    # serve-config deploy that writes $src runs earlier in the bundle), so this
+    # auto-heals the §D filesystem break instead of reporting "no safe auto-repair".
+    install
 }
 
 rollback() {

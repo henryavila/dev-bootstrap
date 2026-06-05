@@ -64,6 +64,12 @@ bundles:
         type: brew-formula
         spec: mosh
         platforms: [mac]
+        # Operational check (verify/operational plan §B): mosh is "listed" by
+        # brew even when mosh-server can't load its protobuf dylib after a
+        # major-version bump. Presence AND a static Mach-O resolve of mosh-server
+        # (standalone helper — bash -c cannot see driver functions). Broken ⇒
+        # check fails ⇒ reinstall-aware brew_formula_install ⇒ `brew reinstall`.
+        check: 'HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_FROM_API=1 "${BREW_BIN:-brew}" list --formula -- mosh >/dev/null 2>&1 && bash "$MESH_LIB_DIR/mach-o-resolvable.sh" "$(HOMEBREW_NO_AUTO_UPDATE=1 ${BREW_BIN:-brew} --prefix)/bin/mosh-server"'
       - name: mosh-wsl
         type: apt
         spec: mosh

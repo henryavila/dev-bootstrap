@@ -11,8 +11,26 @@ source "$WS_DIR/scripts/lib/log.sh"
 # shellcheck disable=SC1091
 source "$WS_DIR/scripts/lib/user-service.sh"
 
+# Functional state gate (sudo-free). install() runs `enable --now`, so the
+# state it actually guarantees is: systemd user unit loaded + enabled + active.
+# We therefore assert is-enabled AND is-active (not just is-active) — and on the
+# nohup fallback anchor pgrep on the exact `moshi-hook serve` exec install() uses,
+# not a bare `moshi-hook` substring that an editor/tail/log tail would satisfy.
+# We deliberately do NOT assert paired here: pairing is token-optional (install()
+# falls back to a manual followup), so a running-but-unpaired daemon is a healthy
+# install — asserting paired would false-fail it and trigger spurious repairs.
+# Mirrors moshi-hook-service-mac.sh `_is_running`.
+_is_running() {
+    if user_service_has_systemd; then
+        systemctl --user is-enabled moshi-hook.service >/dev/null 2>&1 || return 1
+        systemctl --user is-active  moshi-hook.service >/dev/null 2>&1 || return 1
+        return 0
+    fi
+    pgrep -u "$USER" -f 'moshi-hook serve' >/dev/null 2>&1
+}
+
 check() {
-    user_service_is_running moshi-hook
+    _is_running
 }
 
 install() {
@@ -45,7 +63,9 @@ install() {
 }
 
 verify() {
-    pgrep -u "$USER" -f 'moshi-hook' >/dev/null 2>&1
+    # At least as strong as check(): the post-install / --repair gate must not
+    # be looser than the keep/skip gate (was a bare `moshi-hook` substring pgrep).
+    _is_running
 }
 
 rollback() {

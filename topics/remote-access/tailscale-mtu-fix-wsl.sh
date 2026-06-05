@@ -41,8 +41,44 @@ install() {
     fi
 }
 
+# Functional probe: the drop-in only changes behaviour AFTER a
+# daemon-reload + tailscaled restart applies `ip link set tailscale0 mtu N`.
+# install() attempts that, but on WSL it can no-op (systemd not ready →
+# the script itself warns "retry manually"), leaving the file correct on
+# disk while tailscale0 still runs the WireGuard default (1280). A
+# content-only check() then KEEPs forever and the SSH-KEX hang persists.
+# So verify()/--repair assert the LIVE state too: when tailscale0 exists,
+# its sysfs MTU must equal the value the drop-in pins. sysfs MTU
+# (/sys/class/net/<if>/mtu) is world-readable → sudo-free, satisfying the
+# scanner constraint. CONSERVATIVE: if tailscale0 is absent (tailscale
+# simply down) we cannot conclude the fix is unapplied, so we do NOT fail
+# on that — the content check() carries the keep/skip decision and a real
+# restart later applies the pinned MTU. This keeps verify() strictly
+# stronger than check() without false-failing a healthy, idle install.
+_pinned_mtu() {
+    # Single source of truth: extract N from the drop-in's
+    # `ip link set tailscale0 mtu N` line.
+    _dropin_content | sed -n 's/.*mtu \([0-9][0-9]*\).*/\1/p' | head -n1
+}
+
 verify() {
-    check
+    # Strong post-install / --repair probe: content sentinel + live MTU.
+    check || return 1
+    local sysfs want got
+    sysfs="/sys/class/net/tailscale0/mtu"
+    # Interface not present → tailscale is down, not misconfigured. Defer to
+    # check() (already passed). Do not false-fail.
+    [[ -r "$sysfs" ]] || return 0
+    want="$(_pinned_mtu)"
+    # Defensive: if we somehow couldn't derive the pinned value, fall back
+    # to the content check we already passed rather than fail spuriously.
+    [[ -n "$want" ]] || return 0
+    got="$(cat "$sysfs" 2>/dev/null || true)"
+    if [[ "$got" != "$want" ]]; then
+        echo "[tailscale-mtu] drop-in present but tailscale0 MTU=$got (want $want) — daemon-reload+restart not applied" >&2
+        return 1
+    fi
+    return 0
 }
 
 rollback() {

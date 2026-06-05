@@ -99,6 +99,7 @@ Usage:
   mesh                              Show cross-mesh status panel (= mesh status)
   mesh status [<alias>] [flags]     Cross-mesh dashboard; positional drill-down
   mesh snap [flags]                 Generate this host's snapshot
+  mesh doctor [--fix]               Report deploy drift; --fix repairs broken installed items
   mesh update [-o NAME] [-f] [-i]   Pull and apply updates
   mesh topic list                   List mesh-workstation topics
   mesh topic <NN...>                Re-apply mesh-workstation topics by number
@@ -131,6 +132,14 @@ Subcommands:
                                      Silently ignored for mesh-identity or incremental runs.
 
            Passthrough flags: --reset-auth, --from-shell-start.
+  doctor   Health check. No args: report identity deploy drift + system
+           phantoms (read-only, the existing deploy-drift doctor). `--fix`:
+           run the engine's verify+repair sweep over every INSTALLED item —
+           it runs each item's strongest probe (not the weak keep/skip check)
+           and repairs broken-but-kept ones THROUGH the installer (e.g. `brew
+           reinstall` a formula whose dylib a dependency bump removed, or
+           re-run `valet install` on a dead serving stack). No manual fixes.
+           Exit 0 = healthy/repaired, 67 = item(s) left unresolved.
   topic    Convenience wrapper for mesh-workstation topics. `mesh topic list`
            prints the topic numbers from the local mesh-workstation checkout.
            `mesh topic 20 30` runs only those topics, equivalent to
@@ -231,6 +240,44 @@ sub_snap() {
     lib="$(_resolve_companion "internal/mesh-snap")"
     [[ -n "$lib" ]] || _die "internal/mesh-snap not found (set \$MESH_HOME or check installation)"
     exec "$lib" "$@"
+}
+
+# `mesh doctor`        → identity deploy-drift + system-phantom report (read-only).
+# `mesh doctor --fix`  → engine --repair sweep: verify every INSTALLED item with
+#   its strongest probe and repair broken-but-kept ones THROUGH the installer
+#   (e.g. `brew reinstall` a formula whose dylib a dependency bump removed, or
+#   re-run `valet install` on a dead serving stack). rc 0 healthy/repaired, 67
+#   unresolved. (verify/operational plan §C — no manual fixes.)
+sub_doctor() {
+    local fix=0
+    local passthrough=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fix) fix=1; shift ;;
+            -h|--help)
+                cat <<'EOF'
+Usage:
+  mesh doctor            Report identity deploy drift + system phantoms (read-only).
+  mesh doctor --fix      Verify every installed item's strongest probe and REPAIR
+                         broken-but-installed items through the installer (engine
+                         --repair). Reinstalls a brew formula whose dylib a
+                         dependency bump removed, restarts a dead valet stack, etc.
+                         rc 0 = healthy/repaired, 67 = unresolved.
+EOF
+                return 0 ;;
+            *) passthrough+=("$1"); shift ;;
+        esac
+    done
+    if [[ "$fix" -eq 1 ]]; then
+        local repo
+        repo="$(_resolve_workstation_repo)" || \
+            _die "mesh-workstation repo not found (set MESH_WORKSTATION_DIR) — needed for doctor --fix"
+        exec bash "$repo/setup.sh" --repair "${passthrough[@]+"${passthrough[@]}"}"
+    fi
+    local runner
+    runner="$(_resolve_companion "runners/doctor.sh")"
+    [[ -n "$runner" ]] || _die "runners/doctor.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$runner" "${passthrough[@]+"${passthrough[@]}"}"
 }
 
 _normalize_topic_spec() {
@@ -1155,6 +1202,10 @@ case "${1:-status}" in
     snap)
         shift
         sub_snap "$@"
+        ;;
+    doctor)
+        shift
+        sub_doctor "$@"
         ;;
     update)
         shift

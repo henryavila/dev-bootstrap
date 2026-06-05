@@ -15,6 +15,16 @@ check() {
     command -v mkcert >/dev/null 2>&1 || return 1
     test -f "$WILDCARD_PEM" || return 1
     test -f "$WILDCARD_KEY" || return 1
+    # Content sentinel: the rootCA that `mkcert -install` creates and that
+    # signed the wildcard above MUST exist, else the certs are present but
+    # untrusted (NSS/Windows browsers reject *.localhost) — a half-installed
+    # state the bare file-existence checks above would falsely KEEP. CAROOT
+    # is a per-user dir (~/.local/share/mkcert), so this stays sudo-free.
+    # Guard against an empty CAROOT (mkcert error) collapsing to /rootCA.pem.
+    local caroot
+    caroot="$(mkcert -CAROOT 2>/dev/null)" || return 1
+    [[ -n "$caroot" ]] || return 1
+    test -f "$caroot/rootCA.pem" || return 1
     return 0
 }
 
