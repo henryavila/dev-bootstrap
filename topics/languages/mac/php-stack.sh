@@ -395,7 +395,12 @@ pecl_install_for_mac() {
     # `php -m` returns the name case-sensitively, normalized (e.g. "igbinary",
     # "mongodb"). Stderr dropped because warnings from *other* dangling
     # extensions would leak in without -m ever being the point of failure.
-    if "$php_bin" -m 2>/dev/null | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
+    # Capture then grep a here-string — NOT `php -m | grep -q`: under the engine's
+    # pipefail, grep -q closing the pipe early makes php exit non-zero on the EPIPE
+    # → a false "not loaded". `<<<` reads from a temp file (no producer to SIGPIPE).
+    # See feedback_engine_pipefail_grep_q_broken_pipe (lint L21).
+    local _mods; _mods="$("$php_bin" -m 2>/dev/null)"
+    if grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$" <<<"$_mods"; then
         _ensure_ini   # belt-and-suspenders
         ok "php@${ver}: $ext already loaded"
         return 0

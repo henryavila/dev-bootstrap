@@ -25,8 +25,11 @@ _is_running() {
         "${BREW_BIN:-brew}" services list 2>/dev/null \
             | awk '$1=="syncthing"{print $2}' | grep -qx 'started' && return 0
     else
-        launchctl print "gui/$(id -u)/com.${USER}.syncthing" 2>/dev/null \
-            | grep -qE 'state[[:space:]]*=[[:space:]]*running' && return 0
+        # Capture then bash-match — NOT `launchctl print | grep -q`: under the
+        # engine's pipefail, grep -q closing the pipe early SIGPIPE-kills launchctl
+        # (141) → a false "not running". See feedback_engine_pipefail_grep_q_broken_pipe (lint L21).
+        local _lc; _lc="$(launchctl print "gui/$(id -u)/com.${USER}.syncthing" 2>/dev/null)"
+        [[ "$_lc" =~ state[[:space:]]*=[[:space:]]*running ]] && return 0
     fi
     return 1
 }

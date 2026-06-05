@@ -56,8 +56,11 @@ _prefix_is_canonical() {
 # A running server: a live mysqld(_safe), our managed unit, or brew services.
 _server_running() {
     pgrep -u "$USER" -f 'mysqld' >/dev/null 2>&1 && return 0
-    launchctl print "gui/$(id -u)/${MYSQL_LABEL}" 2>/dev/null \
-        | grep -qE 'state[[:space:]]*=[[:space:]]*running' && return 0
+    # Capture then bash-match — NOT `launchctl print | grep -q`: under the engine's
+    # pipefail, grep -q closing the pipe early SIGPIPE-kills launchctl (141) → a
+    # false "not running". See feedback_engine_pipefail_grep_q_broken_pipe (lint L21).
+    local _lc; _lc="$(launchctl print "gui/$(id -u)/${MYSQL_LABEL}" 2>/dev/null)"
+    [[ "$_lc" =~ state[[:space:]]*=[[:space:]]*running ]] && return 0
     "${BREW_BIN:-brew}" services list 2>/dev/null \
         | awk -v s="$MYSQL_SVC" '$1==s{print $2}' | grep -qx 'started'
 }

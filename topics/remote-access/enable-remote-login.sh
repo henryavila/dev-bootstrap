@@ -13,8 +13,12 @@
 # non-sudo path for that. Sudo there is correct friction (user opted in).
 
 check() {
-    launchctl print-disabled system 2>/dev/null \
-        | grep -qE '"com\.openssh\.sshd"[[:space:]]*=>[[:space:]]*enabled'
+    # Capture then bash-match — NOT `launchctl print-disabled | grep -q`: under the
+    # engine's pipefail, grep -q closing the pipe early SIGPIPE-kills launchctl (141)
+    # → a false "disabled". See feedback_engine_pipefail_grep_q_broken_pipe (lint L21).
+    local _lc re; _lc="$(launchctl print-disabled system 2>/dev/null)"
+    re='"com\.openssh\.sshd"[[:space:]]*=>[[:space:]]*enabled'
+    [[ "$_lc" =~ $re ]]
 }
 
 install() {

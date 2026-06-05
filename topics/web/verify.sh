@@ -84,7 +84,10 @@ fi
 if command -v ngrok >/dev/null 2>&1; then
     echo "  ✓ ngrok (optional extra)"
 fi
-if php -m 2>/dev/null | grep -qi '^sqlsrv$\|^pdo_sqlsrv$'; then
+# Capture then grep a here-string — NOT `php -m | grep -q` (php exits non-zero on
+# the EPIPE when grep -q closes early under pipefail). See lint L21.
+php_mods="$(php -m 2>/dev/null)"
+if grep -qiE '^sqlsrv$|^pdo_sqlsrv$' <<<"$php_mods"; then
     echo "  ✓ sqlsrv + pdo_sqlsrv PHP extensions (optional extra)"
 fi
 

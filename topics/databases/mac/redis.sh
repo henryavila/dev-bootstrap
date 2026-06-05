@@ -14,7 +14,12 @@ check() {
     # Service running check: either brew services started, or wrapper alive, or pgrep.
     pgrep -u "$USER" -f 'redis-server' >/dev/null 2>&1 && return 0
     if _use_wrapper; then
-        launchctl print "gui/$(id -u)/com.${USER}.redis" 2>/dev/null | grep -qE 'state[[:space:]]*=[[:space:]]*running'
+        # Capture then bash-match — NOT `launchctl print | grep -q`: launchctl
+        # dies on SIGPIPE (141) when grep -q closes the pipe early, and under the
+        # engine's pipefail that 141 becomes a false "not running". See
+        # feedback_engine_pipefail_grep_q_broken_pipe (lint L21).
+        local _lc; _lc="$(launchctl print "gui/$(id -u)/com.${USER}.redis" 2>/dev/null)"
+        [[ "$_lc" =~ state[[:space:]]*=[[:space:]]*running ]]
     else
         "${BREW_BIN:-brew}" services list 2>/dev/null | awk '$1=="redis"{print $2}' | grep -qx 'started'
     fi
