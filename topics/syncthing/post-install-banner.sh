@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
-# Custom item: Syncthing post-install pairing banner (spec §11 / D-10).
+# Custom item: Syncthing post-install pairing (spec §11 / D-10).
 #
-# The apply phase blocks here so the manual device-pairing step cannot be
-# silently skipped: it prints the admin URL + next steps, then waits for Enter
-# on the controlling tty. Pure echo + read — zero side effects, marked
-# `idempotent: true` in the manifest so it runs on every apply.
+# REPLACES the old passive echo+read banner. Instead of printing 3 vague manual
+# UI steps and blocking on `read`, this drives the declarative reconcile
+# (`mesh syncthing pair`): it sets GUI auth, adds the hub(s), creates+shares the
+# folder(s) over the REST API from the identity syncthing-mesh.yaml, then prints
+# a real, filled-in summary. It pauses ONLY when a genuine first-time hub
+# approval remains, and never under NON_INTERACTIVE.
 #
-# In --non-interactive runs (NON_INTERACTIVE=1) it only prints and does NOT
-# block on read.
+# Non-blocking by contract (like the old banner): a transient pairing problem
+# prints a note and returns 0 — pairing is additive UX at the tail of the
+# install, not a gate. The syncthing-service item already verified the daemon.
+# Marked `idempotent: true` in the manifest so it runs on every apply.
 
-SYNCTHING_URL="${SYNCTHING_GUI_URL:-http://127.0.0.1:8384}"
+_WS="${MESH_WORKSTATION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+_RUNNER="$_WS/scripts/runners/syncthing.sh"
+
+_data_file() {
+    local id="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}" c
+    [[ -n "${MESH_SYNCTHING_DATA:-}" ]] && { printf '%s\n' "$MESH_SYNCTHING_DATA"; return 0; }
+    for c in "$id/sync/syncthing-mesh.yaml" "$id/claude/sync/syncthing-mesh.yaml"; do
+        [[ -f "$c" ]] && { printf '%s\n' "$c"; return 0; }
+    done
+    return 1
+}
 
 check() {
     # Idempotent banner — never "already done"; the engine always re-runs it
@@ -19,26 +33,33 @@ check() {
 }
 
 install() {
-    cat <<BANNER
-
-  ┌─ Syncthing pairing ────────────────────────────────────────────┐
-   Admin UI:  $SYNCTHING_URL
-   Next steps:
-     1. Open the admin UI and set a GUI username/password.
-     2. Add this machine's other devices (Actions → Show ID to copy,
-        then Add Remote Device on each peer — IDs must match both ways).
-     3. Share the folders you want to converge (e.g. curated ~/.claude).
-  └────────────────────────────────────────────────────────────────┘
-
-BANNER
-    if [ "${NON_INTERACTIVE:-0}" = "1" ]; then
-        echo "  [non-interactive] skipping pairing pause — finish the steps above later."
+    if [[ ! -f "$_RUNNER" ]]; then
+        echo "  [syncthing] runner not found ($_RUNNER) — skipping pairing." >&2
         return 0
     fi
-    if [ -e /dev/tty ]; then
-        # shellcheck disable=SC2162
-        read -p "  Press Enter once devices are paired… " _ </dev/tty || true
+    if ! _data_file >/dev/null; then
+        cat <<BANNER
+
+  ┌─ Syncthing — no mesh data yet ─────────────────────────────────────┐
+   This machine runs Syncthing, but there is no syncthing-mesh.yaml to
+   pair against. Two cases:
+     • First machine of the mesh → run:  mesh syncthing init-hub
+       then commit the printed hub id into syncthing-mesh.yaml (identity).
+     • Joining an existing mesh → add the hub id + folders to
+       <identity>/sync/syncthing-mesh.yaml, then run:  mesh syncthing pair
+  └────────────────────────────────────────────────────────────────────┘
+
+BANNER
+        return 0
     fi
+
+    # Drive the real reconcile. The runner renders the summary / cold-start /
+    # hub banner and handles the (only) interactive approval pause itself.
+    if ! bash "$_RUNNER" pair; then
+        echo "  [syncthing] pairing reconcile hit a snag (daemon not ready?)." \
+             "Re-run later with:  mesh syncthing pair" >&2
+    fi
+    return 0
 }
 
 verify() {

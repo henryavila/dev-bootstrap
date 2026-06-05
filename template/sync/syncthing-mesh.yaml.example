@@ -1,0 +1,43 @@
+# syncthing-mesh.yaml — declarative source of truth for YOUR Syncthing mesh.
+#
+# Copy this to your identity repo as  sync/syncthing-mesh.yaml  and fill it in.
+# It is the ONLY file you edit to add a peer, a folder, or a static address.
+# Then on each machine:  mesh syncthing pair
+#
+# First machine of a brand-new mesh? You have no hub id yet (a Syncthing device
+# id is born on first launch). On the machine you choose as the hub, run:
+#     mesh syncthing init-hub          # prints the hub id + this exact block
+# commit the id under `hubs:` below, then run `mesh syncthing pair` everywhere.
+
+topology: star            # star (default, scale-safe) | mesh (small nets only)
+introducer: false         # OFF: introducer ⇒ all-to-all N² connections.
+                          # true ONLY together with topology: mesh on a tiny net.
+
+gui:
+  user: you               # GUI login user (the password is generated per-machine
+                          # and shown once; recover via `mesh syncthing password --reset`).
+  # bind policy (fail-closed): local | tailscale | <explicit ip:port>.
+  #   local     = 127.0.0.1 only (no remote GUI; the safe default).
+  #   tailscale = this host's 100.x IP, resolved at runtime — remote GUI over
+  #               the tailnet ONLY. Binds to the tailnet IP (127.0.0.1 stops
+  #               serving); use `mesh syncthing url` to get the address.
+  # 0.0.0.0 is REJECTED unless MESH_SYNCTHING_UNSAFE_BIND=1.
+  bind: local
+
+hubs:                     # the trusted core. Leaves are admitted on the hub via
+                          # a one-time approve; only the hub id(s) live here.
+                          # Run `mesh syncthing init-hub` to mint the first one.
+  - id: AAAAAAA-BBBBBBB-CCCCCCC-DDDDDDD-EEEEEEE-FFFFFFF-GGGGGGG-HHHHHHH  # replace
+    name: my-hub
+    addresses: [dynamic]  # or tcp://100.x.y.z:22000,dynamic behind a firewall.
+
+admission:                # how a NEW machine gets trusted by a hub.
+  tier: manual            # manual | tailscale | token  (Phase 2 adds 1 & 2)
+  allow: []               # tailscale tier: allowed users/tags, e.g. [tag:mesh]
+
+folders:
+  - id: my-shared-folder  # Folder ID — MUST match on every machine.
+    path: ~/my-shared-folder
+    type: sendreceive     # both ways | sendonly | receiveonly
+    namespacing: per-node # each node writes only under <path>/<myID>/… (anti-poison).
+    # stignore: path/to/ignore-patterns          # optional, relative to identity root

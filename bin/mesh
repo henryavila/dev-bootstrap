@@ -111,6 +111,7 @@ Usage:
   mesh personal-clone [flags]       Clone personal repos from identity catalog
   mesh menu [--apply]               Interactive item selector (standalone or with apply)
   mesh secret <verb>                Manage replicated personal secrets (git-crypt 2-tier)
+  mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -278,6 +279,16 @@ EOF
     runner="$(_resolve_companion "runners/doctor.sh")"
     [[ -n "$runner" ]] || _die "runners/doctor.sh not found (set \$MESH_HOME or check installation)"
     exec bash "$runner" "${passthrough[@]+"${passthrough[@]}"}"
+}
+
+# `mesh syncthing <verb>` → REST-driven Syncthing mesh pairing (workstation
+# runner). Replaces the old passive post-install banner: a declarative reconcile
+# from the identity syncthing-mesh.yaml (pair/init-hub/status/password/url).
+sub_syncthing() {
+    local runner
+    runner="$(_resolve_companion "runners/syncthing.sh")"
+    [[ -n "$runner" ]] || _die "runners/syncthing.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$runner" "$@"
 }
 
 _normalize_topic_spec() {
@@ -1246,6 +1257,10 @@ case "${1:-status}" in
     secret)
         shift
         sub_secret "$@"
+        ;;
+    syncthing)
+        shift
+        sub_syncthing "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.
