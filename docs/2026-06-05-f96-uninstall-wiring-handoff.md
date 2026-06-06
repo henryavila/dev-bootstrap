@@ -251,3 +251,29 @@ User has not authorized a commit yet (changed plan mid-session).
    — force with MESH_RTK_FORCE_UNINSTALL=1 or rm manually") and honors
    `MESH_RTK_FORCE_UNINSTALL=1`. With D4, not deleting keeps the marker (honest).
    So `uninstall()` is no longer just `rollback` — it adds the force path.
+
+---
+
+## Rollout status + resume (2026-06-05 — spun out to standalone initiative)
+
+Now tracked as the standalone initiative `uninstall-wiring`
+(`mesh-identity/.atomic-skills/initiatives/uninstall-wiring.md`) — read it for the
+full directives, wave breakdown, and the wave-1 review bug-classes. **PARKED**
+(user changed plan); not pushed.
+
+**Done (13/66 custom items):** `ai/install-rtk` + `web/extras/ngrok` (Frente A,
+`46769e0`) + Frente B **wave 1** (`5631853`, 11 AI+databases items).
+
+**Method (user's choice):** one agent IMPLEMENTS `uninstall()` per script → one
+adversarial agent REVIEWS it per script, via the saved Workflow recipe
+`docs/2026-06-05-uninstall-fanout-workflow.js` (edit `meta.name` + `UNITS` +
+labels, re-run, remediate `needs_fix` BY HAND — don't apply review blindly; the
+two moshi reviewers reached opposite conclusions and the conflict needed
+judgment). Wave 1 caught a HIGH data-loss bug (`install-bun` was `rm -rf`-ing all
+of `~/.bun`, incl. the user's global packages).
+
+**Resume order:** wave 2 (remote-access+identity+containers, 10) → wave 3
+(shell-terminal, 21) → wave 4 (web, 7) → wave 5 (languages+foundation+git+personal+
+syncthing, 15) → B2 npx driver → B3 deploy targeted removals → D5 menu (baseline=
+markers + badge) → D6 rtk force → **Frente C (harden L09)** LAST (only after every
+item has `uninstall()`, else the suite + pre-commit go red).
