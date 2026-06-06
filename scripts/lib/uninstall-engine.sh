@@ -301,6 +301,12 @@ uninstall_bundle() {
             removed=$((removed+1)); continue
         fi
 
+        # item_removed gates the marker drop (D4). The marker is the menu's
+        # "installed?" signal; dropping it unconditionally made a custom item
+        # with no uninstall() report as removed while the binary stayed (the
+        # ngrok bug). Package drivers are assumed to have removed; the custom
+        # branch sets this explicitly from uninstall()'s exit status.
+        local item_removed=1
         case "$type" in
             brew-formula)  _uninstall_brew "$spec" ;;
             brew-cask)     _uninstall_brew_cask "$spec" ;;
@@ -313,23 +319,42 @@ uninstall_bundle() {
             deploy)        log_info "$bundle/$name: deploy item — rendered files left in place (clearing marker)" ;;
             custom)
                 if [[ -n "$script" && -r "$script" ]]; then
+                    # Source the script and run uninstall() via the `|| rc` idiom
+                    # so errexit is suppressed for the verb (the sourced-per-verb
+                    # custom contract — never `set +e`, which L03 bans). Sentinel
+                    # rc 75 = no uninstall() defined → keep the marker (still there).
+                    local _urc=0
                     (
                         # shellcheck disable=SC1090
                         . "$script"
-                        if declare -f uninstall >/dev/null 2>&1; then uninstall
-                        else warn "$bundle/$name: custom script defines no uninstall() — remove manually"; fi
-                    ) || log_warn "$bundle/$name: uninstall() returned non-zero (continuing)"
+                        declare -f uninstall >/dev/null 2>&1 || exit 75
+                        _vrc=0
+                        uninstall || _vrc=$?
+                        exit "$_vrc"
+                    ) || _urc=$?
+                    if [[ "$_urc" -eq 75 ]]; then
+                        warn "$bundle/$name: custom script defines no uninstall() — keeping marker (still installed); remove manually"
+                        item_removed=0
+                    elif [[ "$_urc" -ne 0 ]]; then
+                        log_warn "$bundle/$name: uninstall() returned $_urc — keeping marker (removal not confirmed)"
+                        item_removed=0
+                    fi
                 else
-                    warn "$bundle/$name: custom script not found: ${script:-<unset>}"
+                    warn "$bundle/$name: custom script not found: ${script:-<unset>} — keeping marker"
+                    item_removed=0
                 fi
                 ;;
-            *) warn "$bundle/$name: no uninstall handler for type=$type" ;;
+            *) warn "$bundle/$name: no uninstall handler for type=$type — keeping marker"; item_removed=0 ;;
         esac
 
-        # Drop the marker regardless: the user's intent (removal) is recorded
-        # here whether or not the package was already gone.
-        install_state_remove "$TOPIC" "$name" 2>/dev/null || true
-        removed=$((removed+1))
+        # Drop the marker only on a real removal (D4): a kept marker keeps the
+        # item visible as installed in the menu, so it can't falsely show "removed".
+        if [[ "$item_removed" -eq 1 ]]; then
+            install_state_remove "$TOPIC" "$name" 2>/dev/null || true
+            removed=$((removed+1))
+        else
+            log_info "$bundle/$name: marker kept — not removed"
+        fi
     done
     log_info "$topic/$bundle: uninstalled ($removed item(s) on $PLATFORM)"
 }

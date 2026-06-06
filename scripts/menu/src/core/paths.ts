@@ -49,6 +49,15 @@ export function paramsFile(): string {
 }
 
 /**
+ * Bundles the user deselected since the last apply (computeDelta.remove). The
+ * Apply (setup.sh) runs uninstall-engine on these BEFORE installing, then
+ * deletes the file. Empty body (header only) ⇒ nothing to remove.
+ */
+export function removalsFile(): string {
+  return path.join(meshConfigDir(), 'removals.list');
+}
+
+/**
  * Install markers the engine writes (one `<topic>__<item>.env`). Matches
  * install-state.sh: MESH_INSTALL_STATE_DIR override → else <state>/mesh/installed.
  */

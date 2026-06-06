@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   readSelections,
   writeSelections,
+  writeRemovals,
   readParams,
   writeParams,
   quoteParam,
@@ -24,6 +25,24 @@ describe('selections.list', () => {
 
   it('returns an empty set for a missing file', () => {
     expect(readSelections('/no/such/file').size).toBe(0);
+  });
+});
+
+describe('removals.list', () => {
+  it('writes deselected bundles sorted + deduped, readable by the engine parser', () => {
+    const f = path.join(tmp(), 'removals.list');
+    writeRemovals(['web/ngrok', 'web/mailpit', 'web/ngrok'], f); // dup dropped
+    const body = readFileSync(f, 'utf8');
+    expect(body).toContain('# mesh removals');
+    expect(body).toContain('web/mailpit\nweb/ngrok'); // sorted, deduped
+    // Same on-disk shape as selections.list, so readSelections parses it.
+    expect([...readSelections(f)].sort()).toEqual(['web/mailpit', 'web/ngrok']);
+  });
+
+  it('writes a header-only file (no real lines) when nothing was deselected', () => {
+    const f = path.join(tmp(), 'removals.list');
+    writeRemovals([], f);
+    expect(readSelections(f).size).toBe(0); // header/blank ignored ⇒ engine skips
   });
 });
 

@@ -27,7 +27,7 @@ import {
 import { scanAll } from './core/scanner.js';
 import { initialSelection, requiredKeys } from './core/init.js';
 import { closeRequires, dependentsOf, computeDelta, toggleTopicSelection } from './core/delta.js';
-import { writeSelections, writeParams, readParams } from './core/selections-io.js';
+import { writeSelections, writeRemovals, writeParams, readParams } from './core/selections-io.js';
 import { buildFormSpec, applyFormValues, resolveSelectedDefaults, incompleteRequired, type BundleFormSpec } from './core/form-spec.js';
 import { TopicPicker } from './screens/TopicPicker.js';
 import { OptionsForm } from './screens/OptionsForm.js';
@@ -117,6 +117,9 @@ export function App({ dryRun, onExit }: AppProps) {
       // the engine fails on it. Copy params so the resolve doesn't mutate state.
       const resolved = resolveSelectedDefaults(selectedRefs, new Map(params));
       writeSelections([...selected]);
+      // Persist the deselected set so the Apply uninstalls it before installing
+      // (Frente A). On a fresh install prevSelection is empty → no removals.
+      writeRemovals(computeDelta(prevSelection, selected).remove);
       writeParams(resolved);
     }
     onExit(code);

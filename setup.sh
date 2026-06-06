@@ -220,6 +220,11 @@ trap 'rm -f "${MESH_FOLLOWUP_FILE:-}"' EXIT
 # ─── resolve the selection ───────────────────────────────────────────────────
 SELECTIONS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mesh"
 SELECTIONS_FILE="$SELECTIONS_DIR/selections.list"
+# Bundles the menu computed as deselected-since-last-apply (computeDelta.remove).
+# The menu writes them here; the Apply runs uninstall-engine on them BEFORE the
+# install pass, then deletes the file. Headless runs have no menu/delta → no
+# file → install-only (marker-diff for headless is future work, see handoff).
+REMOVALS_FILE="$SELECTIONS_DIR/removals.list"
 MENU_DIR="$HERE/scripts/menu"
 
 run_menu_if_available() {
@@ -287,6 +292,25 @@ engine_args=(--selections "$SELECTIONS_FILE" --platform "$OS")
 [[ "$NON_INTERACTIVE" == "1" ]] && engine_args+=(--non-interactive)
 [[ "$DRY_RUN" == "1" ]] && engine_args+=(--dry-run)
 [[ "$REPAIR_MODE" == "1" ]] && engine_args+=(--repair)
+
+# ─── uninstall pass: bundles deselected in the menu (Frente A) ────────────────
+# Run BEFORE install so re-selecting a previously-removed dependency reinstalls
+# cleanly. Skipped under --repair (a marker sweep, independent of the selection)
+# and when nothing was deselected. uninstall-engine takes no --non-interactive
+# (it never prompts) and computes no requires_bundles closure, so it removes
+# exactly the listed bundles — never an auto-removed shared dependency.
+if [[ "$REPAIR_MODE" != "1" ]] && [[ -s "$REMOVALS_FILE" ]] && grep -qvE '^[[:space:]]*(#|$)' "$REMOVALS_FILE"; then
+    info "uninstall pass: $REMOVALS_FILE"
+    uninstall_args=(--selections "$REMOVALS_FILE" --platform "$OS")
+    [[ "$DRY_RUN" == "1" ]] && uninstall_args+=(--dry-run)
+    set +e
+    bash "$HERE/scripts/lib/uninstall-engine.sh" "${uninstall_args[@]}" 2>&1 | tee -a "$LOG"
+    uninstall_rc="${PIPESTATUS[0]}"
+    set -e
+    [[ "$uninstall_rc" -ne 0 ]] && warn "uninstall pass exited rc=$uninstall_rc — continuing to install (see $LOG)"
+    # Clear so a later plain re-run doesn't re-trigger the uninstall.
+    [[ "$DRY_RUN" == "1" ]] || rm -f "$REMOVALS_FILE"
+fi
 
 set +e
 bash "$HERE/scripts/lib/install-engine.sh" "${engine_args[@]}" 2>&1 | tee -a "$LOG"

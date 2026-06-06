@@ -10,7 +10,7 @@
  * shapes in install-engine.sh.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { meshConfigDir, paramsFile, selectionsFile } from './paths.js';
+import { meshConfigDir, paramsFile, removalsFile, selectionsFile } from './paths.js';
 import type { FieldValue } from '@henryavila/blink-tui';
 
 function ensureConfigDir(): void {
@@ -43,6 +43,23 @@ export function writeSelections(keys: Iterable<string>, file: string = selection
   ensureConfigDir();
   const sorted = [...new Set(keys)].sort();
   const body = ['# mesh selections — written by the setup menu (topic/bundle per line)', ...sorted].join('\n');
+  writeFileSync(file, body + '\n', { mode: 0o644 });
+}
+
+/**
+ * Write removals.list — bundles deselected since the last apply, which the
+ * Apply uninstalls before the install pass (then deletes the file). One
+ * `topic/bundle` per line; a header-only file means "nothing to remove" and the
+ * engine pass is skipped. Always written (overwriting any stale list) so a run
+ * with zero removals clears a leftover from a prior run.
+ */
+export function writeRemovals(keys: Iterable<string>, file: string = removalsFile()): void {
+  ensureConfigDir();
+  const sorted = [...new Set(keys)].sort();
+  const body = [
+    '# mesh removals — deselected bundles to uninstall before install (topic/bundle per line)',
+    ...sorted,
+  ].join('\n');
   writeFileSync(file, body + '\n', { mode: 0o644 });
 }
 
