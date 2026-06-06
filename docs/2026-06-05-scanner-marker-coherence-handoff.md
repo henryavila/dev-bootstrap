@@ -7,6 +7,34 @@ Self-contained resume doc. Read this first.
 
 ---
 
+## ✅ RESOLVED 2026-06-06 — Option A implemented (`mesh adopt` / engine `--adopt`)
+
+Implemented exactly as recommended (Option A, read-only). TDD: integration test
+first (`tests/integration/engine-adopt.test.sh`, 14/14), then the engine mode.
+
+- **Engine** `install-engine.sh`: new `--adopt` mode — a per-item subshell branch
+  (mirroring `--repair`) that, for a marker-ABSENT item whose strong probe passes
+  (driver verify > manifest `check:` > driver `_check`), writes the install marker
+  and NOTHING else. Skips idempotent items + items that already have a marker;
+  absent/unprobeable → no marker. Always rc 0 (best-effort). Mutually exclusive
+  with `--update`/`--repair` (rc 64).
+- **`setup.sh --adopt`**: forces non-interactive, scopes over **all** bundles
+  (`emit_all_selections`, so opt-in v1 installs are adopted too), skips the
+  uninstall pass, and skips the sudo warmup + NOPASSWD cleanup (read-only).
+- **`mesh adopt`**: `bin/mesh` subcommand → `setup.sh --adopt`. The read-only
+  sibling of `mesh doctor --fix`.
+
+**Metal validation on ultron (the machine in the symptom):** before = 0 markers,
+all tools present. `mesh adopt` → **62 markers written, rc 0, 0 install/deploy/
+sudo lines** (proven read-only). The real TS scanner over the live markers:
+`{installed:0,partial:0,missing:32}` → `{installed:16,partial:11,missing:5}`.
+The false negative is gone; the menu now reflects reality. Re-run is idempotent.
+
+Acceptance criteria below all met. D5 (uninstall-wiring) can now assume markers
+reflect reality on migrated machines.
+
+---
+
 ## Symptom
 
 On `ultron` (provisioned by the **v1** dev-bootstrap/dotfiles system, then the repos
@@ -79,12 +107,15 @@ correct on migrated machines.** Track this finding under `uninstall-wiring`.
 
 ## Acceptance criteria
 
-- [ ] `mesh adopt` (or `setup.sh --adopt`) on ultron writes a marker for every
+- [x] `mesh adopt` (or `setup.sh --adopt`) on ultron writes a marker for every
       present item WITHOUT running any install/deploy and WITHOUT sudo side effects.
-- [ ] After adopt, the v2 menu renders the present tools as installed (✓), not missing.
-- [ ] Adopt is idempotent + safe to re-run; an absent tool gets NO marker.
-- [ ] Unit/integration test: seed a tool present + no marker → adopt writes the marker;
-      tool absent + no marker → no marker written.
+      *(62 markers, rc 0, 0 mutating lines, sudo warmup/NOPASSWD skipped under --adopt.)*
+- [x] After adopt, the v2 menu renders the present tools as installed (✓), not missing.
+      *(real scanner: 32 missing → 16 installed + 11 partial + 5 missing.)*
+- [x] Adopt is idempotent + safe to re-run; an absent tool gets NO marker.
+      *(engine-adopt.test.sh re-run case + absent-item case.)*
+- [x] Unit/integration test: seed a tool present + no marker → adopt writes the marker;
+      tool absent + no marker → no marker written. *(`tests/integration/engine-adopt.test.sh`, 14/14.)*
 
 ## Key file refs
 

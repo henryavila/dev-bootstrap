@@ -10,7 +10,7 @@
 #   bash install-engine.sh [--selections FILE] [--bundle topic/bundle ...]
 #                          [--topics-dir DIR] [--params FILE] [--secrets FILE]
 #                          [--platform OS] [--non-interactive] [--dry-run]
-#                          [--update | --repair]
+#                          [--update | --repair | --adopt]
 #
 # Selections come from --selections (one `topic/bundle` per line; blank lines
 # and `#` comments ignored) and/or repeated --bundle flags. The two combine.
@@ -32,6 +32,18 @@
 # A failure is recorded and the sweep CONTINUES (reports every broken item in one
 # pass) — rc 67 if any item is left unresolved, rc 0 on a healthy tree. Mutually
 # exclusive with --update. `mesh doctor --fix` / `setup --repair` invoke it.
+#
+# --adopt (scanner-marker-coherence handoff §A): a READ-ONLY marker backfill. For
+# each marker-ABSENT item whose strongest probe passes (driver verify > manifest
+# check > driver check) it writes the install marker WITHOUT install/deploy/sudo.
+# Reconciles the drift-in state a v1-migrated (or foreign) install leaves — tool
+# present but no v2 marker — so the marker-only menu scanner stops reporting it
+# `missing`. The inverse of --repair (which acts on marker-PRESENT items): same
+# probe, marker-ABSENT target, and the marker is its only write. Idempotent / a
+# tool that simply isn't installed are no-ops; absent ≠ error so it always exits
+# 0 and is safe to re-run. Mutually exclusive with --update/--repair. `mesh adopt`
+# / `setup --adopt` invoke it. (`--dry-run` short-circuits before the probe, like
+# the other modes — use `mesh adopt` itself, it is already side-effect-free.)
 #
 # Per bundle, in topological order:
 #   1. cd into the topic dir (custom `script:` paths are topic-relative).
@@ -99,6 +111,7 @@ PLATFORM_OVERRIDE=""
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 UPDATE_MODE=0
 REPAIR_MODE=0
+ADOPT_MODE=0
 CLI_BUNDLES=()
 
 while [[ $# -gt 0 ]]; do
@@ -114,16 +127,20 @@ while [[ $# -gt 0 ]]; do
         --dry-run)          DRY_RUN=1; shift ;;
         --update)           UPDATE_MODE=1; shift ;;
         --repair)           REPAIR_MODE=1; shift ;;
+        --adopt)            ADOPT_MODE=1; shift ;;
         --help|-h)          sed -n '2,40p' "$0"; exit 0 ;;
         *)                  log_error "unknown arg: $1"; exit 64 ;;
     esac
 done
 
-# --repair and --update are mutually exclusive: --update exits before the normal
-# lifecycle (it upgrades versions), --repair runs an operational verify+fix pass.
-# Combining them is a usage error (plan §3.C / Codex finding #7).
-if [[ "$REPAIR_MODE" -eq 1 && "$UPDATE_MODE" -eq 1 ]]; then
-    log_error "--repair and --update are mutually exclusive"
+# --update / --repair / --adopt are pairwise exclusive: each replaces the normal
+# install lifecycle with a different single-purpose pass — --update upgrades
+# versions, --repair runs an operational verify+fix, --adopt does a read-only
+# marker backfill. Combining any two is a usage error (plan §3.C / Codex finding
+# #7 / scanner-marker-coherence handoff).
+_mode_count=$(( UPDATE_MODE + REPAIR_MODE + ADOPT_MODE ))
+if [[ "$_mode_count" -gt 1 ]]; then
+    log_error "--update, --repair and --adopt are mutually exclusive"
     exit 64
 fi
 
@@ -231,6 +248,11 @@ trap 'rm -rf "$WORK"' EXIT
 REPAIR_OK_FILE="$WORK/repair-ok"
 REPAIR_FIXED_FILE="$WORK/repair-fixed"
 REPAIR_FAIL_FILE="$WORK/repair-failures"
+
+# --adopt bookkeeping: per-item subshells append one "topic/bundle/name" per
+# marker written, so the parent can report how many pre-existing installs were
+# adopted. Same subshell-can't-set-parent-vars rationale as the repair files.
+ADOPT_DONE_FILE="$WORK/adopt-done"
 
 # ─── selection collection ────────────────────────────────────────────────────
 
@@ -606,6 +628,51 @@ apply_bundle() {
             . "$driver"
             local prefix="${type//-/_}"
 
+            # adopt mode (scanner-marker-coherence handoff, Option A): a read-only
+            # marker backfill. For each marker-ABSENT item whose STRONGEST probe
+            # passes (driver verify > manifest check > driver check) write the
+            # install marker WITHOUT install/deploy/sudo. This reconciles the
+            # drift-in state a v1-migrated (or foreign) install leaves — tool
+            # present but no v2 marker — so the marker-only menu scanner stops
+            # reporting it `missing`. Inverse of --repair: same probe, but it
+            # targets marker-ABSENT items and the marker is its ONLY write.
+            # Idempotent items have no install-state (always-run, e.g. banners) →
+            # nothing to adopt. An item that already has a marker → no-op. An item
+            # that is absent/unprobeable gets NO marker. Always exits 0 (a tool
+            # that simply isn't here is not an error), so the sweep is best-effort
+            # and safe to re-run.
+            if [[ "$ADOPT_MODE" -eq 1 ]]; then
+                if [[ "$idem" == "1" ]]; then
+                    log_info "$bundle/$name: adopt skip (idempotent — no install state to adopt)"; exit 0
+                fi
+                if [[ -f "$(install_state_path "$TOPIC" "$name")" ]]; then
+                    log_info "$bundle/$name: adopt skip (already has a marker)"; exit 0
+                fi
+                _adopt_probe() {   # driver verify > manifest check > driver check
+                    if declare -f "${prefix}_verify" >/dev/null 2>&1; then
+                        "${prefix}_verify" "$arg"
+                    elif [[ -n "$mcheck" ]]; then
+                        bash -c "$mcheck" >/dev/null 2>&1
+                    elif declare -f "${prefix}_check" >/dev/null 2>&1; then
+                        "${prefix}_check" "$arg" 2>/dev/null
+                    else
+                        return 2   # no probe available → cannot confirm presence
+                    fi
+                }
+                local _aprc=0
+                _adopt_probe >/dev/null 2>&1 || _aprc=$?
+                if [[ "$_aprc" -ne 0 ]]; then
+                    log_info "$bundle/$name: adopt skip (not present / unprobeable)"; exit 0
+                fi
+                if install_state_record "$TOPIC" "$name" "$type" "$arg"; then
+                    printf '%s\n' "$bundle/$name" >> "$ADOPT_DONE_FILE" 2>/dev/null || true
+                    log_info "$bundle/$name: adopted ✓ (present, marker written)"
+                else
+                    log_warn "$bundle/$name: present but failed to write marker"
+                fi
+                exit 0
+            fi
+
             # repair mode (verify/operational plan §C): verify each installed
             # item with its STRONGEST probe; on failure attempt ONE repair through
             # the installer, then re-probe. Failures are RECORDED (not aborting)
@@ -808,6 +875,16 @@ if [[ "$REPAIR_MODE" -eq 1 ]]; then
         while IFS= read -r _l; do [[ -n "$_l" ]] && log_error "  - $_l"; done < "$REPAIR_FAIL_FILE"
         exit 67
     fi
+    exit 0
+fi
+
+# ─── adopt-mode summary (scanner-marker-coherence handoff) ────────────────────
+# Read-only sweep: item subshells exit 0 and append to ADOPT_DONE_FILE per marker
+# written. Tally + report; adopt is best-effort so it always exits 0.
+if [[ "$ADOPT_MODE" -eq 1 ]]; then
+    _a_done=0
+    [[ -s "$ADOPT_DONE_FILE" ]] && _a_done="$(grep -c . "$ADOPT_DONE_FILE")"
+    log_info "adopt sweep on $PLATFORM: $_a_done marker(s) written for pre-existing installs"
     exit 0
 fi
 

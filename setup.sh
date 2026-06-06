@@ -38,6 +38,7 @@ NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 LIST_BUNDLES=0
 REPAIR_MODE=0
+ADOPT_MODE=0
 for arg in "$@"; do
     case "$arg" in
         --help|-h)        SHOW_HELP=1 ;;
@@ -45,6 +46,7 @@ for arg in "$@"; do
         --dry-run)        DRY_RUN=1 ;;
         --list-bundles)   LIST_BUNDLES=1 ;;
         --repair)         REPAIR_MODE=1 ;;
+        --adopt)          ADOPT_MODE=1 ;;
         *) echo "setup.sh: unknown arg: $arg (try --help)" >&2; exit 64 ;;
     esac
 done
@@ -53,6 +55,15 @@ done
 # unset option falls back to its silent default; the engine repairs only items
 # with an install marker (so the selection just scopes the sweep).
 [[ "$REPAIR_MODE" == "1" ]] && NON_INTERACTIVE=1
+# --adopt (scanner-marker-coherence handoff, via `mesh adopt`): a READ-ONLY
+# marker backfill, never the menu. Force non-interactive (skip menu + silent
+# option defaults); the engine writes a marker for every already-present item
+# that lacks one — no install/deploy/sudo. Scopes over ALL bundles (below) so
+# opt-in tools installed under v1 also get a marker.
+[[ "$ADOPT_MODE" == "1" ]] && NON_INTERACTIVE=1
+if [[ "$ADOPT_MODE" == "1" && "$REPAIR_MODE" == "1" ]]; then
+    echo "setup.sh: --adopt and --repair are mutually exclusive" >&2; exit 64
+fi
 export NON_INTERACTIVE DRY_RUN
 
 # shellcheck disable=SC1091
@@ -73,6 +84,9 @@ Automation / CI mode:
   bash setup.sh --list-bundles      list every topic/bundle + default selection
   bash setup.sh --repair            verify+repair installed-but-broken items only
                                     (no menu; engine --repair; = mesh doctor --fix)
+  bash setup.sh --adopt             read-only: backfill install markers for tools
+                                    already present but unmarked (v1→v2 machines);
+                                    no install/deploy/sudo (= mesh adopt)
 
 Selection lives in ~/.config/mesh/selections.list (one topic/bundle per line);
 resolved non-secret options in ~/.config/mesh/params.env. Delete selections.list
@@ -103,6 +117,28 @@ emit_default_selections() {
                 if [[ "$req" == "1" || "$ds" != "0" ]]; then
                     printf '%s/%s\n' "$topic" "$name"
                 fi
+            done
+        )
+    done
+}
+
+# Every bundle, ignoring required / default_selected. Used by --adopt so the
+# read-only marker backfill probes opt-in bundles too (a v1 machine may have
+# installed Docker/MSSQL/etc.); the menu can then show true state for all of them.
+emit_all_selections() {
+    local mf topic vf
+    for mf in "$HERE"/topics/*/manifest.yaml; do
+        [[ -f "$mf" ]] || continue
+        topic="$(basename "$(dirname "$mf")")"
+        vf="$(bash "$HERE/scripts/lib/yaml-parse.sh" < "$mf" 2>/dev/null)" || continue
+        (
+            eval "$vf"
+            [[ "${__YAML_PARSE_OK:-0}" == "1" ]] || exit 0
+            local n="${BUNDLE_COUNT:-0}" i name_v name
+            for ((i=0; i<n; i++)); do
+                name_v="BUNDLE_${i}_NAME"; name="${!name_v:-}"
+                [[ -n "$name" ]] || continue
+                printf '%s/%s\n' "$topic" "$name"
             done
         )
     done
@@ -199,12 +235,14 @@ if [[ "$OS" == "mac" ]]; then
 fi
 
 # ─── sudo warmup + legacy NOPASSWD cleanup ───────────────────────────────────
-if [[ "$DRY_RUN" != "1" ]]; then
+# Skipped under --adopt: a read-only marker backfill must never warm sudo or
+# mutate sudoers (its probes are check()/verify() only — no privileged action).
+if [[ "$DRY_RUN" != "1" && "$ADOPT_MODE" != "1" ]]; then
     sudo -v 2>/dev/null || warn "sudo cache warmup failed (non-fatal — items will prompt individually)"
 fi
 # Pre-v2026-04-22 remote-access left a permanent NOPASSWD sudoers entry.
 # Clean it up unconditionally so forks inherit the fix.
-if [[ ( "$OS" == "wsl" || "$OS" == "linux" ) && "$DRY_RUN" != "1" ]]; then
+if [[ ( "$OS" == "wsl" || "$OS" == "linux" ) && "$DRY_RUN" != "1" && "$ADOPT_MODE" != "1" ]]; then
     legacy_nopasswd="/etc/sudoers.d/10-${USER}-nopasswd"
     if [[ -f "$legacy_nopasswd" ]] || sudo test -f "$legacy_nopasswd" 2>/dev/null; then
         info "removing legacy NOPASSWD sudoers entry at $legacy_nopasswd"
@@ -266,7 +304,18 @@ if should_run_menu; then
     # menu_rc == 0 → selections.list was written; proceed with it.
 fi
 
-if [[ ! -f "$SELECTIONS_FILE" ]]; then
+if [[ "$ADOPT_MODE" == "1" ]]; then
+    # Adopt probes EVERY bundle (not just the default/saved selection) so an
+    # opt-in tool installed under v1 also gets its marker. Never persist a
+    # selections.list as a side effect; feed the engine via a temp file. The
+    # user's real selections.list (if any) is left untouched.
+    SELECTIONS_FILE="$(mktemp -t mesh-adopt.XXXXXX)"
+    trap 'rm -f "${MESH_FOLLOWUP_FILE:-}" "'"$SELECTIONS_FILE"'"' EXIT
+    {
+        echo "# mesh adopt — all bundles (read-only marker-backfill scope)"
+        emit_all_selections
+    } > "$SELECTIONS_FILE"
+elif [[ ! -f "$SELECTIONS_FILE" ]]; then
     info "no selections.list — computing the default selection"
     mkdir -p "$SELECTIONS_DIR"
     if [[ "$DRY_RUN" == "1" || "$REPAIR_MODE" == "1" ]]; then
@@ -292,6 +341,7 @@ engine_args=(--selections "$SELECTIONS_FILE" --platform "$OS")
 [[ "$NON_INTERACTIVE" == "1" ]] && engine_args+=(--non-interactive)
 [[ "$DRY_RUN" == "1" ]] && engine_args+=(--dry-run)
 [[ "$REPAIR_MODE" == "1" ]] && engine_args+=(--repair)
+[[ "$ADOPT_MODE" == "1" ]] && engine_args+=(--adopt)
 
 # ─── uninstall pass: bundles deselected in the menu (Frente A) ────────────────
 # Run BEFORE install so re-selecting a previously-removed dependency reinstalls
@@ -299,7 +349,7 @@ engine_args=(--selections "$SELECTIONS_FILE" --platform "$OS")
 # and when nothing was deselected. uninstall-engine takes no --non-interactive
 # (it never prompts) and computes no requires_bundles closure, so it removes
 # exactly the listed bundles — never an auto-removed shared dependency.
-if [[ "$REPAIR_MODE" != "1" ]] && [[ -s "$REMOVALS_FILE" ]] && grep -qvE '^[[:space:]]*(#|$)' "$REMOVALS_FILE"; then
+if [[ "$REPAIR_MODE" != "1" && "$ADOPT_MODE" != "1" ]] && [[ -s "$REMOVALS_FILE" ]] && grep -qvE '^[[:space:]]*(#|$)' "$REMOVALS_FILE"; then
     info "uninstall pass: $REMOVALS_FILE"
     uninstall_args=(--selections "$REMOVALS_FILE" --platform "$OS")
     [[ "$DRY_RUN" == "1" ]] && uninstall_args+=(--dry-run)

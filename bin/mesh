@@ -100,6 +100,7 @@ Usage:
   mesh status [<alias>] [flags]     Cross-mesh dashboard; positional drill-down
   mesh snap [flags]                 Generate this host's snapshot
   mesh doctor [--fix]               Report deploy drift; --fix repairs broken installed items
+  mesh adopt                        Backfill install markers for already-present tools (v1→v2; read-only)
   mesh update [-o NAME] [-f] [-i]   Pull and apply updates
   mesh topic list                   List mesh-workstation topics
   mesh topic <NN...>                Re-apply mesh-workstation topics by number
@@ -141,6 +142,13 @@ Subcommands:
            reinstall` a formula whose dylib a dependency bump removed, or
            re-run `valet install` on a dead serving stack). No manual fixes.
            Exit 0 = healthy/repaired, 67 = item(s) left unresolved.
+  adopt    Read-only install-marker backfill for a machine provisioned by the
+           older v1 system (tools present, zero v2 markers → the marker-only
+           setup menu wrongly shows everything "not installed"). Runs each
+           item's strongest probe and writes the marker for every ALREADY-
+           present item, WITHOUT install/deploy/sudo. Idempotent + safe to
+           re-run; an absent tool gets no marker. The read-only sibling of
+           `doctor --fix` for the inverse (marker-absent) drift.
   topic    Convenience wrapper for mesh-workstation topics. `mesh topic list`
            prints the topic numbers from the local mesh-workstation checkout.
            `mesh topic 20 30` runs only those topics, equivalent to
@@ -279,6 +287,35 @@ EOF
     runner="$(_resolve_companion "runners/doctor.sh")"
     [[ -n "$runner" ]] || _die "runners/doctor.sh not found (set \$MESH_HOME or check installation)"
     exec bash "$runner" "${passthrough[@]+"${passthrough[@]}"}"
+}
+
+# `mesh adopt` → READ-ONLY install-marker backfill (setup.sh --adopt → engine
+# --adopt). A machine provisioned by the older v1 system has the tools but zero
+# v2 install markers, so the v2 setup menu shows every bundle as "not installed"
+# (false negative — the menu reads markers only). `mesh adopt` runs each item's
+# strongest probe and writes the marker for every item that is ALREADY present,
+# WITHOUT install/deploy/sudo. Idempotent + safe to re-run; an absent tool gets
+# no marker. (scanner-marker-coherence handoff §A.)
+sub_adopt() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                cat <<'EOF'
+Usage:
+  mesh adopt     Read-only: for every tool already installed but missing its
+                 mesh install marker (e.g. a machine set up by the older v1
+                 system), write the marker WITHOUT running any install/deploy/
+                 sudo. Makes the setup menu show the true install state.
+                 Idempotent + safe to re-run; an absent tool gets no marker.
+EOF
+                return 0 ;;
+            *) _die "adopt: unexpected arg '$1' (mesh adopt takes no arguments)" ;;
+        esac
+    done
+    local repo
+    repo="$(_resolve_workstation_repo)" || \
+        _die "mesh-workstation repo not found (set MESH_WORKSTATION_DIR) — needed for adopt"
+    exec bash "$repo/setup.sh" --adopt
 }
 
 # `mesh syncthing <verb>` → REST-driven Syncthing mesh pairing (workstation
@@ -1217,6 +1254,10 @@ case "${1:-status}" in
     doctor)
         shift
         sub_doctor "$@"
+        ;;
+    adopt)
+        shift
+        sub_adopt "$@"
         ;;
     update)
         shift
