@@ -257,3 +257,68 @@ rollback() {
         launch_wrapper_teardown "$MYSQL_LABEL" 2>/dev/null || true
     fi
 }
+
+uninstall() {
+    # Reverse install(), per the path install() would have taken (no state file
+    # is recorded, so re-derive it the same way check()/install() do):
+    #
+    #   Path 2 (canonical brew prefix, no Oracle binary) — install() did
+    #     `brew install mysql` + `brew services start`. REVERSE IT FOR REAL:
+    #     stop the service, then `brew uninstall mysql` (formula, matching the
+    #     install verb). Success is gated on the formula actually being gone, so
+    #     the engine's marker drop is honest (the ngrok pattern). brew owns its
+    #     own datadir teardown for the formula, so this is data-safe.
+    #
+    #   Path 1 / Path 3 (Oracle install at /usr/local/mysql) — the only
+    #     mesh-managed, data-safe artifacts are the run layer (user LaunchAgent +
+    #     wrapper script) and the /etc/paths.d PATH fragment install() wrote.
+    #     We deliberately do NOT remove /usr/local/mysql, its symlink target, or
+    #     the datadir: Path 1 may be a user's pre-existing .dmg/.pkg install we
+    #     only registered, and on Path 3 the datadir lives *inside* the extracted
+    #     tree (/usr/local/mysql/data) — rm -rf would be data loss. This mirrors
+    #     rollback()'s documented refusal. The binary therefore stays, so success
+    #     here is gated on the mesh-managed artifacts being gone, not on the
+    #     mysql binary disappearing.
+    local rc=0
+
+    # ---- Path 2: canonical brew prefix, formula install (no Oracle binary) ----
+    if _prefix_is_canonical && [[ ! -x "$ORACLE_MYSQL_BIN" ]]; then
+        local brew_bin="${BREW_BIN:-brew}"
+        # If brew is unavailable we can't have removed the formula and can't
+        # confirm it's gone — keep the marker (return 1), never a false "removed"
+        # (the ngrok dishonest-marker class). Mirrors redis.sh.
+        command -v "$brew_bin" >/dev/null 2>&1 || return 1
+        if "$brew_bin" list --formula "$MYSQL_SVC" >/dev/null 2>&1; then
+            "$brew_bin" services stop "$MYSQL_SVC" >/dev/null 2>&1 || true
+            # --ignore-dependencies matches the engine brew handler + sibling
+            # redis.sh: a legitimate uninstall must not fail just because an
+            # unrelated formula declares mysql as a dependency.
+            "$brew_bin" uninstall --ignore-dependencies --formula "$MYSQL_SVC" >/dev/null 2>&1 || rc=$?
+        fi
+        # Honest gate: success only when the formula is actually gone.
+        if "$brew_bin" list --formula "$MYSQL_SVC" >/dev/null 2>&1; then
+            echo "mysql(mac): brew formula '${MYSQL_SVC}' still present after uninstall" >&2
+            return 1
+        fi
+        return 0
+    fi
+
+    # ---- Path 1 / Path 3: Oracle install at /usr/local/mysql ----
+    # Tear down the mesh run layer (user LaunchAgent + wrapper). Skipped by
+    # install() when a .pkg/.dmg system daemon manages mysql, so a teardown
+    # no-op there is correct (nothing of ours was installed).
+    _source_launch_wrapper
+    launch_wrapper_teardown "$MYSQL_LABEL" 2>/dev/null || true
+
+    # Remove ONLY the PATH fragment install()/_register_oracle_path added.
+    # Never the binary tree or the datadir (data-loss / pre-existing-install).
+    local paths_file="/etc/paths.d/61-oracle-mysql"
+    if [[ -e "$paths_file" ]]; then
+        sudo rm -f "$paths_file" 2>/dev/null || rc=$?
+    fi
+
+    # Gate on the mesh-managed artifacts being gone (the binary intentionally
+    # stays — see header). A non-zero rc from the PATH-file removal is the only
+    # thing that can fail the honest marker drop here.
+    [[ "$rc" -eq 0 ]] && [[ ! -e "$paths_file" ]]
+}

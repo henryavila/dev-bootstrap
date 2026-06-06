@@ -72,3 +72,120 @@ verify() {
 rollback() {
     :
 }
+
+uninstall() {
+    # Reverse install-mssql-driver.sh (WSL/Debian only — Mac install is manual,
+    # so there is nothing this verb removes on Darwin). install() does, in order:
+    #   1. apt: msodbcsql18, mssql-tools18, unixodbc-dev (+ per-PHP php<ver>-dev)
+    #   2. Microsoft APT source + keyring it created
+    #   3. /etc/profile.d/mssql-tools.sh PATH snippet it wrote
+    #   4. PECL sqlsrv + pdo_sqlsrv built + `phpenmod`-enabled per PHP version
+    # We undo 1-4 scoped strictly to mesh-managed paths. Shared deps are LEFT:
+    #   - unixodbc-dev is a generic ODBC build dep other drivers may need → keep.
+    #   - php<ver>-dev is owned by the languages bundle (10-languages installs it
+    #     for all PECL builds) → keep; we only added it defensively for a
+    #     standalone run.
+    # Success is gated on `! check` so the engine's marker drop is honest: we
+    # only confirm removal when the driver packages are gone AND no configured
+    # PHP version still loads the extensions.
+
+    # Mac: install is manual (heavy-lifter exits 0 off Ubuntu/Debian), so there
+    # is nothing we own to remove. Documented no-op for this platform.
+    case "$(uname -s)" in
+        Linux) : ;;
+        *) return 0 ;;
+    esac
+
+    local ver php_bin
+
+    # ── 4. PECL extensions: disable then uninstall per configured PHP version ──
+    # phpdismod (reverse of install's phpenmod) is what actually makes `php -m`
+    # stop reporting the ext — the exact signal check() probes. `pecl uninstall`
+    # then clears the registry/.so; both are best-effort (the version may be gone
+    # already, or the ext never built). The 4-env-var pinning install used isn't
+    # needed to *disable*: phpdismod -v binds the version directly.
+    for ver in ${PHP_VERSIONS:-${PHP_DEFAULT:-}}; do
+        [[ -z "$ver" ]] && continue
+        if command -v phpdismod >/dev/null 2>&1; then
+            sudo phpdismod -v "$ver" pdo_sqlsrv >/dev/null 2>&1 || true
+            sudo phpdismod -v "$ver" sqlsrv     >/dev/null 2>&1 || true
+        fi
+        # Remove what install() actually wrote. `pecl uninstall` is best-effort
+        # AND usually a no-op: install built the extensions with an ISOLATED
+        # PHP_PEAR_METADATA_DIR (mktemp'd then deleted), so the default PEAR
+        # registry has no record — leaving the .so + the mods-available .ini stubs
+        # orphaned. So also delete those directly, scoped to mesh-written paths.
+        php_bin="$(command -v "php${ver}" 2>/dev/null)" || php_bin=""
+        if [[ -n "$php_bin" ]] && command -v pecl >/dev/null 2>&1; then
+            PHP_PEAR_PHP_BIN="$php_bin" sudo -E pecl uninstall "pdo_sqlsrv" >/dev/null 2>&1 || true
+            PHP_PEAR_PHP_BIN="$php_bin" sudo -E pecl uninstall "sqlsrv"     >/dev/null 2>&1 || true
+        fi
+        # The mods-available .ini stubs install wrote (phpdismod only drops the
+        # conf.d symlink, never these).
+        sudo rm -f "/etc/php/${ver}/mods-available/sqlsrv.ini" \
+                   "/etc/php/${ver}/mods-available/pdo_sqlsrv.ini" 2>/dev/null || true
+        # The built .so in this version's extension_dir. `php -r ini_get` prints
+        # the dir directly — no pipe, so no pipefail/broken-pipe race.
+        if [[ -n "$php_bin" ]]; then
+            local extdir
+            extdir="$("$php_bin" -r 'echo ini_get("extension_dir");' 2>/dev/null)" || extdir=""
+            if [[ -n "$extdir" && -d "$extdir" ]]; then
+                sudo rm -f "$extdir/sqlsrv.so" "$extdir/pdo_sqlsrv.so" 2>/dev/null || true
+            fi
+        fi
+    done
+
+    # Restart any running FPMs so the now-disabled extension is dropped from the
+    # live worker (mirror of install's restart pass). Best-effort.
+    for ver in ${PHP_VERSIONS:-${PHP_DEFAULT:-}}; do
+        [[ -z "$ver" ]] && continue
+        if command -v systemctl >/dev/null 2>&1 \
+            && systemctl is-active --quiet "php${ver}-fpm" 2>/dev/null; then
+            sudo systemctl restart "php${ver}-fpm" >/dev/null 2>&1 || true
+        fi
+    done
+
+    # ── 1. apt packages: remove the driver + tools install() hardwired ──────────
+    # purge (not just remove) so msodbcsql18's odbcinst.ini stanza + configs are
+    # gone — a stale "ODBC Driver 18 for SQL Server" registration would otherwise
+    # leave check()'s odbcinst probe passing. unixodbc-dev is a shared build dep:
+    # NOT removed (another ODBC driver bundle may rely on it).
+    if command -v apt-get >/dev/null 2>&1; then
+        for pkg in mssql-tools18 msodbcsql18; do
+            if dpkg -s "$pkg" >/dev/null 2>&1; then
+                sudo ACCEPT_EULA=Y apt-get purge -y -qq "$pkg" >/dev/null 2>&1 || true
+            fi
+        done
+    fi
+
+    # ── 3. PATH snippet install() wrote for sqlcmd/bcp ─────────────────────────
+    sudo rm -f /etc/profile.d/mssql-tools.sh 2>/dev/null || true
+
+    # ── 2. Microsoft APT source + keyring install() created ────────────────────
+    # Both files are written by THIS installer and (per repo grep) no other
+    # bundle consumes them, so removing them only reverts what install() added.
+    sudo rm -f /etc/apt/sources.list.d/mssql-release.list \
+               /etc/apt/keyrings/microsoft.gpg 2>/dev/null || true
+    # Refresh the apt cache so the dropped source stops being referenced. Tolerate
+    # failure (offline, locked dpkg) — it doesn't affect removal correctness.
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq >/dev/null 2>&1 || true
+    fi
+
+    # Honest success gate: removed only when the driver package is gone AND no
+    # configured PHP version still loads the extensions. check() can't be reused:
+    # its `dpkg -s msodbcsql18 || return 1` SHORT-CIRCUITS before the per-PHP ext
+    # probe, so it would report "removed" the instant the package is purged even
+    # if phpdismod failed and the ext stayed enabled. Probe both arms here.
+    dpkg -s msodbcsql18 >/dev/null 2>&1 && return 1   # driver package still installed
+    for ver in ${PHP_VERSIONS:-${PHP_DEFAULT:-}}; do
+        [[ -z "$ver" ]] && continue
+        php_bin="$(command -v "php${ver}" 2>/dev/null)" || continue
+        # capture-then-test (pipefail-safe; no `php -m | grep -q` broken-pipe
+        # race). "sqlsrv" substring catches both sqlsrv and pdo_sqlsrv.
+        local mods
+        mods="$("$php_bin" -m 2>/dev/null)" || mods=""
+        [[ "$mods" == *sqlsrv* ]] && return 1   # extension still enabled
+    done
+    return 0
+}

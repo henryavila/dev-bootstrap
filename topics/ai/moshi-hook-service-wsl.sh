@@ -71,3 +71,57 @@ verify() {
 rollback() {
     user_service_teardown moshi-hook
 }
+
+uninstall() {
+    # Reverse install() — and ONLY what install() established here. The
+    # moshi-hook *binary* is owned by a separate bundle item (moshi-hook-linux
+    # / install-moshi-hook.sh), whose own uninstall() removes ~/.local/bin so
+    # we never touch it. This item reverses two pieces of state:
+    #   1. the systemd user service (unit + enable, or the nohup fallback proc)
+    #   2. the agent hook configs written by `moshi-hook install`
+    # The local Moshi pairing (`moshi-hook pair`, ~/.config/moshi) is user-owned
+    # account credential state and is deliberately NOT reversed here (anti-M2);
+    # install() only pairs when MOSHI_PAIRING_TOKEN is set. Matches the mac sibling.
+    #
+    # errexit is OFF inside custom verbs and L03 bans `set +e`, so every step is
+    # guarded (command -v / || true) and we capture rc explicitly where it gates
+    # the result. Idempotent: each step is a no-op when the thing is already gone.
+
+    # 1. Service teardown (same primitive as rollback(): disable+rm unit, or
+    #    pkill on the nohup fallback). This is the authoritative state we gate on.
+    user_service_teardown moshi-hook || true
+
+    # 2. Reverse the agent-hook install, best-effort. Runs through the binary,
+    #    which may already be gone if moshi-hook-linux uninstalled first (deselect
+    #    order is not guaranteed) — hence the guard. Resolve by absolute path like
+    #    install() does (~/.local/bin is not on the item-subshell PATH on a fresh
+    #    bootstrap).
+    local bin
+    bin="$(command -v moshi-hook 2>/dev/null || true)"
+    [ -n "$bin" ] || bin="$HOME/.local/bin/moshi-hook"
+    if [ -x "$bin" ]; then
+        # `moshi-hook uninstall` removes the agent hook configuration written by
+        # `install`. We deliberately do NOT run `moshi-hook unpair`: pairing is
+        # user-owned account credential state (~/.config/moshi), only created when
+        # the MOSHI_PAIRING_TOKEN secret was present — tooling must never delete
+        # user-owned $HOME state (anti-M2). Matches the mac sibling.
+        "$bin" uninstall >/dev/null 2>&1 || true
+    fi
+
+    # Honest marker drop: success = the service install() established is actually
+    # gone. Assert the systemd unit is no longer enabled/active (or, on the nohup
+    # fallback, that no `moshi-hook serve` process remains for this user). Mirror
+    # _is_running's probe and invert it, so the engine only clears the marker when
+    # the daemon this item owns is truly down.
+    if user_service_has_systemd; then
+        local enrc=0
+        systemctl --user is-enabled moshi-hook.service >/dev/null 2>&1 || enrc=$?
+        local acrc=0
+        systemctl --user is-active  moshi-hook.service >/dev/null 2>&1 || acrc=$?
+        # Down = both probes failed (non-zero). If either still reports the unit,
+        # teardown did not take — keep the marker by returning non-zero.
+        [ "$enrc" -ne 0 ] && [ "$acrc" -ne 0 ]
+    else
+        ! pgrep -u "$USER" -f 'moshi-hook serve' >/dev/null 2>&1
+    fi
+}

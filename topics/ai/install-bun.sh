@@ -28,3 +28,19 @@ rollback() {
     local dir="$HOME/.bun"
     [[ -x "$dir/bin/bun" ]] && rm -rf "$dir" 2>/dev/null || true
 }
+
+uninstall() {
+    # Reverse install() — remove ONLY the installer's binaries, NOT the whole
+    # ~/.bun tree. ~/.bun/install/ holds user state mesh never created: the
+    # global package cache (~/.bun/install/cache) and globally-installed CLIs
+    # (~/.bun/install/global, shimmed under ~/.bun/bin). Nuking it would be
+    # guessing-deletion of user data. The PATH/completion lines the installer
+    # appended to the user's shell rc are user-owned and left untouched.
+    local dir="$HOME/.bun"
+    rm -f "$dir/bin/bun" "$dir/bin/bunx" 2>/dev/null || true
+    # Drop bin/ then ~/.bun only if now empty (preserves install/ + any user
+    # shims); rmdir fails harmlessly when not empty.
+    rmdir "$dir/bin" "$dir" 2>/dev/null || true
+    # Honest marker drop: success = the binary we installed is actually gone.
+    [[ ! -e "$dir/bin/bun" ]]
+}

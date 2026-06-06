@@ -143,3 +143,57 @@ rollback() {
         sudo service mysql stop 2>/dev/null || true
     fi
 }
+
+uninstall() {
+    # Reverse install(): stop the server, REMOVE (not purge) the community 9.x
+    # package, and drop ONLY the Oracle APT source + keyring this script added.
+    #
+    # Data-safe by design: `apt-get remove` (never `purge`) leaves /var/lib/mysql
+    # and /etc/mysql untouched — this is a deliberate `mesh uninstall`, not the
+    # crash-time rollback(), but a database's data dir is never ours to delete.
+    #
+    # install() explicitly leaves a pre-existing distro mysql-server-8.0 ALONE
+    # (8.0→9 is not a direct upgrade and the packages conflict). uninstall()
+    # honours the same boundary: it only ever removes the community package and
+    # the repo files WE added — never the distro 8.0 package, its data, or any
+    # mysql binary 8.0 might still provide.
+    [[ "$(uname -s)" == Linux* ]] || return 0
+
+    # Nothing of ours installed → honest no-op success (a lone distro 8.0, or a
+    # never-installed machine, leaves no community package and no repo files).
+    if ! _pkg_installed && [[ ! -e "$MYSQL_SOURCES" && ! -e "$MYSQL_KEYRING" ]]; then
+        return 0
+    fi
+
+    sudo -v 2>/dev/null || true
+
+    # Stop the server before package removal (best-effort; either init path).
+    if _server_running; then
+        if _has_systemd; then
+            sudo systemctl disable --now mysql >/dev/null 2>&1 || true
+        else
+            sudo service mysql stop >/dev/null 2>&1 || true
+        fi
+    fi
+
+    # Remove (not purge) the community server package if present.
+    if _pkg_installed; then
+        export DEBIAN_FRONTEND=noninteractive
+        local rc=0
+        sudo apt-get remove -y -q "$PKG" || rc=$?
+        [[ "$rc" -eq 0 ]] || echo "mysql(wsl): apt-get remove $PKG returned $rc" >&2
+    fi
+
+    # Drop only the mesh-added APT source + keyring (scoped, mesh-managed paths).
+    sudo rm -f "$MYSQL_SOURCES" "$MYSQL_KEYRING" 2>/dev/null || true
+
+    # Refresh the index so the now-removed source can't leave a dangling entry.
+    if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -q >/dev/null 2>&1 || true
+    fi
+
+    # Honest marker drop: success = OUR package is gone AND both repo files are
+    # gone. Gating on _pkg_installed (not `command -v mysql`) is deliberate — a
+    # surviving distro 8.0 would still provide a `mysql` binary that isn't ours.
+    ! _pkg_installed && [[ ! -e "$MYSQL_SOURCES" && ! -e "$MYSQL_KEYRING" ]]
+}

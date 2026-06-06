@@ -123,3 +123,48 @@ rollback() {
         "${BREW_BIN:-brew}" services stop moshi-hook 2>/dev/null || true
     fi
 }
+
+uninstall() {
+    # Reverse what install() established — the SERVICE-MANAGER state, not the
+    # moshi-hook binary. install() asserts the binary is already present
+    # (`[[ -x "$bin" ]] || return 1`); it never installs it. The binary is a
+    # brew formula owned by a *different* bundle item, so `brew uninstall
+    # moshi-hook` here would yank a shared dependency — out of scope. We remove
+    # only the launchd wrapper job (custom prefix) or the `brew services`
+    # registration (canonical prefix), plus the agent hooks install() added via
+    # `moshi-hook install`. Pairing data (~/.config/moshi/config.json) is
+    # user-owned credential/config — never deleted.
+    #
+    # errexit is OFF in custom verbs and `set +e` is L03-banned, so every step
+    # is best-effort via `|| true` / captured rc; success is gated on the
+    # service being gone (! _is_running), mirroring ngrok's honest marker drop.
+    local ws_dir="${MESH_WORKSTATION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+    # shellcheck disable=SC1091
+    . "$ws_dir/scripts/lib/launch-wrapper.sh"
+
+    # 1. Remove the agent hooks install() registered (idempotent, best-effort).
+    #    Only attempt when the binary is still present and exposes `uninstall`;
+    #    capture rc rather than letting a non-zero exit propagate.
+    if command -v moshi-hook >/dev/null 2>&1; then
+        local _hrc=0
+        moshi-hook uninstall >/dev/null 2>&1 || _hrc=$?
+        # _hrc is advisory only (subcommand may not exist on older builds);
+        # the marker drop is gated on service teardown below, not on this.
+    fi
+
+    # 2. Tear down the service-manager registration on whichever path install()
+    #    used. Both teardown helpers are idempotent and no-op when absent.
+    if _use_wrapper; then
+        launch_wrapper_teardown "com.${USER}.moshi-hook" 2>/dev/null || true
+    else
+        "${BREW_BIN:-brew}" services stop moshi-hook 2>/dev/null || true
+    fi
+
+    # 3. Honest success gate: the supervised service must actually be gone, so
+    #    the engine only drops the install marker when teardown really took.
+    if _is_running; then
+        echo "[moshi-hook-service-mac] uninstall: service still running after teardown" >&2
+        return 1
+    fi
+    return 0
+}
