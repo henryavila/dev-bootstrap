@@ -220,13 +220,34 @@ User has not authorized a commit yet (changed plan mid-session).
 - Marker `<topic>__<item>` collision (known F9.6 finding) when deriving
   bundle→item for any marker-diff fallback.
 
-## Open design decisions (resolve at session start)
+## Design decisions — RESOLVED 2026-06-05
 
-1. **Removals source:** menu-persists `removals.list` vs `setup.sh` diffs
-   markers−selection. (Recommend: menu persists; marker-diff fallback for headless.)
-2. **Order:** uninstall before or after the install pass in Apply? (Recommend: before.)
-3. **deploy uninstall (B3):** remove rendered files or stay no-op?
-4. **Marker drop (B4):** unconditional vs only-on-successful-removal?
-5. **Gap 3 UX:** deselected-but-installed renders checked, or unchecked + badge?
-6. **rtk uninstall sha256 guard:** keep refusing to delete a drifted binary on
-   an explicit user uninstall? (Currently yes, via `rollback`.)
+1. **Removals source → menu-persists `removals.list`** (marker-diff fallback for
+   headless deferred). ✅ DONE in Frente A (commit 46769e0).
+2. **Order → uninstall BEFORE the install pass.** ✅ DONE in Frente A.
+3. **deploy uninstall (B3) → permanent no-op; targeted removals via the owning
+   bundle's `uninstall()` in Frente B.** deploy.sh writes user-editable config
+   via managed-block merges and records no write-manifest, so auto-deleting risks
+   destroying user edits. The driver stays a no-op; a deploy-rendered *mesh-owned
+   standalone* artifact (e.g. the `share-project` wrapper, generated completions)
+   is removed by the owning custom `uninstall()`, not the deploy driver. deploy
+   keeps dropping its marker (the rendered config is intentionally left).
+4. **Marker drop (B4) → only on a real removal.** ✅ DONE in Frente A (D4):
+   custom w/o uninstall() (rc 75) or a failed uninstall() keeps the marker.
+5. **Gap 3 UX → (b) unchecked + independent install badge, AND baseline = markers.**
+   Render an installed-but-deselected bundle as ☐ (selection = intent) with a
+   distinct ✓/◐ install badge (reality) + legend "installed, not selected →
+   removed on Apply". Change the delta baseline `prevSelection` (wizard.tsx) from
+   the saved selection to the currently-installed set (scanner/markers) so
+   `computeDelta(installed, selected).remove = installed − selected`. This closes
+   the original ngrok bug class: Frente A's saved-selection baseline only removes
+   what was in selections.list; the marker baseline also removes items that
+   drifted out of selections.list but are still installed.
+6. **rtk sha256 guard → keep by default; add an explicit force override for
+   user-initiated uninstall.** A drifted `~/.local/bin/rtk` may be a different
+   vendor (rtk-ai/rtk vs reachingforthejack/rtk) or an external upgrade, so
+   `rollback()` stays strictly guarded. `uninstall()` (explicit intent) instead
+   warns actionably on drift ("differs from mesh's recorded install; not deleting
+   — force with MESH_RTK_FORCE_UNINSTALL=1 or rm manually") and honors
+   `MESH_RTK_FORCE_UNINSTALL=1`. With D4, not deleting keeps the marker (honest).
+   So `uninstall()` is no longer just `rollback` — it adds the force path.
