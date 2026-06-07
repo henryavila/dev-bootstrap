@@ -140,6 +140,13 @@ r="$(printf '%s' "$pend_json" | python3 "$PY" render pair)"
 assert_contains "render: pending-leaf branch" "join the mesh" "$r"
 assert_contains "render: fresh password shown" "SECRET123   ← save this" "$r"
 assert_contains "render: warning surfaced" "⚠ back it up" "$r"
+# T-003: hub with NO explicit address → fallback hint (no URL to derive)
+assert_contains "render: pending fallback hints mesh syncthing url" "on the hub for the address" "$r"
+
+# T-003: hub WITH explicit tcp://IP:port → derived admin URL printed in step 1
+pend_addr_json='{"myid":"4QE","self_name":"mac","am_i_hub":false,"gui":{"user":"henry","url":"http://127.0.0.1:8384","password_action":"kept","password":null},"hubs":[{"id":"SNG","name":"ultron","addresses":["tcp://100.71.187.99:22000","dynamic"]}],"folders":[{"id":"claude-mem-sync","type":"sendreceive","path":"/h/cm"}],"peers":[],"folder_status":[],"pending_approve":true,"warnings":[]}'
+ra="$(printf '%s' "$pend_addr_json" | python3 "$PY" render pair)"
+assert_contains "render: pending shows derived hub admin URL (sync port→8384)" "http://100.71.187.99:8384" "$ra"
 
 paired_json='{"myid":"4QE","self_name":"mac","am_i_hub":false,"gui":{"user":"henry","url":"http://127.0.0.1:8384","password_action":"kept","password":null},"hubs":[{"id":"SNG","name":"ultron"}],"peers":[{"id":"SNG","name":"ultron","connected":true}],"folders":[{"id":"claude-mem-sync","type":"sendreceive","path":"/h/cm"}],"folder_status":[{"id":"claude-mem-sync","state":"idle","globalBytes":1048576,"needBytes":0}],"pending_approve":false,"warnings":[]}'
 r="$(printf '%s' "$paired_json" | python3 "$PY" render pair)"

@@ -654,7 +654,8 @@ def cmd_pair(data_path, self_name, non_interactive):
         "gui": {"user": auth["user"], "bind": auth["address"],
                 "password_action": auth["action"], "password": auth["password"],
                 "url": "http://%s" % _ui_host(auth["address"])},
-        "hubs": [{"id": h["id"], "name": h.get("name", "")} for h in hubs],
+        "hubs": [{"id": h["id"], "name": h.get("name", ""),
+                  "addresses": h.get("addresses")} for h in hubs],
         "peers": status["peers"],
         "folders": folder_summ,
         "folder_status": status["folders"],
@@ -666,6 +667,18 @@ def cmd_pair(data_path, self_name, non_interactive):
 def _ui_host(address):
     # For the admin-UI URL, present 127.0.0.1 verbatim; an explicit bind shows as-is.
     return address
+
+
+def _hub_admin_url(hub):
+    """Best-effort hub admin-UI URL from the hub's declared sync addresses: take
+    the first explicit ``tcp://HOST:PORT`` and swap to the GUI port. Returns None
+    when the hub only advertises ``dynamic`` (no host to derive from) — the caller
+    then falls back to the generic "run `mesh syncthing url` on the hub" hint."""
+    for addr in (hub.get("addresses") or []):
+        m = re.match(r"^tcp://(\[[0-9A-Fa-f:]+\]|[^:/\s]+)(?::\d+)?/?$", str(addr))
+        if m:
+            return "http://%s:%d" % (m.group(1), DEFAULT_PORT)
+    return None
 
 
 def _data_loss_guard(path, warnings):
@@ -808,6 +821,9 @@ def render_pair(d):
     elif d.get("pending_approve"):
         hub = (d.get("hubs") or [{}])[0]
         folder = (d.get("folders") or [{}])[0]
+        hub_url = _hub_admin_url(hub)
+        open_step = ("  1. Open the hub admin UI:  %s" % hub_url) if hub_url \
+            else "  1. Open the hub admin UI — run `mesh syncthing url` on the hub for the address."
         lines = [
             "This machine : %-12s ID %s" % (d.get("self_name", ""), d["myid"]),
             "Mesh hub     : %-12s ID %s" % (hub.get("name", ""), hub.get("id", "")),
@@ -818,7 +834,7 @@ def render_pair(d):
             "  ✔ folder %s created & offered to the hub" % folder.get("id", ""),
             "",
             "ONE manual step — only the first time this machine joins:",
-            "  1. Open the hub admin UI (any browser on your Tailscale net).",
+            open_step,
             "  2. \"New Device %s… (%s)\" → Add Device → Save" % (_short(d["myid"]), d.get("self_name", "")),
             "  3. \"New Folder %s offered by %s\" → Add → keep %s → Save"
             % (folder.get("id", ""), d.get("self_name", ""), folder.get("path", "")),
