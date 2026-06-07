@@ -283,6 +283,16 @@ _affected_selected_bundles() {
     done <<< "$selections"
 }
 
+# T-002: did this identity diff touch the declarative Syncthing mesh? The mesh
+# replicates the DATA on pull (sync/syncthing-mesh.yaml, or claude/sync/…), but
+# only `mesh syncthing pair` applies a topology/peer change to the local daemon.
+# Pure + deterministic so the reconcile decision is unit-tested; the pair itself
+# is metal-validated (needs the daemon). The `\.yaml$` anchor excludes the
+# shipped `.example` template. Echo|grep, not a fatal-producer pipe (L21-safe).
+_syncthing_yaml_changed() {
+    echo "$1" | grep -qE '(^|/)sync/syncthing-mesh\.yaml$'
+}
+
 # ─── Accumulators ───────────────────────────────────────────────────
 SHELL_RC_CHANGED=0
 FOLLOWUPS=()
@@ -445,6 +455,17 @@ process_repo() {
                     [[ -n "$doctor_out" ]] && printf '%s\n' "$doctor_out" | sed 's/^/    /' >&2
                 fi
             fi
+            # T-002: a --full identity re-apply reconciles Syncthing too — the
+            # yaml may carry a topology/peer change. No diff to gate on in --full
+            # (force re-apply everything), so reconcile unconditionally when
+            # syncthing is installed. Idempotent + non-interactive; non-fatal.
+            if command -v syncthing >/dev/null 2>&1 && [[ -f "$HERE/syncthing.sh" ]]; then
+                notice "$name: reconciliando Syncthing (mesh syncthing pair)…"
+                if ! NON_INTERACTIVE=1 MESH_IDENTITY_DIR="$repo" \
+                        bash "$HERE/syncthing.sh" pair 2>&1 | sed 's/^/    /'; then
+                    warn "$name: \`mesh syncthing pair\` retornou non-zero (continuando)"
+                fi
+            fi
         fi
         # Defense in depth: never write empty last-applied. new_head is the
         # actual post-pull SHA; head_remote was the upstream snapshot at
@@ -579,6 +600,24 @@ process_repo() {
     if (( ! skip_install )) && _is_identity_repo "$repo"; then
         if ! bash "$repo/install.sh" 2>&1 | sed 's/^/    /'; then
             warn "$name: install.sh falhou (continuando)"
+        fi
+    fi
+
+    # ─── Apply: auto-reconcile Syncthing when the mesh yaml changed (T-002) ──
+    # The mesh replicates the yaml on pull but nothing applies it — close that
+    # gap by re-running the idempotent `mesh syncthing pair` here, non-interactive
+    # (a genuinely-new device just defers to the Tier-0 approve; already handled).
+    # Gated on syncthing being installed; failure warns but never aborts update.
+    if (( ! skip_install )) && _is_identity_repo "$repo" \
+            && command -v syncthing >/dev/null 2>&1 \
+            && _syncthing_yaml_changed "$diff_paths"; then
+        local st_runner="$HERE/syncthing.sh"
+        if [[ -f "$st_runner" ]]; then
+            notice "$name: syncthing-mesh.yaml mudou — reconciliando (mesh syncthing pair)…"
+            if ! NON_INTERACTIVE=1 MESH_IDENTITY_DIR="$repo" \
+                    bash "$st_runner" pair 2>&1 | sed 's/^/    /'; then
+                warn "$name: \`mesh syncthing pair\` retornou non-zero (continuando) — reconcilie manualmente"
+            fi
         fi
     fi
 
