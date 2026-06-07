@@ -85,3 +85,30 @@ bundles:
       - name: rtk
         type: custom
         script: ./install-rtk.sh
+
+  - name: claude-mem
+    label: "claude-mem"
+    desc: "Persistent cross-session memory (Claude Code plugin + Bun worker)"
+    icon_name: sync
+    # Needs the Claude Code CLI + Bun in place first. The official installer
+    # auto-installs Bun/uv if missing, but ai/claude-code pre-stages Bun so the
+    # worker on :37777 starts cleanly on the first session (removes the
+    # smart-install timing/connectivity coupling — see README).
+    requires_bundles:
+      - ai/claude-code
+    items:
+      - name: claude-mem
+        type: npx
+        # Official non-interactive installer (v13+, thedotmack/claude-mem):
+        # registers the Claude Code plugin + lifecycle hooks and selects the
+        # local `worker` runtime (SQLite on :37777). --no-auto-start leaves the
+        # worker stopped; the dump/pull sync hooks (mesh-identity) bring it up.
+        spec: "claude-mem@latest install --ide claude-code --provider claude --runtime worker --no-auto-start"
+        # Idempotent self-healing check (overrides the npx driver's always-run
+        # check). Passes only when the plugin is BOTH present (cache dir) AND its
+        # marketplace deps are installed (node_modules) — so a cached-but-broken
+        # install (deps missing, the real state found on mac) re-triggers the
+        # installer, which reinstalls deps + registers the plugin. node_modules
+        # path is version-dependent (v10: thedotmack/plugin/, v13: thedotmack/),
+        # so probe both via -maxdepth 2 (portable -print -quit, no pipe).
+        check: 'test -d "$HOME/.claude/plugins/cache/thedotmack/claude-mem" && [ -n "$(find "$HOME/.claude/plugins/marketplaces/thedotmack" -maxdepth 2 -name node_modules -type d -print -quit 2>/dev/null)" ]'

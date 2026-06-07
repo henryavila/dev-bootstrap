@@ -6,9 +6,9 @@ Installs the three tools that make up the cross-machine "Claude stack":
 
 Via the official installer: `curl -fsSL https://bun.sh/install | bash`. Binary lands at `~/.bun/bin/bun`; `~/.bun/bin` is added to shell rc automatically.
 
-**Why here:** the `claude-mem@thedotmack` plugin (installed by the user as part of their Claude plugin set) runs a **worker service** on port 37777 that is managed by Bun. The plugin ships a `smart-install.js` hook that auto-installs Bun if missing, but that only fires on the first Claude session with the plugin active — a fragile dependency chain. Installing Bun explicitly in the bootstrap removes that timing/connectivity coupling and guarantees claude-mem works from the first session.
+**Why here:** the `claude-mem@thedotmack` plugin (installed by the `claude-mem` bundle below — opt-in) runs a **worker service** on port 37777 that is managed by Bun. The plugin ships a `smart-install.js` hook that auto-installs Bun if missing, but that only fires on the first Claude session with the plugin active — a fragile dependency chain. Installing Bun explicitly in the bootstrap removes that timing/connectivity coupling and guarantees claude-mem works from the first session.
 
-If you don't use the `claude-mem` plugin, Bun is unused but harmless.
+If you don't select the `claude-mem` bundle, Bun is unused but harmless.
 
 ## 2. Claude Code CLI
 
