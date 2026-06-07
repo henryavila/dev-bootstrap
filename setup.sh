@@ -207,8 +207,16 @@ install_mesh_symlink() {
     fi
     mkdir -p "$HOME/.local/bin"
     if [[ -L "$dst" && "$(readlink "$dst")" == "$target" ]]; then return 0; fi
+    # A machine provisioned by the v1 system has a REGULAR FILE here (the
+    # pre-rename `scripts/mesh` dispatcher, no doctor/adopt). Take ownership:
+    # back it up (the deploy driver's .bak-<TS> pattern) and install the shim,
+    # so v1-migrated boxes self-heal instead of keeping the stale dispatcher.
     if [[ -e "$dst" && ! -L "$dst" ]]; then
-        warn "$dst is a regular file (not a symlink) — leaving alone; mv it aside to install the bin/mesh shim"; return 0
+        local backup="$dst.bak-$(date +%Y%m%d-%H%M%S)"
+        if ! mv "$dst" "$backup"; then
+            warn "$dst is a regular file and could not be backed up — leaving alone"; return 0
+        fi
+        warn "$dst was a regular file (pre-v2 dispatcher) — backed up to $backup; installing the bin/mesh symlink"
     fi
     ln -sf "$target" "$dst"
 }
