@@ -157,6 +157,55 @@ assert_contains "render: kept-password recovery hint" "already set" "$r"
 python3 "$PY" read-data "$WS/template/sync/syncthing-mesh.yaml.example" >/dev/null 2>&1
 assert "shipped template scaffold parses (rc0)" "0" "$?"
 
+# ── 8. topology writer (T-001): the guided star/mesh choice ──
+# init-hub's --topology path reuses _set_topology; the `topology` command exercises
+# the same writer daemon-free (the REST/prompt wiring is metal-validated).
+cp "$WS/template/sync/syncthing-mesh.yaml.example" "$t/topo.yaml"
+
+# set mesh → introducer must become true; the written pair re-parses + validates
+out_m="$(python3 "$PY" topology --set mesh --data "$t/topo.yaml")"
+assert "topology --set mesh rc0" "0" "$?"
+gm() { printf '%s' "$out_m" | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+assert "set mesh: reports topology mesh"    "mesh" "$(gm 'd["topology"]')"
+assert "set mesh: reports introducer true"  "True" "$(gm 'd["introducer"]')"
+rd="$(python3 "$PY" read-data "$t/topo.yaml")"
+assert "after set mesh: read-data rc0 (valid pair)" "0" "$?"
+gr() { printf '%s' "$rd" | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+assert "after set mesh: file topology mesh"   "mesh" "$(gr 'd["topology"]')"
+assert "after set mesh: file introducer true" "True" "$(gr 'd["introducer"]')"
+
+# set star → introducer must flip back to false (never leaves the rejected star+true)
+python3 "$PY" topology --set star --data "$t/topo.yaml" >/dev/null
+assert "topology --set star rc0" "0" "$?"
+rd2="$(python3 "$PY" read-data "$t/topo.yaml")"
+assert "after set star: read-data rc0 (valid pair)" "0" "$?"
+gr2() { printf '%s' "$rd2" | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+assert "after set star: file topology star"        "star"  "$(gr2 'd["topology"]')"
+assert "after set star: introducer flipped false"  "False" "$(gr2 'd["introducer"]')"
+assert "after set star: NO introducer:true left in file" "" \
+    "$(grep -E '^introducer:[[:space:]]*true' "$t/topo.yaml" || true)"
+
+# report mode (no --set) returns the current pair, changed=false
+out_r="$(python3 "$PY" topology --data "$t/topo.yaml")"
+assert "topology report rc0" "0" "$?"
+assert "report: topology star" "star" \
+    "$(printf '%s' "$out_r" | python3 -c 'import json,sys;print(json.load(sys.stdin)["topology"])')"
+assert "report: changed false" "False" \
+    "$(printf '%s' "$out_r" | python3 -c 'import json,sys;print(json.load(sys.stdin)["changed"])')"
+
+# invalid topology rejected before any write (usage rc2)
+python3 "$PY" topology --set sideways --data "$t/topo.yaml" >/dev/null 2>&1
+assert "invalid topology REJECTED (rc2)" "2" "$?"
+assert "invalid topology did NOT corrupt the file" "star" \
+    "$(python3 "$PY" read-data "$t/topo.yaml" | python3 -c 'import json,sys;print(json.load(sys.stdin)["topology"])')"
+
+# prepend branch: a minimal file missing the introducer line gets a consistent pair
+printf 'topology: star\nfolders:\n  - id: f\n    path: ~/f\n' > "$t/topo-min.yaml"
+python3 "$PY" topology --set mesh --data "$t/topo-min.yaml" >/dev/null
+assert "minimal file: set mesh rc0" "0" "$?"
+assert "minimal file: introducer line added true" "True" \
+    "$(python3 "$PY" read-data "$t/topo-min.yaml" | python3 -c 'import json,sys;print(json.load(sys.stdin)["introducer"])')"
+
 # ── summary ──
 echo
 echo "syncthing-rest: $passed passed, $failed failed"

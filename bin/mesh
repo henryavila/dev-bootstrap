@@ -193,6 +193,44 @@ Subcommands:
              codex/config.toml, git/gitconfig.local,
              ssh/authorized_keys, ssh/config
 
+  catalog  Regenerate the .catalog/ derived listings (topic/item inventory the
+           menu + status surfaces read) from the live mesh-workstation tree.
+           `mesh catalog generate` rebuilds them. Run after adding/renaming topics.
+
+  personal-clone  Clone your personal repos from the mesh-identity catalog onto
+           this machine — reads the identity repo list and clones any missing.
+           `mesh personal-clone -h` for flags.
+
+  menu     Interactive item selector (the Ink TUI). `mesh menu` runs the
+           selector standalone (writes your selection); `mesh menu --apply`
+           runs the selector then executes the install/uninstall delta.
+
+  secret   Manage replicated personal secrets (git-crypt 2-tier). Verbs:
+             init             first machine: install+init git-crypt, write the
+                              .gitattributes rule, export the root key.
+             unlock <keyfile> new machine: decrypt the repo with the key.
+             add              wizard: add an integration (login | file | token).
+             set <id>         update a stored value.
+             rm <id>          remove an integration.
+             list             integrations + per-machine + replication status.
+             doctor           drift / health checks.
+             deploy           decrypt+place all enabled Tier-2 files; run logins.
+             push             push pending commits (after a failed auto-push).
+           add/set/rm commit AND push — "saved" means "replicated".
+
+  syncthing  Pair this node into the Syncthing mesh — declarative reconcile from
+           identity sync/syncthing-mesh.yaml. Verbs:
+             pair               idempotent reconcile from syncthing-mesh.yaml.
+             init-hub [--write] first-hub bootstrap: print this node's id + the
+                                ready-to-paste snippet (--write updates the file).
+                                Asks star vs mesh and writes the topology for you
+                                (or --topology star|mesh, non-interactive).
+             topology [star|mesh]  show or switch the mesh-wide topology.
+             status             live convergence summary (peers + folders).
+             password [--reset] show GUI login state; --reset rotates via the API
+                                key + prints the new password (recovery path).
+             url                print the admin UI URL.
+
 Examples:
   mesh                              Open the panel
   mesh status crc                   Drill-down on host 'crc'
@@ -213,6 +251,11 @@ Examples:
   mesh template-check              Check template/ ↔ identity parity
   mesh template-check --install-hook
                                    Install pre-commit hook in mesh-identity
+  mesh menu --apply                Pick items, then install/uninstall the delta
+  mesh secret add                  Add an integration (login | file | token)
+  mesh secret deploy               Place all enabled Tier-2 secret files
+  mesh syncthing pair              Reconcile this node into the Syncthing mesh
+  mesh syncthing status            Show peer + folder convergence
 
 Configuration:
   ~/.config/mesh/mesh-status.conf       (alias map, run hosts, repos tracked, retention)

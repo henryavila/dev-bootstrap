@@ -727,7 +727,7 @@ def cmd_reset_password(user):
     emit(res)
 
 
-def cmd_init_hub(data_path, write):
+def cmd_init_hub(data_path, write, topology=None):
     rest = Rest()
     myid = op_myid(rest)
     if not myid:
@@ -739,6 +739,7 @@ def cmd_init_hub(data_path, write):
                "    addresses: [dynamic]\n" % (myid, name))
     wrote = False
     already = False
+    topo_written = None
     if data_path and os.path.exists(data_path):
         data = load_data(data_path)
         if any(h["id"] == myid for h in data["hubs"]):
@@ -746,8 +747,34 @@ def cmd_init_hub(data_path, write):
         elif write and not data["hubs"]:
             _append_hub_block(data_path, myid, name)
             wrote = True
+        # Topology is a separate concern from the hub block: only touched when the
+        # caller passes an explicit choice (the interactive prompt / --topology
+        # lives in the runner). Re-running without a choice never flips it.
+        if topology:
+            t, i = _set_topology(data_path, topology)
+            load_data(data_path)  # re-validate: the pair must still pass _validate_data
+            topo_written = {"topology": t, "introducer": i}
     emit({"myid": myid, "name": name, "wrote": wrote, "already_present": already,
+          "topology_written": topo_written is not None,
+          "topology_value": topo_written["topology"] if topo_written else "",
+          "introducer_value": topo_written["introducer"] if topo_written else False,
           "snippet": snippet})
+
+
+def cmd_topology(data_path, topology):
+    """`mesh syncthing topology [<star|mesh>]` — report or switch the mesh-wide
+    topology. With no value: report the current pair. With a value: rewrite the
+    consistent pair and re-validate."""
+    if not data_path or not os.path.exists(data_path):
+        die(EXIT_DATA, "no syncthing-mesh.yaml to read/set topology in (%r)" % data_path)
+    if not topology:
+        data = load_data(data_path)
+        emit({"topology": data["topology"], "introducer": data["introducer"],
+              "changed": False})
+        return
+    t, i = _set_topology(data_path, topology)
+    load_data(data_path)  # re-validate the written pair
+    emit({"topology": t, "introducer": i, "changed": True})
 
 
 def _append_hub_block(path, myid, name):
@@ -766,6 +793,54 @@ def _append_hub_block(path, myid, name):
         new = text + "\n" + block
     with open(path, "w") as fh:
         fh.write(new)
+
+
+def _topo_pair(topology):
+    """Map a topology choice to its only valid (topology, introducer) pair:
+    mesh ⇒ introducer on (all-to-all), star ⇒ introducer off. This is the
+    contract _validate_data enforces — we never write the rejected combo."""
+    topo = (topology or "").strip().lower()
+    if topo not in VALID_TOPOLOGY:
+        die(EXIT_USAGE, "topology must be one of %s" % (VALID_TOPOLOGY,))
+    return topo, (topo == "mesh")
+
+
+def _replace_line(text, key, newline):
+    """Replace the first top-level `key:` line wholesale (comment included) with
+    `newline`. Returns (text, replaced?). A function-repl avoids backref/escape
+    surprises when `newline` contains characters like `\\`."""
+    pat = re.compile(r"(?m)^%s:[^\n]*$" % re.escape(key))
+    new, n = pat.subn(lambda _m: newline, text, count=1)
+    return new, n > 0
+
+
+def _set_topology(path, topology):
+    """Write the consistent topology+introducer pair into the yaml. Same
+    conservative, line-oriented style as _append_hub_block: rewrite the two
+    existing top-level lines (with a fresh, accurate comment — the old comment
+    would now lie), or prepend them if the file omits them. Returns the pair."""
+    topo, intro = _topo_pair(topology)
+    intro_s = "true" if intro else "false"
+    topo_line = ("topology: %-13s# chosen via `mesh syncthing init-hub` — %s"
+                 % (topo, "small net: all-to-all, resilient"
+                    if topo == "mesh" else "scales to many machines"))
+    intro_line = ("introducer: %-10s# %s"
+                  % (intro_s, "mesh ⇒ a trusted node can vouch for new edges"
+                     if intro else "star keeps the N² introducer fan-out off"))
+    with open(path, "r") as fh:
+        text = fh.read()
+    text, ok_t = _replace_line(text, "topology", topo_line)
+    text, ok_i = _replace_line(text, "introducer", intro_line)
+    prefix = ""
+    if not ok_t:
+        prefix += topo_line + "\n"
+    if not ok_i:
+        prefix += intro_line + "\n"
+    if prefix:
+        text = prefix + text
+    with open(path, "w") as fh:
+        fh.write(text)
+    return topo, intro
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -942,7 +1017,7 @@ def main(argv):
     if not argv:
         die(EXIT_USAGE, "no command (read-data|resolve-bind|namespace-dir|myid|"
                         "ensure-gui-auth|set-bind|upsert-device|upsert-folder|"
-                        "status|pair|reset-password|init-hub)")
+                        "status|pair|reset-password|init-hub|topology)")
     cmd, args = argv[0], argv[1:]
 
     if cmd == "read-data":
@@ -991,7 +1066,10 @@ def main(argv):
     elif cmd == "reset-password":
         cmd_reset_password(_getarg(args, "--user", "mesh"))
     elif cmd == "init-hub":
-        cmd_init_hub(_getarg(args, "--data"), write=_hasflag(args, "--write"))
+        cmd_init_hub(_getarg(args, "--data"), write=_hasflag(args, "--write"),
+                     topology=_getarg(args, "--topology"))
+    elif cmd == "topology":
+        cmd_topology(_getarg(args, "--data"), _getarg(args, "--set"))
     elif cmd == "render":
         if not args:
             die(EXIT_USAGE, "render <pair|status>  (JSON on stdin)")

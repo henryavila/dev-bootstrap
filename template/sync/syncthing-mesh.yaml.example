@@ -9,7 +9,10 @@
 #     mesh syncthing init-hub          # prints the hub id + this exact block
 # commit the id under `hubs:` below, then run `mesh syncthing pair` everywhere.
 
-topology: star            # star (default, scale-safe) | mesh (small nets only)
+topology: star            # star (default, scale-safe) | mesh (small nets only).
+                          # `mesh syncthing init-hub` ASKS this for you (and writes
+                          # both lines consistently); editing here is the fallback.
+                          # Switch later with `mesh syncthing topology <star|mesh>`.
 introducer: false         # OFF: introducer ⇒ all-to-all N² connections.
                           # true ONLY together with topology: mesh on a tiny net.
 

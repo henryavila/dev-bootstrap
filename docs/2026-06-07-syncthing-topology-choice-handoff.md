@@ -2,8 +2,14 @@
 
 **Date:** 2026-06-07
 **Initiative:** `mesh-identity/.atomic-skills/initiatives/syncthing-self-driving.md` → **T-001**
-**Status of this task:** NOT STARTED (spec/handoff only — implement in a fresh session)
-**Exit gate it satisfies:** G-1 of `syncthing-self-driving`.
+**Status of this task:** ✅ DONE 2026-06-07 (mesh-workstation, NOT yet committed/pushed).
+Implemented 4a + 4b + 4c per this spec: `init-hub` guided one-question prompt +
+non-interactive `--topology star|mesh` (writes the consistent pair via new
+`_set_topology`/`cmd_topology`), the optional `mesh syncthing topology [star|mesh]`
+verb, template/help polish, and +18 unit tests (54 passed/0 failed; lint L01–L21 rc0;
+`bash -n` + py_compile clean). The interactive `init-hub` prompt + REST path is
+metal-validated (op_myid needs the daemon), per repo convention.
+**Exit gate it satisfies:** G-1 of `syncthing-self-driving` — **met**.
 
 > This file is self-contained. A fresh session should be able to implement T-001
 > from this document alone. All LOGIC lands in **mesh-workstation**; `mesh-identity`
