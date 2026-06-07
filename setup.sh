@@ -282,10 +282,20 @@ run_menu_if_available() {
     [[ -f "$MENU_DIR/index.js" || -f "$MENU_DIR/dist/index.js" ]] || return 2
     command -v node >/dev/null 2>&1 || { warn "Node.js not found — cannot run the setup menu"; return 2; }
     info "launching the bundle menu…"
-    if [[ ! -d "$MENU_DIR/node_modules" ]]; then
-        # --install-links: pack the file: blink-tui dep as a real copy (dist only,
-        # no bundled React) so React dedupes to one instance (else: invalid-hook).
-        (cd "$MENU_DIR" && npm install --omit=dev --install-links --no-audit --no-fund --silent 2>/dev/null) || true
+    # Gate on the key dep, not just node_modules/: a machine whose earlier run
+    # left a PARTIAL node_modules (the old file:-link install that failed on a
+    # host without the blink-tui checkout) would otherwise never reinstall.
+    if [[ ! -d "$MENU_DIR/node_modules/@henryavila/blink-tui" ]]; then
+        # blink-tui is a published npm package (peer-depends on react/ink, so a
+        # single React instance dedupes naturally — no --install-links needed).
+        (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent 2>/dev/null) || true
+    fi
+    # Guard: if the install couldn't land the deps (no network / blocked
+    # registry), fall back cleanly instead of letting `node` dump a raw
+    # ERR_MODULE_NOT_FOUND stack trace at the user.
+    if [[ ! -d "$MENU_DIR/node_modules/@henryavila/blink-tui" ]]; then
+        warn "menu dependencies unavailable (could not install @henryavila/blink-tui) — skipping the menu"
+        return 2
     fi
     node "$MENU_DIR/index.js"
 }

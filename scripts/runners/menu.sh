@@ -35,11 +35,19 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 MENU_DIR="$ROOT/scripts/menu"
-if [[ ! -d "$MENU_DIR/node_modules" ]]; then
+# Gate on the key dep, not just node_modules/: a PARTIAL node_modules left by an
+# earlier failed file:-link install would otherwise skip the reinstall forever.
+if [[ ! -d "$MENU_DIR/node_modules/@henryavila/blink-tui" ]]; then
     info "Installing menu dependencies..."
-    # --install-links: pack the file: blink-tui dep as a real copy (dist only, no
-    # bundled React) so React dedupes to one instance (else: invalid-hook crash).
-    (cd "$MENU_DIR" && npm install --omit=dev --install-links --no-audit --no-fund --silent)
+    # blink-tui is a published npm package (peer-depends on react/ink, so a single
+    # React instance dedupes naturally — no --install-links needed).
+    (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent)
+fi
+
+if [[ ! -d "$MENU_DIR/node_modules/@henryavila/blink-tui" ]]; then
+    log_error "Menu dependencies missing: could not install @henryavila/blink-tui."
+    log_error "Check network/npm registry access, then re-run \`mesh menu\`."
+    exit 1
 fi
 
 node "$MENU_DIR/index.js" "$@"
