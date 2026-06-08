@@ -46,7 +46,7 @@ Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
 1. Quais topics opt-in ativar (`60-web-stack` / `70-remote-access` / `82-ai-tools` / `90-editor` / `95-dotfiles-personal` — você desmarca o que não quer).
 2. `GIT_NAME` / `GIT_EMAIL` (pula silenciosamente se `git config --global` já tiver esses valores).
 3. `MESH_IDENTITY_REPO` + `MESH_IDENTITY_DIR` (só se você marcou `82-ai-tools`, `95-dotfiles-personal` ou `npm-global`).
-4. `CODE_DIR` (só se você marcou `60-web-stack`).
+4. `CODE_DIR` — seu dev root, onde os repos ficam (default `~/code`); exportado no shell (auto-cd + atalhos tmux) e usado como raiz de sites do web stack quando instalado.
 5. Tela final com resumo e confirmação — cancelar em qualquer tela aborta limpo (sem estado parcial).
 
 Se `whiptail` não estiver instalado, o bootstrap instala antes (`apt install whiptail` no Linux/WSL; `brew install newt` no Mac — whiptail vem dentro da formula `newt`).
@@ -111,7 +111,7 @@ Primariamente para automação / CI — o menu interativo preenche essas vars pr
 | `MESH_IDENTITY_REPO` | URL/path do repo dotfiles pessoal (aceita `file://` para testes locais) |
 | `MESH_IDENTITY_DIR` | destino do clone (default `~/mesh-identity`) |
 | `GIT_NAME` / `GIT_EMAIL` | identidade — aplicada só se `user.name` / `user.email` ainda não existem (topic 50-git preserva existentes) |
-| `CODE_DIR` | raiz de projetos (default `~/code/web`) |
+| `CODE_DIR` | dev root — onde seus repos ficam (default `~/code`); auto-cd no shell + raiz de sites do web stack |
 | `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | ativa topic opt-in |
 | `NO_COLOR=1` | desabilita output colorido (auto se não for TTY) |
 

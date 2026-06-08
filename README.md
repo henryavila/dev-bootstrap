@@ -52,7 +52,7 @@ Running without any control env var opens a `whiptail` menu that asks:
 1. Which opt-in topics to enable (`60-web-stack` / `70-remote-access` / `82-ai-tools` / `90-editor` / `95-dotfiles-personal` / `npm-global`).
 2. `GIT_NAME` / `GIT_EMAIL` (skipped silently when `git config --global` already has them).
 3. `MESH_IDENTITY_REPO` + `MESH_IDENTITY_DIR` (only when `82-ai-tools`, `95-dotfiles-personal`, or `npm-global` is checked).
-4. `CODE_DIR` (only when `60-web-stack` is checked).
+4. `CODE_DIR` — your dev root, where repos live (default `~/code`); exported into the shell (auto-cd + tmux shortcuts) and used as the web stack's site root when installed.
 5. Final confirmation with a summary — cancelling at any screen aborts cleanly (no partial state).
 
 If `whiptail` isn't installed, the bootstrap installs it first (`apt install whiptail` on Linux/WSL; `brew install newt` on Mac — whiptail ships inside the `newt` formula).
@@ -149,7 +149,7 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 | `INCLUDE_IDENTITY=1` | enable `95-dotfiles-personal`; `MESH_IDENTITY_REPO=<url>` alone is still accepted as a legacy shorthand |
 | `MESH_AI_PACKAGES=1` | legacy alias for `INCLUDE_AI_TOOLS=1` |
 | `GIT_NAME` / `GIT_EMAIL` | identity — applied only when `user.name` / `user.email` aren't set yet (topic 50-git preserves existing values) |
-| `CODE_DIR` | projects root (default `~/code/web`) |
+| `CODE_DIR` | dev root — where your repos live (default `~/code`); shell auto-cd + web-stack site root |
 | `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_AI_TOOLS` / `INCLUDE_EDITOR` / `INCLUDE_DOCKER` | enable opt-in topics |
 | `INCLUDE_MAILPIT=1` / `INCLUDE_NGROK=1` / `INCLUDE_MSSQL=1` / `INCLUDE_POSTGRES=1` | 60-web-stack extras (when `INCLUDE_WEBSTACK=1`) |
 | `POSTGRES_VERSION=17` | PostgreSQL major version when `INCLUDE_POSTGRES=1` (default 17; menu prompts on first run, env var pre-seeds for automation) |

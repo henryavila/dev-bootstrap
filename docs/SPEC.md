@@ -121,7 +121,7 @@ bash setup.sh --help                   # list topics + env vars
 | `MESH_IDENTITY_DIR` | clone destination (default: `~/mesh-identity`) |
 | `MESH_NPM_GLOBAL=1` | tell the dotfiles installer to configure npm globals under `~/.npm-global` and persist `~/.npm-global/bin` on PATH |
 | `GIT_NAME`, `GIT_EMAIL` | identity for `50-git` |
-| `CODE_DIR` | where projects live (default: `~/code/web`; on Henry's Mac: `/Volumes/External/code`) |
+| `CODE_DIR` | dev root — where repos live (default: `~/code`; per-host override example — Henry's Mac: `/Volumes/External/code`). Asked in the menu's dev-root screen; persisted to `~/.config/mesh/config.env` for the shell |
 | `INCLUDE_WEBSTACK=1` | enable topic `60-web-stack` (default: skip) |
 | `INCLUDE_REMOTE=1` | enable topic `70-remote-access` (default: skip) |
 | `INCLUDE_EDITOR=1` | enable topic `90-editor` (default: skip) |
@@ -381,7 +381,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 - `nginx-catchall.conf.template` — deployed via the `DEPLOY` file:
   - WSL: `$NGINX_CONF_DIR=/etc/nginx/sites-enabled`
   - Mac: `$NGINX_CONF_DIR=$BREW_PREFIX/etc/nginx/servers` (uses `lib/detect-brew.sh`)
-- `bin/link-project.template` — script that wires `$CODE_DIR/<name>/public` → `<name>.localhost` (uses env var `CODE_DIR`, default `~/code/web`)
+- `bin/link-project.template` — script that wires `$CODE_DIR/<name>/public` → `<name>.localhost` (uses env var `CODE_DIR`, default `~/code`)
 
 **Env vars used:** `CODE_DIR`, `BREW_PREFIX` (via detect-brew on Mac), `POSTGRES_VERSION` (when `INCLUDE_POSTGRES=1`).
 
