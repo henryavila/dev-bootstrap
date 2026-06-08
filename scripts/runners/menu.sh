@@ -35,21 +35,10 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 MENU_DIR="$ROOT/scripts/menu"
-# Gate on the key dep, not just node_modules/: a PARTIAL node_modules left by an
-# earlier failed file:-link install would otherwise skip the reinstall forever.
-if [[ ! -d "$MENU_DIR/node_modules/@henryavila/blink-tui" ]]; then
-    info "Installing menu dependencies..."
-    # blink-tui is a published npm package (peer-depends on react/ink, so a single
-    # React instance dedupes naturally — no --install-links needed).
-    (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent)
-fi
-
-if [[ ! -d "$MENU_DIR/node_modules/@henryavila/blink-tui" ]]; then
-    log_error "Menu dependencies missing: could not install @henryavila/blink-tui."
-    log_error "Check network/npm registry access, then re-run \`mesh menu\`."
-    exit 1
-fi
-
+# Dependency provisioning lives in the launcher (scripts/menu/index.js): it is
+# the single entry every path runs, so it `npm ci`s against the committed
+# lockfile on a missing OR drifted node_modules — no guard duplicated here. If
+# it cannot provision (offline), index.js exits non-zero, propagated below.
 node "$MENU_DIR/index.js" "$@"
 menu_exit=$?
 

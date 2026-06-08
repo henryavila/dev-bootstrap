@@ -283,21 +283,12 @@ run_menu_if_available() {
     [[ -f "$MENU_DIR/index.js" || -f "$MENU_DIR/dist/index.js" ]] || return 2
     command -v node >/dev/null 2>&1 || { warn "Node.js not found — cannot run the setup menu"; return 2; }
     info "launching the bundle menu…"
-    # Gate on the key dep, not just node_modules/: a machine whose earlier run
-    # left a PARTIAL node_modules (the old file:-link install that failed on a
-    # host without the blink-tui checkout) would otherwise never reinstall.
-    if [[ ! -d "$MENU_DIR/node_modules/@henryavila/blink-tui" ]]; then
-        # blink-tui is a published npm package (peer-depends on react/ink, so a
-        # single React instance dedupes naturally — no --install-links needed).
-        (cd "$MENU_DIR" && npm install --omit=dev --no-audit --no-fund --silent 2>/dev/null) || true
-    fi
-    # Guard: if the install couldn't land the deps (no network / blocked
-    # registry), fall back cleanly instead of letting `node` dump a raw
-    # ERR_MODULE_NOT_FOUND stack trace at the user.
-    if [[ ! -d "$MENU_DIR/node_modules/@henryavila/blink-tui" ]]; then
-        warn "menu dependencies unavailable (could not install @henryavila/blink-tui) — skipping the menu"
-        return 2
-    fi
+    # Dependency provisioning lives in the launcher (scripts/menu/index.js), not
+    # here: it is the single entry every path runs (`node index.js`), so a fresh
+    # OR stale machine self-heals there with `npm ci` against the committed
+    # lockfile — no duplicated guard, no "go run npm" prompt. If it cannot
+    # provision (offline), index.js exits non-zero and the caller below falls
+    # back to the saved/default selection.
     node "$MENU_DIR/index.js"
 }
 
