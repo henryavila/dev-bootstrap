@@ -102,6 +102,7 @@ Usage:
   mesh doctor [--fix]               Report deploy drift; --fix repairs broken installed items
   mesh adopt                        Backfill install markers for already-present tools (v1→v2; read-only)
   mesh update [-o NAME] [-f] [-i]   Pull and apply updates
+  mesh setup [--no-update]          Update both repos, then run setup.sh
   mesh topic list                   List mesh-workstation topics
   mesh topic <NN...>                Re-apply mesh-workstation topics by number
   mesh run [flags] <subcommand>     Run mesh subcommands on selected hosts
@@ -134,6 +135,10 @@ Subcommands:
                                      Silently ignored for mesh-identity or incremental runs.
 
            Passthrough flags: --reset-auth, --from-shell-start.
+  setup    Run the bootstrap (setup.sh) from any directory. Runs `mesh update`
+           (both repos) first so the install system AND the identity config
+           (secrets, syncthing yaml, dotfiles) are current, then runs setup.sh.
+           `--no-update` skips the refresh; remaining args pass through to setup.sh.
   doctor   Health check. No args: report identity deploy drift + system
            phantoms (read-only, the existing deploy-drift doctor). `--fix`:
            run the engine's verify+repair sweep over every INSTALLED item —
@@ -1278,6 +1283,54 @@ sub_secret() {
     exec bash "$lib" "$@"
 }
 
+# ─── mesh setup ────────────────────────────────────────────────────
+# Run the bootstrap (setup.sh) from anywhere — no `cd` into the checkout, no
+# `bash setup.sh`. By default it first runs a full `mesh update` (BOTH repos)
+# so the install system AND the identity (config/secrets/syncthing yaml) are
+# current, THEN execs the freshly-pulled setup.sh. (setup.sh's identity bundle
+# also ff-pulls identity, but updating up-front gives a predictable clean state
+# even if that bundle is deselected.) `--no-update` skips the refresh (offline /
+# testing a local checkout). Remaining args pass through to setup.sh.
+sub_setup() {
+    local do_update=1
+    local pass=()
+    while (( $# > 0 )); do
+        case "$1" in
+            --no-update) do_update=0; shift ;;
+            -h|--help)
+                cat <<'EOF'
+Usage: mesh setup [--no-update] [setup.sh args...]
+  Run the bootstrap from anywhere. By default runs `mesh update` (both repos)
+  first so the install system + identity config are current, then runs setup.sh.
+    --no-update   skip the refresh; run the current checkout's setup.sh as-is
+  Extra args pass through to setup.sh (e.g. --non-interactive, --repair).
+EOF
+                return 0
+                ;;
+            --) shift; while (( $# > 0 )); do pass+=("$1"); shift; done; break ;;
+            *) pass+=("$1"); shift ;;
+        esac
+    done
+
+    local ws setup_sh
+    ws="$(cd "$HERE/.." 2>/dev/null && pwd -P)"
+    setup_sh="$ws/setup.sh"
+    [[ -f "$setup_sh" ]] || _die "setup: setup.sh not found at $setup_sh"
+
+    if (( do_update )); then
+        printf 'mesh setup: refreshing both repos (mesh update)…\n' >&2
+        # Run as a child (NOT exec) so control returns here to launch setup.sh.
+        # A failed refresh (e.g. offline) is non-fatal — fall through to the
+        # current checkout's setup.sh rather than blocking the bootstrap.
+        local urc=0
+        bash "${BASH_SOURCE[0]}" update || urc=$?
+        (( urc == 0 )) || printf 'mesh setup: warning — update returned rc %d; continuing with the current checkout\n' "$urc" >&2
+    fi
+
+    printf 'mesh setup: running %s\n' "$setup_sh" >&2
+    exec bash "$setup_sh" "${pass[@]+"${pass[@]}"}"
+}
+
 sub_menu() {
     local runner apply=0
     runner="$(_resolve_companion "runners/menu.sh")"
@@ -1362,6 +1415,10 @@ case "${1:-status}" in
     menu)
         shift
         sub_menu "$@"
+        ;;
+    setup)
+        shift
+        sub_setup "$@"
         ;;
     secret)
         shift
