@@ -84,11 +84,20 @@ function bundleStateIntent(scan: BundleScan | undefined): string | undefined {
 export function TopicPicker(props: TopicPickerProps) {
   const { topics, selected, required, scan, banner } = props;
   const [activePane, setActivePane] = useState<Pane2>('topics');
-  const { rows: rawRows } = useStdoutDimensions();
+  const { rows: rawRows, columns: rawCols } = useStdoutDimensions();
   const g = useGlyph();
   // Guard against a transient bad/0 reading (some stdouts report garbage on a
   // resize event) collapsing the layout; assume a sane terminal otherwise.
   const rows = rawRows >= 10 ? rawRows : 24;
+  const cols = rawCols >= 40 ? rawCols : 80;
+
+  // Pin the Topics pane to a FIXED cell width. Previously it used
+  // `flexBasis="32%"` with the Pane's default `flexGrow=1`, while the right
+  // column was a content-sized `flexGrow` box — so switching topics changed the
+  // right column's intrinsic width and the flex algorithm reflowed the left
+  // pane, making it visibly jump. A fixed width recomputes ONLY on terminal
+  // resize, never on item switch, so the left pane stays put.
+  const topicsWidth = Math.max(22, Math.min(40, Math.round(cols * 0.32)));
 
   // Always-visible quick legend for the two badge columns. Built from the same
   // glyph names the List rows use (selectionIntents + stateIntents), via
@@ -244,7 +253,7 @@ export function TopicPicker(props: TopicPickerProps) {
         />
       </Box>
       <Box flexDirection="row" flexGrow={1} minHeight={0} overflow="hidden">
-        <Pane title="Topics" tone={activePane === 'topics' ? 'focus' : 'resting'} flexBasis="32%">
+        <Pane title="Topics" tone={activePane === 'topics' ? 'focus' : 'resting'} width={topicsWidth} flexGrow={0}>
           <List rows={topicRows} focusedId={activePane === 'topics' ? topicNav.focusedId : null} height={innerHeight - 2} />
         </Pane>
         <Box flexDirection="column" flexGrow={1}>
