@@ -12,4 +12,5 @@
 igbinary
 imagick:libmagickwand-dev pkg-config:imagemagick pkg-config
 mongodb:libssl-dev:openssl
+pcov
 redis
