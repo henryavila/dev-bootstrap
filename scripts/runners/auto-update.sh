@@ -127,6 +127,15 @@ fi
 # shellcheck disable=SC1090
 source "$CONF"
 
+# Operational defaults — the SCRIPT owns these, not the config FILE. The
+# conf.example documents them, but a deployed config.env predating a tunable
+# would leave it unset, and these are read BARE under `set -u` (fetch timeout,
+# sudo pre-check regex) → an unbound-variable crash. Default them here so any
+# config that defines at least AUTO_UPDATE_REPOS runs. (AUTO_UPDATE_VERBOSE and
+# AUTO_EXEC_SHELL are already read with `${…:-0}`, so they need no default.)
+: "${AUTO_UPDATE_FETCH_TIMEOUT:=3}"
+: "${AUTO_UPDATE_SUDO_REGEX:=\\b(apt|brew|pip install|npm i |chsh|sudo)\\b|curl[^|]*\\|[^|]*sh}"
+
 # Spec §C10 clean break: per-host .local override removed. ~/.config/mesh/
 # config.env is already per-user/per-host (lives in $HOME), so the separate
 # .local pattern is redundant. AUTO_UPDATE_REPOS overrides go directly into
