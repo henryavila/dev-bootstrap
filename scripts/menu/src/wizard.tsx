@@ -34,6 +34,7 @@ import { OptionsForm } from './screens/OptionsForm.js';
 import { SummaryConfirm } from './screens/SummaryConfirm.js';
 import { UpdatesScreen, UPDATE_ENV, updateValuesFromParams } from './screens/UpdatesScreen.js';
 import { IdentityOnboarding, IDENTITY_ENV, type IdentityResult } from './screens/IdentityOnboarding.js';
+import { DevRootScreen, CODE_DIR_ENV } from './screens/DevRootScreen.js';
 import type { Bundle, BundleRef } from './types.js';
 
 /** The personal-identity bundle gets the dedicated create-or-adopt onboarding
@@ -54,7 +55,7 @@ function ghLogin(): string {
   }
 }
 
-type Screen = 'picker' | 'options' | 'identity' | 'summary' | 'updates' | 'help' | 'confirmRemove';
+type Screen = 'devroot' | 'picker' | 'options' | 'identity' | 'summary' | 'updates' | 'help' | 'confirmRemove';
 
 /** Exit code when the user leaves the menu WITHOUT applying (quit / Ctrl-C).
  *  Distinct from a launch failure (setup.sh treats 1/2 as "menu unavailable" and
@@ -93,7 +94,10 @@ export function App({ dryRun, onExit }: AppProps) {
     [init],
   );
 
-  const [screen, setScreen] = useState<Screen>('picker');
+  // Dev root (CODE_DIR) is collected up-front — the wizard's first screen — so
+  // the value lands once before the picker, universal (not web-gated). Pre-filled
+  // from params on a re-run, so it's a single Enter to keep.
+  const [screen, setScreen] = useState<Screen>('devroot');
   const [selected, setSelected] = useState<Set<string>>(() => init.selected);
   const [params, setParams] = useState<Map<string, string>>(() => readParams());
   const [banner, setBanner] = useState<string | null>(null);
@@ -213,6 +217,15 @@ export function App({ dryRun, onExit }: AppProps) {
     setEditing({ ref, spec, values: spec.values, notice });
     setScreen('options');
   };
+  const closeDevRoot = (resolved: string | null) => {
+    if (resolved !== null) {
+      const next = new Map(params);
+      next.set(CODE_DIR_ENV, resolved);
+      setParams(next);
+      setBanner(`Dev root: ${resolved}`);
+    }
+    setScreen('picker');
+  };
   const closeIdentity = (result: IdentityResult | null) => {
     if (result) {
       const next = new Map(params);
@@ -254,6 +267,11 @@ export function App({ dryRun, onExit }: AppProps) {
   };
 
   // ── screens ──
+  if (screen === 'devroot') {
+    return (
+      <DevRootScreen initial={params.get(CODE_DIR_ENV) ?? ''} onClose={closeDevRoot} />
+    );
+  }
   if (screen === 'options' && editing) {
     return (
       <OptionsForm

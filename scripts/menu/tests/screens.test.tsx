@@ -48,8 +48,10 @@ function renderApp() {
 
 describe('TopicPicker screen', () => {
   it('renders header, the nav footer, and core action hotkeys', async () => {
-    const { lastFrame, unmount } = renderApp();
+    const { stdin, lastFrame, unmount } = renderApp();
     await delay(80);
+    stdin.write('\u001B'); // dev root is the first screen — skip to the picker
+    await delay(20);
     const f = lastFrame()!;
     expect(f).toContain('mesh setup');
     // The footer-drop saga's payload: navigation chips must be on screen.
@@ -60,8 +62,10 @@ describe('TopicPicker screen', () => {
   });
 
   it('renders the always-visible badge legend (both columns explained)', async () => {
-    const { lastFrame, unmount } = renderApp();
+    const { stdin, lastFrame, unmount } = renderApp();
     await delay(80);
+    stdin.write('\u001B'); // skip the dev-root screen → picker
+    await delay(20);
     const f = lastFrame()!;
     // Quick legend band — the T-500 finding. These tokens appear ONLY in the
     // legend, never in the nav footer, so they pin the band's presence.
@@ -94,6 +98,8 @@ describe('SummaryConfirm screen', () => {
   it('renders the apply plan with a delta summary + apply/back footer', async () => {
     const { stdin, lastFrame, unmount } = renderApp();
     await delay(80);
+    stdin.write('\u001B'); // skip the dev-root screen → picker
+    await delay(20);
     stdin.write('c'); // picker → summary
     await delay(30);
     const f = lastFrame()!;
@@ -139,6 +145,8 @@ describe('Help dialog', () => {
   it('opens on ? and shows the how-to-use lines', async () => {
     const { stdin, lastFrame, unmount } = renderApp();
     await delay(80);
+    stdin.write('\u001B'); // skip the dev-root screen → picker
+    await delay(20);
     stdin.write('?');
     await delay(30);
     const f = lastFrame()!;

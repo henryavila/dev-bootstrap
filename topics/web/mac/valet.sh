@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Custom: Laravel Valet — composer global install + valet install + .localhost TLD + park CODE_DIR.
 
-: "${CODE_DIR:=$HOME/code/web}"
+: "${CODE_DIR:=$HOME/code}"
 
 # Resolve the valet binary from composer's actual global bin-dir at runtime.
 # Composer's home is ~/.composer on older defaults but ~/.config/composer when

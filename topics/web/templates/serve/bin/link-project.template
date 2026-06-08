@@ -26,7 +26,7 @@
 #       Show every enabled mesh-workstation site.
 set -euo pipefail
 
-: "${CODE_DIR:=$HOME/code/web}"
+: "${CODE_DIR:=$HOME/code}"
 : "${NGINX_AVAILABLE_DIR:=/etc/nginx/sites-available}"
 : "${NGINX_ENABLED_DIR:=/etc/nginx/sites-enabled}"
 : "${CERT_DIR:=/etc/nginx/certs}"

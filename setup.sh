@@ -19,7 +19,8 @@
 #   DRY_RUN=1             print what the engine would do without executing
 #   MESH_IDENTITY_REPO    identity repo URL (used by ai / personal topics)
 #   MESH_IDENTITY_DIR     where to clone the identity repo (default ~/mesh-identity)
-#   CODE_DIR              project root (default ~/code/web)
+#   CODE_DIR              dev root — where your repos live (default ~/code). Asked
+#                         in the menu (dev-root screen); persisted to config.env.
 #   NO_COLOR=1            disable colored output (auto if not a TTY)
 #
 # Usage: bash setup.sh [--help] [--non-interactive] [--dry-run] [--list-bundles]
@@ -193,7 +194,7 @@ state_load
 # Defaults inherited by item scripts that read non-option env directly.
 export MESH_IDENTITY_REPO="${MESH_IDENTITY_REPO:-}"
 export MESH_IDENTITY_DIR="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
-export CODE_DIR="${CODE_DIR:-$HOME/code/web}"
+export CODE_DIR="${CODE_DIR:-$HOME/code}"
 export NO_COLOR="${NO_COLOR:-}"
 
 # ─── mesh symlink (~/.local/bin/mesh → bin/mesh) ─────────────────────────────
@@ -321,6 +322,34 @@ if should_run_menu; then
     fi
     # menu_rc == 0 → selections.list was written; proceed with it.
 fi
+
+# ─── persist the dev root (CODE_DIR) for the interactive shell ────────────────
+# The menu writes CODE_DIR to params.env (the engine sources it, so the web stack
+# gets the right site root at install time). But the interactive shell reads
+# ~/.config/mesh/config.env, NOT params.env — mesh-identity's shell/aliases.sh
+# sources config.env for auto-cd + the tmux project shortcuts. Bridge the two:
+# lift CODE_DIR from params.env into config.env (idempotent line upsert that
+# leaves every other line — repo paths, the AUTO_UPDATE_REPOS array — untouched),
+# and re-export it so the post-menu engine pass inherits the chosen value.
+persist_code_dir() {
+    [[ "$DRY_RUN" == "1" ]] && return 0
+    local params="$SELECTIONS_DIR/params.env" config="$SELECTIONS_DIR/config.env"
+    [[ -f "$params" ]] || return 0
+    # Source in a subshell so bash applies the same quoting it wrote — never
+    # leaks the other KEY=values into setup.sh's environment.
+    local chosen
+    chosen="$(set +u; . "$params" >/dev/null 2>&1; printf '%s' "${CODE_DIR:-}")"
+    [[ -n "$chosen" ]] || return 0
+    export CODE_DIR="$chosen"
+    mkdir -p "$SELECTIONS_DIR"
+    local tmp; tmp="$(mktemp "$SELECTIONS_DIR/.config.env.XXXXXX")" || return 0
+    {
+        [[ -f "$config" ]] && grep -v '^CODE_DIR=' "$config"
+        printf 'CODE_DIR=%q\n' "$chosen"
+    } > "$tmp" && mv "$tmp" "$config" || { rm -f "$tmp"; return 0; }
+    info "dev root persisted: CODE_DIR=$chosen → ${config/#$HOME/\~}"
+}
+persist_code_dir
 
 if [[ "$ADOPT_MODE" == "1" ]]; then
     # Adopt probes EVERY bundle (not just the default/saved selection) so an

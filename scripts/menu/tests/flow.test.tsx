@@ -33,6 +33,11 @@ describe('full wizard flow (ink-testing-library)', () => {
     let code = -1;
     const { stdin, lastFrame, unmount } = renderApp((c) => (code = c));
     await delay(80);
+    expect(lastFrame()).toContain('dev root'); // devroot is the first screen
+    stdin.write('/srv/devroot'); // type an absolute dev root
+    await delay(20);
+    stdin.write('\r'); // save → picker (CODE_DIR resolved into params)
+    await delay(20);
     expect(lastFrame()).toContain('mesh setup');
 
     stdin.write('u'); // updates screen
@@ -55,6 +60,7 @@ describe('full wizard flow (ink-testing-library)', () => {
     const params = readFileSync(path.join(cfg, 'mesh', 'params.env'), 'utf8');
     expect(params).toContain('MESH_UPDATE_AGENT_CLIS=1');
     expect(params).toContain('MESH_UPDATE_CLI_TOOLS=0');
+    expect(params).toContain('CODE_DIR=/srv/devroot'); // dev-root screen → params.env
     unmount();
   });
 
@@ -69,6 +75,8 @@ describe('full wizard flow (ink-testing-library)', () => {
       let code = -1;
       const { stdin, lastFrame, unmount } = renderApp((c) => (code = c));
       await delay(80);
+      stdin.write('\x1B'); // skip dev root → picker
+      await delay(20);
       stdin.write('c'); // try to apply — gate must divert (personal/repo required + empty)
       await delay(40);
       expect(lastFrame()).toContain('identity');
@@ -101,6 +109,8 @@ describe('full wizard flow (ink-testing-library)', () => {
     let code = -1;
     const { stdin, unmount } = renderApp((c) => (code = c));
     await delay(80);
+    stdin.write('\x1B'); // skip dev root → picker (q would type into the path field)
+    await delay(20);
     stdin.write('q');
     await delay(40);
     expect(code).toBe(130);

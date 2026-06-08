@@ -59,7 +59,7 @@ esac
 # Alias kept for templates that still reference $NGINX_CONF_DIR (== sites-enabled).
 NGINX_CONF_DIR="${NGINX_ENABLED_DIR:-}"
 
-CODE_DIR="${CODE_DIR:-$HOME/code/web}"
+CODE_DIR="${CODE_DIR:-$HOME/code}"
 DEV_DEFAULT_PORT="${DEV_DEFAULT_PORT:-3000}"
 # PHP_DEFAULT comes from the languages/php option (params.env, exported by the
 # engine). Leave whatever is already set; do not clobber.
