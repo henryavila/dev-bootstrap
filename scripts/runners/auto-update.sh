@@ -12,6 +12,10 @@
 #   bash scripts/runners/auto-update.sh -i|--interactive    in --full + mesh-workstation, run setup.sh
 #                                                   WITHOUT --non-interactive (i.e. show the menu).
 #                                                   Silently ignored for mesh-identity or incremental runs.
+#   bash scripts/runners/auto-update.sh --force             update the CURRENT branch even if not `main`
+#                                                   (the shell-start auto path stays main-only; this is
+#                                                   opt-in for a fleet running a feature/release branch).
+#                                                   Still refuses on a dirty tree or unpushed commits.
 #   bash scripts/runners/auto-update.sh --reset-auth        clear auth-failed-* flags and exit
 #   bash scripts/runners/auto-update.sh -h|--help           this help
 #
@@ -59,6 +63,7 @@ FROM_SHELL_START=0
 RESET_AUTH=0
 FULL=0
 INTERACTIVE=0
+FORCE=0
 ONLY=""
 while (( $# > 0 )); do
     case "$1" in
@@ -66,6 +71,7 @@ while (( $# > 0 )); do
         --reset-auth)       RESET_AUTH=1 ;;
         --full|-f)          FULL=1 ;;
         --interactive|-i)   INTERACTIVE=1 ;;
+        --force)            FORCE=1 ;;
         --only|-o)
             shift
             ONLY="${1:-}"
@@ -337,8 +343,12 @@ process_repo() {
         return 0
     fi
     if [[ "$branch" != "main" ]]; then
-        notice "pulado: $name em branch $branch"
-        return 0
+        if (( FORCE )); then
+            notice "forçando update de $name na branch $branch (--force)"
+        else
+            notice "pulado: $name em branch $branch (use --force para atualizar mesmo assim)"
+            return 0
+        fi
     fi
 
     # ─── Pre-flight: working tree must be clean ─────────────────────

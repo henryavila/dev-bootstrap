@@ -133,6 +133,11 @@ Subcommands:
              -i, --interactive       In `-f` + mesh-workstation, run setup.sh
                                      WITHOUT --non-interactive (i.e. show the menu).
                                      Silently ignored for mesh-identity or incremental runs.
+                 --force             Update the CURRENT branch even if it is not
+                                     `main` (the shell-start auto-update stays
+                                     main-only). For a fleet on a feature/release
+                                     branch. Still refuses on a dirty tree or
+                                     unpushed local commits.
 
            Passthrough flags: --reset-auth, --from-shell-start.
   setup    Run the bootstrap (setup.sh) from any directory. Runs `mesh update`
@@ -1285,12 +1290,15 @@ sub_secret() {
 
 # ─── mesh setup ────────────────────────────────────────────────────
 # Run the bootstrap (setup.sh) from anywhere — no `cd` into the checkout, no
-# `bash setup.sh`. By default it first runs a full `mesh update` (BOTH repos)
+# `bash setup.sh`. By default it first runs `mesh update --force` (BOTH repos)
 # so the install system AND the identity (config/secrets/syncthing yaml) are
-# current, THEN execs the freshly-pulled setup.sh. (setup.sh's identity bundle
-# also ff-pulls identity, but updating up-front gives a predictable clean state
-# even if that bundle is deselected.) `--no-update` skips the refresh (offline /
-# testing a local checkout). Remaining args pass through to setup.sh.
+# current, THEN execs the freshly-pulled setup.sh. --force updates the current
+# branch even when it is not `main` (a fleet may run a feature/release branch);
+# the main-only restriction is only for the shell-start AUTO update, not this
+# explicit one. (setup.sh's identity bundle also ff-pulls identity, but updating
+# up-front gives a predictable clean state even if that bundle is deselected.)
+# `--no-update` skips the refresh (offline / testing a local checkout). Remaining
+# args pass through to setup.sh.
 sub_setup() {
     local do_update=1
     local pass=()
@@ -1300,8 +1308,9 @@ sub_setup() {
             -h|--help)
                 cat <<'EOF'
 Usage: mesh setup [--no-update] [setup.sh args...]
-  Run the bootstrap from anywhere. By default runs `mesh update` (both repos)
-  first so the install system + identity config are current, then runs setup.sh.
+  Run the bootstrap from anywhere. By default runs `mesh update --force` (both
+  repos, current branch) first so the install system + identity config are
+  current, then runs setup.sh.
     --no-update   skip the refresh; run the current checkout's setup.sh as-is
   Extra args pass through to setup.sh (e.g. --non-interactive, --repair).
 EOF
@@ -1318,12 +1327,14 @@ EOF
     [[ -f "$setup_sh" ]] || _die "setup: setup.sh not found at $setup_sh"
 
     if (( do_update )); then
-        printf 'mesh setup: refreshing both repos (mesh update)…\n' >&2
-        # Run as a child (NOT exec) so control returns here to launch setup.sh.
-        # A failed refresh (e.g. offline) is non-fatal — fall through to the
-        # current checkout's setup.sh rather than blocking the bootstrap.
+        printf 'mesh setup: refreshing both repos (mesh update --force)…\n' >&2
+        # --force so a fleet on a feature/release branch (not `main`) still gets
+        # pulled — `mesh setup` is explicit intent, unlike the main-only
+        # shell-start auto-update. Run as a child (NOT exec) so control returns
+        # here to launch setup.sh. A failed refresh (offline / dirty tree) is
+        # non-fatal — fall through to the current checkout's setup.sh.
         local urc=0
-        bash "${BASH_SOURCE[0]}" update || urc=$?
+        bash "${BASH_SOURCE[0]}" update --force || urc=$?
         (( urc == 0 )) || printf 'mesh setup: warning — update returned rc %d; continuing with the current checkout\n' "$urc" >&2
     fi
 
