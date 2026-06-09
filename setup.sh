@@ -371,6 +371,25 @@ elif [[ ! -f "$SELECTIONS_FILE" ]]; then
     } > "$SELECTIONS_FILE"
 fi
 
+# ─── honor SKIP_TOPICS (CI / automation) ─────────────────────────────────────
+# Space-separated topic names to drop from the resolved selection. The smoke
+# test uses it to skip 'identity'/'personal', which need real credentials or a
+# TTY and must not hard-fail an unattended bootstrap. Defaults empty, so
+# interactive and ordinary non-interactive runs are unaffected. We filter into
+# a temp copy and never mutate a persisted selections.list.
+if [[ -n "${SKIP_TOPICS:-}" ]]; then
+    read -ra _skip_arr <<< "$SKIP_TOPICS"
+    _skip_re=""
+    for _t in "${_skip_arr[@]}"; do
+        _skip_re+="${_skip_re:+|}^${_t}/"
+    done
+    _filtered="$(mktemp -t mesh-selections-filtered.XXXXXX)"
+    grep -vE "$_skip_re" "$SELECTIONS_FILE" > "$_filtered" || true
+    SELECTIONS_FILE="$_filtered"
+    trap 'rm -f "${MESH_FOLLOWUP_FILE:-}" "'"$_filtered"'"' EXIT
+    info "SKIP_TOPICS active — dropped topics: $SKIP_TOPICS"
+fi
+
 info "selections: $SELECTIONS_FILE"
 
 # ─── apply via the engine ────────────────────────────────────────────────────

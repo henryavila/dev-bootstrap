@@ -31,8 +31,8 @@ TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
 # web / remote-access opt-in bundles are NOT in this list — they auto-skip because
 # their INCLUDE_* opt-in vars default to 0. Letting setup.sh's own gate handle them
 # keeps that path exercised too.
-# NOTE (audit T-009): setup.sh/engine no longer honor SKIP_TOPICS — this skip is
-# currently a no-op; restoring skip support is tracked separately.
+# setup.sh honors SKIP_TOPICS by filtering the resolved selection (T-009 closed):
+# both topics are dropped before the engine runs.
 DEFAULT_SKIP="identity personal"
 SKIP_TOPICS="${DEFAULT_SKIP}${EXTRA_SKIP:+ $EXTRA_SKIP}"
 
