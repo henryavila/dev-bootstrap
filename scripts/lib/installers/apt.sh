@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Driver: apt. Installs Debian/Ubuntu package.
 # CP4 A2-F-003: dpkg-query asserts "install ok installed" status —
 # previous `dpkg -s` accepted packages left in config-files state (post-

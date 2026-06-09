@@ -24,6 +24,7 @@ fails=""
 
 assert() {
     local label="$1"; shift
+    # shellcheck disable=SC2294  # eval of the assertion command string is intentional
     if eval "$@"; then
         pass=$((pass+1))
         echo "  PASS: $label"
@@ -49,7 +50,7 @@ setup_fake_ws_repo() {
     mkdir -p "$ws"
     git init --bare -q "$bare"
     (
-        cd "$ws"
+        cd "$ws" || exit 1
         git init -q -b main
         git config user.email "t@example.com"
         git config user.name "fixture"
@@ -251,6 +252,7 @@ printf 'foo\nbar\nbaz\n' > "$SNAP_RM/brew-formula.txt"
 printf 'foo\nbaz\n'      > "$SNAP_RM/brew-formula.after.txt"  # 'bar' removed
 (
     MESH_BRIDGE_LIB_ONLY=1
+    # shellcheck source=/dev/null
     . "$BRIDGE"
     set +e   # bridge sources with `set -e`; disable AFTER source for our test
     check_no_removals "$SNAP_RM" 2>/tmp/p2-removal-err
@@ -271,6 +273,7 @@ cp "$SNAP_OK/brew-formula.txt" "$SNAP_OK/brew-formula.after.txt"
 (
     MESH_BRIDGE_LIB_ONLY=1
     set +e
+    # shellcheck source=/dev/null
     . "$BRIDGE"
     check_no_removals "$SNAP_OK"
     exit $?
@@ -285,6 +288,7 @@ printf 'pkg1\npkg2\n' > "$SNAP_H2A/apt.txt"
 (
     MESH_BRIDGE_LIB_ONLY=1
     set +e
+    # shellcheck source=/dev/null
     . "$BRIDGE"
     check_no_removals "$SNAP_H2A" 2>/tmp/p2-h2a-err
     exit $?
@@ -302,6 +306,7 @@ printf 'mdprobe\nrtk\n'             > "$SNAP_H2B/npm-global.after.txt"
 (
     MESH_BRIDGE_LIB_ONLY=1
     set +e
+    # shellcheck source=/dev/null
     . "$BRIDGE"
     check_no_removals "$SNAP_H2B" 2>/tmp/p2-h2b-err
     exit $?
@@ -316,8 +321,10 @@ assert "H-2: npm-global removal mentions 'claude-mem'" \
 SNAP_H2C=$(mktemp -d -t mesh-p2-h2c-XXXXXX)
 # Empty dir: no manager files at all → manager absent → check returns 0.
 (
+    # shellcheck disable=SC2034  # consumed by the sourced $BRIDGE
     MESH_BRIDGE_LIB_ONLY=1
     set +e
+    # shellcheck source=/dev/null
     . "$BRIDGE"
     check_no_removals "$SNAP_H2C"
     exit $?
@@ -731,7 +738,7 @@ chmod +x "$FIX_RM/fakebin/brew"
 setup_fake_ws_repo "$FIX_RM/ws-fake"
 # Override the committed setup.sh with one that drops 'foo' from state on apply
 (
-    cd "$FIX_RM/ws-fake"
+    cd "$FIX_RM/ws-fake" || exit 1
     git checkout -q refactor/install-engine
     cat > setup.sh <<EOF
 #!/usr/bin/env bash

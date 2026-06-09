@@ -213,7 +213,8 @@ install_mesh_symlink() {
     # back it up (the deploy driver's .bak-<TS> pattern) and install the shim,
     # so v1-migrated boxes self-heal instead of keeping the stale dispatcher.
     if [[ -e "$dst" && ! -L "$dst" ]]; then
-        local backup="$dst.bak-$(date +%Y%m%d-%H%M%S)"
+        local backup
+        backup="$dst.bak-$(date +%Y%m%d-%H%M%S)"
         if ! mv "$dst" "$backup"; then
             warn "$dst is a regular file and could not be backed up — leaving alone"; return 0
         fi
@@ -329,6 +330,7 @@ persist_code_dir() {
     # Source in a subshell so bash applies the same quoting it wrote — never
     # leaks the other KEY=values into setup.sh's environment.
     local chosen
+    # shellcheck source=/dev/null
     chosen="$(set +u; . "$params" >/dev/null 2>&1; printf '%s' "${CODE_DIR:-}")"
     [[ -n "$chosen" ]] || return 0
     export CODE_DIR="$chosen"

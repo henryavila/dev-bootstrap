@@ -124,7 +124,8 @@ rm -f /tmp/rollback-preflight.out
 fixture_with_metadata() {
     local fake="$1"
     mkdir -p "$fake/.local/state/mesh/snapshots/$(hostname)-pre-migration"
-    local snap="$fake/.local/state/mesh/snapshots/$(hostname)-pre-migration"
+    local snap
+    snap="$fake/.local/state/mesh/snapshots/$(hostname)-pre-migration"
     echo "ORIGINAL" > "$fake/.bashrc.mesh-migrate"
     echo "MUTATED"  > "$fake/.bashrc"
     echo "main" > "$snap/git-branch-before-migration.txt"

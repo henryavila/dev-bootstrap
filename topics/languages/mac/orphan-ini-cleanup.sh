@@ -17,7 +17,8 @@ install() {
     # nothing behind, and the move path quarantines into a single
     # known location instead of a fresh per-run mktemp dir in /tmp
     # that would never be cleaned up.
-    local quarantine_root="$(mesh_state_dir)/orphan-ini-quarantine"
+    local quarantine_root
+    quarantine_root="$(mesh_state_dir)/orphan-ini-quarantine"
     local moved=0
     local php_ver_dir php_etc_path
     for php_ver_dir in "${BREW_PREFIX}/etc/php"/*/; do

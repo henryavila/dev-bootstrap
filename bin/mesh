@@ -1449,6 +1449,7 @@ case "${1:-status}" in
         # Sub names may contain hyphens (e.g. mesh code-server) → map to underscores.
         extension_sub="sub_${1//-/_}"
         if declare -F "$extension_sub" >/dev/null 2>&1; then
+            # shellcheck disable=SC2034  # captured for future extension dispatch
             cmd_arg="$1"
             shift
             "$extension_sub" "$@"

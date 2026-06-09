@@ -12,6 +12,7 @@ assert() {
     else failed=$((failed+1)); echo "  ✗ $name (expected: '$expected', got: '$actual')" >&2; fi
 }
 
+# shellcheck source=/dev/null
 . "$LIB"
 
 # Test 1: inject block into empty file

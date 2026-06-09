@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # scripts/lib/log.sh — central logger. Source-only (no top-level execution).
 # Functions: log_info / log_warn / log_error / log_debug.
 # All write to stderr (so stdout is reserved for data piped between commands).

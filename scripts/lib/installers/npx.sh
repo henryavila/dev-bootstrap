@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Driver: npx. Runs an npm package via npx without global install.
 #
 # spec format: "<package>[@version] <subcommand> [args...]"

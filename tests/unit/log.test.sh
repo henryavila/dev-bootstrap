@@ -26,6 +26,7 @@ assert "log_warn prefix"   "[WARN] danger" "$out"
 out=$(log_error "boom" 2>&1 1>/dev/null)
 assert "log_error prefix"  "[ERROR] boom"  "$out"
 
+# shellcheck disable=SC2034  # read by log_debug (sourced from log.sh)
 # log_debug suppressed unless MESH_DEBUG=1
 unset MESH_DEBUG
 out=$(log_debug "hidden" 2>&1 1>/dev/null)

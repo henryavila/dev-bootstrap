@@ -81,6 +81,7 @@ __BL_OWNED_VAR_HASH=$(
 #    check/install so existing mutation harnesses keep matching it.
 case "$PHASE" in
     verify)
+        # shellcheck source=/dev/null
         ( . "$SCRIPT"
           if [ "$(type -t verify)" = "function" ]; then
               verify
@@ -89,6 +90,7 @@ case "$PHASE" in
           fi )
         ;;
     rollback)
+        # shellcheck source=/dev/null
         ( . "$SCRIPT"
           if [ "$(type -t rollback)" = "function" ]; then
               rollback
@@ -97,6 +99,7 @@ case "$PHASE" in
           fi )
         ;;
     *)
+        # shellcheck source=/dev/null
         ( . "$SCRIPT"; "$PHASE" )
         ;;
 esac

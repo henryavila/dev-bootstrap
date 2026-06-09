@@ -64,12 +64,14 @@ secrets_resolve_home bogus >/dev/null 2>&1
 eq "dest via resolver" "$(secrets_dest_path '' composer-home auth.json)" "$HOME/.composer/auth.json"
 
 # --- secrets_dest_path: absolute path with ~ ---
+# shellcheck disable=SC2088  # literal ~ is the test input under expansion
 eq "dest ~ expand" "$(secrets_dest_path '~/.npmrc' '' '')" "$HOME/.npmrc"
 
 # --- secrets_dest_path: absolute path with $HOME ---
 eq "dest \$HOME expand" "$(secrets_dest_path '$HOME/.s3cfg' '' '')" "$HOME/.s3cfg"
 
 # --- secrets_dest_path: both forms set → rc 2 ---
+# shellcheck disable=SC2088  # literal ~ is the test input under expansion
 secrets_dest_path '~/.x' composer-home auth.json >/dev/null 2>&1
 [ $? -eq 2 ] && ok || no "both dest forms should rc 2"
 

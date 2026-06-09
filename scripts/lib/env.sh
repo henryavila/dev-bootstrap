@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # scripts/lib/env.sh — resolve MESH_WORKSTATION_DIR / MESH_IDENTITY_DIR.
 # Source-only. Idempotent: re-sourcing leaves already-set values alone.
 #

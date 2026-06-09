@@ -40,6 +40,7 @@ install() {
         tmp="$(mktemp -d)"
         curl -fsSL -o "$tmp/mkcert" \
             "https://github.com/FiloSottile/mkcert/releases/download/${ver}/mkcert-${ver}-linux-amd64"
+        # shellcheck disable=SC2033  # coreutils install, not the engine install() fn
         sudo install -m 0755 "$tmp/mkcert" /usr/local/bin/mkcert
         rm -rf "$tmp"
     fi
@@ -65,6 +66,7 @@ install() {
             rm -rf "$tmp"
             return 1
         fi
+        # shellcheck disable=SC2033  # coreutils install, not the engine install() fn
         if ! sudo install -m 0644 -o root -g root "$tmp/wildcard-localhost.pem"     "$WILDCARD_PEM" \
            || ! sudo install -m 0640 -o root -g root "$tmp/wildcard-localhost-key.pem" "$WILDCARD_KEY"; then
             echo "[mkcert] failed to install wildcard cert into $CERT_DIR" >&2

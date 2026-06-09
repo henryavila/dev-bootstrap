@@ -15,7 +15,7 @@ check() {
     # would silently pass and skip install. Now we assert origin URL +
     # the pinned tag.
     [[ -d "$CATP_TMUX/.git" ]] || return 1
-    local origin describe
+    local origin
     origin="$(git -C "$CATP_TMUX" config --get remote.origin.url 2>/dev/null)"
     case "$origin" in
         *catppuccin/tmux*) ;;

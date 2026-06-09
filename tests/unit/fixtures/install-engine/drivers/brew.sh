@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Minimal brew driver stub for P4 test — does not invoke real brew.
+# shellcheck disable=SC2034  # driver metadata read by the engine when sourced
 DRIVER_BREW_PLATFORMS="mac"
 
 install_brew() {

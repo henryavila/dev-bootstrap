@@ -25,6 +25,7 @@ trap _cleanup EXIT
 # ─── Test 1: fresh generation ──────────────────────────────────────
 echo "Fresh generation"
 [[ -d "$OUT" ]] && rm -rf "$OUT"
+# shellcheck disable=SC2034  # captured to suppress catalog stdout
 out=$(bash "$CATALOG" 2>&1); rc=$?
 assert_eq "$rc" "0" "catalog.sh fresh-run rc=0"
 assert_file_exists "$OUT/resources.txt"     ".catalog/resources.txt exists"

@@ -100,6 +100,7 @@ fixture_template="$SANDBOX/fixture-template"
 created_identity="$SANDBOX/created-identity"
 _make_fixture_template "$fixture_template"
 
+# shellcheck disable=SC2034  # captured for later assertions
 env_out=$(
     MESH_TEMPLATE_DIR="$fixture_template" \
     MESH_IDENTITY_DIR="$created_identity" \

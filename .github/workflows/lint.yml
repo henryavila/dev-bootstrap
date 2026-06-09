@@ -15,6 +15,9 @@ jobs:
         uses: ludeeus/action-shellcheck@master
         with:
           ignore_paths: docs windows
+          # zsh is not a shellcheck-supported dialect (sh/bash/dash/ksh only);
+          # these files are genuine zsh and parse-error under shellcheck.
+          ignore_names: p10k.zsh mesh-guard.zsh auto-update.zsh
           severity: warning
 
       - name: bash syntax

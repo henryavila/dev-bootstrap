@@ -46,8 +46,7 @@ install() {
 verify() {
     # Brief readiness wait: a daemon still spawning right after `services start`
     # would be misread as failed by an immediate check(). Retry up to ~3s.
-    local i
-    for i in 1 2 3 4 5 6; do
+    for _ in 1 2 3 4 5 6; do
         check && return 0
         sleep 0.5
     done

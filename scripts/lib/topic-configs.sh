@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # scripts/lib/topic-configs.sh — workstation default config linker.
 #
 # Single source of truth for the C15 "ship default configs" mechanism

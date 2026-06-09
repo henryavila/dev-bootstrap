@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Driver: git-clone. Clones spec into GIT_CLONE_DEST or $HOME/<basename>.
 #
 # Detection model: dir-presence is the install-time check (don't re-clone

@@ -39,6 +39,7 @@ printf '#!/usr/bin/env bash\n# bin/mesh v2 (has doctor/adopt)\n' > "$REPO_FAKE/b
 # runtime; stub it here.
 eval "$(sed -n '/^install_mesh_symlink() {/,/^}/p' "$BOOT")"
 warn() { echo "warn: $*" >&2; }
+# shellcheck disable=SC2034  # consumed by install_mesh_symlink (sourced)
 HERE="$REPO_FAKE"   # global read by install_mesh_symlink as the symlink target dir
 DRY_RUN=0
 
@@ -77,6 +78,7 @@ assert_eq    "$(readlink "$HOME/.local/bin/mesh" 2>/dev/null)" "$REPO_FAKE/bin/m
 HOME="$SANDBOX/c4"; mkdir -p "$HOME/.local/bin"
 printf 'OLD\n' > "$HOME/.local/bin/mesh"
 DRY_RUN=1 install_mesh_symlink
+# shellcheck disable=SC2034  # reset for next case
 DRY_RUN=0
 ASSERT_MSG="Case 4a: dry-run leaves the regular file untouched" assert_true '[[ -f "$HOME/.local/bin/mesh" && ! -L "$HOME/.local/bin/mesh" ]]'
 ASSERT_MSG="Case 4b: dry-run writes no backup" assert_false 'compgen -G "$HOME/.local/bin/mesh.bak-*" >/dev/null 2>&1'

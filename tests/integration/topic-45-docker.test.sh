@@ -47,7 +47,9 @@ assert_eq "${__YAML_PARSE_OK:-0}" "1" "yaml-parse rc=0 + sentinel set"
 
 # Count items: increment i until ITEM_i_NAME is unset
 i=0
+# shellcheck disable=SC1083  # literal braces inside eval are intentional
 while [[ -n "${!j:-}" || -n "$(eval echo \${ITEM_${i}_NAME:-})" ]]; do
+    # shellcheck disable=SC1083  # literal braces inside eval are intentional
     name="$(eval echo \${ITEM_${i}_NAME:-})"
     [[ -z "$name" ]] && break
     i=$((i+1))

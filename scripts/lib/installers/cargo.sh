@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Driver: cargo. Installs Rust crate.
 # check uses awk literal-substring match (regex metachars in pkg names like
 # `+` `.` `*` would false-positive with the previous `grep -q "^$1 v"`).

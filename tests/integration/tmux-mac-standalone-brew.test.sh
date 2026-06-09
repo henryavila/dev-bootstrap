@@ -30,7 +30,7 @@ mkdir -p "$STUBBIN" "$HOME_DIR/.tmux/plugins/tpm/.git" \
 # skipped. Otherwise the engine would re-clone and trip on the existing
 # (non-git) dir.
 (
-    cd "$HOME_DIR/.tmux/plugins/tmux"
+    cd "$HOME_DIR/.tmux/plugins/tmux" || exit 1
     git init -q
     git config user.email test@example.com
     git config user.name test

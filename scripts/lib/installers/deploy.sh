@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Driver: deploy — render + install a bundle's template files.
 #
 # A `deploy`-type item carries `spec: ./templates/<subdir>` (relative to the

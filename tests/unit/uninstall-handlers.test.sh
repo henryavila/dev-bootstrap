@@ -139,6 +139,7 @@ rm -rf "$TMP"
 
 # ─── _uninstall_npx: advisory only ────────────────────────────────
 echo "--- npx handler ---"
+# shellcheck disable=SC2034  # captured to suppress handler stdout
 output=$(_uninstall_npx "some-pkg install --yes" 2>&1)
 pass "_uninstall_npx runs without error (advisory)"
 

@@ -8,6 +8,7 @@ install() {
     curl -fsSL -o "$tmp/lg.tgz" \
         "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${ver}_Linux_x86_64.tar.gz"
     tar -C "$tmp" -xzf "$tmp/lg.tgz" lazygit
+    # shellcheck disable=SC2033  # coreutils install, not the engine install() fn
     sudo install -m 0755 "$tmp/lazygit" /usr/local/bin/lazygit
     rm -rf "$tmp"
 }

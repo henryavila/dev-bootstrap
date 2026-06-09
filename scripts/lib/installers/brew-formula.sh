@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Driver: brew-formula. Installs Homebrew formula.
 # CP4 A2-F-002: `--` separator stops brew option parsing.
 #

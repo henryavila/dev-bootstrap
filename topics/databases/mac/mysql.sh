@@ -69,8 +69,7 @@ _server_running() {
 # init, slow socket bind) can lag behind `brew services start` returning — so a
 # single check right after start races and misreads it as not-running.
 _wait_server_running() {
-    local i
-    for i in 1 2 3 4 5 6; do
+    for _ in 1 2 3 4 5 6; do
         _server_running && return 0
         sleep 0.5
     done

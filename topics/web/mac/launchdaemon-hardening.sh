@@ -42,6 +42,7 @@ install() {
     for svc in php nginx dnsmasq; do
         plist="/Library/LaunchDaemons/homebrew.mxcl.${svc}.plist"
         sudo test -f "$plist" || continue
+        # shellcheck disable=SC2034  # advisory flag reserved for future reporting
         found=1
         target="$(_target_log_for "$svc")"
         current_err="$(sudo /usr/libexec/PlistBuddy -c "Print :StandardErrorPath" "$plist" 2>/dev/null || echo "")"

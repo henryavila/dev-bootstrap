@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Driver: custom escape hatch.
 # YAML schema for custom items uses `script:` field — engine should pass ITEM_N_SCRIPT
 # as the dispatch arg. Custom scripts define their own check/install/verify/rollback.
@@ -10,6 +11,7 @@ custom_check() {
     # unconditionally (regardless of its real state), forcing install() to
     # re-run on every pass and silently breaking idempotency-respect.
     [[ -r "$script" ]] || { echo "custom: script not readable: $script"; return 1; }
+    # shellcheck source=/dev/null
     ( . "$script"; declare -f check >/dev/null && check )
 }
 custom_install() {
@@ -19,6 +21,7 @@ custom_install() {
     # the contract instead.
     local script="$1"
     (
+        # shellcheck source=/dev/null
         . "$script"
         if ! declare -f install >/dev/null; then
             echo "custom: $script does not define install() — contract violation" >&2
@@ -38,6 +41,7 @@ custom_verify() {
     # verifier. Custom scripts MUST opt in to verification.
     local script="$1"
     (
+        # shellcheck source=/dev/null
         . "$script"
         if declare -f verify >/dev/null; then
             verify
@@ -56,6 +60,7 @@ custom_update() {
     local script="$1"
     [[ -r "$script" ]] || { echo "custom: script not readable: $script" >&2; return 1; }
     (
+        # shellcheck source=/dev/null
         . "$script"
         if declare -f update >/dev/null; then
             update
@@ -75,6 +80,7 @@ custom_repair() {
     local script="$1"
     [[ -r "$script" ]] || { echo "custom: script not readable: $script" >&2; return 1; }
     (
+        # shellcheck source=/dev/null
         . "$script"
         if declare -f repair >/dev/null; then
             repair
@@ -90,6 +96,7 @@ custom_rollback() {
     # should know — partial state may remain.
     local script="$1"
     (
+        # shellcheck source=/dev/null
         . "$script"
         if declare -f rollback >/dev/null; then
             rollback

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Minimal apt driver stub for P4 test.
+# shellcheck disable=SC2034  # driver metadata read by the engine when sourced
 DRIVER_APT_PLATFORMS="linux"
 
 install_apt() {

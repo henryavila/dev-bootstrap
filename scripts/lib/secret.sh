@@ -56,6 +56,7 @@ _is_ciphertext() {
 
 # Load + eval the manifest into INTEGRATION_* vars. Empty manifest → 0 entries.
 _manifest_load() {
+    # shellcheck disable=SC2034  # part of the manifest data contract
     if [ ! -f "$MANIFEST" ]; then INTEGRATION_COUNT=0; MANIFEST_VERSION=0; return 0; fi
     local parsed
     parsed="$(bash "$LIB_DIR/secrets-manifest.sh" < "$MANIFEST")" \

@@ -18,6 +18,7 @@ check() {
 install() {
     # C6 fix: canary set unconditionally so leak detection works on both
     # platforms (previously only set in linux branch via _add_pgdg_repo).
+    # shellcheck disable=SC2034  # intentional engine-isolation canary
     POSTGRES_INTERNAL_LEAK_CANARY="if-you-see-this-in-engine-isolation-failed"
     case "$MESH_OS" in
         mac)

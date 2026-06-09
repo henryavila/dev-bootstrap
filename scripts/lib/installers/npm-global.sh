@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Driver: npm-global. Installs npm package globally.
 # check uses --parseable + non-empty output (regex metachars in scoped pkg
 # names like `@foo/bar.baz` would false-match with the previous grep "$1@").

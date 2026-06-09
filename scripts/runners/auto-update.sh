@@ -724,6 +724,7 @@ process_repo() {
 # or env), so existing `mesh update` behavior is unchanged.
 _any_update_optin() {
     local params="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/params.env" v
+    # shellcheck source=/dev/null
     [[ -r "$params" ]] && . "$params" 2>/dev/null
     for v in "${MESH_UPDATE_AGENT_CLIS:-0}" "${MESH_UPDATE_RUNTIMES_DBS:-0}" "${MESH_UPDATE_CLI_TOOLS:-0}"; do
         case "$v" in 1|true|yes|on) return 0 ;; esac
