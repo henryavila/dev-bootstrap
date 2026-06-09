@@ -123,3 +123,13 @@ tm() {
         tmux new-session -A -s main
     fi
 }
+
+# Tab-complete live tmux session names for `ta`. `ta` is a function, not an
+# alias to `tmux attach`, so nothing completes session names for it by default.
+_mesh_tmux_sessions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local sessions
+    sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null)"
+    mapfile -t COMPREPLY < <(compgen -W "$sessions" -- "$cur")
+}
+complete -F _mesh_tmux_sessions ta

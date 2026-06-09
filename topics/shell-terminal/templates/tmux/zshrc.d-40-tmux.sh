@@ -133,3 +133,17 @@ tm() {
         tmux new-session -A -s main
     fi
 }
+
+# Tab-complete live tmux session names for `ta`. `ta` is a function, not an
+# alias to `tmux attach`, so zsh's bundled _tmux completion never fires on it.
+# Register only when the completion system is loaded (same guard the git topic
+# uses) so this fragment stays inert in non-completion contexts.
+if command -v compdef >/dev/null 2>&1; then
+    _mesh_tmux_sessions() {
+        local -a sessions
+        # shellcheck disable=SC2206,SC2296 # zsh ${(f)...} splits on newlines only; intentional and zsh-only syntax.
+        sessions=(${(f)"$(tmux list-sessions -F '#{session_name}' 2>/dev/null)"})
+        (( ${#sessions} )) && _describe -t sessions 'tmux session' sessions
+    }
+    compdef _mesh_tmux_sessions ta
+fi
