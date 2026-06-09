@@ -6,12 +6,12 @@ trying the bootstrap on a real WSL or Mac install.
 ## Running
 
 ```bash
-cd ~/dev-bootstrap
+cd ~/mesh-workstation
 bash ci/smoke-test.sh
 ```
 
-Builds `dev-bootstrap-smoke` from `Dockerfile.ubuntu-24.04`, runs
-`bash ~/dev-bootstrap/setup.sh` inside it with `NON_INTERACTIVE=1`
+Builds `mesh-workstation-smoke` from `Dockerfile.ubuntu-24.04`, runs
+`bash ~/mesh-workstation/setup.sh` inside it with `NON_INTERACTIVE=1`
 and a curated `SKIP_TOPICS` list, writes the full run log to
 `ci/last-run.log`, and prints `SMOKE TEST PASSED` or `SMOKE TEST FAILED`.
 

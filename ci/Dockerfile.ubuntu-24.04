@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Dockerfile.ubuntu-24.04 — hermetic smoke-test image for dev-bootstrap.
+# Dockerfile.ubuntu-24.04 — hermetic smoke-test image for mesh-workstation.
 #
 # Mirrors a fresh WSL2 Ubuntu 24.04 install as closely as a container allows:
 #   - non-root `henry` user with NOPASSWD sudo
@@ -55,7 +55,7 @@ RUN useradd -m -s /bin/bash henry \
 
 # Bring the repo in as `henry`. `.dockerignore` strips `.git` + log noise
 # so the build context stays tight.
-COPY --chown=henry:henry . /home/henry/dev-bootstrap
+COPY --chown=henry:henry . /home/henry/mesh-workstation
 
 # Docker-layer coercion: force scripts/lib/detect-os.sh to emit "wsl" instead of "linux".
 #
@@ -77,8 +77,8 @@ RUN printf 'Linux version 5.15.0-microsoft-standard (docker-ci-smoke) #1 SMP Ubu
         > /etc/fake-proc-version \
     && sed -i \
         's|/proc/version|/etc/fake-proc-version|g' \
-        /home/henry/dev-bootstrap/scripts/lib/detect-os.sh \
-    && test "$(bash /home/henry/dev-bootstrap/scripts/lib/detect-os.sh)" = "wsl" \
+        /home/henry/mesh-workstation/scripts/lib/detect-os.sh \
+    && test "$(bash /home/henry/mesh-workstation/scripts/lib/detect-os.sh)" = "wsl" \
         || (echo 'detect-os.sh did not report wsl after patch' >&2 && exit 1)
 
 USER henry
@@ -87,4 +87,4 @@ ENV HOME=/home/henry
 
 # Default CMD runs setup.sh non-interactively. `smoke-test.sh` overrides
 # this with its own bash -c wrapper so it can pass SKIP_TOPICS cleanly.
-CMD ["bash", "/home/henry/dev-bootstrap/setup.sh", "--non-interactive"]
+CMD ["bash", "/home/henry/mesh-workstation/setup.sh", "--non-interactive"]
