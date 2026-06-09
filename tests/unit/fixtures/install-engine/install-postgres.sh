@@ -54,6 +54,7 @@ rollback() {
 
 _add_pgdg_repo() {
     info "(mock) adding PGDG APT repo"
+    # shellcheck disable=SC2034  # redundant canary in the legacy linux branch
     POSTGRES_INTERNAL_LEAK_CANARY="if-you-see-this-in-engine-isolation-failed"
     return 0
 }

@@ -85,7 +85,7 @@ parse_mappings() {
 
 check_mapping() {
     local raw="$1"
-    local src dst mode perms
+    local src dst mode
     IFS='|' read -r src dst mode _ <<< "$raw"
     mode="${mode:-overwrite}"
     # dst is already expanded + trimmed by deploy_map_emit (shared parser).

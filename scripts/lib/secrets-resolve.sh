@@ -70,9 +70,9 @@ secrets_resolver_list() {
 # Expand a leading ~ and a literal $HOME in an absolute-ish path.
 _secrets_expand_path() {
     local p="$1"
+    # shellcheck disable=SC2088  # case patterns match a literal leading ~ on purpose
     case "$p" in
         '~') p="$HOME" ;;
-        # shellcheck disable=SC2088  # case pattern matches a literal leading ~
         '~/'*) p="$HOME/${p#\~/}" ;;
     esac
     # literal $HOME (and ${HOME}) → $HOME (parameter substitution, not eval).

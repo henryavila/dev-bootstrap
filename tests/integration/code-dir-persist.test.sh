@@ -85,8 +85,9 @@ assert_false "[[ -f '$SELECTIONS_DIR/config.env' ]]" \
 
 # ─── Case 4: DRY_RUN never writes ────────────────────────────────────────────
 SELECTIONS_DIR="$SANDBOX/c4"; seed_params "$SELECTIONS_DIR" "$SANDBOX/c4/dev"
-# shellcheck disable=SC2034  # trailing DRY_RUN reset for next case
-CODE_DIR=""; DRY_RUN=1 persist_code_dir; DRY_RUN=0
+CODE_DIR=""; DRY_RUN=1 persist_code_dir
+# shellcheck disable=SC2034  # reset DRY_RUN for the next case
+DRY_RUN=0
 assert_false "[[ -f '$SELECTIONS_DIR/config.env' ]]" "Case 4a: dry-run writes no config.env"
 
 # ─── Case 5: a path with a space round-trips through the %q quoting ──────────
