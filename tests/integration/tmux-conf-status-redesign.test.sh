@@ -82,6 +82,16 @@ assert_pattern_present "$CONF" 'status-format\[1\]' \
 assert_pattern_absent "$CONF" '@mesh_line2.*printf' \
     "G — line 2 segments never use printf (strftime eats %-sequences)"
 
+# ── H · nested cockpit: auto-hide outer bar + manual toggle ─────────────────
+assert_pattern_present "$CONF" 'set -g focus-events on' \
+    "H — focus-events enabled (hooks + nvim autoread)"
+for hook in 'pane-focus-in' 'session-window-changed' 'window-pane-changed'; do
+    assert_pattern_present "$CONF" "set-hook -g $hook .*m/r:\^\(ssh\|mosh\)" \
+        "H — $hook hook re-evaluates the ssh/mosh auto-hide rule"
+done
+assert_pattern_present "$CONF" 'bind b if -F' \
+    "H — prefix b manually flips the bar (key verified unbound in stock tmux)"
+
 # ── Functional: the conf parses and applies on a scratch server ─────────────
 if command -v tmux >/dev/null 2>&1; then
     SOCK="mesh-conf-test-$$"
