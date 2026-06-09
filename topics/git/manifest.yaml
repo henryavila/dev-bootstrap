@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Git"
+  hint: "global config, lazygit, optional GPG signing"
+  required: true
+  order: 40
+  description: |
+    Applies the shared global git configuration (aliases, defaults, sane
+    behaviour), links the lazygit config, and optionally enables GPG commit
+    signing. Author name/email are pre-filled from your existing git config.
+
+bundles:
+
+  - name: config
+    label: "Git config"
+    desc: "Global git config + author identity"
+    required: true
+    icon_name: git
+    options:
+      - name: user-name
+        type: text
+        label: "Git author name"
+        env: GIT_NAME
+        default_from: "git config --global --get user.name"
+      - name: user-email
+        type: text
+        label: "Git author email"
+        env: GIT_EMAIL
+        default_from: "git config --global --get user.email"
+    items:
+      - name: gitconfig-apply
+        type: custom
+        script: ./gitconfig-apply.sh
+        idempotent: true
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/config
+        idempotent: true
+
+  - name: lazygit
+    label: "lazygit config"
+    desc: "lazygit default config — identity overrides win"
+    icon_name: git
+    items:
+      - name: lazygit-default-config
+        type: custom
+        script: ./link-lazygit-config.sh
+
+  - name: gpg-signing
+    label: "GPG signing"
+    desc: "Opt-in GPG commit & tag signing (off by default)"
+    default_selected: false
+    icon_name: key
+    items:
+      - name: gpg-signing
+        type: custom
+        script: ./gpg-signing.sh

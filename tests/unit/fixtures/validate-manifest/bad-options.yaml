@@ -1,0 +1,44 @@
+topic:
+  label: "BadOpts"
+  order: 10
+bundles:
+  - name: b
+    label: "B"
+    desc: "b"
+    options:
+      - name: dup
+        type: text
+        label: "L"
+        env: SAME_ENV
+      - name: dup
+        type: text
+        label: "L2"
+        env: SAME_ENV
+      - name: ms
+        type: multiselect
+        label: "MS"
+        env: MS_ENV
+        required_min: 2
+        choices:
+          - { value: a, label: "A", default: true }
+          - { value: b, label: "B" }
+      - name: badderive
+        type: toggle
+        label: "BD"
+        env: BD_ENV
+        derive_from: nope
+      - name: bothsel
+        type: select
+        label: "BS"
+        env: BS_ENV
+        derive_from: ms
+        source: ./x.conf
+      - name: dffrom
+        type: select
+        label: "DF"
+        env: DF_ENV
+        default_from: "echo hi"
+    items:
+      - name: i
+        type: custom
+        script: ./i.sh

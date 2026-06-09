@@ -1,0 +1,7 @@
+# AI Agent Instructions
+
+This project follows Claude Code conventions. Read and follow @CLAUDE.md for all instructions, including status tracking requirements.
+
+Additional project context:
+- Memory: `.ai/memory/MEMORY.md` (index) + `.ai/memory/PROJECT_STATUS.md` (canonical rollup dashboard)
+- Status: `.atomic-skills/PROJECT-STATUS.md` (per-initiative operational state)

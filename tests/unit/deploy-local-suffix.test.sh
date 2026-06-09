@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-DEPLOY_SH="$REPO_ROOT/lib/deploy.sh"
+DEPLOY_SH="$REPO_ROOT/scripts/lib/deploy.sh"
 assert_file_exists "$DEPLOY_SH"
 
 # Build a minimal harness that loads just the function under test.

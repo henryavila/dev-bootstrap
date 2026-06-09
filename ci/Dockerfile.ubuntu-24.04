@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
-# Dockerfile.ubuntu-24.04 — hermetic smoke-test image for dev-bootstrap.
+# Dockerfile.ubuntu-24.04 — hermetic smoke-test image for mesh-workstation.
 #
 # Mirrors a fresh WSL2 Ubuntu 24.04 install as closely as a container allows:
 #   - non-root `henry` user with NOPASSWD sudo
 #   - Phase 0 of docs/onboard-new-machine.md pre-installed (git, curl, ca-certs)
-#   - a docker-layer sed on lib/detect-os.sh so it emits "wsl" (upstream
-#     lib/ is NOT modified — see rationale below)
+#   - a docker-layer sed on scripts/lib/detect-os.sh so it emits "wsl"
+#     (upstream scripts/lib/ is NOT modified — see rationale below)
 #
 # Built and run by ci/smoke-test.sh — do not invoke docker build directly
 # unless you know what you're doing.
@@ -15,7 +15,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Phase 0 of the onboarding doc is git + curl + ca-certificates. That's the
-# only tooling a human user installs before running bootstrap.sh.
+# only tooling a human user installs before running setup.sh.
 #
 # We also pre-install three packages that ship by default in WSL's Ubuntu
 # cloud image but are absent from `ubuntu:24.04` minimal:
@@ -55,9 +55,9 @@ RUN useradd -m -s /bin/bash henry \
 
 # Bring the repo in as `henry`. `.dockerignore` strips `.git` + log noise
 # so the build context stays tight.
-COPY --chown=henry:henry . /home/henry/dev-bootstrap
+COPY --chown=henry:henry . /home/henry/mesh-workstation
 
-# Docker-layer coercion: force lib/detect-os.sh to emit "wsl" instead of "linux".
+# Docker-layer coercion: force scripts/lib/detect-os.sh to emit "wsl" instead of "linux".
 #
 # Why: out of the 7 topics the smoke test targets, 5 (00-core, 10-languages,
 # 20-terminal-ux, 40-tmux, 80-claude-code) only ship `install.wsl.sh` +
@@ -68,23 +68,23 @@ COPY --chown=henry:henry . /home/henry/dev-bootstrap
 # The install.wsl.sh scripts are apt-based and run fine on non-WSL Ubuntu;
 # they're gated behind the WSL tag by convention, not by WSL-specific APIs.
 #
-# Approach: patch the image's COPY of lib/detect-os.sh to grep a file we
-# own (/etc/fake-proc-version containing the magic "microsoft" string)
-# instead of /proc/version. We do not touch the repo on disk — this patch
-# lives entirely inside the image layer. Bind-mounting /proc/version isn't
-# an option (kernel-virtual, needs --privileged).
+# Approach: patch the image's COPY of scripts/lib/detect-os.sh to grep a
+# file we own (/etc/fake-proc-version containing the magic "microsoft"
+# string) instead of /proc/version. We do not touch the repo on disk —
+# this patch lives entirely inside the image layer. Bind-mounting
+# /proc/version isn't an option (kernel-virtual, needs --privileged).
 RUN printf 'Linux version 5.15.0-microsoft-standard (docker-ci-smoke) #1 SMP Ubuntu 24.04 LTS\n' \
         > /etc/fake-proc-version \
     && sed -i \
         's|/proc/version|/etc/fake-proc-version|g' \
-        /home/henry/dev-bootstrap/lib/detect-os.sh \
-    && test "$(bash /home/henry/dev-bootstrap/lib/detect-os.sh)" = "wsl" \
+        /home/henry/mesh-workstation/scripts/lib/detect-os.sh \
+    && test "$(bash /home/henry/mesh-workstation/scripts/lib/detect-os.sh)" = "wsl" \
         || (echo 'detect-os.sh did not report wsl after patch' >&2 && exit 1)
 
 USER henry
 WORKDIR /home/henry
 ENV HOME=/home/henry
 
-# Default CMD runs the bootstrap non-interactively. `smoke-test.sh` overrides
+# Default CMD runs setup.sh non-interactively. `smoke-test.sh` overrides
 # this with its own bash -c wrapper so it can pass SKIP_TOPICS cleanly.
-CMD ["bash", "/home/henry/dev-bootstrap/bootstrap.sh", "--non-interactive"]
+CMD ["bash", "/home/henry/mesh-workstation/setup.sh", "--non-interactive"]

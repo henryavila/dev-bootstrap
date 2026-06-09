@@ -4,12 +4,12 @@
 # Validates lib/launch-wrapper.sh — the user-scope LaunchAgent generator
 # that wraps brew binaries living in non-canonical (e.g. /Volumes/External)
 # prefixes. Workaround for the TCC sandbox exit-78 bug; empirical mechanism
-# documented in dotfiles/.ai/memory/feedback_tcc_entitlement_spawn_only.md.
+# TCC entitlement is granted at spawn and preserved across execve; rootfs wrapper bypasses noowners volume exit 78.
 #
 # Two layers of coverage:
 #   (1) lib/launch-wrapper.sh unit-style: exercise public API in DRY_RUN
 #       mode against a tempdir; assert wrapper script + plist content.
-#   (2) topics/80-claude-code/install.mac.sh structural: grep that the
+#   (2) topics/80-claude-code/syncthing-service-mac.sh structural: grep that the
 #       custom-prefix branch wires the wrapper instead of failing with
 #       a `warn` block (regression on the original broken UX).
 
@@ -20,8 +20,8 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-LIB="$ROOT/lib/launch-wrapper.sh"
-TOPIC="$ROOT/topics/80-claude-code/install.mac.sh"
+LIB="$ROOT/scripts/lib/launch-wrapper.sh"
+TOPIC="$ROOT/topics/80-claude-code/syncthing-service-mac.sh"
 
 # ---------------------------------------------------------------------
 # Layer 1: lib/launch-wrapper.sh unit behavior
@@ -86,8 +86,8 @@ if [[ -f "$WRAPPER" ]]; then
     # Tells future readers WHY this exists (anti-rot)
     assert_pattern_present "$WRAPPER" 'TCC sandbox' \
         "wrapper documents WHY (TCC sandbox)"
-    assert_pattern_present "$WRAPPER" 'feedback_tcc_entitlement_spawn_only.md' \
-        "wrapper points to memory file with empirical proof"
+    assert_pattern_present "$WRAPPER" 'preserved across execve' \
+        "wrapper documents the empirical TCC finding"
 
     # Honest exit code if target permanently absent
     assert_pattern_present "$WRAPPER" 'exit 78' \
@@ -216,17 +216,17 @@ ASSERT_MSG="install fails when --brew-bin is missing" \
     assert_false "launch_wrapper_install_extbrew --svc x --label com.x.y"
 
 # ---------------------------------------------------------------------
-# Layer 2: topics/80-claude-code/install.mac.sh structural
+# Layer 2: topics/80-claude-code/syncthing-service-mac.sh structural
 # ---------------------------------------------------------------------
 echo
-echo "═══ topics/80-claude-code/install.mac.sh — wrapper integration ═══"
+echo "═══ topics/80-claude-code/syncthing-service-mac.sh — wrapper integration ═══"
 
-assert_pattern_present "$TOPIC" 'source.*lib/launch-wrapper\.sh' \
-    "80-claude-code sources lib/launch-wrapper.sh"
+assert_pattern_present "$TOPIC" '(source|^[[:space:]]*\.).*lib/launch-wrapper\.sh' \
+    "80-claude-code sources lib/launch-wrapper.sh (source or dot-include)"
 
-# Branches on BREW_PREFIX
-assert_pattern_present "$TOPIC" 'case "\$BREW_PREFIX"' \
-    "80-claude-code branches on BREW_PREFIX (canonical vs custom)"
+# Branches on BREW_PREFIX (case statement OR helper function with same effect)
+assert_pattern_present "$TOPIC" '(case "\$BREW_PREFIX"|_use_wrapper)' \
+    "80-claude-code branches on BREW_PREFIX (case stmt or _use_wrapper helper)"
 assert_pattern_present "$TOPIC" '/opt/homebrew\|/usr/local' \
     "80-claude-code names canonical prefixes /opt/homebrew + /usr/local"
 
@@ -254,25 +254,25 @@ assert_pattern_absent "$TOPIC" 'workaround: create ~/Library/LaunchAgents' \
 # ---------------------------------------------------------------------
 # Layer 3: 60-web-stack (redis) integration
 # ---------------------------------------------------------------------
-WS_TOPIC="$ROOT/topics/60-web-stack/install.mac.sh"
+WS_TOPIC="$ROOT/topics/60-web-stack/mac/redis.sh"
 echo
-echo "═══ topics/60-web-stack/install.mac.sh — redis wrapper integration ═══"
-assert_pattern_present "$WS_TOPIC" 'source.*lib/launch-wrapper\.sh' \
-    "60-web-stack sources lib/launch-wrapper.sh"
-assert_pattern_present "$WS_TOPIC" 'use_launch_wrapper=1' \
-    "60-web-stack sets use_launch_wrapper flag (custom prefix branch)"
+echo "═══ topics/60-web-stack/mac/redis.sh — redis wrapper integration ═══"
+assert_pattern_present "$WS_TOPIC" '(source|^[[:space:]]*\.).*lib/launch-wrapper\.sh' \
+    "60-web-stack sources lib/launch-wrapper.sh (source or dot-include)"
+assert_pattern_present "$WS_TOPIC" '(use_launch_wrapper=1|_use_wrapper)' \
+    "60-web-stack flags the custom-prefix branch (use_launch_wrapper var or _use_wrapper helper)"
 assert_pattern_present "$WS_TOPIC" '[-]-svc redis' \
     "60-web-stack invokes wrapper with --svc redis"
 assert_pattern_present "$WS_TOPIC" '[-]-label "com\.\$\{USER\}\.redis"' \
     "60-web-stack labels redis plist com.\${USER}.redis"
-assert_pattern_present "$WS_TOPIC" '[-]-workdir "\$BREW_PREFIX/var"' \
+assert_pattern_present "$WS_TOPIC" '[-]-workdir "\$\{?BREW_PREFIX\}?/var"' \
     "60-web-stack passes --workdir \$BREW_PREFIX/var (matches brew formula default)"
-assert_pattern_present "$WS_TOPIC" '\$BREW_PREFIX/etc/redis\.conf' \
+assert_pattern_present "$WS_TOPIC" '\$\{?BREW_PREFIX\}?/etc/redis\.conf' \
     "60-web-stack passes \$BREW_PREFIX/etc/redis.conf as redis arg"
 
 # Canonical-prefix branch keeps `brew services start redis` (don't break
 # users who run on /opt/homebrew or /usr/local).
-assert_pattern_present "$WS_TOPIC" '[$]BREW_BIN" services start redis' \
+assert_pattern_present "$WS_TOPIC" 'BREW_BIN.*services start redis' \
     "60-web-stack canonical branch keeps brew services start redis"
 
 # ---------------------------------------------------------------------

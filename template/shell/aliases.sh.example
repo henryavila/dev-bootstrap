@@ -1,0 +1,29 @@
+# shell/aliases.sh — __USER_NAME__'s personal shell aliases.
+# Deployed to ~/.zshrc.d/30-aliases.sh (sourced by zshrc).
+# Edit freely; non-structural changes (alias content) don't trigger
+# template-check drift.
+
+# ─── Git ────────────────────────────────────────────────────────────
+alias g="git"
+alias gs="git status --short --branch"
+alias gd="git diff"
+alias gco="git checkout"
+alias gl="git log --oneline --graph --decorate -20"
+
+# ─── Navigation ─────────────────────────────────────────────────────
+alias ..="cd .."
+alias ...="cd ../.."
+
+# ─── Listing (prefers eza when available, falls back to ls) ─────────
+if command -v eza >/dev/null 2>&1; then
+    alias ll="eza -lah --git --group-directories-first"
+    alias lt="eza --tree --level=2"
+else
+    alias ll="ls -lah"
+fi
+
+# ─── Personal extras ────────────────────────────────────────────────
+# Add your own below this line; the section above mirrors the template
+# defaults and may be regenerated on `mesh init --create-identity` if you
+# delete the file. New aliases here survive re-runs (template-check only
+# checks structure, not content).

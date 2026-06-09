@@ -8,15 +8,14 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-INSTALL="$ROOT/topics/85-code-server/install.mac.sh"
+INSTALL="$ROOT/topics/85-code-server/mac/code-server.sh"
 VERIFY="$ROOT/topics/85-code-server/verify.sh"
-MENU="$ROOT/lib/menu.sh"
-BOOTSTRAP="$ROOT/bootstrap.sh"
+BOOTSTRAP="$ROOT/setup.sh"
 
 echo
 echo "═══ 85-code-server topic wiring ═══"
 
-assert_file_exists "$INSTALL" "install.mac.sh exists"
+assert_file_exists "$INSTALL" "mac/code-server.sh exists"
 assert_file_exists "$VERIFY" "verify.sh exists"
 
 list_out="$(HOME="$(mktemp -d /tmp/code-server-list.XXXXXX)" bash "$BOOTSTRAP" --list-topics 2>&1)"
@@ -36,12 +35,8 @@ assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_UPGRADE="\$\{CODE_SERVER_UPGRAD
 assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_CHECK_UPDATES="\$\{CODE_SERVER_CHECK_UPDATES:-1\}"' \
     "bootstrap checks for code-server updates by default"
 
-assert_pattern_present "$MENU" 'INCLUDE_CODE_SERVER' \
-    "menu handles INCLUDE_CODE_SERVER automation/state"
-assert_pattern_present "$MENU" 'code-server\)' \
-    "menu has code-server default-state detection"
-assert_pattern_present "$MENU" '85-code-server: VS Code in browser via Tailscale' \
-    "menu checklist includes code-server item"
+# (menu.sh code-server checklist/state assertions removed with the dead F9.5 menu
+# in T-005; the Ink TUI in scripts/menu/ owns the code-server bundle item.)
 
 echo
 echo "═══ 85-code-server installer contract ═══"
@@ -51,7 +46,7 @@ assert_pattern_present "$INSTALL" 'curl -fsSL https://code-server\.dev/install\.
 assert_pattern_present "$INSTALL" '[-][-]method=standalone --prefix "\$CODE_SERVER_INSTALL_PREFIX"' \
     "installer uses standalone method with prefix"
 assert_pattern_present "$INSTALL" 'env -u OS -u ARCH -u DISTRO sh -s --' \
-    "installer clears dev-bootstrap OS env before running upstream install script"
+    "installer clears mesh-workstation OS env before running upstream install script"
 assert_pattern_absent "$INSTALL" 'brew install code-server' \
     "installer does not use Homebrew code-server formula"
 assert_pattern_present "$INSTALL" 'CODE_SERVER_UPGRADE:=0' \
@@ -87,7 +82,7 @@ assert_pattern_present "$INSTALL" 'read -r -s first </dev/tty' \
     "interactive install prompts for hidden password"
 assert_pattern_present "$INSTALL" 'Confirm code-server password' \
     "interactive password prompt asks for confirmation"
-assert_pattern_present "$INSTALL" 'BOOTSTRAP_FOLLOWUP_FILE' \
+assert_pattern_present "$INSTALL" 'MESH_FOLLOWUP_FILE' \
     "generated password is deferred to bootstrap final summary"
 assert_pattern_present "$INSTALL" 'Deliberately bypass followup\(\)' \
     "generated password is not printed through tee'd topic logs"
@@ -98,8 +93,10 @@ assert_pattern_absent "$INSTALL" 'echo "\$password"' \
 
 assert_pattern_present "$INSTALL" 'CODE_SERVER_LABEL:=com\.\$\{USER\}\.code-server' \
     "installer default label is user-derived"
-assert_pattern_present "$INSTALL" '/usr/bin/plutil -lint "\$CODE_SERVER_PLIST"' \
-    "installer validates plist with plutil"
+assert_pattern_present "$INSTALL" '/usr/bin/plutil -lint "\$tmp"' \
+    "installer validates plist with plutil (on tmp before atomic mv — CP4 C-F-010)"
+assert_pattern_present "$INSTALL" 'mv -f "\$tmp" "\$CODE_SERVER_PLIST"' \
+    "installer atomically renames validated plist into place (CP4 C-F-010)"
 assert_pattern_absent "$INSTALL" '<key>GITHUB_TOKEN</key>' \
     "plist generation does not write GITHUB_TOKEN"
 assert_pattern_absent "$INSTALL" '<key>EnvironmentVariables</key>' \
@@ -108,7 +105,7 @@ assert_pattern_absent "$INSTALL" '<key>EnvironmentVariables</key>' \
 echo
 echo "═══ service wrapper + external brew PATH ═══"
 
-assert_pattern_present "$INSTALL" 'bash "\$HERE/\.\./\.\./lib/detect-brew\.sh"' \
+assert_pattern_present "$INSTALL" 'bash "\$HERE/\.\./\.\./scripts/lib/detect-brew\.sh"' \
     "installer calls detect-brew.sh as a subprocess"
 assert_pattern_present "$INSTALL" 'BREW_BIN=\*\).*BREW_BIN=' \
     "installer parses only BREW_BIN lines from detect-brew output"

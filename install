@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# mesh install — curl-pipe bootstrap entry (C13.1).
+#
+# Usage:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/henryavila/dev-bootstrap/main/install)
+#
+# Passthrough flags (forwarded verbatim to `mesh init`):
+#   --identity-repo URL      adopt existing identity by clone URL
+#   --create-identity        scaffold new identity from template/
+#   --no-identity            bootstrap workstation only, skip identity
+#
+# Env overrides:
+#   MESH_WORKSTATION_DIR     target clone path (default: $HOME/mesh-workstation)
+#   MESH_REPO_URL            override upstream clone URL (advanced)
+#
+# Steps: validate prereqs → clone (if missing) → setup.sh → mesh init.
+
+set -euo pipefail
+
+# 1. Prerequisites
+if [[ "${BASH_VERSINFO[0]:-0}" -lt 3 ]] \
+    || { [[ "${BASH_VERSINFO[0]}" -eq 3 ]] && [[ "${BASH_VERSINFO[1]:-0}" -lt 2 ]]; }; then
+    echo "install: bash 3.2+ required (have ${BASH_VERSION:-unknown})" >&2
+    exit 1
+fi
+for _cmd in curl git; do
+    if ! command -v "$_cmd" >/dev/null 2>&1; then
+        echo "install: required command not in PATH: $_cmd" >&2
+        exit 1
+    fi
+done
+
+# 2. Resolve target + upstream
+WS_DIR="${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}"
+MESH_REPO_URL="${MESH_REPO_URL:-https://github.com/henryavila/dev-bootstrap.git}"
+
+# 3. Clone if missing (idempotent: existing .git ⇒ skip)
+if [[ ! -d "$WS_DIR/.git" ]]; then
+    echo "==> cloning mesh-workstation into $WS_DIR"
+    git clone --depth 1 "$MESH_REPO_URL" "$WS_DIR"
+else
+    echo "==> reusing existing checkout at $WS_DIR"
+fi
+
+# 4. Run setup.sh (prelude symlinks bin/mesh → ~/.local/bin/mesh per C13.5)
+(
+    cd "$WS_DIR"
+    bash setup.sh
+)
+
+# 5. Auto-chain into mesh init (D-B13)
+exec "$WS_DIR/bin/mesh" init "$@"

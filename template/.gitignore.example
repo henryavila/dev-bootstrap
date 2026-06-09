@@ -1,0 +1,22 @@
+# mesh-identity .gitignore
+# Uncomment lines to exclude files from version control.
+
+# Real secrets (never commit)
+#ssh/config
+#git/gitconfig.local
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
+
+# Atomic-skills runtime state
+.atomic-skills/status/stop.log
+.atomic-skills/status/drift.log
+.atomic-skills/status/SKIP
+.atomic-skills/status/SKIP-EMERGENT
+.atomic-skills/bootstrap-drafts/
+.atomic-skills/status/bootstrap.json

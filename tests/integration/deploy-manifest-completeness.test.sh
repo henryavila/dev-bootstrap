@@ -49,7 +49,7 @@ for topic_dir in "$ROOT"/topics/*/templates; do
     # newline-delimited string with leading + trailing newlines as anchors,
     # and probe via `[[ "$haystack" == *$'\n'"$needle"$'\n'* ]]`. Zero forks,
     # bash-3.2-safe, identical semantics for the lookup we need (membership
-    # only, no per-key payload). See feedback_bash32_compat_macos.md.
+    # only, no per-key payload). bash 3.2 lacks `declare -A`; this is the portable alternative.
     deploy_srcs=$'\n'
     while IFS= read -r line || [[ -n "$line" ]]; do
         line="${line%$'\r'}"

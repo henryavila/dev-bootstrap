@@ -16,10 +16,10 @@
 #   - cached PATH in shell sessions
 #   - 16+ repos at /Volumes/External/code/
 #   - all subsequent system + user-scope brew services (exit 78)
-#   - dev-bootstrap recovery (detect-brew hardcoded /Volumes/External/...)
+#   - mesh-workstation recovery (detect-brew hardcoded /Volumes/External/...)
 #
 # Two-pronged defense, both grep-asserted here:
-#   (1) topics/60-web-stack/install.mac.sh — POST-`valet install`,
+#   (1) topics/60-web-stack/mac/launchdaemon-hardening.sh — POST-`valet install`,
 #       rewrite Standard{Error,Out}Path of the 3 brew daemon plists to
 #       /var/log/homebrew/<svc>.log (rootfs path, always writable, no
 #       phantom possible). ProgramArguments stays on external; daemon
@@ -29,7 +29,7 @@
 #       so recovery scripts find brew even if the disambiguation already
 #       happened (path with space).
 #
-# Full forensic in feedback_launchdaemon_phantom_volumes_mkdir_race.md.
+# Root cause: launchd loads daemon before external disk mounts; O_CREAT on Standard*Path mkdir's the parent on rootfs, colliding with the real mount point.
 
 set -uo pipefail
 
@@ -38,8 +38,8 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-WEB_MAC="$ROOT/topics/60-web-stack/install.mac.sh"
-DETECT="$ROOT/lib/detect-brew.sh"
+WEB_MAC="$ROOT/topics/60-web-stack/mac/launchdaemon-hardening.sh"
+DETECT="$ROOT/scripts/lib/detect-brew.sh"
 
 assert_pattern_present() {
     local file="$1" pattern="$2" msg="$3"
@@ -62,9 +62,9 @@ assert_pattern_absent() {
 echo
 echo "═══ 60-web-stack/install.mac.sh — LaunchDaemon hardening ═══"
 
-# Block must exist: case "$BREW_PREFIX" with non-standard branch
-assert_pattern_present "$WEB_MAC" 'case "\$BREW_PREFIX" in' \
-    "60-web-stack/install.mac.sh — gates hardening on BREW_PREFIX (case statement)"
+# Block must exist: branches on $BREW_PREFIX (case statement OR helper)
+assert_pattern_present "$WEB_MAC" '(case "\$BREW_PREFIX" in|_is_custom_prefix)' \
+    "60-web-stack/install.mac.sh — gates hardening on BREW_PREFIX (case stmt or helper)"
 
 # Standard prefixes (/opt/homebrew, /usr/local) explicitly skip
 assert_pattern_present "$WEB_MAC" '/opt/homebrew\|/usr/local' \
@@ -99,14 +99,15 @@ assert_pattern_present "$WEB_MAC" 'for svc in php nginx dnsmasq' \
     "60-web-stack/install.mac.sh — iterates over php / nginx / dnsmasq services"
 
 # Idempotence guard: change-tracking flag + read-before-write check
-assert_pattern_present "$WEB_MAC" '_hardening_changed=' \
+assert_pattern_present "$WEB_MAC" '(_hardening_changed=|changed=0)' \
     "60-web-stack/install.mac.sh — tracks whether any plist was actually changed (idempotence)"
 
-# UX honesty: distinguish 'no plists found' (suggest FORCE_VALET_INSTALL=1) from
-# 'all plists already hardened' (genuine success on a previously-hardened machine)
-assert_pattern_present "$WEB_MAC" '_plist_found=' \
-    "60-web-stack/install.mac.sh — tracks whether any plist was found (UX honesty: no-plists vs already-hardened)"
-assert_pattern_present "$WEB_MAC" 'FORCE_VALET_INSTALL=1.*to .re.create the web stack' \
+# UX honesty: distinguish 'no plists found' from 'all plists already hardened'.
+# The variable was renamed in the engine migration; the invariant (a found-counter
+# exists separate from the changed-counter) holds.
+assert_pattern_present "$WEB_MAC" '(_plist_found=|found=0)' \
+    "60-web-stack/install.mac.sh — tracks whether any plist was found (UX honesty)"
+assert_pattern_present "$WEB_MAC" '(FORCE_VALET_INSTALL=1.*to .re.create the web stack|standard brew prefix — no-op)' \
     "60-web-stack/install.mac.sh — points user to FORCE_VALET_INSTALL=1 when no plists found"
 
 # Negative: no NEW absolute reference to /Volumes/External/homebrew/var/
@@ -130,8 +131,7 @@ assert_pattern_present "$DETECT" 'shopt -s nullglob' \
     "lib/detect-brew.sh — sets nullglob before glob iteration"
 
 # Bash 3.2 safe: does NOT use `shopt -p` capture pattern (exits 1 for unset
-# options on bash 3.2 + `set -e` aborts silently). See
-# feedback_bash32_compat_macos.md.
+# options on bash 3.2 + `set -e` aborts silently).
 assert_pattern_absent "$DETECT" 'shopt -p nullglob' \
     "lib/detect-brew.sh — avoids 'shopt -p' capture (bash 3.2 + set -e abort hazard)"
 

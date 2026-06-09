@@ -1,0 +1,209 @@
+#compdef mesh
+# managed by mesh-workstation
+
+_mesh_topic_specs() {
+    emulate -L zsh
+
+    local -a fallback
+    local out
+
+    out="$(_mesh_topic_specs_from_mesh)"
+    if [[ -n "$out" ]]; then
+        print -r -- "$out"
+        return
+    fi
+
+    out="$(_mesh_topic_specs_from_bootstrap)"
+    if [[ -n "$out" ]]; then
+        print -r -- "$out"
+        return
+    fi
+
+    fallback=(
+        '00:00-core'
+        '05:05-identity'
+        '10:10-languages'
+        '20:20-terminal-ux'
+        '30:30-shell'
+        '40:40-tmux'
+        '45:45-docker  opt-in: INCLUDE_DOCKER=1'
+        '50:50-git'
+        '60:60-web-stack  opt-in: INCLUDE_WEBSTACK=1'
+        '70:70-remote-access  opt-in: INCLUDE_REMOTE=1'
+        '80:80-claude-code'
+        '82:82-ai-tools  opt-in: INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=<url>  AI review prompts + token-saving CLI tools'
+        '85:85-code-server  opt-in: INCLUDE_CODE_SERVER=1'
+        '90:90-editor  opt-in: INCLUDE_EDITOR=1'
+        '95:95-dotfiles-personal  opt-in: INCLUDE_IDENTITY=1 MESH_IDENTITY_REPO=<url>'
+    )
+    print -rl -- "${fallback[@]}"
+}
+
+_mesh_topic_specs_from_mesh() {
+    emulate -L zsh
+
+    (( $+commands[mesh] )) || return 1
+    command mesh topic list 2>/dev/null | _mesh_topic_specs_from_lines
+}
+
+_mesh_topic_specs_from_bootstrap() {
+    emulate -L zsh
+
+    local root out
+    for root in "${(@f)$(_mesh_dev_bootstrap_roots)}"; do
+        [[ -n "$root" && -x "$root/setup.sh" ]] || continue
+        out="$(bash "$root/setup.sh" --list-topics 2>/dev/null | _mesh_topic_specs_from_lines)"
+        if [[ -n "$out" ]]; then
+            print -r -- "$out"
+            return 0
+        fi
+    done
+    return 1
+}
+
+_mesh_dev_bootstrap_roots() {
+    emulate -L zsh
+
+    local -aU roots
+    local -a AUTO_UPDATE_REPOS
+    local conf local_conf repo
+
+    [[ -n "${MESH_WORKSTATION_DIR:-}" ]] && roots+=("$MESH_WORKSTATION_DIR")
+    [[ -n "${MESH_WORKSTATION_ROOT:-}" ]] && roots+=("$MESH_WORKSTATION_ROOT")
+    [[ -n "${DEV_BOOTSTRAP_ROOT:-}" ]] && roots+=("$DEV_BOOTSTRAP_ROOT")
+
+    for conf in "${AUTO_UPDATE_CONF:-}" "$HOME/.config/mesh/config.env" "$HOME/.config/dotfiles/auto-update.conf"; do
+        [[ -n "$conf" && -r "$conf" ]] || continue
+        AUTO_UPDATE_REPOS=()
+        source "$conf" 2>/dev/null || true
+        for repo in "${AUTO_UPDATE_REPOS[@]}"; do
+            [[ -n "$repo" && "$repo" == */mesh-workstation ]] && roots+=("$repo")
+            [[ -n "$repo" && "$repo" == */dev-bootstrap ]] && roots+=("$repo")
+        done
+        break
+    done
+
+    roots+=("$HOME/mesh-workstation" "/Volumes/External/code/mesh-workstation")
+    roots+=("$HOME/dev-bootstrap" "/Volumes/External/code/dev-bootstrap")
+    print -rl -- "${roots[@]}"
+}
+
+_mesh_topic_specs_from_lines() {
+    emulate -L zsh
+
+    local line number name detail
+    local -a parts
+
+    while IFS= read -r line; do
+        parts=(${(z)line})
+        number="${parts[1]:-}"
+        name="${parts[2]:-}"
+        if [[ "$number" == [0-9][0-9] && "$name" == "$number"-* ]]; then
+            if (( ${#parts[@]} > 2 )); then
+                detail="${line#*${name}}"
+                detail="${detail#"${detail%%[![:space:]]*}"}"
+                print -r -- "${number}:${name}  ${detail}"
+            else
+                print -r -- "${number}:${name}"
+            fi
+        fi
+    done
+}
+
+_mesh() {
+    local curcontext="$curcontext" state
+    local -a subcommands
+
+    subcommands=(
+        'status:show cross-mesh status and per-host detail'
+        'snap:generate this host snapshot'
+        'update:pull and apply dotfiles ecosystem updates'
+        'topic:list or run mesh-workstation topics by number'
+        'run:run a mesh subcommand on selected hosts'
+    )
+
+    if (( CURRENT == 2 )); then
+        _arguments \
+            '(-h --help)'{-h,--help}'[show help]' \
+            '(-V --version)'{-V,--version}'[show version]' \
+            '1:mesh subcommand:->subcommand'
+        if [[ "$state" == "subcommand" ]]; then
+            _describe -t commands 'mesh subcommand' subcommands
+        fi
+        return
+    fi
+
+    case "${words[2]}" in
+        status)
+            _arguments \
+                '(-h --help)'{-h,--help}'[show status help]' \
+                '--detail[show detail for a host alias]:host alias:' \
+                '--write[refresh PROJECT_STATUS.md]' \
+                '--json[emit JSON output]' \
+                '--refresh[refresh cached snapshots]' \
+                '*:host alias or status flag:_files'
+            ;;
+        snap)
+            _arguments \
+                '(-h --help)'{-h,--help}'[show snapshot help]' \
+                '--json[emit JSON output]' \
+                '--no-history[skip history update]' \
+                '*:snapshot flag:_files'
+            ;;
+        update)
+            _arguments \
+                '(-h --help)'{-h,--help}'[show update help]' \
+                '(-o --only)'{-o,--only}'[restrict update to one repo]:repo:(mesh-workstation mesh-identity)' \
+                '(-f --full)'{-f,--full}'[force full apply]' \
+                '(-i --interactive)'{-i,--interactive}'[show mesh-workstation full-apply menu]' \
+                '(-t --topics)'{-t,--topics}'[run only mesh-workstation topics by number/name]:topics:' \
+                '--reset-auth[reset auth state during update]' \
+                '--from-shell-start[mark update as shell startup triggered]' \
+                '*:update flag:_files'
+            ;;
+        topic)
+            local -a topic_actions topic_specs
+            topic_actions=(
+                'list:list mesh-workstation topics'
+            )
+            topic_specs=("${(@f)$(_mesh_topic_specs)}")
+            _arguments \
+                '(-h --help)'{-h,--help}'[show topic help]' \
+                '1:topic action or number:->topic_arg' \
+                '*:topic number/name:->topic_spec'
+            case "$state" in
+                topic_arg)
+                    _describe -t commands 'mesh topic command' topic_actions
+                    _describe -t topics 'mesh-workstation topic' topic_specs
+                    ;;
+                topic_spec)
+                    _describe -t topics 'mesh-workstation topic' topic_specs
+                    ;;
+            esac
+            ;;
+        run)
+            local -a run_subcommands
+            run_subcommands=(
+                'status:show cross-mesh status on selected hosts'
+                'snap:generate snapshots on selected hosts'
+                'update:pull and apply updates on selected hosts'
+            )
+            _arguments \
+                '(-h --help)'{-h,--help}'[show run help]' \
+                '--hosts[run on comma-separated host aliases]:hosts:' \
+                '--online[run on online configured hosts]' \
+                '--all[run on all configured hosts]' \
+                '--dry-run[show commands without executing]' \
+                '1:mesh subcommand:->run_subcommand' \
+                '*:mesh command argument:_files'
+            if [[ "$state" == "run_subcommand" ]]; then
+                _describe -t commands 'mesh run subcommand' run_subcommands
+            fi
+            ;;
+        *)
+            _files
+            ;;
+    esac
+}
+
+_mesh "$@"

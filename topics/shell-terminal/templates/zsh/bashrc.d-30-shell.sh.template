@@ -1,0 +1,88 @@
+# shellcheck shell=bash
+# 30-shell shell fragment (bash) — managed by mesh-workstation
+# Fundamentals every dev wants: bash completion, dircolors, sane defaults.
+# Loaded by ~/.bashrc from ~/.bashrc.d/ (ordered alphabetically — 30 runs
+# AFTER 10-languages and 20-terminal-ux but BEFORE user overrides in
+# ~/.bashrc.local).
+
+# ---------- Bash programmable completion ----------
+# ${BREW_PREFIX} substituted at deploy time (envsubst allowlist). Placed
+# first so custom brew prefixes (/Volumes/External/homebrew, etc) win over
+# standard paths.
+if ! shopt -oq posix 2>/dev/null; then
+    __bootstrap_brew_prefix='${BREW_PREFIX}'
+    if [ -f /usr/share/bash-completion/bash_completion ]; then
+        . /usr/share/bash-completion/bash_completion
+    elif [ -f /etc/bash_completion ]; then
+        . /etc/bash_completion
+    elif [ -n "$__bootstrap_brew_prefix" ] \
+         && [ -f "$__bootstrap_brew_prefix/etc/profile.d/bash_completion.sh" ]; then
+        . "$__bootstrap_brew_prefix/etc/profile.d/bash_completion.sh"
+    elif [ -f /opt/homebrew/etc/profile.d/bash_completion.sh ]; then
+        . /opt/homebrew/etc/profile.d/bash_completion.sh
+    elif [ -f /usr/local/etc/profile.d/bash_completion.sh ]; then
+        . /usr/local/etc/profile.d/bash_completion.sh
+    fi
+    unset __bootstrap_brew_prefix
+fi
+
+# ---------- dircolors — populates $LS_COLORS even when eza isn't used ----------
+if command -v dircolors >/dev/null 2>&1; then
+    if [ -r "$HOME/.dircolors" ]; then
+        eval "$(dircolors -b "$HOME/.dircolors")"
+    else
+        eval "$(dircolors -b)"
+    fi
+fi
+
+# ---------- Extra shell options ----------
+shopt -s globstar 2>/dev/null || true
+
+# ---------- Grep colored ----------
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+
+# ---------- Navigation (go up N dirs) ----------
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias .....='cd ../../../..'
+alias home='cd ~'
+
+# ---------- Shell shortcuts ----------
+alias h='history'
+alias j='jobs'
+alias e='exit'
+alias c='clear'
+alias cla='clear && ls -la'
+
+# ---------- Desktop notification helper (Linux only — notify-send) ----------
+# Usage: `make build; alert`. Mac/macOS users can define their own with
+# osascript in ~/.bashrc.d/99-personal-aliases.sh.
+if command -v notify-send >/dev/null 2>&1; then
+    # shellcheck disable=SC2142
+    alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+fi
+
+# ---------- Utility functions ----------
+mkd() { mkdir -p "$@" && cd "$@" || return; }
+md()  { mkdir -p "$@" && cd "$@" || return; }
+
+fs() {
+    local arg
+    if du -b /dev/null > /dev/null 2>&1; then
+        arg=-sbh
+    else
+        arg=-sh
+    fi
+    if [ -n "$*" ]; then
+        du "$arg" -- "$@"
+    else
+        du "$arg" .[^.]* ./*
+    fi
+}
+
+tre() {
+    tree -aC -I '.git|node_modules|bower_components|.venv|vendor' --dirsfirst "$@" | less -FRNX
+}

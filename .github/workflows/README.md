@@ -7,7 +7,7 @@ against `main`. Keep them fast, deterministic, and independent of external secre
 
 | File | Trigger | Purpose |
 |------|---------|---------|
-| [`lint.yml`](lint.yml) | push, PR | ShellCheck + `bash -n` on every script under `bootstrap.sh`, `lib/`, and `topics/` |
+| [`lint.yml`](lint.yml) | push, PR | ShellCheck + `bash -n` on every script under `setup.sh`, `lib/`, and `topics/` |
 | [`smoke-test.yml`](smoke-test.yml) | push to `main`, PR to `main`, `workflow_dispatch` | End-to-end bootstrap smoke test on a fresh Ubuntu 24.04 runner via `ci/smoke-test.sh` |
 
 ### `lint.yml`
@@ -18,7 +18,7 @@ Static analysis only — no code runs. Uses `ludeeus/action-shellcheck` with
 
 ### `smoke-test.yml`
 
-Exercises the happy path of `bootstrap.sh` inside a fresh `ubuntu-24.04` runner
+Exercises the happy path of `setup.sh` inside a fresh `ubuntu-24.04` runner
 to catch regressions that ShellCheck cannot see (missing packages, broken
 installs, wrong ordering between topics).
 
@@ -54,8 +54,8 @@ You do not need to wait for GHA round-trips to catch issues:
 
 ```bash
 # same checks as lint.yml
-shellcheck $(find bootstrap.sh lib topics -name '*.sh')
-find bootstrap.sh lib topics -name '*.sh' -exec bash -n {} \;
+shellcheck $(find setup.sh lib topics -name '*.sh')
+find setup.sh lib topics -name '*.sh' -exec bash -n {} \;
 
 # same end-to-end check as smoke-test.yml (requires Docker)
 bash ci/smoke-test.sh

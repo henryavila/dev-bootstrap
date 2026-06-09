@@ -1,0 +1,8 @@
+# shell/personal-repos.list — repo catalog for `mesh personal-clone`.
+#
+# Format: <name>|<url>|<branch>
+# Lines starting with # are ignored. Empty lines are ignored.
+#
+# Example:
+# my-project|git@github.com:you/my-project.git|main
+# another-repo|git@github.com:you/another-repo.git|develop

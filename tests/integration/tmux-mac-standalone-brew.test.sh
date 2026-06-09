@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # tests/integration/tmux-mac-standalone-brew.test.sh
 #
-# Regression guard for incremental updates: dotfiles/scripts/auto-update.sh
-# runs changed topic installers directly, outside bootstrap.sh. Mac topic
+# Regression guard for incremental updates: scripts/runners/auto-update.sh
+# runs changed topic installers directly, outside setup.sh. Mac topic
 # installers that need Homebrew must therefore recover BREW_BIN themselves
-# instead of assuming bootstrap.sh exported it.
+# instead of assuming setup.sh exported it.
 
 set -uo pipefail
 
@@ -22,7 +22,22 @@ HOME_DIR="$TESTROOT/home"
 FAKE_PREFIX="$TESTROOT/homebrew"
 LOG="$TESTROOT/run.log"
 mkdir -p "$STUBBIN" "$HOME_DIR/.tmux/plugins/tpm/.git" \
-    "$HOME_DIR/.tmux/plugins/tmux/.git" "$FAKE_PREFIX"
+    "$HOME_DIR/.tmux/plugins/tmux" "$FAKE_PREFIX"
+
+# 40-tmux/clone-catppuccin.sh's check() asserts origin URL + pinned tag
+# (Codex review A-F004, Fix 7 — 2026-05-19). Initialize a minimal real
+# git checkout at the plugin path so the check passes and install() is
+# skipped. Otherwise the engine would re-clone and trip on the existing
+# (non-git) dir.
+(
+    cd "$HOME_DIR/.tmux/plugins/tmux" || exit 1
+    git init -q
+    git config user.email test@example.com
+    git config user.name test
+    git remote add origin https://github.com/catppuccin/tmux
+    git commit --allow-empty -q -m initial
+    git tag v1.0.3
+)
 
 cat > "$STUBBIN/brew" <<'FAKEBREW'
 #!/usr/bin/env bash
@@ -48,7 +63,7 @@ if PATH="$STUBBIN:$PATH" \
    FAKE_BREW_PREFIX="$FAKE_PREFIX" \
    BREW_BIN='' \
    BREW_PREFIX='' \
-   bash "$ROOT/topics/40-tmux/install.mac.sh" >"$LOG" 2>&1; then
+   bash "$ROOT/topics/40-tmux/install.sh" >"$LOG" 2>&1; then
     pass "40-tmux/install.mac.sh runs standalone with BREW_BIN unset"
 else
     rc=$?
@@ -63,7 +78,7 @@ else
     pass "standalone topic install does not emit BREW_BIN not set"
 fi
 
-assert_file_contains "$LOG" "tmux already installed" \
-    "40-tmux/install.mac.sh used detected fake brew"
+assert_file_contains "$LOG" "tmux-mac: already present" \
+    "40-tmux/install.sh used detected fake brew via engine"
 
 summary

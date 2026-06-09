@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Web"
+  hint: "Valet/nginx + mailpit + ngrok"
+  required: false
+  order: 70
+  description: |
+    Local web development stack. Mac uses Valet (handles nginx + dnsmasq +
+    HTTPS); WSL hand-rolls nginx + php-fpm. MySQL and Redis are pulled in
+    automatically (databases topic). Optional dev extras for SMTP catching
+    and public tunneling.
+
+bundles:
+
+  - name: valet
+    label: "Valet"
+    desc: "Laravel Valet — *.localhost with HTTPS, zero config"
+    platforms: [mac]
+    icon_name: laravel
+    requires_bundles:
+      - databases/mysql
+      - databases/redis
+    items:
+      - name: mkcert
+        type: brew-formula
+        spec: mkcert
+      - name: valet
+        type: custom
+        script: ./mac/valet.sh
+      - name: launchdaemon-hardening
+        type: custom
+        script: ./mac/launchdaemon-hardening.sh
+      - name: migrate-legacy-nginx
+        type: custom
+        script: ./mac/migrate-legacy-nginx.sh
+        idempotent: true
+      - name: serve-config
+        type: deploy
+        spec: ./templates/serve
+        idempotent: true
+
+  - name: nginx-php-fpm
+    label: "nginx + php-fpm"
+    desc: "nginx + php-fpm + mkcert — HTTPS wildcard on WSL"
+    platforms: [wsl]
+    icon_name: nginx
+    requires_bundles:
+      - languages/php
+      - databases/mysql
+      - databases/redis
+    items:
+      - name: packages
+        type: custom
+        script: ./wsl/packages.sh
+      - name: mkcert
+        type: custom
+        script: ./wsl/mkcert.sh
+      - name: serve-config
+        type: deploy
+        spec: ./templates/serve
+        idempotent: true
+      - name: nginx-sites
+        type: custom
+        script: ./wsl/nginx-sites.sh
+
+  - name: mailpit
+    label: "Mailpit"
+    desc: "Local SMTP catcher — see every dev email"
+    icon_name: mail
+    items:
+      - name: mailpit
+        type: custom
+        script: ./extras/mailpit.sh
+
+  - name: ngrok
+    label: "ngrok"
+    desc: "Public HTTPS tunnel — share localhost for testing"
+    icon_name: globe
+    options:
+      - name: authtoken
+        type: secret
+        label: "ngrok auth token"
+        env: NGROK_AUTHTOKEN
+        description: "From https://dashboard.ngrok.com/auth"
+        required: false
+    items:
+      - name: ngrok
+        type: custom
+        script: ./extras/ngrok.sh
+      - name: share-cli
+        type: deploy
+        spec: ./templates/share
+        idempotent: true

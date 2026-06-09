@@ -1,0 +1,29 @@
+# PROJECT_STATUS — __USER_NAME__'s mesh rollup
+
+Canonical dashboard for what is done / in-progress / pending across the
+mesh. Updated each session you ship work.
+
+## §1 — Machines
+
+| Host | OS | Role | Status |
+|---|---|---|---|
+| _example_ | macOS | primary dev | ready |
+
+## §2 — Initiatives × Machines
+
+| Initiative | host-A | host-B |
+|---|---|---|
+| _example_ | ✅ done | ⏳ pending |
+
+## §3 — Snapshot (auto-refreshed by `mesh status --write`)
+
+<!-- BEGIN MESH STATUS -->
+<!-- END MESH STATUS -->
+
+## §4 — Tasks / decisions log
+
+- _example_: 2026-MM-DD — initial scaffold from mesh-workstation/template.
+
+## §5 — Open questions
+
+- _example_: which dotfiles slot should host machine-specific git overrides?

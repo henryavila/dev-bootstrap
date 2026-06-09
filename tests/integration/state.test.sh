@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/integration/state.test.sh
 #
-# Validates lib/state.sh — the small persistence helper that lets dev-bootstrap
+# Validates lib/state.sh — the small persistence helper that lets mesh-workstation
 # remember user-explicit decisions (currently: Homebrew prefix) across runs.
 # State is a shell-sourceable KEY="VALUE" file because 00-core may run before
 # jq is installable, so external tools can't be assumed.
@@ -13,13 +13,13 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-LIB="$ROOT/lib/state.sh"
+LIB="$ROOT/scripts/lib/state.sh"
 assert_file_exists "$LIB" "lib/state.sh exists"
 
 # ---------- Isolated tempdir + sourcing ----------
 TMPROOT="$(mktemp -d -t state-test.XXXXXX)"
 trap 'rm -rf "$TMPROOT"' EXIT
-export DEV_BOOTSTRAP_STATE_DIR="$TMPROOT/state"
+export MESH_STATE_DIR="$TMPROOT/state"
 
 # shellcheck source=../../lib/state.sh
 source "$LIB"
@@ -33,7 +33,7 @@ echo
 echo "═══ state_path ═══"
 expected="$TMPROOT/state/state.env"
 got="$(state_path)"
-assert_eq "$got" "$expected" "state_path returns \$DEV_BOOTSTRAP_STATE_DIR/state.env"
+assert_eq "$got" "$expected" "state_path returns \$MESH_STATE_DIR/state.env"
 
 # ---------- state_get on missing file ----------
 echo

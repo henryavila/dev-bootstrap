@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# mesh-identity install.sh — thin deploy script for __USER_NAME__.
+# Repo: github.com/__GH_USERNAME__/mesh-identity
+#
+# Scaffolded from mesh-workstation/template/ on `mesh init --create-identity`.
+# The deploy set is DATA: edit deploy.map to control which identity files land
+# where — no code edits here. Real secrets go through the secrets layer.
+#
+# Usage:
+#   bash install.sh                 # deploy + install template-check hook
+#   DRY_RUN=1 bash install.sh       # log only, no writes (when supported)
+
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS_LIB="${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib"
+
+# shellcheck source=/dev/null
+. "$WS_LIB/env.sh"
+# shellcheck source=/dev/null
+. "$WS_LIB/log.sh"
+# shellcheck source=/dev/null
+. "$WS_LIB/perms.sh"
+# shellcheck source=/dev/null
+. "$WS_LIB/managed-block.sh"
+# shellcheck source=/dev/null
+. "$WS_LIB/deploy.sh"
+
+info "deploying identity for __USER_NAME__ (__USER_EMAIL__)"
+
+# Deploy every personal file declared in deploy.map (the editable data file —
+# it documents its own format). To add a replicated file: commit it here, add a
+# line to deploy.map, re-run. No script editing needed.
+deploy_map "$HERE/deploy.map" "$HERE"
+
+# C16.5: post-deploy, install pre-commit hook enforcing template parity.
+if command -v mesh >/dev/null 2>&1; then
+    mesh template-check --install-hook || warn "template-check --install-hook failed (non-fatal)"
+else
+    warn "mesh CLI not on PATH — skip template-check hook install"
+fi
+
+info "identity install complete"

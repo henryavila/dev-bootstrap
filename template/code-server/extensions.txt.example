@@ -1,0 +1,9 @@
+# code-server extensions — one extension ID per line.
+# Used by mesh-workstation topic 85-code-server to install extensions.
+#
+# Find IDs: https://open-vsx.org/ or `code-server --list-extensions`
+#
+# Example:
+# editorconfig.editorconfig
+# esbenp.prettier-vscode
+# eamodio.gitlens

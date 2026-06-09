@@ -1,0 +1,9 @@
+topic:
+  label: "Bad"
+  order: 10
+bundles:
+  - name: x
+    label: "X"
+    desc: "x"
+    items:
+      - just-a-bare-value

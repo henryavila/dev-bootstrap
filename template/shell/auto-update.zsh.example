@@ -1,0 +1,7 @@
+# shell/auto-update.zsh — fire auto-update on zsh shell start.
+#
+# Sourced from shell/aliases.sh under [[ -n "$ZSH_VERSION" ]] guard.
+# Defers to first precmd to avoid Powerlevel10k instant_prompt capture.
+#
+# Copy this file and customize the auto-update behavior.
+# See mesh-workstation docs for the auto-update spec.

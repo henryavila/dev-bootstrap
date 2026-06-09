@@ -2,6 +2,10 @@
 /tmp/
 *.log
 
+# Python sidecar bytecode (scripts/lib/syncthing-rest.py is invoked, never built)
+__pycache__/
+*.pyc
+
 # Editor / OS noise
 .DS_Store
 Thumbs.db
@@ -12,3 +16,6 @@ Thumbs.db
 
 # Backups from lib/deploy.sh (never committed)
 *.bak-*
+
+# Derived catalog (regenerate via `mesh catalog generate`)
+/.catalog/

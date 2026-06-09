@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Personal identity"
+  hint: "clone + apply your mesh-identity repo"
+  required: true
+  order: 30
+  description: |
+    Clones your private mesh-identity repo and runs its install.sh to apply your
+    personal identity layer, then prunes drift artifacts the fork no longer ships.
+    Required — this is what makes the machine yours.
+
+bundles:
+
+  - name: personal
+    label: "Personal identity"
+    desc: "Clone + apply your mesh-identity repo"
+    required: true
+    icon_name: home
+    options:
+      - name: repo
+        type: text
+        label: "mesh-identity repo (URL or owner/name)"
+        env: MESH_IDENTITY_REPO
+        # Required → the apply-time gate routes a fresh machine (empty
+        # default_from) to the IdentityOnboarding screen (adopt URL or create
+        # from a template) before apply, instead of failing later. On a
+        # provisioned machine default_from fills it, so the gate stays quiet.
+        required: true
+        default_from: "git -C \"$HOME/mesh-identity\" remote get-url origin 2>/dev/null"
+    items:
+      - name: apply
+        type: custom
+        script: ./apply.sh
+        idempotent: true

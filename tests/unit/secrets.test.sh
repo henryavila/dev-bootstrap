@@ -2,14 +2,14 @@
 # tests/unit/secrets.test.sh — lib/secrets.sh helper contract.
 #
 # Contract under test (see lib/secrets.sh header):
-#   - secrets_init creates $BOOTSTRAP_SECRETS_FILE with mode 0600, parent 0700.
+#   - secrets_init creates $MESH_SECRETS_FILE with mode 0600, parent 0700.
 #   - secrets_load sources the file when mode is 0600 or 0400, refuses if loose
 #     and chmod failed, no-op when file is absent.
 #   - secrets_set upserts atomically; refuses newline-containing values.
 #   - secrets_has returns 0 iff the key is in env OR present in the file.
 #
 # Notes on isolation:
-#   We override BOOTSTRAP_STATE_DIR per test so each assertion operates on a
+#   We override MESH_STATE_DIR per test so each assertion operates on a
 #   fresh tmp tree — avoids cross-test leaks and keeps the runner idempotent
 #   even when executed against a real user that already has secrets on disk.
 
@@ -18,16 +18,16 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-SECRETS_SH="$REPO_ROOT/lib/secrets.sh"
+SECRETS_SH="$REPO_ROOT/scripts/lib/secrets.sh"
 assert_file_exists "$SECRETS_SH" "lib/secrets.sh present"
 
 # Each test gets a fresh state dir. mktemp -d works the same way on
 # macOS + GNU; the `-t` prefix spelling is portable.
 _fresh_state() {
     local tmp
-    tmp="$(mktemp -d -t dev-bootstrap-secrets-test.XXXXXX)"
-    export BOOTSTRAP_STATE_DIR="$tmp"
-    export BOOTSTRAP_SECRETS_FILE="$tmp/secrets.env"
+    tmp="$(mktemp -d -t mesh-workstation-secrets-test.XXXXXX)"
+    export MESH_STATE_DIR="$tmp"
+    export MESH_SECRETS_FILE="$tmp/secrets.env"
     # shellcheck source=/dev/null
     source "$SECRETS_SH"
 }
@@ -44,35 +44,35 @@ echo
 echo "== secrets_init =="
 _fresh_state
 secrets_init
-assert_file_exists "$BOOTSTRAP_SECRETS_FILE" "secrets.env created on init"
-mode="$(_mode_of "$BOOTSTRAP_SECRETS_FILE")"
+assert_file_exists "$MESH_SECRETS_FILE" "secrets.env created on init"
+mode="$(_mode_of "$MESH_SECRETS_FILE")"
 assert_eq "$mode" "600" "secrets.env mode is 0600"
-dir_mode="$(_mode_of "$BOOTSTRAP_STATE_DIR")"
+dir_mode="$(_mode_of "$MESH_STATE_DIR")"
 assert_eq "$dir_mode" "700" "state dir mode is 0700"
 
 # Calling init twice must not change or truncate the file.
-echo "NOT_A_REAL_KEY=marker" >> "$BOOTSTRAP_SECRETS_FILE"
+echo "NOT_A_REAL_KEY=marker" >> "$MESH_SECRETS_FILE"
 secrets_init
-assert_true "grep -q NOT_A_REAL_KEY '$BOOTSTRAP_SECRETS_FILE'" \
+assert_true "grep -q NOT_A_REAL_KEY '$MESH_SECRETS_FILE'" \
     "secrets_init is idempotent — does not clobber existing content"
 
 echo
 echo "== secrets_set =="
 _fresh_state
 secrets_set NGROK_AUTHTOKEN "sk_test_123 with space"
-assert_file_exists "$BOOTSTRAP_SECRETS_FILE" "secrets.env exists after set"
-assert_true "grep -qE '^export NGROK_AUTHTOKEN=' '$BOOTSTRAP_SECRETS_FILE'" \
+assert_file_exists "$MESH_SECRETS_FILE" "secrets.env exists after set"
+assert_true "grep -qE '^export NGROK_AUTHTOKEN=' '$MESH_SECRETS_FILE'" \
     "file contains the set key"
 
 # Upsert semantics — second set must replace the first, not duplicate.
 secrets_set NGROK_AUTHTOKEN "sk_test_456"
-count="$(grep -cE '^export NGROK_AUTHTOKEN=' "$BOOTSTRAP_SECRETS_FILE")"
+count="$(grep -cE '^export NGROK_AUTHTOKEN=' "$MESH_SECRETS_FILE")"
 assert_eq "$count" "1" "secrets_set upserts (one line per key after update)"
 
 # Value round-trips through printf %q — special chars preserved.
 unset NGROK_AUTHTOKEN
 # shellcheck source=/dev/null
-source "$BOOTSTRAP_SECRETS_FILE"
+source "$MESH_SECRETS_FILE"
 assert_eq "${NGROK_AUTHTOKEN:-}" "sk_test_456" "value round-trips through set+source"
 
 # Newline-containing values must be rejected.
@@ -129,14 +129,14 @@ assert_eq "${LOAD_KEY:-}" "load-value" "secrets_load sources 0600 file"
 # Loose permissions — function must tighten then load.
 _fresh_state
 secrets_set LOOSE_KEY "loose-value"
-chmod 0644 "$BOOTSTRAP_SECRETS_FILE"
+chmod 0644 "$MESH_SECRETS_FILE"
 unset LOOSE_KEY
 secrets_load
-mode_after="$(_mode_of "$BOOTSTRAP_SECRETS_FILE")"
+mode_after="$(_mode_of "$MESH_SECRETS_FILE")"
 assert_eq "$mode_after" "600" "secrets_load tightens loose permissions back to 0600"
 assert_eq "${LOOSE_KEY:-}" "loose-value" "secrets_load still sources after tightening"
 
 # Cleanup
-rm -rf "$BOOTSTRAP_STATE_DIR"
+rm -rf "$MESH_STATE_DIR"
 
 summary

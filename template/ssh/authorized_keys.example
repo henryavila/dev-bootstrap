@@ -1,0 +1,11 @@
+# authorized_keys — public keys allowed to SSH into hosts running as
+# __USER_NAME__. Deployed in managed_block mode: the markers below
+# delineate the mesh-managed region; lines outside the markers are
+# left untouched on re-deploy.
+#
+# Replace the placeholder ssh-ed25519 entry below with your real public
+# key(s). One key per line. Comment-only lines (#) are preserved.
+
+# mesh-managed: ssh-authorized-keys start
+ssh-ed25519 AAAA__REPLACE_WITH_YOUR_PUBLIC_KEY__ __GH_USERNAME__@host
+# mesh-managed: ssh-authorized-keys end

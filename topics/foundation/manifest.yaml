@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../../schema/manifest.schema.json
+topic:
+  label: "Foundation"
+  hint: "Homebrew / apt + core CLI tooling"
+  required: true
+  order: 10
+  description: |
+    The base every other topic builds on: Homebrew (mac, with the custom-prefix
+    bootstrap) or apt core packages (WSL), plus git/curl/wget/gnupg/jq/unzip/
+    gettext. Always installed — shown locked at the top of the picker.
+
+bundles:
+
+  - name: base
+    label: "Base tooling"
+    desc: "Package manager + core CLI utilities"
+    required: true
+    icon_name: package
+    items:
+      - name: core-mac
+        type: custom
+        script: ./mac/core.sh
+        platforms: [mac]
+      - name: core-wsl
+        type: custom
+        script: ./wsl/core.sh
+        platforms: [wsl]

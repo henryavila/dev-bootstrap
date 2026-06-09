@@ -25,7 +25,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$ROOT/tests/lib/assert.sh"
 
 TOPIC="$ROOT/topics/00-core/install.mac.sh"
-BOOT="$ROOT/bootstrap.sh"
+BOOT="$ROOT/setup.sh"
 
 assert_file_exists "$TOPIC" "topics/00-core/install.mac.sh exists"
 
@@ -142,15 +142,15 @@ assert_pattern_absent "$TOPIC" '^[[:space:]]*emit_custom_prefix_warning[[:space:
     'emit_custom_prefix_warning is always called inside if/|| (return value matters)'
 
 # ---------------------------------------------------------------------
-# bootstrap.sh sources state.sh and calls state_load
+# setup.sh sources state.sh and calls state_load
 # ---------------------------------------------------------------------
 echo
-echo "═══ bootstrap.sh — state.sh wiring ═══"
+echo "═══ setup.sh — state.sh wiring ═══"
 
 assert_pattern_present "$BOOT" 'source.*lib/state\.sh' \
-    "bootstrap.sh sources lib/state.sh"
+    "setup.sh sources lib/state.sh"
 assert_pattern_present "$BOOT" 'state_load' \
-    "bootstrap.sh calls state_load before topics run"
+    "setup.sh calls state_load before topics run"
 
 # state_load must come BEFORE the first run_topic invocation (so 00-core
 # sees previously-persisted BREW_PREFIX)
@@ -163,7 +163,7 @@ if [[ -n "$state_load_line" ]] && [[ -n "$first_run_topic_line" ]]; then
         fail "state_load must come before run_topic (got state_load=$state_load_line, run_topic=$first_run_topic_line)"
     fi
 else
-    fail "could not locate both state_load and run_topic in bootstrap.sh"
+    fail "could not locate both state_load and run_topic in setup.sh"
 fi
 
 # ---------------------------------------------------------------------
@@ -184,8 +184,8 @@ fi
 #   1. Spawn a fake `brew` in a tempdir + prepend to PATH.
 #      `lib/detect-brew.sh` walks PATH first, so this wins rung 1
 #      ("detected_existing") deterministically.
-#   2. Override DEV_BOOTSTRAP_STATE_DIR so we don't clobber the user's
-#      real state.env at ~/.config/dev-bootstrap.
+#   2. Override MESH_STATE_DIR so we don't clobber the user's
+#      real state.env at ~/.config/mesh-workstation.
 #   3. Run install.mac.sh standalone, capture exit code + log.
 #   4. Assert exit 0, no "unbound variable" anywhere, and state.env
 #      ends up populated with method=detected_existing.
@@ -235,7 +235,7 @@ EXEC_LOG="$EXEC_TMP/run.log"
 EXEC_STATE="$EXEC_TMP/state-dir"
 
 if PATH="$EXEC_TMP/bin:$PATH" \
-   DEV_BOOTSTRAP_STATE_DIR="$EXEC_STATE" \
+   MESH_STATE_DIR="$EXEC_STATE" \
    bash "$ROOT/topics/00-core/install.mac.sh" >"$EXEC_LOG" 2>&1; then
     pass "install.mac.sh exits 0 with brew already on PATH (regression: was 'unbound variable')"
 else
@@ -257,7 +257,7 @@ fi
 # state.env must be populated — proves the state_record_brew_prefix call
 # was actually reached (it lives AFTER the failing line in the broken version).
 if [[ -f "$EXEC_STATE/state.env" ]]; then
-    pass "state.env created at \$DEV_BOOTSTRAP_STATE_DIR (state_record_brew_prefix reached)"
+    pass "state.env created at \$MESH_STATE_DIR (state_record_brew_prefix reached)"
 
     if grep -qE '^BREW_PREFIX_DECISION_METHOD="detected_existing"' "$EXEC_STATE/state.env"; then
         pass "state.env records method=detected_existing (rung 1 wired correctly)"

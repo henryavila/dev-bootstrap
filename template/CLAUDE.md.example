@@ -1,0 +1,45 @@
+# CLAUDE.md — project directive for __USER_NAME__'s mesh-identity
+
+This file is auto-loaded by Claude Code when working in mesh-identity.
+Keep it short. Rules here are **durable** — they override defaults.
+
+## Hard gate: template parity (workstation ↔ identity)
+
+ANY structural change to mesh-identity (new MAPPINGS slot, new directory,
+removed file, renamed path) REQUIRES corresponding update to
+`$MESH_WORKSTATION_DIR/template/` IN THE SAME TASK.
+
+Before completing any structural change:
+
+1. Run `mesh template-check` to detect drift
+2. Update `mesh-workstation/template/<corresponding-path>.example`
+3. Commit BOTH repos as part of the same change
+
+The pre-commit hook at `.git/hooks/pre-commit` blocks commits that violate
+this gate. Re-install with `mesh template-check --install-hook` if missing.
+
+## Repo routing (when in doubt, ask)
+
+- **mesh-identity (here)**: personal identity only — gitconfig name/email,
+  SSH authorized_keys, shell aliases, machine-specific MAPPINGS overrides.
+  No tooling logic; no installers.
+- **mesh-workstation**: universal tooling, installers, drivers, mesh CLI,
+  topics, `template/`. Public.
+- **mesh-engine** (if split out): bottom-layer install engine, YAML parser,
+  drivers. Public.
+
+If a requested change is universal but lands in identity, stop and route it
+upstream to workstation. Never duplicate logic across layers.
+
+## Memory + auto-context
+
+- Memory lives in `.ai/memory/`; index is `MEMORY.md` (≤200 lines).
+- `PROJECT_STATUS.md` is the rollup dashboard (initiatives × machines).
+- Commit memory updates as separate commits with `docs(memory): …` prefix.
+
+## Commit discipline
+
+- Small, focused commits with explanatory body.
+- Never `--no-verify` (a substring-match hook blocks the literal string).
+- Force-push / `reset --hard` / branch delete: confirm with __USER_NAME__
+  each time. Default to safer alternatives.

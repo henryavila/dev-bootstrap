@@ -1,0 +1,804 @@
+#!/usr/bin/env bash
+# shellcheck source=/dev/null
+. "${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib/github-api.sh"
+# Custom: code-server (mac) — bundles the original 697-LOC install.mac.sh
+# verbatim under the engine contract.
+
+check() {
+    # Idempotency requires all 3 pieces present, not just the binary.
+    # Codex review 2026-05-19 (E-F001): the previous check matched any
+    # code-server binary on disk, even with no config/LaunchAgent/listener.
+    local bin="${HOME}/.local/bin/code-server"
+    local alt="${HOME}/.local/lib/code-server/bin/code-server"
+    local label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
+    local plist="${HOME}/Library/LaunchAgents/${label}.plist"
+    local config="${HOME}/.config/code-server/config.yaml"
+
+    # F9.6 §D filesystem hardening (2026-06-03): `[[ -x ]]` on the
+    # ~/.local/bin/code-server symlink follows the link, but a present exec
+    # bit on a half-installed / corrupt standalone bundle (e.g. an aborted
+    # version-dir swap, a wrong-arch binary, or a broken bundled node) still
+    # passed the bare check — the engine then KEEPs an unrunnable install.
+    # Content sentinel: assert the binary actually executes `--version`,
+    # exactly the success gate install_code_server_standalone() already uses
+    # (line "$CODE_SERVER_BIN" --version >/dev/null). sudo-free, bash-3.2
+    # safe; a healthy install runs --version in well under a second.
+    local found=""
+    if [[ -x "$bin" ]]; then
+        found="$bin"
+    elif [[ -x "$alt" ]]; then
+        found="$alt"
+    fi
+    [[ -n "$found" ]] || return 1
+    "$found" --version >/dev/null 2>&1 || return 1
+
+    [[ -f "$plist" ]] || return 1
+    [[ -f "$config" ]] || return 1
+    return 0
+}
+
+install() {
+    local HERE
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    HERE="$HERE/.."
+    # shellcheck disable=SC1091
+    . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/log.sh"
+    # shellcheck disable=SC1091
+    . "${MESH_WORKSTATION_DIR:-$(cd "$HERE/../.." && pwd)}/scripts/lib/launch-wrapper.sh"
+
+    # Env defaults (preserved from original install.mac.sh header)
+    : "${CODE_SERVER_PORT:=8080}"
+    : "${CODE_SERVER_LABEL:=com.${USER}.code-server}"
+    : "${CODE_SERVER_TAILSCALE_SERVE:=1}"
+    : "${CODE_SERVER_INSTALL_PREFIX:=$HOME/.local}"
+    : "${CODE_SERVER_INSTALL_METHOD:=standalone}"
+    : "${CODE_SERVER_UPGRADE:=0}"
+    : "${CODE_SERVER_CHECK_UPDATES:=1}"
+
+CODE_SERVER_BIN=""
+CODE_SERVER_SERVICE_WRAPPER=""
+CODE_SERVER_CONFIG_DIR=""
+CODE_SERVER_CONFIG_FILE=""
+CODE_SERVER_STATE_DIR=""
+CODE_SERVER_USER_DATA_DIR=""
+CODE_SERVER_PLIST=""
+CODE_SERVER_WORKDIR="${CODE_SERVER_WORKDIR:-$HOME}"
+CODE_SERVER_EXTRA_PATH=""
+CODE_SERVER_GENERATED_PASSWORD=""
+BREW_BIN="${BREW_BIN:-}"
+BREW_PREFIX="${BREW_PREFIX:-}"
+
+require_macos() {
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        followup critical "85-code-server is macOS-only in this release; skipping $(uname -s)."
+        exit 1
+    fi
+}
+
+decode_detect_brew_value() {
+    local raw="$1"
+    raw="${raw//\\ / }"
+    printf '%s' "$raw"
+}
+
+append_extra_path() {
+    local entry="$1"
+    [[ -z "$entry" ]] && return 0
+    case ":$CODE_SERVER_EXTRA_PATH:" in
+        *":$entry:"*) ;;
+        *)
+            if [[ -z "$CODE_SERVER_EXTRA_PATH" ]]; then
+                CODE_SERVER_EXTRA_PATH="$entry"
+            else
+                CODE_SERVER_EXTRA_PATH="${CODE_SERVER_EXTRA_PATH}:$entry"
+            fi
+            ;;
+    esac
+}
+
+plist_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    value="${value//\'/&apos;}"
+    printf '%s' "$value"
+}
+
+has_ctty() {
+    [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]]
+}
+
+normalize_code_server_version() {
+    local raw="$1" version
+    version="$(printf '%s\n' "$raw" | awk '{
+        value=$1
+        sub(/^v/, "", value)
+        if (match(value, /^[0-9]+(\.[0-9]+)?(\.[0-9]+)?/)) {
+            print substr(value, RSTART, RLENGTH)
+        }
+    }')"
+    [[ -n "$version" ]] || return 1
+    printf '%s\n' "$version"
+}
+
+code_server_current_version() {
+    [[ -x "$CODE_SERVER_BIN" ]] || return 1
+    "$CODE_SERVER_BIN" --version 2>/dev/null | sed -n '1p' | awk '{ print $1; exit }'
+}
+
+semver_gt() {
+    local left right
+    left="$(normalize_code_server_version "$1")" || return 1
+    right="$(normalize_code_server_version "$2")" || return 1
+
+    awk -v left="$left" -v right="$right" '
+        function split_version(version, parts,    n, i) {
+            n = split(version, parts, ".")
+            for (i = n + 1; i <= 3; i++) {
+                parts[i] = 0
+            }
+        }
+        BEGIN {
+            split_version(left, a)
+            split_version(right, b)
+            for (i = 1; i <= 3; i++) {
+                if ((a[i] + 0) > (b[i] + 0)) exit 0
+                if ((a[i] + 0) < (b[i] + 0)) exit 1
+            }
+            exit 1
+        }
+    '
+}
+
+fetch_latest_code_server_version() {
+    local body tag
+
+    if [[ -n "${CODE_SERVER_LATEST_VERSION:-}" ]]; then
+        normalize_code_server_version "$CODE_SERVER_LATEST_VERSION"
+        return
+    fi
+
+    command -v curl >/dev/null 2>&1 || return 1
+    body="$(gh_api_curl "https://api.github.com/repos/coder/code-server/releases/latest" 2>/dev/null)" || return 1
+    tag="$(printf '%s\n' "$body" | awk -F'"' '/"tag_name"[[:space:]]*:/ { print $4; exit }')"
+    normalize_code_server_version "$tag"
+}
+
+record_code_server_final_info() {
+    local msg="$1"
+    if [[ -n "${MESH_FOLLOWUP_FILE:-}" ]]; then
+        printf '%s\x1f%s\x1e' "info" "$msg" >> "$MESH_FOLLOWUP_FILE" 2>/dev/null || true
+    else
+        info "$msg"
+    fi
+}
+
+maybe_report_code_server_update() {
+    [[ "$CODE_SERVER_CHECK_UPDATES" == "1" ]] || return 0
+    [[ "$CODE_SERVER_UPGRADE" != "1" ]] || return 0
+
+    local current latest bootstrap_path command
+    current="$(code_server_current_version 2>/dev/null || true)"
+    current="$(normalize_code_server_version "$current" 2>/dev/null || true)"
+    [[ -n "$current" ]] || return 0
+
+    if ! latest="$(fetch_latest_code_server_version 2>/dev/null)"; then
+        info "code-server update check skipped (latest upstream release unavailable)"
+        return 0
+    fi
+
+    if semver_gt "$latest" "$current"; then
+        bootstrap_path="$(cd "$HERE/../.." && pwd -P)/setup.sh"
+        command="INCLUDE_CODE_SERVER=1 CODE_SERVER_UPGRADE=1 CODE_SERVER_VERSION=$latest ONLY_TOPICS=85 bash \"$bootstrap_path\" --non-interactive"
+        record_code_server_final_info "code-server update available: $current -> $latest
+
+Update when ready:
+    $command"
+    fi
+}
+
+detect_code_server_env() {
+    if [[ "$CODE_SERVER_INSTALL_METHOD" != "standalone" ]]; then
+        followup critical "CODE_SERVER_INSTALL_METHOD=$CODE_SERVER_INSTALL_METHOD is not supported yet. Use CODE_SERVER_INSTALL_METHOD=standalone."
+        exit 1
+    fi
+
+    if [[ "$CODE_SERVER_INSTALL_PREFIX" != "$HOME/.local" ]]; then
+        followup critical "CODE_SERVER_INSTALL_PREFIX must be $HOME/.local in this release. External prefixes need a separate wrapper design."
+        exit 1
+    fi
+
+    if [[ ! -d "$CODE_SERVER_WORKDIR" ]]; then
+        followup critical "CODE_SERVER_WORKDIR does not exist: $CODE_SERVER_WORKDIR"
+        exit 1
+    fi
+    CODE_SERVER_WORKDIR="$(cd "$CODE_SERVER_WORKDIR" && pwd -P)"
+
+    CODE_SERVER_BIN="${CODE_SERVER_INSTALL_PREFIX}/bin/code-server"
+    CODE_SERVER_SERVICE_WRAPPER="${CODE_SERVER_INSTALL_PREFIX}/bin/code-server-service"
+    CODE_SERVER_CONFIG_DIR="${HOME}/.config/code-server"
+    CODE_SERVER_CONFIG_FILE="${CODE_SERVER_CONFIG_DIR}/config.yaml"
+    CODE_SERVER_STATE_DIR="${HOME}/.local/state/code-server"
+    CODE_SERVER_USER_DATA_DIR="${HOME}/.local/share/code-server"
+    CODE_SERVER_PLIST="${HOME}/Library/LaunchAgents/${CODE_SERVER_LABEL}.plist"
+
+    if [[ -z "${BREW_PREFIX:-}" ]]; then
+        local detect_out line
+        if detect_out="$(bash "$HERE/../../scripts/lib/detect-brew.sh" 2>/dev/null)"; then
+            while IFS= read -r line; do
+                case "$line" in
+                    BREW_BIN=*) BREW_BIN="$(decode_detect_brew_value "${line#BREW_BIN=}")" ;;
+                    BREW_PREFIX=*) BREW_PREFIX="$(decode_detect_brew_value "${line#BREW_PREFIX=}")" ;;
+                    "") ;;
+                    *) followup manual "unexpected output from detect-brew.sh while preparing code-server PATH; ignoring line: $line" ;;
+                esac
+            done <<< "$detect_out"
+        fi
+    fi
+
+    if [[ -n "${BREW_PREFIX:-}" ]]; then
+        append_extra_path "$BREW_PREFIX/bin"
+        append_extra_path "$BREW_PREFIX/sbin"
+    fi
+    append_extra_path "/opt/homebrew/bin"
+    append_extra_path "/usr/local/bin"
+    append_extra_path "/usr/bin"
+    append_extra_path "/bin"
+    append_extra_path "/usr/sbin"
+    append_extra_path "/sbin"
+}
+
+install_code_server_standalone() {
+    if [[ "$CODE_SERVER_INSTALL_METHOD" != "standalone" || "$CODE_SERVER_INSTALL_PREFIX" != "$HOME/.local" ]]; then
+        followup critical "code-server standalone install preconditions failed; rerun with CODE_SERVER_INSTALL_METHOD=standalone and CODE_SERVER_INSTALL_PREFIX=$HOME/.local."
+        exit 1
+    fi
+
+    local current_version=""
+    current_version="$(code_server_current_version 2>/dev/null || true)"
+    if [[ -n "$current_version" && "$CODE_SERVER_UPGRADE" != "1" ]]; then
+        ok "code-server already installed at $CODE_SERVER_BIN ($("$CODE_SERVER_BIN" --version 2>/dev/null | head -1))"
+        maybe_report_code_server_update
+        return 0
+    fi
+
+    mkdir -p "$CODE_SERVER_INSTALL_PREFIX/bin"
+    if [[ -n "${CODE_SERVER_VERSION:-}" ]]; then
+        info "installing code-server standalone $CODE_SERVER_VERSION under $CODE_SERVER_INSTALL_PREFIX"
+        curl -fsSL https://code-server.dev/install.sh \
+            | env -u OS -u ARCH -u DISTRO sh -s -- --method=standalone --prefix "$CODE_SERVER_INSTALL_PREFIX" --version "$CODE_SERVER_VERSION"
+    else
+        info "installing latest stable code-server standalone under $CODE_SERVER_INSTALL_PREFIX"
+        curl -fsSL https://code-server.dev/install.sh \
+            | env -u OS -u ARCH -u DISTRO sh -s -- --method=standalone --prefix "$CODE_SERVER_INSTALL_PREFIX"
+    fi
+
+    "$CODE_SERVER_BIN" --version >/dev/null
+    ok "code-server installed at $CODE_SERVER_BIN ($("$CODE_SERVER_BIN" --version 2>/dev/null | head -1))"
+}
+
+record_generated_password_final() {
+    [[ -n "$CODE_SERVER_GENERATED_PASSWORD" ]] || return 0
+
+    if [[ -n "${MESH_FOLLOWUP_FILE:-}" ]]; then
+        # Deliberately bypass followup(): that helper prints inline while the
+        # topic is piped through tee into /tmp/mesh-workstation-*.log. The final
+        # summary is rendered after the topic pipeline, so the generated
+        # password appears only at the end of this run, not in the topic log.
+        printf '%s\x1f%s\x1e' "info" "Generated code-server password for this first install:
+    $CODE_SERVER_GENERATED_PASSWORD
+
+It is also stored in $CODE_SERVER_CONFIG_FILE (mode 0600). If you miss this
+summary, read the password from that file on this host." >> "$MESH_FOLLOWUP_FILE" 2>/dev/null || true
+    else
+        info "generated code-server password for this first install: $CODE_SERVER_GENERATED_PASSWORD"
+        info "it is also stored in $CODE_SERVER_CONFIG_FILE (mode 0600)"
+        info "if you miss this summary, read the password from that file on this host"
+    fi
+}
+
+read_interactive_password() {
+    local first="" second=""
+
+    {
+        printf '\n85-code-server password\n'
+        printf 'Enter a password for code-server. Leave blank to generate one: '
+    } >/dev/tty
+    IFS= read -r -s first </dev/tty || first=""
+    printf '\n' >/dev/tty
+
+    if [[ -z "$first" ]]; then
+        return 1
+    fi
+
+    printf 'Confirm code-server password: ' >/dev/tty
+    IFS= read -r -s second </dev/tty || second=""
+    printf '\n' >/dev/tty
+
+    if [[ "$first" != "$second" ]]; then
+        followup critical "code-server passwords did not match; rerun the topic and try again."
+        exit 1
+    fi
+
+    printf '%s' "$first"
+}
+
+choose_code_server_password() {
+    local password
+
+    if [[ -n "${CODE_SERVER_PASSWORD:-}" ]]; then
+        printf '%s' "$CODE_SERVER_PASSWORD"
+        return 0
+    fi
+
+    if [[ "${NON_INTERACTIVE:-0}" != "1" && -z "${CI:-}" ]] && has_ctty; then
+        if password="$(read_interactive_password)"; then
+            printf '%s' "$password"
+            unset password
+            return 0
+        fi
+    fi
+
+    CODE_SERVER_GENERATED_PASSWORD="$(/usr/bin/openssl rand -hex 24)"
+    printf '%s' "$CODE_SERVER_GENERATED_PASSWORD"
+}
+
+write_code_server_config() {
+    local password tmp old_umask
+    password="$(choose_code_server_password)"
+    old_umask="$(umask)"
+    umask 077
+    tmp="${CODE_SERVER_CONFIG_FILE}.tmp.$$"
+    {
+        printf 'bind-addr: 127.0.0.1:%s\n' "$CODE_SERVER_PORT"
+        printf 'auth: password\n'
+        printf 'password: %s\n' "$password"
+        printf 'cert: false\n'
+    } > "$tmp"
+    umask "$old_umask"
+    unset password
+    mv "$tmp" "$CODE_SERVER_CONFIG_FILE"
+}
+
+ensure_code_server_config() {
+    mkdir -p "$CODE_SERVER_CONFIG_DIR" "$CODE_SERVER_USER_DATA_DIR/User"
+    chmod 0700 "$CODE_SERVER_CONFIG_DIR" "$CODE_SERVER_USER_DATA_DIR" "$CODE_SERVER_USER_DATA_DIR/User"
+
+    if [[ -f "$CODE_SERVER_CONFIG_FILE" && "${CODE_SERVER_REWRITE_CONFIG:-0}" == "1" ]]; then
+        local backup
+        backup="${CODE_SERVER_CONFIG_FILE}.bak-$(date +%Y%m%d-%H%M%S)"
+        cp -p "$CODE_SERVER_CONFIG_FILE" "$backup"
+        info "backed up existing code-server config to $backup"
+        write_code_server_config
+        if [[ -n "$CODE_SERVER_GENERATED_PASSWORD" ]]; then
+            record_generated_password_final
+        else
+            followup info "code-server password was saved in $CODE_SERVER_CONFIG_FILE (mode 0600)."
+        fi
+    elif [[ ! -f "$CODE_SERVER_CONFIG_FILE" ]]; then
+        write_code_server_config
+        if [[ -n "$CODE_SERVER_GENERATED_PASSWORD" ]]; then
+            record_generated_password_final
+        else
+            followup info "code-server password was saved in $CODE_SERVER_CONFIG_FILE (mode 0600)."
+        fi
+    else
+        ok "code-server config already exists at $CODE_SERVER_CONFIG_FILE"
+        if ! grep -Eq "^[[:space:]]*bind-addr:[[:space:]]*127\\.0\\.0\\.1:${CODE_SERVER_PORT}[[:space:]]*$" "$CODE_SERVER_CONFIG_FILE"; then
+            followup critical "code-server config must bind only to 127.0.0.1:${CODE_SERVER_PORT}. Re-run with CODE_SERVER_REWRITE_CONFIG=1 after reviewing $CODE_SERVER_CONFIG_FILE."
+            exit 1
+        fi
+        if ! grep -Eq '^[[:space:]]*auth:[[:space:]]*password[[:space:]]*$' "$CODE_SERVER_CONFIG_FILE"; then
+            followup critical "code-server config must keep auth: password. Re-run with CODE_SERVER_REWRITE_CONFIG=1 after reviewing $CODE_SERVER_CONFIG_FILE."
+            exit 1
+        fi
+        if ! grep -Eq '^[[:space:]]*(password|hashed-password):[[:space:]]*.+' "$CODE_SERVER_CONFIG_FILE"; then
+            followup critical "code-server config is missing password/hashed-password. Re-run with CODE_SERVER_REWRITE_CONFIG=1 after reviewing $CODE_SERVER_CONFIG_FILE."
+            exit 1
+        fi
+    fi
+
+    chmod 0700 "$CODE_SERVER_CONFIG_DIR"
+    chmod 0600 "$CODE_SERVER_CONFIG_FILE"
+}
+
+write_code_server_service_wrapper() {
+    mkdir -p "$(dirname "$CODE_SERVER_SERVICE_WRAPPER")" "$CODE_SERVER_STATE_DIR"
+    chmod 0700 "$CODE_SERVER_STATE_DIR"
+
+    local tmp
+    tmp="${CODE_SERVER_SERVICE_WRAPPER}.tmp.$$"
+    {
+        printf '#!/usr/bin/env bash\n'
+        printf '# Generated by mesh-workstation/topics/85-code-server/install.mac.sh.\n'
+        printf 'set -euo pipefail\n\n'
+        printf 'export HOME=%q\n' "$HOME"
+        printf 'export PATH=%q\n' "${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}"
+        printf '[[ -f /etc/ssl/cert.pem ]] && export NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem\n\n'
+        printf 'token=""\n'
+        printf 'if command -v gh >/dev/null 2>&1; then\n'
+        printf '    gh_bin="$(command -v gh 2>/dev/null || true)"\n'
+        printf '    case "$gh_bin" in\n'
+        printf '        /Volumes/*)\n'
+        printf '            : # launchd can hang spawning binaries from noowners external volumes\n'
+        printf '            ;;\n'
+        printf '        *)\n'
+        printf '            if command -v perl >/dev/null 2>&1; then\n'
+        printf '                token="$(GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 perl -e '\''alarm shift @ARGV; exec @ARGV'\'' 5 gh auth token </dev/null 2>/dev/null || true)"\n'
+        printf '            else\n'
+        printf '                token="$(GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 gh auth token </dev/null 2>/dev/null || true)"\n'
+        printf '            fi\n'
+        printf '            ;;\n'
+        printf '    esac\n'
+        printf 'fi\n'
+        printf 'if [[ -z "$token" && -r "$HOME/.config/gh/hosts.yml" ]]; then\n'
+        printf '    token="$(awk '\''/^[[:space:]]*oauth_token:[[:space:]]*/ { sub(/^[[:space:]]*oauth_token:[[:space:]]*/, "", $0); gsub(/^"|"$/, "", $0); if ($0 != "") { print; exit } }'\'' "$HOME/.config/gh/hosts.yml" 2>/dev/null || true)"\n'
+        printf 'fi\n'
+        printf 'if [[ -n "$token" ]]; then\n'
+        printf '    export GITHUB_TOKEN="$token"\n'
+        printf 'fi\n'
+        printf 'unset token\n'
+        printf 'unset gh_bin\n'
+        printf '\n'
+        printf 'exec %q\n' "$CODE_SERVER_BIN"
+    } > "$tmp"
+    mv "$tmp" "$CODE_SERVER_SERVICE_WRAPPER"
+    chmod 0700 "$CODE_SERVER_SERVICE_WRAPPER"
+    ok "wrote code-server service wrapper at $CODE_SERVER_SERVICE_WRAPPER"
+
+    if PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" command -v gh >/dev/null 2>&1; then
+        if ! PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 gh auth token >/dev/null 2>&1; then
+            followup manual "gh is installed but no token is available. Run 'gh auth login' so code-server can inject GitHub auth at service start."
+        fi
+    else
+        followup manual "gh was not found in the code-server service PATH. GitHub extensions may ask for OAuth until gh is installed/authenticated."
+    fi
+}
+
+backup_launchagent_if_present() {
+    local label="$1" plist="$2"
+    local uid backup
+    uid="$(id -u)"
+
+    if launchctl print "gui/${uid}/${label}" >/dev/null 2>&1; then
+        launchctl bootout "gui/${uid}/${label}" 2>/dev/null || true
+    fi
+
+    if [[ -f "$plist" ]]; then
+        backup="${plist}.bak-$(date +%Y%m%d-%H%M%S)"
+        mv "$plist" "$backup"
+        info "moved legacy LaunchAgent $plist to $backup"
+    fi
+}
+
+migrate_legacy_launchagents() {
+    local launchagents_dir="$HOME/Library/LaunchAgents"
+    backup_launchagent_if_present "homebrew.mxcl.code-server" "$launchagents_dir/homebrew.mxcl.code-server.plist"
+
+    if [[ "$CODE_SERVER_LABEL" != "com.henry.code-server" ]]; then
+        backup_launchagent_if_present "com.henry.code-server" "$launchagents_dir/com.henry.code-server.plist"
+    fi
+}
+
+write_launchagent_plist() {
+    mkdir -p "$(dirname "$CODE_SERVER_PLIST")" "$CODE_SERVER_STATE_DIR"
+    chmod 0700 "$CODE_SERVER_STATE_DIR"
+
+    local label wrapper workdir stdout_path stderr_path tmp
+    label="$(plist_escape "$CODE_SERVER_LABEL")"
+    wrapper="$(plist_escape "$CODE_SERVER_SERVICE_WRAPPER")"
+    workdir="$(plist_escape "$CODE_SERVER_WORKDIR")"
+    stdout_path="$(plist_escape "$CODE_SERVER_STATE_DIR/launchd.log")"
+    stderr_path="$(plist_escape "$CODE_SERVER_STATE_DIR/launchd.err")"
+
+    # CP4 C-F-010: atomic write — partial plist must never be visible to
+    # launchd (which file-watches LaunchAgents) nor to plutil. Write to a
+    # same-dir tmp, lint that tmp, then rename in place.
+    tmp="$(mktemp "$(dirname "$CODE_SERVER_PLIST")/.${CODE_SERVER_LABEL}.plist.XXXXXX")" \
+        || { fail "mktemp failed for LaunchAgent plist"; return 1; }
+
+    {
+        printf '<?xml version="1.0" encoding="UTF-8"?>\n'
+        printf '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        printf '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        printf '<plist version="1.0">\n<dict>\n'
+        printf '    <key>Label</key>\n    <string>%s</string>\n' "$label"
+        printf '    <key>ProgramArguments</key>\n    <array>\n'
+        printf '        <string>%s</string>\n' "$wrapper"
+        printf '    </array>\n'
+        printf '    <key>RunAtLoad</key>\n    <true/>\n'
+        printf '    <key>KeepAlive</key>\n    <true/>\n'
+        printf '    <key>WorkingDirectory</key>\n    <string>%s</string>\n' "$workdir"
+        printf '    <key>StandardOutPath</key>\n    <string>%s</string>\n' "$stdout_path"
+        printf '    <key>StandardErrorPath</key>\n    <string>%s</string>\n' "$stderr_path"
+        printf '</dict>\n</plist>\n'
+    } > "$tmp"
+
+    if ! /usr/bin/plutil -lint "$tmp" >/dev/null; then
+        rm -f "$tmp"
+        fail "plist failed plutil -lint at $tmp"
+        return 1
+    fi
+    mv -f "$tmp" "$CODE_SERVER_PLIST"
+    ok "wrote LaunchAgent $CODE_SERVER_PLIST"
+}
+
+bootstrap_launchagent() {
+    local uid i
+    uid="$(id -u)"
+
+    launchctl bootout "gui/${uid}/${CODE_SERVER_LABEL}" 2>/dev/null || true
+    for i in 1 2 3 4 5; do
+        launchctl print "gui/${uid}/${CODE_SERVER_LABEL}" >/dev/null 2>&1 || break
+        sleep 1
+    done
+
+    launchctl bootstrap "gui/${uid}" "$CODE_SERVER_PLIST"
+    ok "bootstrapped LaunchAgent $CODE_SERVER_LABEL"
+}
+
+wait_for_healthz() {
+    local url i
+    url="http://127.0.0.1:${CODE_SERVER_PORT}/healthz"
+    info "waiting for code-server healthz at $url"
+    for i in $(seq 1 30); do
+        if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+            ok "code-server healthz is responding"
+            return 0
+        fi
+        sleep 1
+    done
+
+    followup critical "code-server LaunchAgent bootstrapped, but $url did not respond within 30s. Inspect $CODE_SERVER_STATE_DIR/launchd.err."
+    return 1
+}
+
+verify_local_only_listener() {
+    if ! command -v lsof >/dev/null 2>&1; then
+        followup manual "lsof is not available; could not verify the code-server listener is loopback-only."
+        return 0
+    fi
+
+    local listeners
+    listeners="$(lsof -nP -iTCP:"$CODE_SERVER_PORT" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -z "$listeners" ]]; then
+        followup critical "code-server healthz responded, but no TCP listener was found on port $CODE_SERVER_PORT."
+        return 1
+    fi
+
+    if printf '%s\n' "$listeners" | awk -v port="$CODE_SERVER_PORT" '
+        NR == 1 { next }
+        $0 !~ ("TCP 127\\.0\\.0\\.1:" port " \\(LISTEN\\)$") { bad=1 }
+        END { exit bad ? 0 : 1 }
+    '; then
+        printf '%s\n' "$listeners" >&2
+        followup critical "code-server must listen only on 127.0.0.1:${CODE_SERVER_PORT}; refusing to treat this setup as protected by Tailscale."
+        return 1
+    fi
+
+    ok "code-server listener is loopback-only on 127.0.0.1:${CODE_SERVER_PORT}"
+}
+
+tailscale_serve_state() {
+    local status_out="$1" parsed
+
+    if [[ -z "$status_out" || "$status_out" == *"No serve config"* ]]; then
+        printf 'empty\n'
+        return 0
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        if parsed="$(TS_STATUS_JSON="$status_out" python3 - "$CODE_SERVER_PORT" 2>/dev/null <<'PY'
+import json
+import os
+import sys
+
+port = sys.argv[1]
+want = f"http://127.0.0.1:{port}"
+data = json.loads(os.environ["TS_STATUS_JSON"])
+found_handlers = False
+root_desired = False
+
+def walk(obj):
+    global found_handlers, root_desired
+    if isinstance(obj, dict):
+        handlers = obj.get("Handlers")
+        if isinstance(handlers, dict):
+            for path, handler in handlers.items():
+                if isinstance(handler, dict) and handler.get("Proxy"):
+                    found_handlers = True
+                    if path == "/" and handler.get("Proxy") == want:
+                        root_desired = True
+        for value in obj.values():
+            walk(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            walk(value)
+
+walk(data)
+if root_desired:
+    print("desired")
+elif found_handlers:
+    print("other")
+else:
+    print("empty")
+PY
+)"; then
+            printf '%s\n' "$parsed"
+            return 0
+        fi
+    fi
+
+    if printf '%s' "$status_out" | grep -qF "http://127.0.0.1:${CODE_SERVER_PORT}"; then
+        printf 'desired\n'
+    elif printf '%s' "$status_out" | grep -Eq '"Handlers"|"Proxy"'; then
+        printf 'other\n'
+    else
+        printf 'invalid\n'
+    fi
+}
+
+print_tailscale_code_server_url() {
+    local status url
+    status="$(PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" tailscale serve status 2>/dev/null || true)"
+    url="$(printf '%s\n' "$status" | awk '/^https:\/\// { print $1; exit }')"
+    if [[ -n "$url" ]]; then
+        ok "code-server URL: $url"
+    else
+        info "code-server URL: run 'tailscale serve status' and open the HTTPS URL that proxies 127.0.0.1:${CODE_SERVER_PORT}"
+    fi
+}
+
+maybe_configure_tailscale_serve() {
+    [[ "$CODE_SERVER_TAILSCALE_SERVE" == "1" ]] || return 0
+
+    if ! PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" command -v tailscale >/dev/null 2>&1; then
+        followup manual "CODE_SERVER_TAILSCALE_SERVE=1, but tailscale is not on PATH. Configure Serve manually after Tailscale is installed."
+        return 0
+    fi
+
+    if ! PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" tailscale status --self >/dev/null 2>&1; then
+        followup manual "CODE_SERVER_TAILSCALE_SERVE=1, but this node is not authenticated in Tailscale. Launch Tailscale, log in, then run: tailscale serve --bg --yes $CODE_SERVER_PORT"
+        return 0
+    fi
+
+    local status_out status_rc state
+    status_out="$(PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" tailscale serve status --json 2>&1)" || status_rc=$?
+    status_rc="${status_rc:-0}"
+    state="$(tailscale_serve_state "$status_out")"
+
+    case "$state" in
+        desired)
+            ok "Tailscale Serve already proxies / to 127.0.0.1:$CODE_SERVER_PORT"
+            print_tailscale_code_server_url
+            return 0
+            ;;
+        empty)
+            ;;
+        other)
+            followup manual "Tailscale Serve already has handlers; not overwriting automatically. Review 'tailscale serve status' and add code-server manually if appropriate."
+            return 0
+            ;;
+        *)
+            followup manual "Could not parse 'tailscale serve status --json' (rc=$status_rc); not changing Serve config automatically."
+            return 0
+            ;;
+    esac
+
+    info "configuring Tailscale Serve for code-server on local port $CODE_SERVER_PORT"
+    PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" tailscale serve --bg --yes "$CODE_SERVER_PORT"
+
+    status_out="$(PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" tailscale serve status --json 2>&1 || true)"
+    state="$(tailscale_serve_state "$status_out")"
+    if [[ "$state" == "desired" ]]; then
+        ok "Tailscale Serve proxies / to 127.0.0.1:$CODE_SERVER_PORT"
+        print_tailscale_code_server_url
+    else
+        followup manual "Tailscale Serve command finished, but validation did not find the expected root proxy. Check 'tailscale serve status'."
+    fi
+}
+
+deploy_user_settings_from_identity() {
+    # C9 / D-B10 (mesh-restructure): identity OWNS the settings.json file;
+    # workstation provides the deploy helper. Reads from identity's
+    # ${MESH_IDENTITY_DIR}/code-server/settings.json (current location) and
+    # writes to the code-server User dir with backup-if-different semantics.
+    # No-op when source absent (user hasn't customized settings).
+    local identity_dir="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
+    local src="$identity_dir/code-server/settings.json"
+    local user_dir="$HOME/.local/share/code-server/User"
+    local dst="$user_dir/settings.json"
+
+    [[ -f "$src" ]] || { dbg "code-server settings: no source at $src (skipping)"; return 0; }
+
+    if [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+        ok "code-server settings already up to date: $dst"
+        return 0
+    fi
+
+    mkdir -p "$user_dir"
+    chmod 0700 "$(dirname "$user_dir")" "$user_dir" 2>/dev/null || true
+
+    if [[ -e "$dst" ]]; then
+        local backup
+        # CP4 chunk C finding C-F-005: previously `.bak-$(date +Y...S)`
+        # silently overwrote the only backup when two reruns landed in
+        # the same second. Counter-suffix on collision keeps each
+        # rerun's backup distinct.
+        local ts
+        ts="$(date +%Y%m%d-%H%M%S)"
+        backup="${dst}.bak-${ts}"
+        local i=1
+        while [[ -e "$backup" ]]; do
+            backup="${dst}.bak-${ts}-${i}"
+            i=$((i + 1))
+            (( i > 9999 )) && backup="${dst}.bak-${ts}-$$.${RANDOM}" && break
+        done
+        cp -p "$dst" "$backup"
+        info "backed up previous $dst → $backup"
+    fi
+
+    # CP4 chunk C finding C-F-007: atomic write. `cp $src $dst` writes
+    # in place; an interrupt / disk full / concurrent code-server read
+    # can observe partial JSON. Write to a same-dir temp + mv -f.
+    local tmp
+    tmp="$(mktemp "${dst}.XXXXXX")" || {
+        warn "code-server settings: failed to mktemp under $user_dir"
+        return 1
+    }
+    if ! cp "$src" "$tmp"; then
+        rm -f "$tmp"
+        warn "code-server settings: copy to temp failed"
+        return 1
+    fi
+    chmod 0644 "$tmp"
+    mv -f "$tmp" "$dst"
+    ok "deployed code-server settings from identity: $src → $dst"
+}
+
+require_macos
+detect_code_server_env
+install_code_server_standalone
+ensure_code_server_config
+write_code_server_service_wrapper
+migrate_legacy_launchagents
+write_launchagent_plist
+bootstrap_launchagent
+
+# Runtime-health gate. wait_for_healthz / verify_local_only_listener `return 1`
+# (not exit) on failure; without set -e the original flat sequence let a
+# non-listening / non-loopback server fall straight through to `ok` and be
+# recorded as a SUCCESSFUL install (the files on disk that check()/verify()
+# assert are all written before this point). Capture their result and report a
+# real install failure at the end so the engine surfaces "install failed"
+# (not a misleading post-verify rc=67, and not a false success). Best-effort
+# config steps still run so they are not skipped on a transient health blip.
+local _cs_fail=0
+wait_for_healthz || _cs_fail=1
+verify_local_only_listener || _cs_fail=1
+
+deploy_user_settings_from_identity
+maybe_configure_tailscale_serve
+
+if [[ "$_cs_fail" -ne 0 ]]; then
+    warn "85-code-server: server did not come up healthy and loopback-only — reporting install failure (see the messages above)"
+    return 1
+fi
+ok "85-code-server done"
+}
+
+verify() {
+    # Kept to check() (binary + plist + config on disk). A live healthz/listener
+    # assertion here would need detect_code_server_env's CODE_SERVER_* vars
+    # re-resolved in this separate verify subshell (they are set only inside
+    # install()); getting that wrong would rc=67 a healthy install. install()
+    # now reports a real failure when the server does not come up (see _cs_fail),
+    # which covers the fresh-install case; ongoing liveness is owned by
+    # `mesh code-server status` / `mesh code-server verify`.
+    check
+}
+rollback() {
+    :   # code-server carries user state (workspace settings); no auto-uninstall
+}

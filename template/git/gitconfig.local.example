@@ -1,0 +1,21 @@
+# gitconfig.local — local identity overrides for __USER_NAME__.
+# Deployed once to ~/.gitconfig.local (mode=once; not overwritten on re-run).
+# Included from ~/.gitconfig via `[include] path = ~/.gitconfig.local`.
+
+[user]
+    name = __USER_NAME__
+    email = __USER_EMAIL__
+    # Uncomment + set if you commit-sign with GPG / SSH:
+    # signingkey = <KEY_ID_OR_PATH>
+
+[commit]
+    # gpgsign = true
+
+[tag]
+    # gpgsign = true
+
+[github]
+    user = __GH_USERNAME__
+
+# Per-host overrides go in ~/.gitconfig.local.d/<hostname>.conf
+# Loaded by ~/.gitconfig's [includeIf "gitdir:…"] sections.

@@ -1,0 +1,12 @@
+# shell/mesh-guard.zsh — redirects `claude` to your identity repo when
+# invoked from any "mesh" repo so that PROJECT_STATUS.md / memory load.
+#
+# Activation:
+#   1. Define mesh repo paths in shell/mesh-repos.list (one path per line)
+#   2. Source this file from shell/aliases.sh (the template does it)
+#   3. Forks without mesh-repos.list → mesh-guard becomes a no-op
+#
+# Override: `claude --here` runs without redirect prompt.
+#
+# Copy from mesh-workstation/template/shell/mesh-guard.zsh.example
+# and customize, or use the identity's version directly.

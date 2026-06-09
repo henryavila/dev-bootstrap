@@ -16,7 +16,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 source "$HERE/../lib/assert.sh"
 
 # Extract allowlist from lib/deploy.sh (single source of truth)
-allowlist_raw="$(grep '^ENVSUBST_ALLOWLIST=' "$REPO_ROOT/lib/deploy.sh" | head -1 | sed "s/.*='\(.*\)'/\1/")"
+allowlist_raw="$(grep '^ENVSUBST_ALLOWLIST=' "$REPO_ROOT/scripts/lib/deploy.sh" | head -1 | sed "s/.*='\(.*\)'/\1/")"
 
 if [[ -z "$allowlist_raw" ]]; then
     fail "could not parse ENVSUBST_ALLOWLIST from lib/deploy.sh"
@@ -32,7 +32,7 @@ export USER="testuser"
 export HOME="/tmp/home-test"
 export BREW_PREFIX="/mock/brew"
 export CODE_DIR="/mock/code"
-export DOTFILES_DIR="/mock/dotfiles"
+export MESH_IDENTITY_DIR="/mock/dotfiles"
 export NGINX_CONF_DIR="/mock/nginx/sites-enabled"
 export NGINX_AVAILABLE_DIR="/mock/nginx/sites-available"
 export NGINX_ENABLED_DIR="/mock/nginx/sites-enabled"

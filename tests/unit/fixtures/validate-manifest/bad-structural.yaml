@@ -1,0 +1,22 @@
+topic:
+  label: "BadStruct"
+  order: 10
+bundles:
+  - name: dup
+    label: "D"
+    desc: "d"
+    items:
+      - name: noscript
+        type: custom
+      - name: nospec
+        type: brew-formula
+      - name: noscript
+        type: custom
+        script: ./x.sh
+  - name: dup
+    label: "D2"
+    desc: "d2"
+    items:
+      - name: ok
+        type: custom
+        script: ./ok.sh

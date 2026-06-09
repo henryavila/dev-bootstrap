@@ -1,0 +1,27 @@
+topic:
+  label: "BadWhen"
+  order: 10
+bundles:
+  - name: b
+    label: "B"
+    desc: "b"
+    options:
+      - name: flag
+        type: select
+        label: "F"
+        env: F_ENV
+        choices:
+          - { value: x, label: "X" }
+    items:
+      - name: i1
+        type: custom
+        script: ./i1.sh
+        when: not_a_condition
+      - name: i2
+        type: custom
+        script: ./i2.sh
+        when: option.flag
+      - name: i3
+        type: custom
+        script: ./i3.sh
+        when: option.missing

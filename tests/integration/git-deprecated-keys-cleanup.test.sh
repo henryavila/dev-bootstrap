@@ -24,7 +24,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-INSTALL="$ROOT/topics/50-git/install.sh"
+INSTALL="$ROOT/topics/50-git/gitconfig-apply.sh"
 REMOVED_FILE="$ROOT/topics/50-git/data/gitconfig.removed"
 
 assert_file_exists() {

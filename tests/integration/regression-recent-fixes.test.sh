@@ -17,13 +17,43 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-WSL="$ROOT/topics/60-web-stack/install.wsl.sh"
-MAC="$ROOT/topics/60-web-stack/install.mac.sh"
-LANG_MAC="$ROOT/topics/10-languages/install.mac.sh"
-REMOTE_MAC="$ROOT/topics/70-remote-access/install.mac.sh"
-BOOTSTRAP="$ROOT/bootstrap.sh"
-MENU="$ROOT/lib/menu.sh"
-LOG="$ROOT/lib/log.sh"
+BOOTSTRAP="$ROOT/setup.sh"
+LOG="$ROOT/scripts/lib/log.sh"
+# NOTE: the old lib/menu.sh (F9.5 whiptail flow) was deleted in audit T-005 —
+# the interactive menu is now the Ink TUI in scripts/menu/ (its own JS tests).
+# Assertions that probed menu.sh were removed here.
+
+# Post-migration each topic's logic is split across multiple custom .sh files
+# under mac/, wsl/, and extras/. We bundle each topic's customs into a single
+# temp file so the existing pattern-based assertions still grep against the
+# topic's complete install logic (the *invariants* are file-location-agnostic).
+_bundle_dir="$(mktemp -d -t mesh-workstation-test-bundle.XXXXXX)"
+trap 'rm -rf "$_bundle_dir"' EXIT
+
+_make_bundle() {
+    local out="$1"; shift
+    local dir f
+    : > "$out"
+    for dir in "$@"; do
+        [[ -d "$dir" ]] || continue
+        while IFS= read -r f; do
+            printf '\n# === BUNDLE: %s ===\n' "$f" >> "$out"
+            cat "$f" >> "$out"
+        done < <(find "$dir" -maxdepth 2 -name '*.sh' -type f 2>/dev/null | LC_ALL=C sort)
+    done
+}
+
+WSL="$_bundle_dir/60-web-stack-wsl.bundle.sh"
+MAC="$_bundle_dir/60-web-stack-mac.bundle.sh"
+LANG_MAC="$_bundle_dir/10-languages-mac.bundle.sh"
+LANG_WSL="$_bundle_dir/10-languages-wsl.bundle.sh"
+REMOTE_MAC="$_bundle_dir/70-remote-access-mac.bundle.sh"
+
+_make_bundle "$WSL"      "$ROOT/topics/60-web-stack/wsl"   "$ROOT/topics/60-web-stack/extras"
+_make_bundle "$MAC"      "$ROOT/topics/60-web-stack/mac"   "$ROOT/topics/60-web-stack/extras"
+_make_bundle "$LANG_MAC" "$ROOT/topics/10-languages/mac"   "$ROOT/topics/10-languages"
+_make_bundle "$LANG_WSL" "$ROOT/topics/10-languages/wsl"   "$ROOT/topics/10-languages"
+_make_bundle "$REMOTE_MAC" "$ROOT/topics/70-remote-access"
 
 # Helper: count matches of an extended regex in a file (works on bash 3.2)
 _count_matches() {
@@ -348,31 +378,26 @@ echo "═══ Pre-migration of legacy unmarked nginx files (60-web-stack mac) 
 assert_pattern_present "$MAC" 'pre-bootstrap-bak' \
     "60-web-stack/install.mac.sh — backs up legacy unmarked files before deploy"
 
-assert_pattern_present "$MAC" 'managed by dev-bootstrap' \
+assert_pattern_present "$MAC" 'managed by mesh-workstation' \
     "60-web-stack/install.mac.sh — checks for marker before touching legacy files"
 
 # Allowlist: only specific paths are migrated (not arbitrary deletions)
 assert_pattern_present "$MAC" 'LEGACY_FILES=' \
     "60-web-stack/install.mac.sh — explicit allowlist of paths to migrate"
 
-# Case-insensitive marker check: templates write "Managed by dev-bootstrap"
-# (capital M), health-checks must use grep -i. A case-sensitive check caused
-# the nginx migration block to re-migrate already-migrated files on EVERY run,
-# producing one .pre-bootstrap-bak-<ts> backup per execution. Regression found
-# 2026-04-23 with 6 backups stacked up in 24h on M2.
-assert_pattern_present "$MAC" 'grep -qi "managed by dev-bootstrap"' \
+# Case-insensitive marker check: templates write "managed by mesh-workstation",
+# health-checks must use grep -i. A case-sensitive check caused the nginx
+# migration block to re-migrate already-migrated files on EVERY run.
+assert_pattern_present "$MAC" 'grep -qi "managed by mesh-workstation"' \
     "60-web-stack/install.mac.sh — migration marker check is case-insensitive (grep -qi)"
 
-assert_pattern_absent "$MAC" 'grep -q "managed by dev-bootstrap"' \
+assert_pattern_absent "$MAC" 'grep -q "managed by mesh-workstation"' \
     "60-web-stack/install.mac.sh — no case-sensitive marker check (would loop-migrate)"
 
-assert_pattern_present "$ROOT/lib/deploy.sh" 'grep -qiF "managed by dev-bootstrap"' \
-    "lib/deploy.sh — overwrite-protection marker check is case-insensitive"
+assert_pattern_present "$ROOT/scripts/lib/deploy.sh" 'managed by (mesh-workstation|dev-bootstrap)' \
+    "lib/deploy.sh — overwrite-protection accepts both old and new marker"
 
-assert_pattern_absent "$ROOT/lib/deploy.sh" 'grep -qF "managed by dev-bootstrap"' \
-    "lib/deploy.sh — no case-sensitive marker check in overwrite protection"
-
-assert_pattern_present "$WSL" 'grep -qi "managed by dev-bootstrap"' \
+assert_pattern_present "$WSL" 'grep -qi "managed by mesh-workstation"' \
     "60-web-stack/install.wsl.sh — legacy catchall removal marker check is case-insensitive"
 
 echo
@@ -433,7 +458,6 @@ assert_pattern_absent "$LANG_MAC" 'exec "\$\{_php_bin\}" "\$\{_composer_bin\}"' 
     "10-languages/install.mac.sh — does NOT bake \$BREW_PREFIX/bin/composer into wrapper"
 
 # WSL: wrapper uses /usr/bin/php<ver> + runtime-resolved composer
-LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
 
 assert_pattern_present "$LANG_WSL" 'composer\$\{ver\}' \
     "10-languages/install.wsl.sh — declares composer\${ver} wrapper path"
@@ -480,7 +504,7 @@ echo
 echo "═══ INCLUDE_LARAVEL → INCLUDE_WEBSTACK back-compat alias ═══"
 
 assert_pattern_present "$BOOTSTRAP" 'INCLUDE_LARAVEL.*INCLUDE_WEBSTACK' \
-    "bootstrap.sh — legacy INCLUDE_LARAVEL aliases to INCLUDE_WEBSTACK"
+    "setup.sh — legacy INCLUDE_LARAVEL aliases to INCLUDE_WEBSTACK"
 
 # The alias check must happen BEFORE export INCLUDE_WEBSTACK, otherwise
 # the alias would set after the canonical default already initialized to 0.
@@ -492,29 +516,16 @@ else
     fail "INCLUDE_LARAVEL alias must come before INCLUDE_WEBSTACK default (alias=$alias_line, export=$export_line)"
 fi
 
-# Menu uses webstack keyword (not legacy 'laravel')
-assert_pattern_present "$MENU" '"webstack"' \
-    "lib/menu.sh — menu keyword renamed to 'webstack'"
-
-assert_pattern_absent "$MENU" 'export INCLUDE_LARAVEL=1' \
-    "lib/menu.sh — does NOT export legacy INCLUDE_LARAVEL (write canonical name only)"
-
-echo
-echo "═══ State file persists canonical INCLUDE_WEBSTACK only ═══"
-
-assert_pattern_present "$MENU" "echo 'export INCLUDE_WEBSTACK=1'" \
-    "lib/menu.sh — state file persists canonical INCLUDE_WEBSTACK"
-
-assert_pattern_absent "$MENU" "echo 'export INCLUDE_LARAVEL=1'" \
-    "lib/menu.sh — state file does NOT persist legacy INCLUDE_LARAVEL"
+# (menu.sh webstack-keyword + state-persistence assertions removed with the dead
+# F9.5 menu in T-005; the Ink TUI owns selection state via selections.list.)
 
 echo
 echo "═══ 2026-04-23 : auto-chsh + secrets.env scaffold ═══"
 
 # Issue 1 — zsh auto-chsh. Bootstrap must try sudo chsh/usermod before
 # falling through to the advisory, default-on, CHSH_AUTO=0 opts out.
-TUX_WSL="$ROOT/topics/20-terminal-ux/install.wsl.sh"
-TUX_MAC="$ROOT/topics/20-terminal-ux/install.mac.sh"
+TUX_WSL="$_bundle_dir/20-terminal-ux-wsl.bundle.sh"; _make_bundle "$TUX_WSL" "$ROOT/topics/20-terminal-ux/wsl" "$ROOT/topics/20-terminal-ux"
+TUX_MAC="$_bundle_dir/20-terminal-ux-mac.bundle.sh"; _make_bundle "$TUX_MAC" "$ROOT/topics/20-terminal-ux/mac" "$ROOT/topics/20-terminal-ux"
 
 assert_pattern_present "$TUX_WSL" 'CHSH_AUTO:-1' \
     "20-terminal-ux/install.wsl.sh — CHSH_AUTO defaults to 1 (auto-on)"
@@ -584,7 +595,7 @@ assert_pattern_present "$TUX_WSL" 'atuin login </dev/tty' \
     "20-terminal-ux/install.wsl.sh — runs 'atuin login' inline via /dev/tty"
 
 # The upstream setup.atuin.sh script now has its own import/register/setup
-# prompts. `mesh run update -f` calls bootstrap.sh with --non-interactive
+# prompts. `mesh run update -f` calls setup.sh with --non-interactive
 # but still allocates ssh -tt, so upstream sees /dev/tty unless we pass
 # its explicit flag. Regression: crc appeared stuck after "Atuin installed
 # successfully!" and each ENTER answered one hidden upstream prompt.
@@ -601,7 +612,7 @@ assert_pattern_present "$TUX_MAC" 'atuin login </dev/tty' \
     "20-terminal-ux/install.mac.sh — runs 'atuin login' inline via /dev/tty"
 
 # TTY gate must test for controlling terminal via /dev/tty, NOT via
-# `-t 1`. bootstrap.sh pipes each installer's stdout to `tee -a LOG`,
+# `-t 1`. setup.sh pipes each installer's stdout to `tee -a LOG`,
 # which makes `-t 1` always false even when the human is still at the
 # terminal. This silently disabled every interactive fallback (chsh
 # prompt + atuin login) in actual runs. /dev/tty is the canonical ctty
@@ -624,42 +635,33 @@ assert_pattern_present "$TUX_MAC" ': </dev/tty >/dev/null 2>&1' \
 assert_pattern_absent "$TUX_MAC" '\[ -t 0 \] && \[ -t 1 \]' \
     "20-terminal-ux/install.mac.sh — no longer gates on '-t 1' (broken under 'tee' pipe)"
 
-# Issue 2 — secrets scaffold. bootstrap.sh must source lib/secrets.sh
+# Issue 2 — secrets scaffold. setup.sh must source lib/secrets.sh
 # and call secrets_load AFTER log.sh, BEFORE the menu runs.
-SECRETS_LIB="$ROOT/lib/secrets.sh"
+SECRETS_LIB="$ROOT/scripts/lib/secrets.sh"
 
 assert_file_exists "$SECRETS_LIB" \
     "lib/secrets.sh — new helper in place"
 
-assert_pattern_present "$BOOTSTRAP" 'source "\$HERE/lib/secrets.sh"' \
-    "bootstrap.sh — sources lib/secrets.sh"
+assert_pattern_present "$BOOTSTRAP" 'source "\$HERE/scripts/lib/secrets.sh"' \
+    "setup.sh — sources scripts/lib/secrets.sh"
 
 assert_pattern_present "$BOOTSTRAP" 'secrets_load' \
-    "bootstrap.sh — calls secrets_load"
+    "setup.sh — calls secrets_load"
 
-# Order check: secrets must be loaded before menu is sourced/run so the
-# menu's secrets_has NGROK_AUTHTOKEN gate behaves correctly.
+# Order check: secrets_load must run before the interactive (Ink) menu so item
+# scripts and `when:` see the tokens. setup.sh sources secrets right after the
+# state-dir setup and before run_menu_if_available.
 secrets_line=$(grep -n 'secrets_load' "$BOOTSTRAP" | head -1 | cut -d: -f1)
-menu_line=$(grep -n 'source "\$HERE/lib/menu.sh"' "$BOOTSTRAP" | head -1 | cut -d: -f1)
+menu_line=$(grep -n 'run_menu_if_available' "$BOOTSTRAP" | head -1 | cut -d: -f1)
 if [[ -n "$secrets_line" && -n "$menu_line" ]] && [[ "$secrets_line" -lt "$menu_line" ]]; then
-    pass "bootstrap.sh — secrets_load runs before menu is sourced (line $secrets_line < $menu_line)"
+    pass "setup.sh — secrets_load runs before the menu (line $secrets_line < $menu_line)"
 else
-    fail "bootstrap.sh — secrets_load must run before menu (secrets=$secrets_line, menu=$menu_line)"
+    fail "setup.sh — secrets_load must run before the menu (secrets=$secrets_line, menu=$menu_line)"
 fi
 
-# Menu: prompts for ngrok token only when selected and not already known.
-assert_pattern_present "$MENU" 'secrets_has NGROK_AUTHTOKEN' \
-    "lib/menu.sh — gates ngrok prompt on secrets_has"
-
-assert_pattern_present "$MENU" 'passwordbox' \
-    "lib/menu.sh — ngrok token uses --passwordbox (masked input)"
-
-assert_pattern_present "$MENU" 'secrets_set NGROK_AUTHTOKEN' \
-    "lib/menu.sh — persists ngrok token via secrets_set (NOT config.env)"
-
-# secrets.env must NOT be written by _persist_menu_state (wrong file + mode).
-assert_pattern_absent "$MENU" 'echo .export NGROK_AUTHTOKEN' \
-    "lib/menu.sh — _persist_menu_state does NOT echo NGROK_AUTHTOKEN into config.env"
+# (ngrok-capture assertions removed with the dead menu.sh in T-005 — the ngrok
+# authtoken is now a tier-2 env-token added via `mesh secret add`, not captured
+# locally by any menu.)
 
 # Taxonomy check: secrets.sh header must document forbidden keys so a future
 # contributor can't "just add GITHUB_TOKEN" without reading the rationale.
@@ -678,8 +680,7 @@ echo "═══ 2026-04-23 : WSL PECL per-version build via PHP_PEAR_PHP_BIN ═
 # The fix lives in lib/pecl-install.sh (single source of truth) so
 # install.wsl.sh + install-mssql-driver.sh share the same hardened
 # implementation. These asserts inspect the lib directly.
-LANG_WSL="$ROOT/topics/10-languages/install.wsl.sh"
-PECL_LIB="$ROOT/lib/pecl-install.sh"
+PECL_LIB="$ROOT/scripts/lib/pecl-install.sh"
 MSSQL="$ROOT/topics/60-web-stack/scripts/install-mssql-driver.sh"
 
 assert_file_exists "$PECL_LIB" \
@@ -865,7 +866,7 @@ echo
 echo "═══ 40-tmux ships generic tmux helpers (tl / ta / tn / tm) ═══"
 
 # These used to live in Henry's private dotfiles; lifted to the
-# public dev-bootstrap after the 'tm' helper proved useful enough
+# public mesh-workstation after the 'tm' helper proved useful enough
 # to belong in the shared baseline. The dotfiles-private file
 # should NOT redeclare them — the aliases_private_keeps_only_project
 # assertion catches accidental drift.
