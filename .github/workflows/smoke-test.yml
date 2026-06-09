@@ -42,6 +42,9 @@ jobs:
         id: smoke
         env:
           RUN_ID: ${{ github.run_id }}
+          # Authenticate the bootstrap's GitHub release lookups so the dozen
+          # cli-tool installers don't exhaust the 60/hr anonymous limit (429).
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
           mkdir -p ci/logs

@@ -144,10 +144,10 @@ start=$(date +%s)
 set +e
 if [[ -n "$TIMEOUT_BIN" ]]; then
     "$TIMEOUT_BIN" "$TIMEOUT_SECS" \
-        docker run --rm "$IMAGE" bash -c "$RUN_CMD" \
+        docker run --rm -e GITHUB_TOKEN -e GH_TOKEN "$IMAGE" bash -c "$RUN_CMD" \
         2>&1 | tee "$LOGFILE"
 else
-    docker run --rm "$IMAGE" bash -c "$RUN_CMD" \
+    docker run --rm -e GITHUB_TOKEN -e GH_TOKEN "$IMAGE" bash -c "$RUN_CMD" \
         2>&1 | tee "$LOGFILE"
 fi
 rc=${PIPESTATUS[0]}

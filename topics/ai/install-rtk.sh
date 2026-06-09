@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=/dev/null
+. "${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib/github-api.sh"
 # Custom installer for rtk (Rust Token Killer).
 # Engine sources this file inside a subshell and calls install(), check(),
 # verify(), rollback() via the custom driver contract.
@@ -63,7 +65,7 @@ _rtk_latest_tag() {
         | sed -E 's|.*/tag/([^[:space:]]+).*|\1|' \
         | tr -d '\r')"
     if [[ -z "$v" ]]; then
-        v="$(curl -fsSL "https://api.github.com/repos/${RTK_REPO}/releases/latest" 2>/dev/null \
+        v="$(gh_api_curl "https://api.github.com/repos/${RTK_REPO}/releases/latest" 2>/dev/null \
             | sed -nE 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' \
             | head -1)"
     fi

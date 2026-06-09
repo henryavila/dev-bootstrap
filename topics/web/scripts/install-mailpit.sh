@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=/dev/null
+. "${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib/github-api.sh"
 # install-mailpit.sh — local mail catcher for dev.
 # Gated by INCLUDE_MAILPIT=1 (set via menu or env).
 #
@@ -44,7 +46,7 @@ else
             ;;
         wsl|linux)
             info "downloading mailpit from GitHub releases"
-            mp_ver="$(curl -fsSL https://api.github.com/repos/axllent/mailpit/releases/latest | jq -r '.tag_name')"
+            mp_ver="$(gh_latest_tag axllent/mailpit)"
             tmp="$(mktemp -d)"
             arch="amd64"
             [[ "$(uname -m)" == "aarch64" ]] && arch="arm64"

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=/dev/null
+. "${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib/github-api.sh"
 # Custom: code-server (mac) — bundles the original 697-LOC install.mac.sh
 # verbatim under the engine contract.
 
@@ -159,7 +161,7 @@ fetch_latest_code_server_version() {
     fi
 
     command -v curl >/dev/null 2>&1 || return 1
-    body="$(curl -fsSL --max-time 6 https://api.github.com/repos/coder/code-server/releases/latest 2>/dev/null)" || return 1
+    body="$(gh_api_curl "https://api.github.com/repos/coder/code-server/releases/latest" 2>/dev/null)" || return 1
     tag="$(printf '%s\n' "$body" | awk -F'"' '/"tag_name"[[:space:]]*:/ { print $4; exit }')"
     normalize_code_server_version "$tag"
 }

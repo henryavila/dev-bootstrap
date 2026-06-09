@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
+# shellcheck source=/dev/null
+. "${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib/github-api.sh"
 # dust + xh + procs — single-file Rust binaries not in apt 24.04.
 # Installed to ~/.local/bin via GitHub release tarballs. Idempotent.
 
 _install_dust() {
     local ver tmp
-    ver="$(curl -fsSL "https://api.github.com/repos/bootandy/dust/releases/latest" | jq -r '.tag_name')"
+    ver="$(gh_latest_tag bootandy/dust)"
     [[ -n "$ver" && "$ver" != "null" ]] || return 1
     tmp="$(mktemp -d)"
     curl -fsSL -o "$tmp/dust.tgz" \
@@ -18,7 +20,7 @@ _install_dust() {
 
 _install_xh() {
     local ver tmp
-    ver="$(curl -fsSL "https://api.github.com/repos/ducaale/xh/releases/latest" | jq -r '.tag_name')"
+    ver="$(gh_latest_tag ducaale/xh)"
     [[ -n "$ver" && "$ver" != "null" ]] || return 1
     tmp="$(mktemp -d)"
     curl -fsSL -o "$tmp/xh.tgz" \
@@ -32,7 +34,7 @@ _install_xh() {
 
 _install_procs() {
     local ver tmp
-    ver="$(curl -fsSL "https://api.github.com/repos/dalance/procs/releases/latest" | jq -r '.tag_name')"
+    ver="$(gh_latest_tag dalance/procs)"
     [[ -n "$ver" && "$ver" != "null" ]] || return 1
     tmp="$(mktemp -d)"
     curl -fsSL -o "$tmp/procs.zip" \

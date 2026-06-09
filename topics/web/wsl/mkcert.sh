@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=/dev/null
+. "${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib/github-api.sh"
 # Custom: mkcert + wildcard cert + Windows trust store import.
 
 CERT_DIR="${CERT_DIR:-/etc/nginx/certs}"
@@ -36,7 +38,7 @@ install() {
     if ! command -v mkcert >/dev/null 2>&1; then
         sudo apt-get install -y -q libnss3-tools
         local ver tmp
-        ver="$(curl -fsSL https://api.github.com/repos/FiloSottile/mkcert/releases/latest | jq -r '.tag_name')"
+        ver="$(gh_latest_tag FiloSottile/mkcert)"
         tmp="$(mktemp -d)"
         curl -fsSL -o "$tmp/mkcert" \
             "https://github.com/FiloSottile/mkcert/releases/download/${ver}/mkcert-${ver}-linux-amd64"
