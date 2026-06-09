@@ -62,8 +62,13 @@ assert_pattern_present "$CONF" '@mesh_line2_left' \
     "G — line 2 left segment defined"
 assert_pattern_present "$CONF" '@mesh_line2_right' \
     "G — line 2 right segment defined"
-assert_pattern_present "$CONF" 'alternate_on' \
-    "G — host+time gated on alternate screen (no p10k duplication)"
+# Host+clock shows only while the prompt is hidden (foreground command is
+# not a shell). alternate_on was too narrow: Claude Code inline mode hides
+# the prompt without the alternate screen.
+assert_pattern_present "$CONF" 'm/r:\^\(zsh\|bash\|fish\|sh\)' \
+    "G — host+time gated on prompt-hidden (foreground ≠ shell)"
+assert_pattern_absent "$CONF" '@mesh_line2.*alternate_on' \
+    "G — alternate_on gate removed (missed Claude Code inline mode)"
 assert_pattern_present "$CONF" 'client_width' \
     "G — responsive cuts for phone-width clients (Moshi/mosh)"
 assert_pattern_present "$CONF" 'client_prefix' \
