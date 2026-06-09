@@ -1,0 +1,916 @@
+# Claude Design — prompt: `Shortcuts` screen (mesh setup app on blink)
+
+> **How to use.** Paste the **PROMPT** block below as the *first message* in a new
+> Claude Design conversation (claude.ai/design). Attach
+> `CaskaydiaMonoNerdFontMono-Regular.woff2` first (HTML-preview font; source:
+> nerd-fonts releases → CascadiaMono.zip → `woff2_compress`). Claude replies
+> `Primed.`; send `go` and it designs the screen.
+>
+> **This prompt is deliberately under-specified.** It gives the *context*, the hard
+> *constraints*, and the *real data* — and leaves the layout, grouping, search,
+> navigation, and visual composition **entirely to the designer**. Do not add a
+> prescribed structure here; that is the point.
+>
+> - Canonical data: `topics/shell-terminal/data/shortcuts.json` (embedded in §4).
+> - Real blink API: `scripts/menu/node_modules/@henryavila/blink-tui/dist/index.d.ts`.
+> - Sister prompt (prescriptive, for contrast): `docs/2026-05-29-topicpicker-claude-design-prompt.md`.
+
+---
+
+## PROMPT (copy from here ↓)
+
+````
+You are designing ONE screen of a terminal UI (TUI) built on **blink**
+(`@henryavila/blink-tui`) — a thin, opinionated layer over Ink (React for the
+terminal). The screen is **"Shortcuts"**.
+
+Design it however you judge best. **The layout, the grouping, how search works,
+the navigation model, the visual rhythm — all of it is YOURS to invent.** I am
+giving you the context, the hard constraints, and the real data. I am deliberately
+NOT giving you a layout, a pane structure, a colour scheme, or a key map. Make
+confident choices and follow Catppuccin / lazygit / k9s conventions where something
+is unspecified. Do not ask clarifying questions.
+
+═══════════════════════════════════════════════════════════════════
+1 · context — what this screen is for
+═══════════════════════════════════════════════════════════════════
+
+Our dev environment rebinds and adds a lot of terminal shortcuts — most notably the
+tmux prefix is **Ctrl-a**, not the usual Ctrl-b — and for a long time none of it was
+documented. People (including the owner) kept pressing the wrong keys and assuming
+things were broken. This screen is the fix: the single, in-terminal, **canonical
+reference** for every shortcut the environment provides.
+
+- It is launched by `mesh shortcuts` and lives as one screen inside the existing
+  mesh setup app (a blink/Ink wizard). It is **read-only** — a thing you glance at
+  to recall a binding, never a place you configure or install anything.
+- Its audience uses it across very different terminals: a wide desktop emulator on
+  macOS, Windows Terminal on WSL, and — critically — an **iPhone over mosh** on
+  flaky mobile data. The same screen has to serve all three.
+- The data is grouped into a handful of **scopes** of very uneven size (tmux ~36
+  rows, shell aliases ~70, others a handful). A good design has to make a large,
+  lopsided reference feel quick to scan and search. How you solve that is up to you.
+
+═══════════════════════════════════════════════════════════════════
+2 · hard constraints (the envelope — everything else is your call)
+═══════════════════════════════════════════════════════════════════
+
+- **Medium:** a terminal on a fixed character-cell grid. You compose **blink**
+  primitives over **Ink**. **Keyboard-only** — no mouse, scroll wheel, hover, or
+  focus ring; focus is shown with characters (a caret, a fill, a recoloured border).
+- **Theme:** the house look is **Catppuccin Mocha**, applied through blink's theme
+  **tokens** (`useTokens()`), *never* raw hex. Borders are box-drawing glyphs (via
+  blink), not CSS. Icons/status are **Nerd Font glyphs** via `useGlyph()` — no emoji,
+  SVG, or raster. If you need a glyph the packs lack, request it in OUTPUT; don't
+  invent one inline.
+- **Responsive is mandatory.** The screen MUST read well at **100×30 (desktop)** and
+  at **60×20 (mobile-mosh)**. Use `useStdoutDimensions()` to adapt the layout between
+  them. Both frames are first-class — design the narrow one with as much care as the
+  wide one, not as a degraded afterthought.
+- **Mobile/mosh reality:** this is regularly opened on a phone over mosh on flaky 4G,
+  where heavy escape-sequence churn corrupts the display. Favour a **calm, low-motion**
+  design (the only sanctioned motion is the 1 Hz cursor / an optional spinner).
+- **Read-only:** nothing here is selectable, toggleable, or installable. No checkboxes,
+  no selection set, no "apply". (So `useListSelection` is almost certainly irrelevant.)
+- **Copy voice:** terse, lowercase, command-shaped, second person. UPPER CASE only for
+  KEY hints. No exclamation marks.
+
+═══════════════════════════════════════════════════════════════════
+3 · the blink toolbox (compose freely; propose new generic primitives)
+═══════════════════════════════════════════════════════════════════
+
+Available in `@henryavila/blink-tui` v0.2.0 — read `dist/index.d.ts` for exact props.
+Use what fits; you are NOT told which to use.
+
+  Components: Pane · List (windows a long list via a `height` prop, with `▴/▾ N more`
+    overflow markers) · Header · Footer (hotkey bar) · Banner · Dialog ·
+    DescriptionList · Form · Input · Spinner · ProgressBar · LogView · ProgressList.
+  Hooks (headless — blink owns logic, the app owns keys via Ink `useInput`):
+    useListNavigation · useListWindow · useStdoutDimensions · useTokens · useGlyph ·
+    useBlink / useSpinnerFrame.
+  Tokens (semantic, from useTokens): fg, fgMuted, fgDim, accent, accentAlt,
+    stateOk/Warn/Err/Info, bgFocus. Glyph sets (useGlyph): states, nav, domains.
+
+If the screen needs a capability blink lacks, propose it in OUTPUT as a NEW GENERIC
+primitive (domain-neutral — not "the shortcuts screen needs it"), per blink's prime
+directive. A primitive that only makes sense for this one screen stays app-level.
+
+═══════════════════════════════════════════════════════════════════
+4 · THE DATA — design against this real dataset
+═══════════════════════════════════════════════════════════════════
+
+This is the canonical model the screen renders (`shortcuts.json`). Every entry is
+real. Field meaning:
+  - `keys`   how the user types it. `<prefix>` = the tmux prefix (Ctrl-a); chords
+             like `Ctrl-R` / `Alt-C` / `Ctrl-X Ctrl-E`; copy-mode keys are tagged.
+  - `action` what it does.
+  - `source` provenance: `custom` (set by our config) · `tmux-default` /
+             `tool-default` (a built-in we keep) · `plugin` (a zsh plugin binding).
+  - `note`   a caveat worth surfacing (e.g. a key that only fills the tmux buffer,
+             a key that is hard to type on a phone, an OS-specific requirement).
+  - `platforms` (optional) OS gate: subset of mac / wsl / linux.
+
+Decide for yourself which of these fields to show, and how, at each width.
+
+```json
+{
+  "meta": {
+    "title": "mesh terminal shortcuts",
+    "prefix": "Ctrl-a",
+    "note": "tmux prefix is Ctrl-a (not Ctrl-b). Chords are prefix-then-key, not held combos."
+  },
+  "scopes": [
+    {
+      "id": "tmux",
+      "label": "tmux keybindings (prefix = Ctrl-a)",
+      "entries": [
+        {
+          "keys": "Ctrl-a",
+          "action": "tmux prefix (precedes all bindings)",
+          "source": "custom",
+          "note": "rebound from default Ctrl-b; Ctrl-b is unbound"
+        },
+        {
+          "keys": "<prefix> Ctrl-a",
+          "action": "send literal prefix / drive inner nested tmux",
+          "source": "custom",
+          "note": "send-prefix; essential for nested/remote tmux"
+        },
+        {
+          "keys": "<prefix> |",
+          "action": "split pane horizontally (left/right), keep cwd",
+          "source": "custom",
+          "note": "| is AltGr on ABNT2 / symbol layer on iOS"
+        },
+        {
+          "keys": "<prefix> -",
+          "action": "split pane vertically (top/bottom), keep cwd",
+          "source": "custom"
+        },
+        {
+          "keys": "<prefix> h",
+          "action": "focus pane left",
+          "source": "custom",
+          "note": "not repeatable — needs prefix each press (no -r flag)"
+        },
+        {
+          "keys": "<prefix> j",
+          "action": "focus pane down",
+          "source": "custom",
+          "note": "not repeatable — needs prefix each press (no -r flag)"
+        },
+        {
+          "keys": "<prefix> k",
+          "action": "focus pane up",
+          "source": "custom",
+          "note": "not repeatable — needs prefix each press (no -r flag)"
+        },
+        {
+          "keys": "<prefix> l",
+          "action": "focus pane right",
+          "source": "custom",
+          "note": "not repeatable — needs prefix each press (no -r flag)"
+        },
+        {
+          "keys": "<prefix> Up/Down/Left/Right",
+          "action": "focus pane in arrow direction",
+          "source": "tmux-default",
+          "note": "repeatable within repeat-time"
+        },
+        {
+          "keys": "<prefix> o",
+          "action": "cycle to next pane",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> ;",
+          "action": "focus last (previously active) pane",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> Ctrl-Up/Down/Left/Right",
+          "action": "resize pane by 1 cell",
+          "source": "tmux-default",
+          "note": "repeatable"
+        },
+        {
+          "keys": "<prefix> Alt-Up/Down/Left/Right",
+          "action": "resize pane by 5 cells",
+          "source": "tmux-default",
+          "note": "repeatable; macOS needs Option-as-Meta",
+          "platforms": [
+            "mac"
+          ]
+        },
+        {
+          "keys": "<prefix> z",
+          "action": "toggle pane zoom (fullscreen)",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> x",
+          "action": "close (kill) current pane",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> >",
+          "action": "open pane menu",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> c",
+          "action": "new window",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> n",
+          "action": "next window",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> p",
+          "action": "previous window",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> 1..9",
+          "action": "select window by number",
+          "source": "tmux-default",
+          "note": "base-index 1, renumber-windows on"
+        },
+        {
+          "keys": "<prefix> ,",
+          "action": "rename current window",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> &",
+          "action": "kill current window",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> w",
+          "action": "open window/session chooser",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> <",
+          "action": "open window menu",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> [",
+          "action": "enter copy-mode (vi keys)",
+          "source": "tmux-default",
+          "note": "mode-keys vi; history-limit 100000"
+        },
+        {
+          "keys": "<prefix> ]",
+          "action": "paste from tmux buffer",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "v (copy-mode)",
+          "action": "begin selection",
+          "source": "custom"
+        },
+        {
+          "keys": "V (copy-mode)",
+          "action": "select whole line",
+          "source": "custom"
+        },
+        {
+          "keys": "Ctrl-v (copy-mode)",
+          "action": "toggle rectangle (block) selection",
+          "source": "custom"
+        },
+        {
+          "keys": "y (copy-mode)",
+          "action": "copy selection and exit copy-mode",
+          "source": "custom",
+          "note": "only fills the tmux buffer, NOT the system clipboard — no set-clipboard/OSC52"
+        },
+        {
+          "keys": "<prefix> d",
+          "action": "detach from session",
+          "source": "tmux-default"
+        },
+        {
+          "keys": "<prefix> r",
+          "action": "reload ~/.tmux.conf (shows 'reloaded tmux.conf')",
+          "source": "custom"
+        },
+        {
+          "keys": "<prefix> I",
+          "action": "install/fetch TPM plugins",
+          "source": "plugin",
+          "note": "tmux-plugins/tpm; catppuccin pre-cloned so not needed on first launch"
+        },
+        {
+          "keys": "Mouse: click pane",
+          "action": "focus clicked pane",
+          "source": "custom",
+          "note": "mouse on"
+        },
+        {
+          "keys": "Mouse: drag border",
+          "action": "resize adjacent panes",
+          "source": "custom",
+          "note": "mouse on"
+        },
+        {
+          "keys": "Mouse: wheel/touch scroll",
+          "action": "scroll pane (enters copy-mode in scrollback)",
+          "source": "custom",
+          "note": "hold Shift to bypass tmux for native OS text selection"
+        }
+      ]
+    },
+    {
+      "id": "search-history",
+      "label": "Busca & histórico (fzf + atuin)",
+      "entries": [
+        {
+          "keys": "Ctrl-R",
+          "action": "open atuin history search (sqlite-backed, cross-machine)",
+          "source": "tool-default",
+          "note": "atuin wins over fzf's Ctrl-R by load order: fzf key-bindings.zsh is sourced first, then `atuin init zsh --disable-up-arrow` rebinds Ctrl-R last; --disable-up-arrow leaves Up to history-substring-search"
+        },
+        {
+          "keys": "Ctrl-T",
+          "action": "fzf file/path finder, inserts selection into the command line",
+          "source": "tool-default",
+          "note": "from fzf's key-bindings.zsh (the only fzf shell file sourced; completion.zsh is skipped so it won't stomp fzf-tab's TAB)"
+        },
+        {
+          "keys": "Alt-C",
+          "action": "fzf cd into a selected subdirectory",
+          "source": "tool-default",
+          "note": "from fzf's key-bindings.zsh; needs Option-as-Meta on macOS for Alt to send ESC"
+        },
+        {
+          "keys": "TAB",
+          "action": "fzf-tab completion with side preview pane; one TAB accepts the highlighted candidate",
+          "source": "plugin",
+          "note": "Aloxaf/fzf-tab; relies on `zstyle ':completion:*' menu no` (else zsh's native menu intercepts TAB) and `fzf-bindings 'tab:accept'`. Falls back to zsh expand-or-complete if fzf-tab fails to load"
+        },
+        {
+          "keys": "Ctrl-/",
+          "action": "toggle the fzf-tab preview pane on/off",
+          "source": "plugin",
+          "note": "fzf-tab fzf-flags `--bind=ctrl-/:toggle-preview`; depends on terminal emulator passing Ctrl-/ through (many send it as Ctrl-_ or swallow it)"
+        },
+        {
+          "keys": "? (empty prompt)",
+          "action": "launch `atuin ai inline` instead of inserting a literal '?'",
+          "source": "tool-default",
+          "note": "surprising atuin rebind that only fires when the buffer is empty; typing ? after any text inserts normally — pending fix"
+        }
+      ]
+    },
+    {
+      "id": "line-editor",
+      "label": "Edição da linha (zsh ZLE)",
+      "entries": [
+        {
+          "keys": "Ctrl-X Ctrl-E",
+          "action": "open current command buffer in $EDITOR (nvim) for multi-line editing",
+          "source": "custom",
+          "note": "bindkey '^X^E' edit-command-line in zshrc.local; bound in the main keymap (viins) so reachable from insert mode. $EDITOR=nvim ($VISUAL too). Falls back to vi if those are unset (template default)."
+        },
+        {
+          "keys": "v (vicmd)",
+          "action": "open current command buffer in $EDITOR (nvim) for multi-line editing",
+          "source": "custom",
+          "note": "bindkey -M vicmd 'v' edit-command-line. Reach vicmd by pressing Esc first. Same widget as Ctrl-X Ctrl-E."
+        },
+        {
+          "keys": "Esc",
+          "action": "leave insert mode, enter vi command mode (vicmd)",
+          "source": "tool-default",
+          "note": "Main keymap is viins (not emacs) because no explicit bindkey -e/-v exists and EDITOR/VISUAL match *vi*/nvim, so zsh auto-selects vi insert. Esc switching to vicmd is built-in ZLE behavior; KEYTIMEOUT (default 0.4s) governs the Esc delay."
+        },
+        {
+          "keys": "Up",
+          "action": "history-substring-search backward (matches text already typed before the cursor)",
+          "source": "custom",
+          "note": "bindkey '^[[A' history-substring-search-up, bound in the main keymap (viins) so it works in insert mode. atuin is initialized with --disable-up-arrow specifically so this binding owns the Up key instead of atuin."
+        },
+        {
+          "keys": "Down",
+          "action": "history-substring-search forward",
+          "source": "custom",
+          "note": "bindkey '^[[B' history-substring-search-down, bound in the main keymap (viins)."
+        },
+        {
+          "keys": "k (vicmd)",
+          "action": "history-substring-search backward",
+          "source": "custom",
+          "note": "bindkey -M vicmd 'k' history-substring-search-up. Reach vicmd via Esc. Overrides vi's default 'k' (up-line-or-history) with substring search."
+        },
+        {
+          "keys": "j (vicmd)",
+          "action": "history-substring-search forward",
+          "source": "custom",
+          "note": "bindkey -M vicmd 'j' history-substring-search-down. Reach vicmd via Esc. Overrides vi's default 'j' (down-line-or-history)."
+        },
+        {
+          "keys": "Ctrl-P",
+          "action": "INERT — bound to history-substring-search-up only in the emacs keymap, which is not the active keymap",
+          "source": "tool-default",
+          "note": "bindkey -M emacs '^P' history-substring-search-up never fires because the main keymap is viins, not emacs. In viins, Ctrl-P falls through to its built-in default (up-line-or-history)."
+        },
+        {
+          "keys": "Ctrl-N",
+          "action": "INERT — bound to history-substring-search-down only in the emacs keymap, which is not the active keymap",
+          "source": "tool-default",
+          "note": "bindkey -M emacs '^N' history-substring-search-down never fires because main keymap is viins. In viins, Ctrl-N falls through to its built-in default (down-line-or-history)."
+        },
+        {
+          "keys": "Ctrl-R",
+          "action": "open atuin fuzzy history search over the command line",
+          "source": "tool-default",
+          "note": "Bound by `atuin init zsh --disable-up-arrow` (sourced SYNC so it works from the first prompt). atuin takes Ctrl-R but deliberately NOT the Up arrow, leaving Up/Down to history-substring-search."
+        }
+      ]
+    },
+    {
+      "id": "aliases",
+      "label": "Aliases (comandos curtos)",
+      "entries": [
+        {
+          "keys": "ls",
+          "action": "list dir via eza with icons, dirs first",
+          "source": "custom",
+          "note": "personal override in mesh-identity (aliases.sh) beats the workstation baseline 'eza' (no icons). Gated on command -v eza."
+        },
+        {
+          "keys": "ll",
+          "action": "long list, all, icons, dirs first, git status (eza -la --git)",
+          "source": "custom",
+          "note": "identity override; baseline is 'eza -l --git'. Gated on eza."
+        },
+        {
+          "keys": "la",
+          "action": "list all incl. hidden, icons, dirs first (eza -a)",
+          "source": "custom",
+          "note": "identity override; baseline is 'eza -la --git'. Gated on eza."
+        },
+        {
+          "keys": "lt",
+          "action": "tree view 2 levels with icons (eza --tree --level=2)",
+          "source": "custom",
+          "note": "identity-only; not in workstation baseline. Gated on eza."
+        },
+        {
+          "keys": "tree",
+          "action": "tree view via eza (eza --tree)",
+          "source": "custom",
+          "note": "workstation 20-terminal-ux baseline; gated on eza."
+        },
+        {
+          "keys": "cat",
+          "action": "view file via bat, plain, no pager",
+          "source": "custom",
+          "note": "bat='bat --style=plain --paging=never'; on Ubuntu falls back to batcat. Gated on command -v bat/batcat."
+        },
+        {
+          "keys": "bat",
+          "action": "alias batcat as bat (Ubuntu binary-name fix)",
+          "source": "custom",
+          "platforms": [
+            "wsl",
+            "linux"
+          ],
+          "note": "only when batcat exists and bat does not (Debian/Ubuntu rename)."
+        },
+        {
+          "keys": "fd",
+          "action": "alias fdfind as fd (Ubuntu binary-name fix)",
+          "source": "custom",
+          "platforms": [
+            "wsl",
+            "linux"
+          ],
+          "note": "only when fdfind exists and fd does not (Debian/Ubuntu rename)."
+        },
+        {
+          "keys": "top",
+          "action": "launch btop instead of top",
+          "source": "custom",
+          "note": "Phase E modern-CLI swap; gated on command -v btop. Scripts calling real top unaffected (interactive only)."
+        },
+        {
+          "keys": "htop",
+          "action": "launch btop instead of htop",
+          "source": "custom",
+          "note": "gated on btop."
+        },
+        {
+          "keys": "df",
+          "action": "disk free via duf",
+          "source": "custom",
+          "note": "gated on command -v duf."
+        },
+        {
+          "keys": "du",
+          "action": "directory sizes via dust",
+          "source": "custom",
+          "note": "gated on command -v dust."
+        },
+        {
+          "keys": "ping",
+          "action": "ping with live graph via gping",
+          "source": "custom",
+          "note": "gated on gping; scripts still call /bin/ping directly."
+        },
+        {
+          "keys": "http",
+          "action": "HTTPie-style HTTP client via xh",
+          "source": "custom",
+          "note": "gated on command -v xh."
+        },
+        {
+          "keys": "ps",
+          "action": "process list via procs",
+          "source": "custom",
+          "note": "gated on command -v procs."
+        },
+        {
+          "keys": "g",
+          "action": "git",
+          "source": "custom",
+          "note": "all other git shortcuts delegate to g so alias-tips emits one reminder. Has compdef _git."
+        },
+        {
+          "keys": "gs",
+          "action": "git status",
+          "source": "custom",
+          "note": "compdef git-status."
+        },
+        {
+          "keys": "gl",
+          "action": "git log --oneline --graph --decorate -15",
+          "source": "custom",
+          "note": "compdef git-log."
+        },
+        {
+          "keys": "gd",
+          "action": "git diff",
+          "source": "custom",
+          "note": "compdef git-diff."
+        },
+        {
+          "keys": "gds",
+          "action": "git diff --staged",
+          "source": "custom",
+          "note": "compdef git-diff."
+        },
+        {
+          "keys": "gch",
+          "action": "git checkout",
+          "source": "custom",
+          "note": "deployed name is gch, not gco. ALIASES.md still says 'gco' but that is stale; gco exists only as a compdef alias for completion, not as a runnable alias. compdef git-checkout."
+        },
+        {
+          "keys": "gb",
+          "action": "git branch",
+          "source": "custom",
+          "note": "compdef git-branch."
+        },
+        {
+          "keys": "gp",
+          "action": "git pull",
+          "source": "custom",
+          "note": "compdef git-pull."
+        },
+        {
+          "keys": "gps",
+          "action": "git push",
+          "source": "custom",
+          "note": "compdef git-push."
+        },
+        {
+          "keys": "gaa",
+          "action": "git add . (stage everything)",
+          "source": "custom"
+        },
+        {
+          "keys": "gc",
+          "action": "git commit",
+          "source": "custom",
+          "note": "compdef git-commit."
+        },
+        {
+          "keys": "grb",
+          "action": "git rebase -i (interactive)",
+          "source": "custom",
+          "note": "compdef git-rebase."
+        },
+        {
+          "keys": "gsh",
+          "action": "git show",
+          "source": "custom",
+          "note": "compdef git-show."
+        },
+        {
+          "keys": "glog",
+          "action": "git log --oneline --decorate --graph",
+          "source": "custom",
+          "note": "compdef git-log."
+        },
+        {
+          "keys": "gloga",
+          "action": "git log --oneline --decorate --graph --all",
+          "source": "custom",
+          "note": "compdef git-log."
+        },
+        {
+          "keys": "whoops",
+          "action": "git reset --hard && git clean -df (discard all + nuke untracked)",
+          "source": "custom",
+          "note": "DESTRUCTIVE — loses uncommitted work and deletes untracked files."
+        },
+        {
+          "keys": "gmm",
+          "action": "checkout main, pull, return to prev branch, merge main in (sync main into current branch keeping your place)",
+          "source": "custom",
+          "note": "multi-step echo+git chain; ends on your original branch with main merged."
+        },
+        {
+          "keys": "git co",
+          "action": "DEPRECATED git checkout (removed)",
+          "source": "custom",
+          "note": "Listed in ALIASES.md but removed 2026-04-24 (gitconfig.removed) in favor of shell alias gch; install.sh unsets it. NOT a live alias."
+        },
+        {
+          "keys": "git br",
+          "action": "git branch",
+          "source": "custom",
+          "note": "git-level alias via global gitconfig (gitconfig.keys)."
+        },
+        {
+          "keys": "git st",
+          "action": "git status",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git ci",
+          "action": "git commit",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git sw",
+          "action": "git switch",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git last",
+          "action": "git log -1 HEAD (show last commit)",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git unstage",
+          "action": "git reset HEAD -- (unstage files)",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git lg",
+          "action": "git log --oneline --graph --decorate --all",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git amend",
+          "action": "git commit --amend --no-edit (reuse last message)",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git undo",
+          "action": "git reset HEAD~1 --mixed (undo last commit, keep changes)",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git df",
+          "action": "git diff",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "git dfc",
+          "action": "git diff --cached (staged diff)",
+          "source": "custom",
+          "note": "git-level alias via gitconfig.keys."
+        },
+        {
+          "keys": "tl",
+          "action": "tmux ls (list sessions)",
+          "source": "custom",
+          "note": "workstation 40-tmux fragment."
+        },
+        {
+          "keys": "ta <name>",
+          "action": "attach to session by name; if already inside tmux, switch-client (no nested clients)",
+          "source": "custom",
+          "note": "context-aware: attach outside, switch-client inside."
+        },
+        {
+          "keys": "tn <name>",
+          "action": "tmux new -s <name> (new session)",
+          "source": "custom"
+        },
+        {
+          "keys": "tm",
+          "action": "go to canonical 'main' session (new-session -A -s main outside; switch-client inside)",
+          "source": "custom",
+          "note": "creates main detached if needed; avoids nesting tmux clients."
+        },
+        {
+          "keys": "tmux_project <session> <dir>",
+          "action": "attach/create session anchored at <dir> (-c); switch+create-detached if already inside tmux",
+          "source": "custom",
+          "note": "reusable helper backing the private th/tsda/tdot wrappers."
+        },
+        {
+          "keys": "th",
+          "action": "open/attach tmux session 'arch' rooted at $CODE_DIR/arch",
+          "source": "custom",
+          "note": "identity-only wrapper over tmux_project; CODE_DIR from ~/.config/mesh/config.env."
+        },
+        {
+          "keys": "tsda",
+          "action": "open/attach tmux session 'sda' rooted at $CODE_DIR/sda",
+          "source": "custom",
+          "note": "identity-only wrapper over tmux_project."
+        },
+        {
+          "keys": "tdot",
+          "action": "open/attach tmux session 'dot' rooted at $MESH_IDENTITY_DIR (~/mesh-identity)",
+          "source": "custom",
+          "note": "identity-only wrapper over tmux_project."
+        },
+        {
+          "keys": "td",
+          "action": "(not defined) — no 'td' alias exists in the deployed config",
+          "source": "custom",
+          "note": "Task brief listed td but it is absent from aliases.sh and the workstation tmux fragment; only tl/ta/tn/tm and th/tsda/tdot exist."
+        },
+        {
+          "keys": "cc",
+          "action": "claude --dangerously-skip-permissions",
+          "source": "custom",
+          "note": "identity-only; opt-in skip-permissions, deliberately NOT in public bootstrap."
+        },
+        {
+          "keys": "ccc",
+          "action": "claude --dangerously-skip-permissions --continue",
+          "source": "custom",
+          "note": "identity-only."
+        },
+        {
+          "keys": "ccr",
+          "action": "claude --dangerously-skip-permissions --resume",
+          "source": "custom",
+          "note": "identity-only."
+        },
+        {
+          "keys": "claude-mem",
+          "action": "run claude-mem worker-service.cjs via bun",
+          "source": "custom",
+          "platforms": [
+            "wsl"
+          ],
+          "note": "hardcoded plugin path under ~/.claude/plugins/...; gated on file existence, not portable."
+        },
+        {
+          "keys": "art / artisan",
+          "action": "php artisan",
+          "source": "custom",
+          "note": "60-web-stack, opt-in (INCLUDE_WEBSTACK=1 only)."
+        },
+        {
+          "keys": "cinst",
+          "action": "composer install",
+          "source": "custom",
+          "note": "60-web-stack opt-in; siblings cdump/cup."
+        },
+        {
+          "keys": "migrate / refresh / rollback",
+          "action": "php artisan migrate / migrate:refresh / migrate:rollback",
+          "source": "custom",
+          "note": "60-web-stack opt-in; also fresh, seed, db:reset, aserve, dusk, phpunit/pu/puf/pud."
+        },
+        {
+          "keys": "srn / ssn",
+          "action": "restart / status nginx",
+          "source": "custom",
+          "note": "60-web-stack opt-in service helpers."
+        },
+        {
+          "keys": "srp / ssp",
+          "action": "restart / status php-fpm (detected version)",
+          "source": "custom",
+          "note": "60-web-stack opt-in; PHP version resolved at load time."
+        },
+        {
+          "keys": "srr / ssr",
+          "action": "restart / status redis",
+          "source": "custom",
+          "note": "60-web-stack opt-in."
+        },
+        {
+          "keys": "ts",
+          "action": "tailscale status",
+          "source": "custom",
+          "note": "70-remote-access, opt-in (INCLUDE_REMOTE=1); whole fragment gated on command -v tailscale."
+        },
+        {
+          "keys": "tip",
+          "action": "tailscale ip -4",
+          "source": "custom",
+          "note": "70-remote-access opt-in."
+        },
+        {
+          "keys": "tup / tdown",
+          "action": "sudo tailscale up / down",
+          "source": "custom",
+          "note": "70-remote-access opt-in."
+        },
+        {
+          "keys": "tping <host>",
+          "action": "tailscale ping <host>",
+          "source": "custom",
+          "note": "70-remote-access opt-in."
+        },
+        {
+          "keys": "tssh <host>",
+          "action": "tailscale ssh <host> (mesh key mgmt, bypasses local sshd)",
+          "source": "custom",
+          "note": "70-remote-access opt-in."
+        },
+        {
+          "keys": "tip-of <hostname>",
+          "action": "print Tailscale IP of a host by name",
+          "source": "custom",
+          "note": "70-remote-access opt-in; shell function not plain alias."
+        },
+        {
+          "keys": "tnetcheck",
+          "action": "tailscale netcheck",
+          "source": "custom",
+          "note": "70-remote-access opt-in."
+        }
+      ]
+    }
+  ]
+}
+```
+
+═══════════════════════════════════════════════════════════════════
+5 · OUTPUT — what to produce
+═══════════════════════════════════════════════════════════════════
+
+Produce, in this order:
+
+1. `Shortcuts.preview.tsx` — an HTML/Tailwind React component that VISUALLY
+   SIMULATES the terminal in the Claude Design iframe (monospace, `#1e1e2e` base,
+   colours inline via `style={{}}` so hex is reviewable, borders drawn with literal
+   box chars, `@font-face` for the attached CaskaydiaMono woff2). Render the **100×30**
+   frame AND the **60×20** frame; add any extra frame your design implies (e.g. a
+   search-active state, if you choose to have search).
+
+2. `Shortcuts.ink.tsx` — the SAME component decomposition in real Ink, importing real
+   blink primitives, `useTokens`/`useGlyph`, and the headless hooks; the app owns Ink
+   `useInput`. Tokens, not hex; no `<div>`/className/emoji. Define `ShortcutsProps`
+   (takes the `shortcuts` model + the live `{columns, rows}`), identical in both files.
+
+3. `## new blink primitives proposed` — for any generic capability blink lacked, a
+   short spec per primitive (name, the domain-neutral problem it solves, props, why it
+   belongs in blink vs staying app-level).
+
+4. `## glyph requests` — any glyph you used but that blink's packs lack, each with
+   proposed {nerd, unicode, ascii} variants.
+
+The diff between (A) and (B) must be leaf-level only (`<div>`+style ↔ `<Box>`+props,
+`<span>` ↔ `<Text>`): same sub-component names, same state/hooks in both.
+
+Confirm you have ingested this by replying with exactly:
+  Primed. send "go" to generate Shortcuts.
+Do NOT generate any artifact in this first turn.
+````
+
+---
+
+## related
+
+- blink API (real, current): `scripts/menu/node_modules/@henryavila/blink-tui/dist/index.d.ts`
+- canonical data: `topics/shell-terminal/data/shortcuts.json`
+- prescriptive sister prompt (for contrast): `docs/2026-05-29-topicpicker-claude-design-prompt.md`
+- shortcuts cheat-sheet (markdown, generated from the same data): `docs/TMUX.md`

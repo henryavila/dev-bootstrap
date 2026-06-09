@@ -33,6 +33,10 @@ Native-Linux users outside WSL: no terminal emulator config runs. Use whatever t
   `mesh topic <TAB>` reads the official topic list from `mesh topic list` when
   available, with a static fallback for fresh installs.
 - Fzf shortcuts: `Ctrl+R` (history), `Ctrl+T` (file finder), `Alt+C` (cd fuzzy).
+- **tmux:** the prefix is **`Ctrl-a`** (not the upstream `Ctrl-b`). Full keybindings
+  cheat-sheet — splits, panes, resize, windows, copy-mode, and per-client (PC/Mac/Moshi)
+  notes — in [`docs/TMUX.md`](../../docs/TMUX.md). Session aliases (`tl`/`ta`/`tn`/`tm`) in
+  [`docs/ALIASES.md`](../../docs/ALIASES.md).
 - `BAT_THEME=Catppuccin-mocha` exported so `bat` renders in the same palette as the terminal.
 
 `30-shell` adds `~/.local/share/zsh/site-functions` to `fpath` before
