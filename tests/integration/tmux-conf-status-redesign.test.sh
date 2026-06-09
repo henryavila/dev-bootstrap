@@ -72,6 +72,10 @@ assert_pattern_present "$CONF" '@mesh_home' \
     "G — \$HOME resolved at load for the ~-abbreviated cwd"
 assert_pattern_present "$CONF" 'status-format\[1\]' \
     "G — second status line format installed"
+# Regression guard: #{T:...} strftime's the whole line INCLUDING #() command
+# text — a printf "%s" inside the git fragment rendered as the epoch.
+assert_pattern_absent "$CONF" '@mesh_line2.*printf' \
+    "G — line 2 segments never use printf (strftime eats %-sequences)"
 
 # ── Functional: the conf parses and applies on a scratch server ─────────────
 if command -v tmux >/dev/null 2>&1; then
