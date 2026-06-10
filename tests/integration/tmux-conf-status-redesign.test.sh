@@ -30,8 +30,14 @@ for var in '@catppuccin_window_default_text' '@catppuccin_window_current_text'; 
     assert_pattern_present "$CONF" "set -g $var" \
         "A — overrides $var before TPM loads the theme"
 done
-assert_pattern_present "$CONF" 'automatic-rename},on' \
-    "A — tab text branches on automatic-rename (manual rename wins)"
+assert_pattern_present "$CONF" '#\{\?#\{automatic-rename\},' \
+    "A — tab text branches on the automatic-rename flag (manual rename wins)"
+# Regression guards — two format bugs froze every tab to the #W fallback
+# (static "claude" instead of Claude Code's live task title):
+assert_pattern_absent "$CONF" 'automatic-rename\},on' \
+    "A — no ==on comparison (boolean options render 1/0 in formats)"
+assert_pattern_absent "$CONF" '\[\^: \]' \
+    "A — no literal : in the s/// strip pattern (aborts modifier parsing)"
 # Literal ERE escaping of the strip expression is unreadable; pin the two
 # halves that matter — the user@host strip head and the 24-col truncation.
 assert_pattern_present "$CONF" 's/\^\[\^@ ' \
@@ -113,6 +119,39 @@ if command -v tmux >/dev/null 2>&1; then
         "$(tmux -L "$SOCK" show -g 'status-format[1]' 2>/dev/null)" \
         '@mesh_line2_left' \
         "functional — line 2 format references the left segment"
+
+    # ── Functional: smart tab text — branch 2 (dynamic app titles) ──────
+    # Render the template's tab format against synthetic pane titles on a
+    # window running `sleep` (no shell OSC writes racing the test). This
+    # is the branch the two format gotchas above silently killed: tabs
+    # froze to #W while pane_title kept updating underneath.
+    fmt="$(tmux -L "$SOCK" show -gqv @catppuccin_window_default_text)"
+    win="$(tmux -L "$SOCK" new-window -t probe -d -P -F '#{window_id}' 'sleep 300')"
+    render() { tmux -L "$SOCK" display-message -p -t "$win" "$fmt"; }
+
+    tmux -L "$SOCK" select-pane -t "$win" -T 'Fix dynamic titles'
+    assert_eq "$(render)" ' Fix dynamic titles' \
+        "functional — app title ≠ host shows in the tab (dynamic titles)"
+
+    tmux -L "$SOCK" select-pane -t "$win" -T 'henry@crc-box: ~/code/mesh'
+    assert_eq "$(render)" ' ~/code/mesh' \
+        "functional — user@host: prefix stripped from remote-shell titles"
+
+    long='abcdefghijklmnopqrstuvwxyz012345'
+    tmux -L "$SOCK" select-pane -t "$win" -T "$long"
+    assert_eq "$(render)" " ${long:0:24}…" \
+        "functional — long titles truncated at 24 cols with ellipsis"
+
+    tmux -L "$SOCK" select-pane -t "$win" \
+        -T "$(tmux -L "$SOCK" display-message -p -t "$win" '#{host}')"
+    assert_eq "$(render)" " $(tmux -L "$SOCK" display-message -p -t "$win" '#W')" \
+        "functional — title == host falls back to #W (no host in a tab)"
+
+    tmux -L "$SOCK" set -w -t "$win" automatic-rename off
+    tmux -L "$SOCK" rename-window -t "$win" PINNED
+    tmux -L "$SOCK" select-pane -t "$win" -T 'Some app title'
+    assert_eq "$(render)" ' PINNED' \
+        "functional — manual rename wins over a live app title"
 
     tmux -L "$SOCK" kill-server 2>/dev/null || true
 else
