@@ -302,20 +302,14 @@ summary, read the password from that file on this host." >> "$MESH_FOLLOWUP_FILE
 read_interactive_password() {
     local first="" second=""
 
-    {
-        printf '\n85-code-server password\n'
-        printf 'Enter a password for code-server. Leave blank to generate one: '
-    } >/dev/tty
-    IFS= read -r -s first </dev/tty || first=""
-    printf '\n' >/dev/tty
+    printf '\n85-code-server password\n' >/dev/tty
+    first="$(ask_secret 'Enter a password for code-server (blank = generate one)')"
 
     if [[ -z "$first" ]]; then
         return 1
     fi
 
-    printf 'Confirm code-server password: ' >/dev/tty
-    IFS= read -r -s second </dev/tty || second=""
-    printf '\n' >/dev/tty
+    second="$(ask_secret 'Confirm code-server password')"
 
     if [[ "$first" != "$second" ]]; then
         followup critical "code-server passwords did not match; rerun the topic and try again."

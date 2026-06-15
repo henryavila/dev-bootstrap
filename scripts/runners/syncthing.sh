@@ -32,6 +32,9 @@ export MESH_WORKSTATION_DIR
 . "$MESH_WORKSTATION_DIR/scripts/lib/env.sh" 2>/dev/null || true
 # shellcheck disable=SC1091
 . "$MESH_WORKSTATION_DIR/scripts/lib/syncthing-rest.sh"
+# Reusable blink-styled interactive prompts.
+# shellcheck disable=SC1091
+. "$MESH_WORKSTATION_DIR/scripts/lib/log.sh"
 
 _die() { printf 'mesh syncthing: %s\n' "$*" >&2; exit 1; }
 
@@ -64,8 +67,7 @@ verb_pair() {
 
     local pending; pending="$(printf '%s' "$json" | st_py get pending_approve)"
     if [[ "$pending" = "true" ]] && _interactive; then
-        # shellcheck disable=SC2162
-        read -p "  Press Enter once you've approved this device on the hub… " _ </dev/tty || true
+        pause "Press Enter once you've approved this device on the hub…"
         _verify_loop "$data"
     elif [[ "$pending" = "true" ]]; then
         echo "  [non-interactive] approve this device on the hub UI later, then re-run \`mesh syncthing pair\`."
@@ -110,25 +112,13 @@ try: sys.exit(0 if not json.load(sys.stdin).get("hubs") else 1)
 except Exception: sys.exit(1)'
 }
 
-# Ask the ONE guided question on the tty; echo the chosen topology to stdout.
-# Derives introducer downstream — never asks it separately. Default = star.
+# Ask the ONE guided question; echo the chosen topology id (mesh|star) to stdout.
+# Derives introducer downstream — never asks it separately. Default = star. A
+# blink-tui select (or a numbered bash menu) — the choice ids ARE the values.
 _ask_topology() {
-    {
-        echo
-        echo "  How many machines will share this mesh?"
-        echo "    1) A few (≤ ~6)  → mesh   all-to-all, resilient, no hub need stay online   [recommended for small setups]"
-        echo "    2) Many (dozens) → star   scales to many machines; the hub must stay online"
-    } >/dev/tty
-    local ans
-    while true; do
-        # shellcheck disable=SC2162
-        read -p "  Choose [1/2] (default 2 = star): " ans </dev/tty || { echo star; return 0; }
-        case "${ans:-2}" in
-            1)    echo mesh; return 0 ;;
-            2|"") echo star; return 0 ;;
-            *)    echo "  Please enter 1 or 2." >/dev/tty ;;
-        esac
-    done
+    ask_select 'How many machines will share this mesh?' star \
+        'mesh=A few (≤ ~6) — all-to-all, resilient, no always-on hub [recommended for small setups]' \
+        'star=Many (dozens) — scales to many machines; the hub must stay online'
 }
 
 # Confirm a flip away from a deliberate (non-star) topology. rc0 = proceed.
@@ -138,10 +128,7 @@ _confirm_topology_change() {
     cur="$(_cur_topology "$data")"
     [[ -n "$cur" && "$cur" != "star" && "$cur" != "$want" ]] || return 0
     _interactive || return 0
-    local c
-    # shellcheck disable=SC2162
-    read -p "  This mesh is currently '$cur'. Switch to '$want'? [y/N]: " c </dev/tty || c=n
-    [[ "$c" =~ ^[Yy]$ ]] && return 0
+    confirm "This mesh is currently '$cur'. Switch to '$want'?" && return 0
     echo "  keeping topology: $cur"
     return 1
 }

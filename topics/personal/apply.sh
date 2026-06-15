@@ -21,38 +21,28 @@ _has_tty() { : </dev/tty >/dev/null 2>&1; }
 # (the backend in identity-repo.sh does the gh-auth check + `gh repo create`).
 # Sets MESH_IDENTITY_REPO and/or CREATE_IDENTITY_FROM_TEMPLATE + MESH_IDENTITY_NEW_REPO_*.
 _prompt_identity_repo() {
-    local ans tmpl owner name priv def_owner
+    local tmpl owner name def_owner
     printf '\n' >/dev/tty
     info "No mesh-identity repo is configured for this machine."
-    printf 'Create a new private repo from a GitHub template? [y/N] ' >/dev/tty
-    read -r ans </dev/tty || ans=""
 
-    if [[ "$ans" =~ ^[Yy] ]]; then
-        printf 'Template repo (owner/name, e.g. henryavila/dotfiles-template): ' >/dev/tty
-        read -r tmpl </dev/tty || tmpl=""
+    if confirm 'Create a new private repo from a GitHub template?'; then
+        tmpl="$(ask_line 'Template repo (owner/name, e.g. henryavila/dotfiles-template)')"
         if [[ -z "$tmpl" ]]; then
             warn "no template given — skipping identity create"
             return 0
         fi
         def_owner="$(gh api user -q .login 2>/dev/null || true)"
-        printf 'New repo owner [%s]: ' "${def_owner:-your-gh-login}" >/dev/tty
-        read -r owner </dev/tty || owner=""
-        owner="${owner:-$def_owner}"
-        printf 'New repo name [mesh-identity]: ' >/dev/tty
-        read -r name </dev/tty || name=""
-        name="${name:-mesh-identity}"
-        printf 'Private? [Y/n] ' >/dev/tty
-        read -r priv </dev/tty || priv=""
+        owner="$(ask_line "New repo owner [${def_owner:-your-gh-login}]" "$def_owner")"
+        name="$(ask_line 'New repo name [mesh-identity]' 'mesh-identity')"
 
         export CREATE_IDENTITY_FROM_TEMPLATE=1
         export MESH_IDENTITY_TEMPLATE_REPO="$tmpl"
         export MESH_IDENTITY_NEW_REPO_OWNER="$owner"
         export MESH_IDENTITY_NEW_REPO_NAME="$name"
-        [[ "$priv" =~ ^[Nn] ]] && export MESH_IDENTITY_NEW_REPO_PRIVATE=0 || export MESH_IDENTITY_NEW_REPO_PRIVATE=1
+        if confirm 'Private?' y; then export MESH_IDENTITY_NEW_REPO_PRIVATE=1; else export MESH_IDENTITY_NEW_REPO_PRIVATE=0; fi
         export MESH_IDENTITY_REPO="$owner/$name"   # satisfies downstream + records the new repo
     else
-        printf 'Existing mesh-identity repo (URL or owner/name), blank to skip: ' >/dev/tty
-        local url; read -r url </dev/tty || url=""
+        local url; url="$(ask_line 'Existing mesh-identity repo (URL or owner/name), blank to skip')"
         [[ -n "$url" ]] && export MESH_IDENTITY_REPO="$url"
     fi
 }

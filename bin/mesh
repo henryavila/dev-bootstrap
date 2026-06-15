@@ -980,10 +980,7 @@ _mesh_select_text() {
     done
     [[ -n "$default_display" ]] || default_display="none"
 
-    printf 'Hosts [%s]: ' "$default_display" >&2
-    if ! IFS= read -r answer; then
-        answer=""
-    fi
+    answer="$(ask_line "Hosts [$default_display]")"
 
     lowered="$(_lower "$answer")"
     case "$lowered" in

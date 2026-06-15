@@ -31,6 +31,10 @@ WS_ROOT="$(cd "$HERE/../.." && pwd)"
 TEMPLATE_DIR="${MESH_TEMPLATE_DIR:-$WS_ROOT/template}"
 IDENTITY_DIR="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}"
 
+# Reusable interactive prompts (blink-styled fields + confirm helpers).
+# shellcheck source=/dev/null
+. "$HERE/log.sh"
+
 _die()  { printf 'mesh init: %s\n' "$*" >&2; exit 2; }
 _info() { printf '==> %s\n' "$*"; }
 
@@ -93,9 +97,9 @@ _create_new() {
     local user_email="${GIT_EMAIL:-}"
     local gh_user="${MESH_INIT_GH_USER:-}"
     if [[ -t 0 ]]; then
-        [[ -n "$user_name"  ]] || read -rp "Your name: " user_name
-        [[ -n "$user_email" ]] || read -rp "Your email: " user_email
-        [[ -n "$gh_user"    ]] || read -rp "GitHub username: " gh_user
+        [[ -n "$user_name"  ]] || user_name="$(ask_line 'Your name')"
+        [[ -n "$user_email" ]] || user_email="$(ask_line 'Your email')"
+        [[ -n "$gh_user"    ]] || gh_user="$(ask_line 'GitHub username')"
     fi
     [[ -n "$user_name" && -n "$user_email" && -n "$gh_user" ]] \
         || _die "create-new needs name/email/gh_user (set GIT_NAME/GIT_EMAIL/MESH_INIT_GH_USER for non-interactive)"
@@ -135,9 +139,7 @@ _create_new() {
 
     # Optional `gh repo create` flow (skipped when MESH_INIT_NO_GH set / no TTY / no gh).
     if [[ -z "${MESH_INIT_NO_GH:-}" ]] && command -v gh >/dev/null 2>&1 && [[ -t 0 ]]; then
-        local yn
-        read -rp "Create private repo gh:$gh_user/${MESH_INIT_REPO_NAME:-mesh-identity}? (y/N) " yn
-        if [[ "$yn" =~ ^[yY]$ ]]; then
+        if confirm "Create private repo gh:$gh_user/${MESH_INIT_REPO_NAME:-mesh-identity}?"; then
             (
                 cd "$IDENTITY_DIR" \
                     && git init -q \
@@ -168,10 +170,10 @@ _interactive_select() {
         echo "  1) Adopt existing identity by URL"
         echo "  2) Create new identity from template"
         echo "  3) Skip"
-        read -rp "Choose [1-3]: " choice
+        choice="$(ask_line 'Choose [1-3]')"
     fi
     case "$choice" in
-        1) read -rp "Identity URL: " url; _adopt_url "$url" ;;
+        1) url="$(ask_line 'Identity URL')"; _adopt_url "$url" ;;
         2) _create_new ;;
         3) _info "skipped"; exit 0 ;;
         *) _die "invalid choice '$choice'" ;;
