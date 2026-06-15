@@ -64,7 +64,7 @@ PHP_VERSIONS="8.4 8.5" PHP_DEFAULT=8.5 \
 
 Every PHP version gets the same baseline. Lists live at:
 
-- `topics/10-languages/data/php-extensions-apt.txt` — apt packages (`php{VER}-bcmath` etc.), 17 today
+- `topics/10-languages/data/php-extensions-apt.txt` — apt packages (`php{VER}-bcmath` etc.), 18 today
 - `topics/10-languages/data/php-extensions-pecl.txt` — PECL builds (igbinary, imagick, mongodb, redis), ABI-matched per version
 - `topics/10-languages/data/php-extensions-mssql.txt` — opt-in (sqlsrv + pdo_sqlsrv)
 

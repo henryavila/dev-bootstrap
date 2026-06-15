@@ -27,6 +27,7 @@ ldap
 mbstring
 mysql
 odbc
+pgsql
 shmop
 sqlite3
 xml
