@@ -15,6 +15,16 @@ import { registerDomainGlyphs } from './glyphs.js';
 import { App, EXIT_CANCEL } from './wizard.js';
 
 async function main() {
+  // `prompt` subcommand → a single-field blink-tui input for bash (the secret
+  // key, init fields, confirmations) — the SAME engine as the wizard, not a
+  // bare `read`. Loaded dynamically so the wizard path is untouched.
+  const argv = process.argv.slice(2);
+  if (argv[0] === 'prompt') {
+    const { promptMain } = await import('./prompt-main.js');
+    await promptMain(argv.slice(1));
+    return;
+  }
+
   // The wizard is keyboard-interactive (Ink raw mode), which needs a real TTY.
   // Without one (piped stdin, CI, or a non-interactive `!`-style shell) Ink's
   // useInput would throw a raw-mode stack trace, so fail clearly instead and let

@@ -82,10 +82,15 @@ run deploy >/dev/null 2>&1
 [ -n "$(ls "$FAKE_HOME/.composer/"*.bak-* 2>/dev/null)" ] && ok || no "changed canonical made a backup"
 grep -q '"x":1' "$DEST" && ok || no "changed content deployed"
 
-# --- deploy: ciphertext source is skipped (repo locked) ---
+# --- deploy: ciphertext source (repo locked) → warns + rc!=0, never silent-green ---
+# A machine that HAS replicated secrets but is locked must not report success
+# with 0 of N deployed — install.sh's `|| log_warn` relies on the non-zero rc.
+# NON_INTERACTIVE=1 suppresses the key prompt so the test is deterministic.
 printf '\000GITCRYPT\000ciphertextblob' > "$ID/secrets/composer/auth.json"
-out="$(run deploy 2>&1)"
+out="$(HOME="$FAKE_HOME" MESH_IDENTITY_DIR="$ID" NON_INTERACTIVE=1 PATH="$TMP/bin:/usr/bin:/bin:$GITDIR" bash "$SECRET" deploy 2>&1)"; rc=$?
 printf '%s' "$out" | grep -qi "unlock" && ok || no "locked source warns to unlock"
+[ "$rc" -ne 0 ] && ok || no "locked deploy returns rc!=0 (does not report success)"
+printf '%s' "$out" | grep -qi "NOT deployed" && ok || no "locked deploy prints a loud banner"
 
 # --- doctor: reports unhealthy (git-crypt absent in this fixture) with rc!=0 ---
 run doctor >/dev/null 2>&1

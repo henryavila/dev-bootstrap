@@ -75,18 +75,9 @@ emit_custom_prefix_warning() {
 
 EOF
     if [[ -t 0 ]] && [[ -t 1 ]] && [[ "${NON_INTERACTIVE:-0}" != "1" ]]; then
-        local reply=""
-        printf '  Continue with prefix %s? [y/N] ' "$prefix" >&2
-        # `read -r` from /dev/tty so we don't get fooled by stdin redirects;
-        # a default empty answer => no.
-        if ! read -r reply </dev/tty 2>/dev/null; then
-            warn "  prompt blocked (no controlling tty?) — assuming 'no'"
-            return 1
-        fi
-        case "$reply" in
-            y|Y|yes|YES) return 0 ;;
-            *)           return 1 ;;
-        esac
+        # Blink-styled confirm; empty/blocked answer => no (default n).
+        confirm "Continue with prefix $prefix" && return 0
+        return 1
     fi
     # Non-interactive: log and proceed
     info "non-interactive context — proceeding with custom prefix without prompt"
@@ -184,8 +175,7 @@ decide_brew_prefix() {
 
     # 4. Interactive TTY → prompt
     if [[ -t 0 ]] && [[ -t 1 ]] && [[ "${NON_INTERACTIVE:-0}" != "1" ]]; then
-        local reply=""
-        # Print prompt to stderr so stdout stays clean for capture
+        # Print context to stderr so stdout stays clean for capture
         cat >&2 <<EOF
 
   Where should Homebrew live?
@@ -197,13 +187,11 @@ decide_brew_prefix() {
                               See bottle-less trade-offs warning below.
 
 EOF
-        printf '  prefix [/opt/homebrew]: ' >&2
-        if read -r reply </dev/tty 2>/dev/null; then
-            local chosen="${reply:-/opt/homebrew}"
-            printf 'BREW_DECISION_METHOD=%q\n' "prompt"
-            printf 'BREW_PREFIX_CHOSEN=%q\n' "$chosen"
-            return 0
-        fi
+        local chosen
+        chosen="$(ask_line 'Homebrew prefix' '/opt/homebrew')"
+        printf 'BREW_DECISION_METHOD=%q\n' "prompt"
+        printf 'BREW_PREFIX_CHOSEN=%q\n' "$chosen"
+        return 0
     fi
 
     # 5. Non-interactive default — warn() goes to stderr (won't pollute eval input).

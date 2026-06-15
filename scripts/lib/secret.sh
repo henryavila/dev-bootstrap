@@ -168,9 +168,13 @@ secret_unlock() {
         local b64="$arg"
         if [ -z "$b64" ]; then
             [ -e /dev/tty ] || { fail "usage: mesh secret unlock <keyfile> | <base64> (or run interactively to paste)"; return 1; }
-            b64="$(_ask_secret 'Paste the base64 git-crypt key (from your password manager): ')"
+            # Required field: a blank Enter must not slip past silently — confirm
+            # the skip, otherwise re-prompt (ask_secret_or_skip handles the loop).
+            if ! b64="$(ask_secret_or_skip 'Paste the base64 git-crypt key (from your password manager)' 'No key entered — skip unlocking this machine for now?')"; then
+                warn "skipped — repo stays locked. Run 'mesh secret unlock' when you have the key."
+                return 1
+            fi
         fi
-        [ -n "$b64" ] || { fail "no key provided"; return 1; }
         keyfile="$(mktemp)"; cleanup=1
         if ! printf '%s' "$b64" | _b64_decode > "$keyfile" 2>/dev/null || [ ! -s "$keyfile" ]; then
             rm -f "$keyfile"; fail "could not decode base64 key (paste the full string)"; return 1
@@ -233,10 +237,44 @@ _deploy_login() {
     fi
 }
 
+# Count applicable file/env-token sources whose committed blob is still
+# ciphertext — i.e. the repo is locked HERE and they cannot be deployed.
+# >0 means deploy can't complete until `mesh secret unlock` runs.
+_secret_locked_count() {
+    local i type src n=0
+    i=0
+    while [ "$i" -lt "${INTEGRATION_COUNT:-0}" ]; do
+        if _applies_here "$i"; then
+            type="$(_f "$i" TYPE)"
+            if [ "$type" = "file" ]; then
+                src="$(_f "$i" SOURCE)"
+                [ -n "$src" ] && _is_ciphertext "$ID_DIR/$src" && n=$((n + 1))
+            fi
+        fi
+        i=$((i + 1))
+    done
+    # The env-token store is a single encrypted file shared by all env-tokens.
+    [ -n "${ENV_SRC:-}" ] && _is_ciphertext "$ENV_SRC" && n=$((n + 1))
+    printf '%s' "$n"
+}
+
 secret_deploy() {
     _manifest_load || return 1
     # shellcheck source=/dev/null
     . "$LIB_DIR/deploy.sh"
+
+    # A machine that HAS replicated secrets but is LOCKED must not be skipped in
+    # silence — that is the "install looks green, deployed nothing" trap. When a
+    # TTY is available, configure it now by asking for the key (secret_unlock
+    # auto-installs git-crypt and decrypts the working tree in place).
+    local locked
+    locked="$(_secret_locked_count)"
+    if [ "$locked" -gt 0 ] && [ "${NON_INTERACTIVE:-0}" != "1" ] && [ -e /dev/tty ]; then
+        warn "This machine has $locked replicated secret(s) but the repo is LOCKED here."
+        info "Paste the git-crypt key to configure them now (or press Enter to skip)."
+        secret_unlock || warn "still locked — encrypted secrets will not be deployed"
+    fi
+
     local i type
     i=0
     while [ "$i" -lt "${INTEGRATION_COUNT:-0}" ]; do
@@ -252,6 +290,21 @@ secret_deploy() {
         i=$((i + 1))
     done
     _deploy_env_store
+
+    # Don't report success while encrypted secrets were left undeployed: fail
+    # loudly so the rc is non-zero (install.sh's `|| log_warn` fires) and the
+    # user sees an actionable banner instead of a silent green install.
+    locked="$(_secret_locked_count)"
+    if [ "$locked" -gt 0 ]; then
+        warn "──────────────────────────────────────────────────────────────"
+        warn " $locked secret(s) NOT deployed — the repo is LOCKED on this machine."
+        warn " Configure replication with your git-crypt key:"
+        warn "     mesh secret unlock        # paste the base64 key, then:"
+        warn "     mesh secret deploy"
+        warn "──────────────────────────────────────────────────────────────"
+        return 1
+    fi
+    return 0
 }
 
 # Deploy the encrypted env-token store to the runtime path the install engine
@@ -332,9 +385,11 @@ secret_doctor() {
 
 # ── wizards (add / set / rm) ─────────────────────────────────────────────────
 
-_ask() { local p="$1" def="${2:-}" ans; printf '%s' "$p" >&2; IFS= read -r ans </dev/tty || true; printf '%s' "${ans:-$def}"; }
-_ask_secret() { local p="$1" ans; printf '%s' "$p" >&2; IFS= read -r -s ans </dev/tty || true; printf '\n' >&2; printf '%s' "$ans"; }
-_yn() { local p="$1" ans; ans="$(_ask "$p [y/N]: ")"; case "$ans" in [yY]|[yY][eE][sS]) return 0;; *) return 1;; esac; }
+# Thin wrappers over the standardized prompt module in log.sh (blink-styled,
+# reusable). Kept so the wizard call sites stay terse.
+_ask() { ask_line "$1" "${2:-}"; }
+_ask_secret() { ask_secret "$1"; }
+_yn() { confirm "$1"; }
 
 # Append a manifest entry from KEY=VALUE pairs passed as args (id first).
 # _manifest_append <id> <field:value>...
