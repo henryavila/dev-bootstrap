@@ -114,6 +114,7 @@ Usage:
   mesh menu [--apply]               Interactive item selector (standalone or with apply)
   mesh secret <verb>                Manage replicated personal secrets (git-crypt 2-tier)
   mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
+  mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -241,6 +242,21 @@ Subcommands:
                                 key + prints the new password (recovery path).
              url                print the admin UI URL.
 
+  clean    Reclaim disk space across mac / WSL / native Linux. Iterates a
+           registry of per-tool cleaner modules (scripts/lib/cleaners/*.sh),
+           each self-gated by OS + tool presence. DRY-RUN by default (lists
+           reclaimable caches, deletes nothing). Flags:
+             --apply    purge Tier-1 caches (npm/pip/uv/composer/apt/journal/
+                        JetBrains/… — regenerable, no re-download cost).
+             --deep     also purge Tier-2 (Playwright/Puppeteer browsers,
+                        torch/HuggingFace model caches — re-downloaded on use).
+             --compact  WSL only: the ext4.vhdx never auto-shrinks, so this
+                        hands off the Windows-side `wsl --shutdown` +
+                        `wsl --manage <distro> --set-sparse true` that returns
+                        freed space to C: (no-op off-WSL).
+             --yes/-y   skip the --apply confirmation (for automation).
+           Never deletes source, venvs, secrets, or ~/.local/share data.
+
 Examples:
   mesh                              Open the panel
   mesh status crc                   Drill-down on host 'crc'
@@ -267,6 +283,10 @@ Examples:
   mesh secret deploy               Place all enabled Tier-2 secret files
   mesh syncthing pair              Reconcile this node into the Syncthing mesh
   mesh syncthing status            Show peer + folder convergence
+  mesh clean                       Dry-run: what dev caches can be reclaimed
+  mesh clean --apply               Purge Tier-1 caches
+  mesh clean --apply --deep        Also purge heavy browser/model caches
+  mesh clean --apply --deep --compact   Full reclaim, then shrink the WSL VHDX
 
 Configuration:
   ~/.config/mesh/mesh-status.conf       (alias map, run hosts, repos tracked, retention)
@@ -1361,6 +1381,15 @@ sub_menu() {
     fi
 }
 
+# `mesh clean [--apply] [--deep] [--compact] [--yes]` → OS-aware disk reclaim.
+# Iterates the cleaner registry (scripts/lib/cleaners/*.sh); dry-run by default.
+sub_clean() {
+    local runner
+    runner="$(_resolve_companion "runners/clean.sh")"
+    [[ -n "$runner" ]] || _die "runners/clean.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$runner" "$@"
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
@@ -1435,6 +1464,10 @@ case "${1:-status}" in
     syncthing)
         shift
         sub_syncthing "$@"
+        ;;
+    clean)
+        shift
+        sub_clean "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.
