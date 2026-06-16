@@ -38,6 +38,8 @@ REPO="$(cd "$HERE/../.." && pwd)"
 . "$REPO/scripts/lib/managed-block.sh"
 # shellcheck disable=SC1091
 . "$REPO/scripts/lib/deploy.sh"   # deploy_map_emit() — shared deploy.map parser
+# shellcheck disable=SC1091
+. "$REPO/scripts/lib/external-brew-mount.sh"   # ebm_detect/ebm_report_line (mac-only)
 # The deploy set lives in identity's deploy.map data file (post-restructure:
 # workstation has no top-level install.sh; the set is identity-owned DATA per
 # spec D-B3 / §C18, and as of audit T-001 is a deploy.map, not a MAPPINGS array
@@ -67,9 +69,10 @@ fi
 
 # ─── Accumulators ──────────────────────────────────────────────────
 count_ok=0 count_drift=0 count_missing=0 count_marker_miss=0
-count_launchd_phantom=0 count_composer_phar=0
+count_launchd_phantom=0 count_composer_phar=0 count_ext_brew_mount=0
 drift_items=() missing_items=() marker_miss_items=()
 launchd_phantom_items=() composer_phar_items=()
+ext_brew_mount_desc=""
 
 # ─── Parse the deploy.map (shared parser) ──────────────────────────
 # Emits one normalized "src|dst|mode|perms" row per entry via deploy_map_emit —
@@ -236,6 +239,21 @@ check_composer_phar() {
     esac
 }
 
+# ─── External-brew mount-disambiguation check (Mac only) ───────────
+# Detects the *materialized* failure (distinct from check_launchd_volume_paths,
+# which flags the racy PLISTS that cause it): brew's prefix volume is mounted
+# at a disambiguated path (e.g. "/Volumes/External 1") because a phantom dir
+# occupies its canonical mount point. Read-only here; `mesh doctor --fix` heals
+# it via scripts/runners/heal-external-brew-mount.sh. Generic + name-agnostic
+# (the volume name is read from diskutil, never hardcoded). No-op off Darwin.
+check_external_brew_mount() {
+    ebm_supported || return 0
+    if ebm_detect; then
+        count_ext_brew_mount=1
+        ext_brew_mount_desc="$(ebm_report_line)"
+    fi
+}
+
 # ─── Fragments listing ─────────────────────────────────────────────
 list_fragments() {
     local dir label
@@ -260,12 +278,13 @@ done < <(parse_mappings)
 check_markers
 check_launchd_volume_paths
 check_composer_phar
+check_external_brew_mount
 
 # ─── Output ────────────────────────────────────────────────────────
 if [[ "$JSON" == 1 ]]; then
     # Minimal JSON without jq (so the script has no runtime deps)
-    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,' \
-        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar"
+    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,"ext_brew_mount":%d,' \
+        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar" "$count_ext_brew_mount"
     printf '"drift_items":['
     sep=""
     # bash 3.2 + set -u: empty `"${arr[@]}"` is unbound; guard with size.
@@ -317,6 +336,7 @@ else
         echo "  ${C_WARN}!${C_RESET} marker miss    : $count_marker_miss"
         echo "  ${C_ERR}✗${C_RESET} launchd phantom: $count_launchd_phantom"
         echo "  ${C_ERR}✗${C_RESET} composer PHAR  : $count_composer_phar"
+        echo "  ${C_ERR}✗${C_RESET} ext-brew mount : $count_ext_brew_mount"
     fi
 
     # The `(( count_* > 0 ))` guards already imply array non-empty (only the
@@ -350,12 +370,18 @@ else
         for p in "${composer_phar_items[@]}"; do echo "  ✗ $p"; done
         echo "  ${C_DIM}fix: brew reinstall --build-from-source composer${C_RESET}"
     fi
+    if (( count_ext_brew_mount > 0 )); then
+        echo
+        echo "${C_ERR}External-brew volume mounted at a disambiguated path (phantom collision):${C_RESET}"
+        echo "  ✗ $ext_brew_mount_desc"
+        echo "  ${C_DIM}fix: mesh doctor --fix  (heals the mount, then repairs the stack)${C_RESET}"
+    fi
 
     list_fragments
 fi
 
 # Exit code: 0 iff no drift/missing/phantom
-if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 )); then
+if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 || count_ext_brew_mount > 0 )); then
     exit 1
 fi
 exit 0
