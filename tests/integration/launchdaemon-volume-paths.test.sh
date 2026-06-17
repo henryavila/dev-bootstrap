@@ -38,7 +38,10 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-WEB_MAC="$ROOT/topics/60-web-stack/mac/launchdaemon-hardening.sh"
+# Topic was renamed 60-web-stack → web during the engine migration (commit
+# 8e46092). The hardening script moved with it; the assertion labels below
+# still say "60-web-stack" but the path is the live one.
+WEB_MAC="$ROOT/topics/web/mac/launchdaemon-hardening.sh"
 DETECT="$ROOT/scripts/lib/detect-brew.sh"
 
 assert_pattern_present() {
