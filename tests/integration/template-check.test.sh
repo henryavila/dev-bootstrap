@@ -108,6 +108,19 @@ MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
     bash "$TC" >/dev/null 2>&1; rc=$?
 assert_eq "$rc" "0" "skip namespaces tolerate missing identity counterpart"
 
+# In-repo git worktrees (.worktrees/<name>) are git-ignored nested checkouts —
+# often a full identity checkout — and must NOT be read as un-templated paths.
+pair="$SANDBOX/skip-worktrees"
+_build_pair "$pair"
+mkdir -p "$pair/identity/.worktrees/mesh-services/ssh" \
+         "$pair/identity/.worktrees/mesh-services/sync"
+echo "wt-config"   > "$pair/identity/.worktrees/mesh-services/ssh/config"
+echo "wt-yaml"     > "$pair/identity/.worktrees/mesh-services/sync/syncthing-mesh.yaml"
+out=$(MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
+    bash "$TC" 2>&1); rc=$?
+assert_eq "$rc" "0" ".worktrees/ nested checkouts are skipped (no drift)"
+assert_not_contains "$out" ".worktrees" "drift report never names .worktrees paths"
+
 # ─── Test 6: --quiet ────────────────────────────────────────────────
 echo
 echo "Test 6: --quiet suppresses output"

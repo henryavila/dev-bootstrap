@@ -36,6 +36,11 @@ QUIET=0
 
 SKIP_PREFIXES=(
     ".git/"
+    # In-repo git worktrees (.worktrees/<name>) are git-ignored nested checkouts,
+    # not identity content — their files (often a full identity checkout) must not
+    # be mistaken for un-templated paths. This walk hits the filesystem, not git,
+    # so the ignore must be explicit here.
+    ".worktrees/"
     "tests/"
     "docs/"
     ".ai/memory/"
