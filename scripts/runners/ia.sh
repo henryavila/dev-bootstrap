@@ -134,19 +134,25 @@ _ia_route() {
     fi
 }
 
-# Blink picker (preferred): feed candidates, read the chosen line back. Returns
-# non-zero (and prints nothing) when the menu app/runtime is unavailable so the
-# caller can fall back.
+# Blink picker (preferred): feed candidates, read the chosen line back. Exit
+# codes mirror ia-pick-main so the caller can tell cancel from unavailable:
+#   0   → chosen line printed
+#   130 → user pressed Esc (cancel): open nothing, do NOT fall back
+#   1   → menu app/runtime unavailable: caller may fall back to the bash picker
 _ia_pick_blink() {
-    local menu="$REPO/scripts/menu/index.js" cand="$1" out
+    local menu="$REPO/scripts/menu/index.js" cand="$1" out rc
     [[ "${MESH_IA_PICKER:-}" == "bash" ]] && return 1
     command -v node >/dev/null 2>&1 || return 1
     [[ -f "$menu" ]] || return 1
     out="$(mktemp -t mesh-ia-pick.XXXXXX)" || return 1
-    if node "$menu" ia-pick --in "$cand" --out "$out" </dev/tty >/dev/tty 2>/dev/null; then
+    node "$menu" ia-pick --in "$cand" --out "$out" </dev/tty >/dev/tty 2>/dev/null
+    rc=$?
+    if (( rc == 0 )); then
         cat "$out"; rm -f "$out"; return 0
     fi
-    rm -f "$out"; return 1
+    rm -f "$out"
+    (( rc == 130 )) && return 130   # Esc → cancel, never fall through to bash
+    return 1                        # anything else → blink unavailable
 }
 
 # Bash fallback picker: a plain numbered chooser on the tty (used when blink is
@@ -206,6 +212,13 @@ if [[ -n "$TERM_ARG" ]] && (( N_FILTERED == 1 )); then
 fi
 
 # Otherwise (no term, or an ambiguous term) → the picker over the filtered set.
-CHOICE="$(_ia_pick_blink "$FILT_FILE")" || CHOICE="$(_ia_pick_bash "$FILT_FILE")" || exit 0
+# Esc in the blink picker (rc 130) cancels outright; only an *unavailable* blink
+# (rc 1) falls back to the bash picker.
+CHOICE="$(_ia_pick_blink "$FILT_FILE")"; PICK_RC=$?
+if (( PICK_RC == 130 )); then
+    exit 0
+elif (( PICK_RC != 0 )); then
+    CHOICE="$(_ia_pick_bash "$FILT_FILE")" || exit 0
+fi
 [[ -n "$CHOICE" ]] || exit 0
 _ia_route "$CHOICE"

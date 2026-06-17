@@ -245,6 +245,30 @@ STUB
     NLOG="$(cat "$HERDR_LOG")"
     assert_not_contains "$NLOG" "workspace create" "unknown term never creates"
     assert_not_contains "$NLOG" "workspace focus" "unknown term never focuses"
+
+    # Esc in the blink picker (node exits 130) cancels outright — it must NOT
+    # fall through to the bash numbered-list picker, and must open nothing.
+    # Needs a real /dev/tty (the picker redirects from it); skip if headless.
+    if ( exec </dev/tty >/dev/tty ) 2>/dev/null; then
+        NBIN="$SANDBOX/nbin"; mkdir -p "$NBIN"
+        cat > "$NBIN/node" <<'STUB'
+#!/usr/bin/env bash
+# Stub: emulate ia-pick-main's Esc-cancel path (exit 130, write nothing).
+exit 130
+STUB
+        chmod +x "$NBIN/node"
+        : > "$HERDR_LOG"
+        ESC_OUT="$(HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" IA_ROOTS="$R1:$R2" \
+            PATH="$NBIN:$RBIN:$PATH" MESH_IA_AGENT=claude \
+            bash "$RUNNER" 2>&1; echo "rc=$?")"
+        assert_contains "$ESC_OUT" "rc=0" "Esc in blink picker exits 0 (cancel)"
+        assert_not_contains "$ESC_OUT" "pick a number" "Esc never falls back to the bash numbered picker"
+        ELOG="$(cat "$HERDR_LOG")"   # read-only discovery calls are fine; a mutation is not
+        assert_not_contains "$ELOG" "workspace create" "Esc opens nothing (no create)"
+        assert_not_contains "$ELOG" "workspace focus" "Esc opens nothing (no focus)"
+    else
+        echo "── Esc-cancel: SKIPPED (no /dev/tty) ──"
+    fi
 else
     echo "── runner: SKIPPED (jq absent) ──"
 fi
