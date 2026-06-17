@@ -25,6 +25,14 @@ async function main() {
     return;
   }
 
+  // `ia-pick` subcommand → the realtime-filter project picker for `mesh ia`
+  // (scripts/runners/ia.sh feeds candidates, reads the chosen line back).
+  if (argv[0] === 'ia-pick') {
+    const { iaPickMain } = await import('./ia-pick-main.js');
+    await iaPickMain(argv.slice(1));
+    return;
+  }
+
   // The wizard is keyboard-interactive (Ink raw mode), which needs a real TTY.
   // Without one (piped stdin, CI, or a non-interactive `!`-style shell) Ink's
   // useInput would throw a raw-mode stack trace, so fail clearly instead and let

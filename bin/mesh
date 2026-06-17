@@ -115,6 +115,7 @@ Usage:
   mesh secret <verb>                Manage replicated personal secrets (git-crypt 2-tier)
   mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
   mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
+  mesh ai [term] [--agent X]        Open an AI agent in the right repo via herdr (disk-search + focus-or-create)
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -256,6 +257,20 @@ Subcommands:
                         freed space to C: (no-op off-WSL).
              --yes/-y   skip the --apply confirmation (for automation).
            Never deletes source, venvs, secrets, or ~/.local/share data.
+
+  ai       Open an AI agent in the right repo via herdr (the agent multiplexer).
+           Discovers repos one level under each root in $IA_ROOTS (default per OS
+           — mac: /Volumes/External/Code + ~; WSL/Linux: $CODE_DIR + ~), then:
+             • a <term> that matches exactly one repo opens it directly;
+             • no term / an ambiguous term → a searchable picker listing open
+               herdr workspaces (focus) above discoverable repos (create);
+             • routing: an open workspace → `herdr workspace focus`; a repo →
+               `herdr workspace create --cwd … --label …` + launch the agent.
+           Flags:
+             --agent X  use claude|codex|gemini for this run (remembered per
+                        project; default + personal flags come from mesh-identity).
+             --list     print the discovered catalogue and exit (no launch).
+           mesh-identity aliases this to `mesh ia` with claude + its own flags.
 
 Examples:
   mesh                              Open the panel
@@ -1390,6 +1405,17 @@ sub_clean() {
     exec bash "$runner" "$@"
 }
 
+# `mesh ai [term] [--agent X]` → open an AI agent in the right repo via herdr.
+# Discovers repos on disk (multi-root) and hands the chosen one to herdr (focus
+# if open, else create + launch). mesh-identity aliases this to `mesh ia` with
+# the personal default agent + flags (see extensions/mesh.sh).
+sub_ai() {
+    local runner
+    runner="$(_resolve_companion "runners/ia.sh")"
+    [[ -n "$runner" ]] || _die "runners/ia.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$runner" "$@"
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
@@ -1468,6 +1494,10 @@ case "${1:-status}" in
     clean)
         shift
         sub_clean "$@"
+        ;;
+    ai)
+        shift
+        sub_ai "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.
