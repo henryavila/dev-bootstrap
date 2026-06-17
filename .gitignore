@@ -19,3 +19,6 @@ Thumbs.db
 
 # Derived catalog (regenerate via `mesh catalog generate`)
 /.catalog/
+
+# In-repo git worktrees (kept inside the repo, never committed)
+/.worktrees/
