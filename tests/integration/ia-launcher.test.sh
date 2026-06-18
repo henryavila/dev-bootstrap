@@ -54,7 +54,9 @@ assert_contains "$MISS" "repoA" "still discovers from the existing root"
 assert_not_contains "$MISS" "$SANDBOX/nope" "missing root yields no rows"
 
 echo "── ia-roots / defaults ──"
-# `~` expansion + `:`/newline split.
+# `~` expansion + `:`/newline split. The literal ~ is intentional — it
+# exercises ia_roots' own tilde expansion, so it must NOT pre-expand here.
+# shellcheck disable=SC2088
 ROOTS_OUT="$(IA_ROOTS="~/foo:~/bar" ia_roots)"
 assert_contains "$ROOTS_OUT" "$HOME/foo" "expands ~ in IA_ROOTS"
 assert_contains "$ROOTS_OUT" "$HOME/bar" "splits IA_ROOTS on :"
