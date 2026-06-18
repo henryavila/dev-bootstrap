@@ -37,6 +37,18 @@ deploy_one() {
     local src_path="$src_base/$src"
     [[ -r "$src_path" ]] || { echo "[deploy] missing source: $src_path" >&2; return 1; }
 
+    # Refuse to deploy a half-scaffolded source. init.sh substitutes the user
+    # tokens (__USER_NAME__/__USER_EMAIL__/__GH_USERNAME__) but leaves the SSH
+    # pubkey sentinel for the human to fill in by hand. Deploying it would
+    # splice a dead placeholder over real content — e.g. overwrite a live
+    # ~/.ssh/authorized_keys and lock every real key out (2026-06-17: a parity
+    # init leaked exactly this into a deployed host). Refuse here so no scaffold
+    # can clobber a deployed host; the next deploy from a filled source heals it.
+    if grep -q '__REPLACE_WITH_YOUR_PUBLIC_KEY__' "$src_path" 2>/dev/null; then
+        echo "[deploy] $src_path contains an unfilled scaffold placeholder (__REPLACE_WITH_YOUR_PUBLIC_KEY__); refusing to deploy to $dst" >&2
+        return 2
+    fi
+
     mkdir -p "$(dirname "$dst")" || return $?
     case "$mode" in
         overwrite)

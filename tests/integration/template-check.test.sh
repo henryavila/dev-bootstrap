@@ -222,12 +222,36 @@ assert_eq "$rc" "0" "bin/mesh template-check rc=0"
 echo
 echo "Test 11: scaffolded identity from real template/ → parity"
 real_id="$SANDBOX/scaffolded-identity"
+# `mesh init --create-identity` runs the scaffold's install.sh, which DEPLOYS
+# into $HOME (~/.gitconfig.local, ~/.ssh/authorized_keys, shell drop-ins, …).
+# Sandbox HOME so this test can NEVER mutate the developer's real home
+# (2026-06-17: an unsandboxed run here spliced the scaffold's placeholder
+# authorized_keys onto a real host and locked it out).
+init_home="$SANDBOX/init-home"; mkdir -p "$init_home"
+# Tripwire: fingerprint representative real-$HOME files; they must be byte-for-
+# byte unchanged after init runs, proving the deploy was fully contained.
+_fp_real_home() {
+    local f
+    for f in "$HOME/.ssh/authorized_keys" "$HOME/.gitconfig.local"; do
+        if [[ -e "$f" ]]; then shasum "$f"; else echo "absent $f"; fi
+    done
+}
+real_home_pre=$(_fp_real_home)
+
 MESH_TEMPLATE_DIR="$REPO_ROOT/template" \
 MESH_IDENTITY_DIR="$real_id" \
+HOME="$init_home" \
 MESH_INIT_NO_GH=1 \
 GIT_NAME="Parity User" GIT_EMAIL="p@example.com" MESH_INIT_GH_USER="parityuser" \
     bash "$INIT_SH" --create-identity </dev/null >/dev/null 2>&1
 assert_file_exists "$real_id/install.sh" "scaffold succeeded (install.sh present)"
+# The deploy landed in the SANDBOX home — proves HOME isolation actually
+# contains install.sh's writes (and that init does deploy to $HOME).
+assert_file_exists "$init_home/.gitconfig.local" "mesh init deploy contained in sandbox HOME"
+# The developer's REAL home is untouched.
+real_home_post=$(_fp_real_home)
+assert_eq "$real_home_post" "$real_home_pre" "mesh init did not mutate the real \$HOME"
+
 MESH_TEMPLATE_DIR="$REPO_ROOT/template" MESH_IDENTITY_DIR="$real_id" \
     bash "$TC" >/dev/null 2>&1; rc=$?
 assert_eq "$rc" "0" "fresh scaffolded identity passes template-check"
