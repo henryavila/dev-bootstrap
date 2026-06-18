@@ -20,6 +20,7 @@
 #   bash scripts/runners/doctor.sh            # human-readable report
 #   bash scripts/runners/doctor.sh --quiet    # only drift/missing lines
 #   bash scripts/runners/doctor.sh --json     # structured output (for automation)
+#   bash scripts/runners/doctor.sh --fix      # re-sync drifted/missing mappings
 #
 # Override knobs (forks using a non-mesh-workstation installer):
 #   DOCTOR_MARKER_FILES   space-separated list of files to check for the
@@ -49,10 +50,12 @@ DEPLOY_MAP="$IDENTITY/deploy.map"
 
 QUIET=0
 JSON=0
+FIX=0
 for a in "$@"; do
     case "$a" in
         --quiet|-q) QUIET=1 ;;
         --json)     JSON=1  ;;
+        --fix)      FIX=1   ;;
         --help|-h)
             sed -n '2,32p' "$0"
             exit 0
@@ -70,8 +73,9 @@ fi
 # ─── Accumulators ──────────────────────────────────────────────────
 count_ok=0 count_drift=0 count_missing=0 count_marker_miss=0
 count_launchd_phantom=0 count_composer_phar=0 count_ext_brew_mount=0
+count_fixed=0
 drift_items=() missing_items=() marker_miss_items=()
-launchd_phantom_items=() composer_phar_items=()
+launchd_phantom_items=() composer_phar_items=() fixed_items=()
 ext_brew_mount_desc=""
 
 # ─── Parse the deploy.map (shared parser) ──────────────────────────
@@ -86,6 +90,27 @@ parse_mappings() {
     deploy_map_emit "$DEPLOY_MAP" 2>/dev/null
 }
 
+# In --fix mode, re-deploy one mapping from the identity tree to heal a drifted
+# or missing dst. deploy_one (sourced from deploy.sh above) re-applies the exact
+# entry install.sh would. On failure the item stays visible under its original
+# category so the run still exits non-zero.
+_fix_mapping() {
+    local raw="$1" dst="$2" src="$3" kind="$4"   # kind: drift | missing
+    if deploy_one "$raw" "$IDENTITY" >/dev/null 2>&1; then
+        count_fixed=$((count_fixed + 1))
+        fixed_items+=("$dst  (src=$src)")
+        return 0
+    fi
+    if [[ "$kind" == "missing" ]]; then
+        count_missing=$((count_missing + 1))
+        missing_items+=("$dst  (src=$src) — fix FAILED")
+    else
+        count_drift=$((count_drift + 1))
+        drift_items+=("$dst  (src=$src) — fix FAILED")
+    fi
+    return 1
+}
+
 check_mapping() {
     local raw="$1"
     local src dst mode
@@ -98,8 +123,12 @@ check_mapping() {
     [[ ! -f "$src_abs" ]] && return 0
 
     if [[ ! -e "$dst" ]]; then
-        count_missing=$((count_missing + 1))
-        missing_items+=("$dst  (src=$src)")
+        if [[ "$FIX" == "1" ]]; then
+            _fix_mapping "$raw" "$dst" "$src" missing
+        else
+            count_missing=$((count_missing + 1))
+            missing_items+=("$dst  (src=$src)")
+        fi
         return 0
     fi
 
@@ -118,6 +147,8 @@ check_mapping() {
         # extra lines on purpose. Compare just the marker-bounded slice.
         if managed_block_in_sync "$src_abs" "$dst" "$src"; then
             count_ok=$((count_ok + 1))
+        elif [[ "$FIX" == "1" ]]; then
+            _fix_mapping "$raw" "$dst" "$src" drift
         else
             count_drift=$((count_drift + 1))
             drift_items+=("$dst  (src=$src)")
@@ -127,6 +158,8 @@ check_mapping() {
 
     if cmp -s "$src_abs" "$dst"; then
         count_ok=$((count_ok + 1))
+    elif [[ "$FIX" == "1" ]]; then
+        _fix_mapping "$raw" "$dst" "$src" drift
     else
         count_drift=$((count_drift + 1))
         drift_items+=("$dst  (src=$src)")
@@ -283,8 +316,8 @@ check_external_brew_mount
 # ─── Output ────────────────────────────────────────────────────────
 if [[ "$JSON" == 1 ]]; then
     # Minimal JSON without jq (so the script has no runtime deps)
-    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,"ext_brew_mount":%d,' \
-        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar" "$count_ext_brew_mount"
+    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,"ext_brew_mount":%d,"fixed":%d,' \
+        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar" "$count_ext_brew_mount" "$count_fixed"
     printf '"drift_items":['
     sep=""
     # bash 3.2 + set -u: empty `"${arr[@]}"` is unbound; guard with size.
@@ -326,6 +359,14 @@ if [[ "$JSON" == 1 ]]; then
             sep=","
         done
     fi
+    printf '],"fixed_items":['
+    sep=""
+    if (( ${#fixed_items[@]} > 0 )); then
+        for d in "${fixed_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
     printf ']}\n'
 else
     if [[ "$QUIET" == 0 ]]; then
@@ -347,9 +388,14 @@ else
         echo "${C_WARN}Missing (install.sh never ran, or user deleted):${C_RESET}"
         for m in "${missing_items[@]}"; do echo "  ! $m"; done
     fi
+    if (( count_fixed > 0 )); then
+        echo
+        echo "${C_OK}Re-synced (deploy refreshed from src — was drifted/missing):${C_RESET}"
+        for f in "${fixed_items[@]}"; do echo "  ✓ $f"; done
+    fi
     if (( count_drift > 0 )); then
         echo
-        echo "${C_ERR}Drifted (dst differs from src — run install.sh to sync):${C_RESET}"
+        echo "${C_ERR}Drifted (dst differs from src — run 'mesh doctor --fix' to sync):${C_RESET}"
         for d in "${drift_items[@]}"; do echo "  ✗ $d"; done
     fi
     if (( count_marker_miss > 0 )); then

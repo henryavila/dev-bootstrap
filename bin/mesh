@@ -383,6 +383,12 @@ EOF
                 return 0
             fi
         fi
+        # Re-sync identity deploy drift first. setup.sh --repair (below) fixes
+        # installed-but-broken items, not config drift — without this, `mesh
+        # doctor --fix` detected drift but never healed it (2026-06-17).
+        local drift_runner
+        drift_runner="$(_resolve_companion "runners/doctor.sh" 2>/dev/null || true)"
+        [[ -n "$drift_runner" ]] && bash "$drift_runner" --fix --quiet || true
         exec bash "$repo/setup.sh" --repair "${passthrough[@]+"${passthrough[@]}"}"
     fi
     local runner
