@@ -531,6 +531,20 @@ assert_not_contains "$all_calls" "systemctl start" "Case 37a: reconcile never st
 assert_not_contains "$all_calls" "systemctl stop"  "Case 37b: reconcile never stops a running unit (G-3: boot bit only)"
 unset STUB_ENABLED
 
+# ─── Case 37c-f: reconcile SKIPS a non-orthogonal (brew) backend ──────────────
+# Explicit `reconcile <name>` on mac resolves mysql → brew||mysql. brew couples
+# the two bits (svc_enable=`brew services start` also runs, svc_disable=`brew
+# services stop` also stops), so reconcile — enabled-bit only — must SKIP it
+# rather than start/stop a running unit. The collateral guard cmd_action honours,
+# applied to reconcile (regression test for the silent start/stop bug).
+rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+out="$(PATH="$SHIM:$PATH" MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" reconcile mysql 2>&1)"; rc=$?
+brew_calls="$(calls brew)"
+assert_eq "$rc" 0 "Case 37c: reconcile of a brew (non-orthogonal) service exits 0 (skipped, not failed)"
+assert_contains "$out" "skipped" "Case 37d: reconcile reports the brew service skipped (couples boot+runtime)"
+assert_not_contains "$brew_calls" "services start" "Case 37e: reconcile never 'brew services start' (no collateral run)"
+assert_not_contains "$brew_calls" "services stop"  "Case 37f: reconcile never 'brew services stop' (no collateral stop)"
+
 # ─── Case 38: topic installers decoupled from inline auto-enable (structural) ──
 MYSQL_TOPIC="$REPO_ROOT/topics/databases/wsl/mysql.sh"
 DOCKER_TOPIC="$REPO_ROOT/topics/containers/post-setup-wsl.sh"

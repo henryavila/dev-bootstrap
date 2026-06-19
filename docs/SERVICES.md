@@ -44,8 +44,13 @@ badges read `running`/`stopped` (active) × `on-boot`/`no-boot` (enabled).
 
 On a **non-orthogonal** backend (brew) a verb that cannot preserve the
 unrequested bit says so in `status`; the runner **never silently mutates the bit
-you did not ask for**. WSL without systemd degrades to `service x start` + a
-nohup fallback and warns that enable/disable will not persist.
+you did not ask for** — and `reconcile` (enabled-bit only) **skips** a
+non-orthogonal backend entirely rather than start/stop a running unit.
+
+On a WSL host without systemd as PID 1, the systemd backend's `systemctl` calls
+fail with a clear error — there is no automatic fallback. Enable systemd in WSL
+(`/etc/wsl.conf` → `[boot]` `systemd=true`, then `wsl --shutdown`) to use
+`mesh services` there.
 
 ## `--all` discovery is read-only
 

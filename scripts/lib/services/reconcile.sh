@@ -85,13 +85,25 @@ services_reconcile_one() {
         [[ -n "$rid" ]] || continue
         [[ "$rid" == "$id" || "$rid" == "$id"@* ]] || continue
         acted=1
+        # Reconcile is enabled-bit-ONLY (codex F-004): it must never start or stop
+        # a running unit. A non-orthogonal backend (brew) cannot set the boot bit
+        # without also flipping runtime — svc_enable=`brew services start` (also
+        # runs), svc_disable=`brew services stop` (also stops). Honour the same
+        # capability matrix cmd_action enforces (svc_collateral) and skip it here.
+        if ! svc_orthogonal "$rkind"; then
+            printf 'reconcile: %s → skipped (%s couples boot+runtime; set boot-state via `mesh services enable/disable %s`)\n' "$rid" "$rkind" "$rid"
+            continue
+        fi
         if services_default_has "$rid"; then desired=on; else desired=off; fi
         current="$(_recon_enabled_now "$rkind" "$rscope" "$rtarget")"
-        if [[ "$desired" == on && "$current" != on ]]; then
+        # Act ONLY on a definite mismatch — leave `unknown` (static/masked/indirect
+        # units, where is-enabled is neither enabled nor disabled) untouched, so no
+        # spurious disable is issued and a re-run stays a no-op (idempotent).
+        if [[ "$desired" == on && "$current" == off ]]; then
             if svc_enable "$rkind" "$rscope" "$rtarget" >/dev/null 2>&1; then
                 printf 'reconcile: %s → enabled at boot\n' "$rid"
             else printf 'reconcile: %s → enable FAILED\n' "$rid" >&2; rc=1; fi
-        elif [[ "$desired" == off && "$current" != off ]]; then
+        elif [[ "$desired" == off && "$current" == on ]]; then
             if svc_disable "$rkind" "$rscope" "$rtarget" >/dev/null 2>&1; then
                 printf 'reconcile: %s → disabled at boot\n' "$rid"
             else printf 'reconcile: %s → disable FAILED\n' "$rid" >&2; rc=1; fi
