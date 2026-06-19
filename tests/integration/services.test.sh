@@ -101,10 +101,12 @@ SHIM="$SANDBOX/bin"
 SHIM_LOG="$SANDBOX/calls"
 mkdir -p "$SHIM" "$SHIM_LOG"
 
-# systemctl stub: log argv; answer is-active/is-enabled from env; else exit 0.
+# systemctl stub: log argv; optional targeted failure (STUB_SYSTEMCTL_FAIL is a
+# substring of the argv that should fail); answer is-active/is-enabled from env.
 cat >"$SHIM/systemctl" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >> "$SHIM_LOG/systemctl.calls"
+[[ -n "\${STUB_SYSTEMCTL_FAIL:-}" && "\$*" == *"\${STUB_SYSTEMCTL_FAIL}"* ]] && exit 1
 case "\$*" in
     *is-active*)  echo "\${STUB_ACTIVE:-active}";   [[ "\${STUB_ACTIVE:-active}" == active ]] ; exit \$? ;;
     *is-enabled*) echo "\${STUB_ENABLED:-enabled}"; [[ "\${STUB_ENABLED:-enabled}" == enabled ]] ; exit \$? ;;
@@ -223,5 +225,80 @@ assert_contains "$out" "active=on"      "Case 11a: launchd status active when a 
 assert_contains "$out" "orthogonal=yes" "Case 11b: launchd is reported orthogonal"
 run_drv "svc_enable launchd '' com.example.daemon" >/dev/null
 assert_contains "$(calls launchctl)" "enable gui/" "Case 11c: launchd enable runs launchctl enable in the gui domain"
+
+# ─── T-003 ───────────────────────────────────────────────────────────────────
+# The runner scripts/runners/services.sh: non-interactive verbs that resolve the
+# registry, dispatch the driver, and report per-service + aggregate exit. Run it
+# under MESH_SERVICES_OS=wsl with the same PATH-shim so systemd state/mutations
+# are stubbed. bin/mesh wiring is asserted structurally (the live dispatch is
+# G-2's manual check).
+
+RUNNER="$REPO_ROOT/scripts/runners/services.sh"
+assert_file_exists "$RUNNER" "T-003: runner scripts/runners/services.sh exists"
+
+# run_svc <args...> — run the runner (wsl OS) with the shim on PATH; reset logs.
+run_svc() {
+    rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+    PATH="$SHIM:$PATH" MESH_SERVICES_OS=wsl NO_COLOR=1 bash "$RUNNER" "$@"
+}
+
+# ─── Case 12: `list` (human) — badges + owner + header ───────────────────────
+out="$(run_svc list)"
+assert_contains "$out" "SERVICE"   "Case 12a: list prints a header row"
+assert_contains "$out" "mysql"     "Case 12b: list includes the mysql service"
+assert_contains "$out" "running"   "Case 12c: list shows the active badge (is-active→running)"
+assert_contains "$out" "on-boot"   "Case 12d: list shows the enabled badge (is-enabled→on-boot)"
+assert_contains "$out" "databases" "Case 12e: list shows the owning topic"
+
+# ─── Case 13: `list --porcelain` — machine row the TUI (T-004) consumes ──────
+out="$(run_svc list --porcelain)"
+assert_contains "$out" "mysql|MySQL|mysqld|databases|systemd|system|mysql|on|on" \
+    "Case 13: --porcelain emits id|…|target|active|enabled"
+
+# ─── Case 14: `status <name>` — two bits + backend ───────────────────────────
+out="$(run_svc status mysql)"
+assert_contains "$out" "MySQL"          "Case 14a: status names the service"
+assert_contains "$out" "systemd/system" "Case 14b: status shows the backend + scope"
+assert_contains "$out" "running"        "Case 14c: status shows active"
+assert_contains "$out" "on-boot"        "Case 14d: status shows enabled"
+
+# ─── Case 15: fuzzy/substring match on id ────────────────────────────────────
+out="$(run_svc status my)"
+assert_contains "$out" "MySQL (mysql)" "Case 15: a substring of the id resolves the service"
+
+# ─── Case 16: an ambiguous name is refused, not guessed ──────────────────────
+out="$(run_svc status s 2>&1)"; rc=$?
+assert_ne "$rc" 0 "Case 16a: an ambiguous name exits non-zero"
+assert_contains "$out" "ambiguous" "Case 16b: ...and names the candidates"
+
+# ─── Case 17: an unknown name is a clear error ───────────────────────────────
+out="$(run_svc status nope 2>&1)"; rc=$?
+assert_ne "$rc" 0 "Case 17a: an unknown name exits non-zero"
+assert_contains "$out" "no service matches" "Case 17b: ...with a clear no-match message"
+
+# ─── Case 18: multi-service verb — both acted, dispatched through the driver ─
+out="$(run_svc stop mysql redis 2>&1)"; rc=$?
+sudo_calls="$(calls sudo)"
+assert_eq "$rc" "0" "Case 18a: 'stop mysql redis' exits 0 when both succeed"
+assert_contains "$sudo_calls" "systemctl stop mysql"        "Case 18b: mysql stopped via sudo systemctl"
+assert_contains "$sudo_calls" "systemctl stop redis-server" "Case 18c: redis stopped via its apt unit name redis-server"
+
+# ─── Case 19: partial failure (bad name) → aggregate non-zero ────────────────
+out="$(run_svc stop mysql bogus 2>&1)"; rc=$?
+assert_ne "$rc" 0 "Case 19a: a bad name in a batch makes the verb exit non-zero"
+assert_contains "$out" "MySQL: stop"                "Case 19b: ...but the resolvable service is still acted on"
+assert_contains "$out" "no service matches 'bogus'" "Case 19c: ...and the bad name is reported"
+
+# ─── Case 20: driver failure → aggregate non-zero ────────────────────────────
+export STUB_SYSTEMCTL_FAIL='stop mysql'
+out="$(run_svc stop mysql redis 2>&1)"; rc=$?
+unset STUB_SYSTEMCTL_FAIL
+assert_ne "$rc" 0 "Case 20a: a failing driver mutation makes the verb exit non-zero"
+assert_contains "$out" "MySQL: stop failed" "Case 20b: the failing service is reported as failed"
+
+# ─── Case 21: bin/mesh wiring (structural; live dispatch is G-2) ─────────────
+MESH="$REPO_ROOT/bin/mesh"
+ASSERT_MSG="Case 21a: bin/mesh defines sub_services()" assert_true "grep -q 'sub_services()' '$MESH'"
+ASSERT_MSG="Case 21b: bin/mesh dispatches the 'services' subcommand" assert_true "grep -qE '^[[:space:]]*services\\)' '$MESH'"
 
 summary

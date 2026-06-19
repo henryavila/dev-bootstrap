@@ -116,6 +116,7 @@ Usage:
   mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
   mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
   mesh ai [term] [--agent X]        Open an AI agent in the right repo via herdr (disk-search + focus-or-create)
+  mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable) — active × enabled
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -302,6 +303,9 @@ Examples:
   mesh clean --apply               Purge Tier-1 caches
   mesh clean --apply --deep        Also purge heavy browser/model caches
   mesh clean --apply --deep --compact   Full reclaim, then shrink the WSL VHDX
+  mesh services list               List mesh-owned daemons with active/enabled badges
+  mesh services stop mysql redis   Stop both now (does not change boot state)
+  mesh services disable mysql      Stop mysql from starting at boot (leaves it running)
 
 Configuration:
   ~/.config/mesh/mesh-status.conf       (alias map, run hosts, repos tracked, retention)
@@ -1416,6 +1420,16 @@ sub_ai() {
     exec bash "$runner" "$@"
 }
 
+# `mesh services <verb> [name…]` → cross-platform service control plane.
+# Curated registry of mesh-owned daemons; two orthogonal bits active × enabled.
+# Verbs: list / status / start / stop / restart / enable / disable.
+sub_services() {
+    local runner
+    runner="$(_resolve_companion "runners/services.sh")"
+    [[ -n "$runner" ]] || _die "runners/services.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$runner" "$@"
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
@@ -1498,6 +1512,10 @@ case "${1:-status}" in
     ai)
         shift
         sub_ai "$@"
+        ;;
+    services)
+        shift
+        sub_services "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.
