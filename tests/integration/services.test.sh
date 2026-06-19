@@ -481,6 +481,22 @@ assert_contains "$ids_real" "php-fpm@8.2" "Case 33g: an enumerated php-fpm insta
 assert_contains "$ids_real" "postgres" "Case 33h: postgres is in the real opt-out set"
 assert_contains "$ids_real" "docker"   "Case 33i: docker is in the real opt-out set"
 
+# ─── Case 33j-k: install-path alias resolution sources mesh-status.conf (O-1) ──
+# A topic installer under setup.sh has no MESH_SERVICES_ALIAS exported; the file
+# must still resolve to services.default.<alias>, NOT services.default.<hostname>.
+RECON_LIB="$REPO_ROOT/scripts/lib/services/reconcile.sh"
+CONF_STUB="$SANDBOX/mesh-status.conf"; printf 'MESH_HOST_ALIAS=zeta\n' > "$CONF_STUB"
+p_alias="$(env -u MESH_SERVICES_ALIAS -u MESH_HOST_ALIAS -u MESH_SERVICES_DEFAULT \
+    MESH_STATUS_CONF="$CONF_STUB" MESH_IDENTITY_DIR=/id \
+    bash -c 'source "$1"; services_default_path' _ "$RECON_LIB")"
+assert_eq "$p_alias" "/id/config/services.default.zeta" \
+    "Case 33j: services_default_path resolves <alias> from mesh-status.conf MESH_HOST_ALIAS (not the raw hostname)"
+p_override="$(env -u MESH_SERVICES_DEFAULT MESH_SERVICES_ALIAS=crc \
+    MESH_STATUS_CONF="$CONF_STUB" MESH_IDENTITY_DIR=/id \
+    bash -c 'source "$1"; services_default_path' _ "$RECON_LIB")"
+assert_eq "$p_override" "/id/config/services.default.crc" \
+    "Case 33k: an explicit MESH_SERVICES_ALIAS overrides the conf alias"
+
 # run_svc_recon <default-contents> [args…] — runner `reconcile` over the hermetic
 # opt-out registry + a fixture services.default. STUB_ENABLED drives the current
 # boot bit the systemctl shim reports; mutations land in the sudo call-log.
@@ -544,6 +560,24 @@ assert_eq "$rc" 0 "Case 37c: reconcile of a brew (non-orthogonal) service exits 
 assert_contains "$out" "skipped" "Case 37d: reconcile reports the brew service skipped (couples boot+runtime)"
 assert_not_contains "$brew_calls" "services start" "Case 37e: reconcile never 'brew services start' (no collateral run)"
 assert_not_contains "$brew_calls" "services stop"  "Case 37f: reconcile never 'brew services stop' (no collateral stop)"
+
+# ─── Case 37g-h: services.default is authoritative OUTSIDE the opt-out set (O-2) ─
+# gamma is curated but NOT opt-out; a services.default opt-in must still reconcile
+# it (this is the mechanism that was a silent no-op on mac, where nothing is opt-out).
+export STUB_ENABLED=disabled
+out="$(run_svc_recon $'gamma\n' 2>&1)"; rc=$?
+sudo_calls="$(calls sudo)"
+assert_eq "$rc" 0 "Case 37g: reconcile of a non-opt-out opted-in service (gamma) exits 0"
+assert_contains "$sudo_calls" "systemctl enable gammaunit" \
+    "Case 37h: a services.default opt-in OUTSIDE the opt-out set is enabled (services.default authoritative)"
+unset STUB_ENABLED
+
+# ─── Case 37i-j: a stale/unknown services.default entry warns, never fails ────
+export STUB_ENABLED=enabled
+out="$(run_svc_recon $'nonsuch-xyz\n' 2>&1)"; rc=$?
+assert_eq "$rc" 0 "Case 37i: an unresolved services.default entry does not fail reconcile (mesh update stays green)"
+assert_contains "$out" "no such curated service" "Case 37j: ...and warns about the ignored entry"
+unset STUB_ENABLED
 
 # ─── Case 38: topic installers decoupled from inline auto-enable (structural) ──
 MYSQL_TOPIC="$REPO_ROOT/topics/databases/wsl/mysql.sh"

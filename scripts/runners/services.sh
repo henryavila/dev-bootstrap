@@ -198,14 +198,36 @@ cmd_action() {
 # unit (G-3: `disable` ≠ `stop`). With names, reconciles only those; with none,
 # every opt-out curated service for this OS. Driven by install + `mesh update`.
 cmd_reconcile() {
-    local rc=0 id ids
+    local rc=0 id ids reg entry matched r
     if [[ $# -gt 0 ]]; then
         for id in "$@"; do services_reconcile_one "$id" || rc=1; done
         return "$rc"
     fi
+    # No names: reconcile the UNION of (a) the OS opt-out set (enable/disable
+    # toward services.default) and (b) every id in this host's services.default
+    # that resolves to a curated row — so an opt-in OUTSIDE the opt-out set is
+    # applied too and services.default.<alias> is authoritative on every platform
+    # (without this, a host whose opt-out set is empty — e.g. mac, all-brew —
+    # silently ignored its services.default). A non-orthogonal (brew) target is
+    # skipped by services_reconcile_one; a stale/unknown services.default entry
+    # warns instead of failing `mesh update`.
     ids="$(services_optout_ids "$SERVICES_OS")"
+    reg="$(services_registry_resolve | cut -d '|' -f1)"
+    while IFS= read -r entry; do
+        [[ -n "$entry" ]] || continue
+        matched=0
+        while IFS= read -r r; do
+            [[ "$r" == "$entry" || "$r" == "$entry"@* ]] && { matched=1; break; }
+        done <<<"$reg"
+        if (( matched )); then
+            ids+="${ids:+$'\n'}$entry"
+        else
+            warn "services reconcile: services.default lists '$entry' — no such curated service for ${SERVICES_OS}; ignored"
+        fi
+    done < <(services_default_read)
+    ids="$(printf '%s\n' "$ids" | awk 'NF && !seen[$0]++')"
     if [[ -z "$ids" ]]; then
-        info "services reconcile: no opt-out services for ${SERVICES_OS}"
+        info "services reconcile: nothing to reconcile for ${SERVICES_OS} (no opt-out services, empty services.default)"
         return 0
     fi
     while IFS= read -r id; do

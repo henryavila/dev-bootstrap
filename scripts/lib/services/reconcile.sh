@@ -14,9 +14,10 @@
 #
 # Env:
 #   MESH_SERVICES_DEFAULT  full path to the services.default file (tests/override)
-#   MESH_SERVICES_ALIAS    host alias (mac|ultron|crc); else MESH_HOST_ALIAS;
-#                          else `hostname -s`. bin/mesh exports the resolved
-#                          alias (_mesh_self_alias) before delegating.
+#   MESH_SERVICES_ALIAS    host alias (mac|ultron|crc). bin/mesh exports the
+#                          resolved alias before delegating; when unset (a topic
+#                          installer under setup.sh), _recon_self_alias sources
+#                          mesh-status.conf for MESH_HOST_ALIAS / the alias map.
 #   MESH_IDENTITY_DIR      identity repo root (default $HOME/mesh-identity)
 #
 # Sourced; do not execute directly. No `set -e` (sourced lib; uses `:-` defaults
@@ -28,13 +29,38 @@ _RECON_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 declare -F services_registry_resolve >/dev/null 2>&1 || . "$_RECON_HERE/registry.sh"
 declare -F svc_status >/dev/null 2>&1 || . "$_RECON_HERE/driver.sh"
 
+# _recon_self_alias — resolve THIS host's mesh alias for services.default.<alias>.
+# Mirrors the canonical resolver (scripts/internal/mesh-snap _resolve_alias) and
+# SOURCES mesh-status.conf first, so the per-host MESH_HOST_ALIAS / alias map is
+# seen even when the caller is a topic installer under setup.sh that did not
+# export it — the bug where install-time reconcile read services.default.<hostname>
+# instead of <alias> on a host whose hostname ≠ alias (e.g. crc → crcmg005078).
+# Precedence: MESH_SERVICES_ALIAS → MESH_HOST_ALIAS → MESH_TAILSCALE_ALIAS_MAP[host] → host.
+_recon_self_alias() {
+    [[ -n "${MESH_SERVICES_ALIAS:-}" ]] && { printf '%s' "$MESH_SERVICES_ALIAS"; return 0; }
+    local conf="${MESH_STATUS_CONF:-$HOME/.config/mesh/mesh-status.conf}"
+    if [[ -r "$conf" ]]; then
+        # shellcheck source=/dev/null
+        . "$conf" 2>/dev/null || true
+    fi
+    [[ -n "${MESH_HOST_ALIAS:-}" ]] && { printf '%s' "$MESH_HOST_ALIAS"; return 0; }
+    local hn mapped
+    hn="$(hostname -s 2>/dev/null || hostname 2>/dev/null || printf unknown)"
+    if [[ -n "${MESH_TAILSCALE_ALIAS_MAP:-}" ]] && command -v jq >/dev/null 2>&1; then
+        mapped="$(printf '%s' "$MESH_TAILSCALE_ALIAS_MAP" | jq -r --arg h "$hn" '.[$h] // empty' 2>/dev/null)"
+        [[ -n "$mapped" ]] && { printf '%s' "$mapped"; return 0; }
+    fi
+    printf '%s' "$hn"
+}
+
 # services_default_path — resolve the per-host services.default file path.
 services_default_path() {
     if [[ -n "${MESH_SERVICES_DEFAULT:-}" ]]; then
         printf '%s' "$MESH_SERVICES_DEFAULT"
         return 0
     fi
-    local host_alias="${MESH_SERVICES_ALIAS:-${MESH_HOST_ALIAS:-$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo unknown)}}"
+    local host_alias
+    host_alias="$(_recon_self_alias)"
     printf '%s' "${MESH_IDENTITY_DIR:-$HOME/mesh-identity}/config/services.default.${host_alias}"
 }
 
