@@ -87,4 +87,141 @@ assert_not_contains "$out_mac" "good|" "Case 4e: a service with no descriptor fo
 err="$(resolve_in wsl "$FIX" 2>&1 1>/dev/null)"
 assert_contains "$err" "nometa" "Case 5: missing-meta module is reported on stderr"
 
+# ─── T-002 ───────────────────────────────────────────────────────────────────
+# Cross-platform drivers (systemd / brew / launchd) behind the uniform svc_*
+# interface in driver.sh. We exercise command DISPATCH + the capability matrix
+# OS-AGNOSTICALLY by shimming the platform binaries onto PATH and recording
+# their argv — the same stub-the-environment discipline T-001 used for the OS.
+# Real daemon behaviour is G-2's manual mac/crc check.
+
+DRIVER="$REPO_ROOT/scripts/lib/services/driver.sh"
+assert_file_exists "$DRIVER" "T-002: driver.sh (uniform svc_* interface) exists"
+
+SHIM="$SANDBOX/bin"
+SHIM_LOG="$SANDBOX/calls"
+mkdir -p "$SHIM" "$SHIM_LOG"
+
+# systemctl stub: log argv; answer is-active/is-enabled from env; else exit 0.
+cat >"$SHIM/systemctl" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$SHIM_LOG/systemctl.calls"
+case "\$*" in
+    *is-active*)  echo "\${STUB_ACTIVE:-active}";   [[ "\${STUB_ACTIVE:-active}" == active ]] ; exit \$? ;;
+    *is-enabled*) echo "\${STUB_ENABLED:-enabled}"; [[ "\${STUB_ENABLED:-enabled}" == enabled ]] ; exit \$? ;;
+esac
+exit 0
+EOF
+
+# sudo stub: log the wrapped command, then exec it (so the inner shim still runs).
+cat >"$SHIM/sudo" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$SHIM_LOG/sudo.calls"
+exec "\$@"
+EOF
+
+# brew stub: log argv; `services list` prints a canned table driven by env.
+cat >"$SHIM/brew" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$SHIM_LOG/brew.calls"
+if [[ "\$1" == services && "\$2" == list ]]; then
+    echo "Name Status User File"
+    echo "mysql \${STUB_BREW_MYSQL:-none} me -"
+    echo "redis \${STUB_BREW_REDIS:-none} me -"
+fi
+exit 0
+EOF
+
+# loginctl stub: log argv; show-user reports linger (default yes → no sudo path).
+cat >"$SHIM/loginctl" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$SHIM_LOG/loginctl.calls"
+[[ "\$1" == show-user ]] && echo "Linger=\${STUB_LINGER:-yes}"
+exit 0
+EOF
+
+# launchctl stub: log argv; `list <label>` returns a dict driven by env.
+cat >"$SHIM/launchctl" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$SHIM_LOG/launchctl.calls"
+if [[ "\$1" == list && -n "\${2:-}" ]]; then
+    [[ "\${STUB_LAUNCHD_LOADED:-1}" == 1 ]] || exit 1
+    echo '{'
+    [[ "\${STUB_LAUNCHD_PID:-1}" == 1 ]] && echo '  "PID" = 4242;'
+    echo '}'
+fi
+exit 0
+EOF
+chmod +x "$SHIM"/systemctl "$SHIM"/sudo "$SHIM"/brew "$SHIM"/loginctl "$SHIM"/launchctl
+
+# run_drv "<call>" — source the driver with the shim FIRST on PATH and run one
+# call (logs reset each time so each case is hermetic). Returns the call's rc.
+run_drv() {
+    rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+    PATH="$SHIM:$PATH" NO_COLOR=1 bash -c "source '$DRIVER'; $1"
+}
+calls() { cat "$SHIM_LOG/$1.calls" 2>/dev/null; }
+
+# ─── Case 6: systemd SYSTEM scope — reads need no root, mutations use sudo ────
+out="$(run_drv "svc_status systemd system mysql")"
+sd_calls="$(calls systemctl)"; sudo_calls="$(calls sudo)"
+assert_contains "$out" "active=on"      "Case 6a: systemd status maps is-active → active=on"
+assert_contains "$out" "enabled=on"     "Case 6b: systemd status maps is-enabled → enabled=on"
+assert_contains "$out" "orthogonal=yes" "Case 6c: systemd is reported orthogonal"
+assert_contains "$sd_calls" "is-active mysql" "Case 6d: status reads via systemctl is-active"
+assert_not_contains "$sudo_calls" "systemctl"  "Case 6e: a systemd STATUS read never uses sudo"
+
+run_drv "svc_start systemd system mysql" >/dev/null
+assert_contains "$(calls sudo)" "systemctl start mysql" "Case 6f: systemd system START is wrapped in sudo"
+assert_contains "$(calls systemctl)" "start mysql"      "Case 6g: ...and reaches systemctl start"
+
+# ─── Case 7: systemd USER scope (mailpit) — systemctl --user, never sudo ─────
+run_drv "svc_status systemd user mailpit" >/dev/null
+assert_contains "$(calls systemctl)" "--user is-active mailpit" "Case 7a: user-scope status reads via systemctl --user"
+
+run_drv "svc_start systemd user mailpit" >/dev/null
+assert_contains "$(calls systemctl)" "--user start mailpit" "Case 7b: user-scope start uses systemctl --user"
+assert_not_contains "$(calls sudo)" "systemctl"             "Case 7c: user-scope start never sudo-runs systemctl"
+
+run_drv "svc_enable systemd user mailpit" >/dev/null
+assert_contains "$(calls systemctl)" "--user enable mailpit" "Case 7d: user-scope enable uses systemctl --user"
+assert_not_contains "$(calls sudo)" "systemctl"              "Case 7e: user-scope enable never sudo-runs systemctl"
+
+# ─── Case 8: brew NON-ORTHOGONAL verb→command mapping (codex F-001) ──────────
+run_drv "svc_start brew '' mysql" >/dev/null
+assert_contains "$(calls brew)"     "services run mysql"  "Case 8a: brew START → brew services run (active only)"
+assert_not_contains "$(calls brew)" "services start"      "Case 8b: brew start does NOT register login autostart"
+
+run_drv "svc_enable brew '' mysql" >/dev/null
+assert_contains "$(calls brew)" "services start mysql" "Case 8c: brew ENABLE → brew services start (runs + registers)"
+
+run_drv "svc_stop brew '' mysql" >/dev/null
+assert_contains "$(calls brew)" "services stop mysql" "Case 8d: brew STOP → brew services stop"
+
+out="$(run_drv "export STUB_BREW_MYSQL=started; svc_status brew '' mysql")"
+assert_contains "$out" "orthogonal=no" "Case 8e: brew status labels the backend non-orthogonal"
+assert_contains "$out" "active=on"     "Case 8f: brew 'started' → active=on"
+out="$(run_drv "export STUB_BREW_MYSQL=none; svc_status brew '' mysql")"
+assert_contains "$out" "active=off"    "Case 8g: brew 'none' → active=off"
+
+# ─── Case 9: the capability matrix as queryable data ─────────────────────────
+ASSERT_MSG="Case 9a: svc_orthogonal systemd → true"  assert_true  "run_drv 'svc_orthogonal systemd' >/dev/null"
+ASSERT_MSG="Case 9b: svc_orthogonal launchd → true"  assert_true  "run_drv 'svc_orthogonal launchd' >/dev/null"
+ASSERT_MSG="Case 9c: svc_orthogonal brew → false"    assert_false "run_drv 'svc_orthogonal brew'    >/dev/null"
+assert_eq "$(run_drv 'svc_collateral brew enable')"    "active"  "Case 9d: brew ENABLE collaterally flips active"
+assert_eq "$(run_drv 'svc_collateral brew stop')"      "enabled" "Case 9e: brew STOP collaterally flips enabled"
+assert_eq "$(run_drv 'svc_collateral brew start')"     ""        "Case 9f: brew START is clean (no collateral)"
+assert_eq "$(run_drv 'svc_collateral systemd enable')" ""        "Case 9g: systemd enable has no collateral"
+
+# ─── Case 10: an unknown backend kind is rejected, never silently dispatched ─
+out="$(run_drv "svc_start bogus system x" 2>&1)"; rc=$?
+assert_ne "$rc" 0 "Case 10a: dispatch to an unknown backend kind fails"
+assert_contains "$out" "unknown backend kind" "Case 10b: ...with a clear message"
+
+# ─── Case 11: launchd backend — orthogonal + gui-domain dispatch ─────────────
+out="$(run_drv "export STUB_LAUNCHD_PID=1; svc_status launchd '' com.example.daemon")"
+assert_contains "$out" "active=on"      "Case 11a: launchd status active when a PID is present"
+assert_contains "$out" "orthogonal=yes" "Case 11b: launchd is reported orthogonal"
+run_drv "svc_enable launchd '' com.example.daemon" >/dev/null
+assert_contains "$(calls launchctl)" "enable gui/" "Case 11c: launchd enable runs launchctl enable in the gui domain"
+
 summary
