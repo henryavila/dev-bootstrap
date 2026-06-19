@@ -301,4 +301,19 @@ MESH="$REPO_ROOT/bin/mesh"
 ASSERT_MSG="Case 21a: bin/mesh defines sub_services()" assert_true "grep -q 'sub_services()' '$MESH'"
 ASSERT_MSG="Case 21b: bin/mesh dispatches the 'services' subcommand" assert_true "grep -qE '^[[:space:]]*services\\)' '$MESH'"
 
+# ─── T-004 (shell side) ──────────────────────────────────────────────────────
+# The interactive no-arg flow lives in the blink-tui menu (TS, covered by the
+# menu vitest). Here we only assert the runner's NON-interactive contract: the
+# no-arg invocation must never hang in CI/scripts, and -h still prints usage.
+export NON_INTERACTIVE=1
+out="$(run_svc 2>&1)"; rc=$?
+unset NON_INTERACTIVE
+assert_eq "$rc" "0" "Case 22a: no-arg services in a non-interactive context exits 0 (never hangs)"
+assert_contains "$out" "Usage:"        "Case 22b: ...and prints usage instead of launching the TUI"
+assert_contains "$out" "interactive"   "Case 22c: usage documents the interactive no-arg flow"
+
+out="$(run_svc -h 2>&1)"; rc=$?
+assert_eq "$rc" "0" "Case 22d: -h prints usage and exits 0"
+assert_contains "$out" "mesh services list" "Case 22e: usage lists the verbs"
+
 summary

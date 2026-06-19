@@ -132,7 +132,83 @@ cmd_action() {
     return "$rc"
 }
 
-usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; }
+# ─── Interactive (no-arg) flow ───────────────────────────────────────────────
+# Blink picker (preferred): feed the porcelain rows, read `<id>\t<verb>` back.
+# Exit codes mirror services-main so the caller tells cancel from unavailable:
+#   0 → choice printed · 130 → Esc (cancel, do NOT fall back) · 1 → unavailable.
+_svc_pick_blink() {
+    local menu="$SVC_REPO/scripts/menu/index.js" rows="$1" infile out rc
+    [[ "${MESH_SERVICES_PICKER:-}" == bash ]] && return 1
+    command -v node >/dev/null 2>&1 || return 1
+    [[ -f "$menu" ]] || return 1
+    infile="$(mktemp -t mesh-svc-rows.XXXXXX)" || return 1
+    out="$(mktemp -t mesh-svc-out.XXXXXX)" || { rm -f "$infile"; return 1; }
+    printf '%s\n' "$rows" >"$infile"
+    node "$menu" services --in "$infile" --out "$out" </dev/tty >/dev/tty 2>/dev/null
+    rc=$?
+    if (( rc == 0 )); then cat "$out"; rm -f "$infile" "$out"; return 0; fi
+    rm -f "$infile" "$out"
+    (( rc == 130 )) && return 130
+    return 1
+}
+
+# Bash fallback picker: numbered service chooser → numbered context-aware action
+# chooser, both on /dev/tty (used when blink is unavailable, or
+# MESH_SERVICES_PICKER=bash). Prints the chosen `<id>\t<verb>`.
+_svc_pick_bash() {
+    local rows="$1" n=0 sel idx
+    local f_id f_display f_aliases f_owner f_kind f_scope f_target f_active f_enabled
+    local -a ids=() displays=() actives=() enableds=()
+    while IFS='|' read -r f_id f_display f_aliases f_owner f_kind f_scope f_target f_active f_enabled; do
+        [[ -n "$f_id" ]] || continue
+        n=$((n + 1))
+        ids+=("$f_id"); displays+=("$f_display"); actives+=("$f_active"); enableds+=("$f_enabled")
+        printf '  %2d) %-14s %-9s %-9s %s\n' \
+            "$n" "$f_display" "$(_badge_active "$f_active")" "$(_badge_enabled "$f_enabled")" "$f_kind" >&2
+    done <<<"$rows"
+    (( n > 0 )) || { log_error "services: nothing to control"; return 1; }
+    printf 'services> pick a number (or q): ' >&2
+    IFS= read -r sel </dev/tty || return 1
+    [[ "$sel" == q || -z "$sel" ]] && return 1
+    [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= n )) || { log_error "services: invalid choice"; return 1; }
+    idx=$((sel - 1))
+    # Context-aware verbs for the chosen service's two bits (mirrors actionsFor).
+    local -a verbs=()
+    case "${actives[$idx]}" in on) verbs+=(stop restart) ;; off) verbs+=(start) ;; *) verbs+=(start stop restart) ;; esac
+    case "${enableds[$idx]}" in on) verbs+=(disable) ;; off) verbs+=(enable) ;; *) verbs+=(enable disable) ;; esac
+    local i=0 v
+    for v in "${verbs[@]}"; do i=$((i + 1)); printf '  %2d) %s\n' "$i" "$v" >&2; done
+    printf 'services> action for %s (or q): ' "${displays[$idx]}" >&2
+    IFS= read -r sel </dev/tty || return 1
+    [[ "$sel" == q || -z "$sel" ]] && return 1
+    [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= ${#verbs[@]} )) || { log_error "services: invalid choice"; return 1; }
+    printf '%s\t%s' "${ids[$idx]}" "${verbs[$((sel - 1))]}"
+}
+
+# cmd_interactive — the no-arg flow: list → pick a service → pick an action →
+# run it. Non-interactive contexts (NON_INTERACTIVE=1 or no /dev/tty) print the
+# usage instead of launching, so `mesh services` never hangs in CI/scripts.
+cmd_interactive() {
+    if [[ "${NON_INTERACTIVE:-0}" == 1 || ! -e /dev/tty ]]; then
+        usage
+        return 0
+    fi
+    local rows choice id verb rc
+    rows="$(cmd_list --porcelain)"
+    if [[ -z "$rows" ]]; then
+        info "No mesh-owned services for this platform (${SERVICES_OS})."
+        return 0
+    fi
+    choice="$(_svc_pick_blink "$rows")"; rc=$?
+    if (( rc == 130 )); then return 0; fi              # Esc → cancel
+    if (( rc != 0 )); then choice="$(_svc_pick_bash "$rows")" || return 0; fi
+    [[ -n "$choice" ]] || return 0
+    IFS=$'\t' read -r id verb <<<"$choice"
+    [[ -n "$id" && -n "$verb" ]] || return 0
+    cmd_action "$verb" "$id"
+}
+
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
 
 verb="${1:-}"
 [[ $# -gt 0 ]] && shift
@@ -140,6 +216,7 @@ case "$verb" in
     list)                                cmd_list "$@" ;;
     status)                              cmd_status "$@" ;;
     start|stop|restart|enable|disable)   cmd_action "$verb" "$@" ;;
-    ""|-h|--help)                        usage; exit 0 ;;
+    -h|--help)                           usage; exit 0 ;;
+    "")                                  cmd_interactive ;;
     *) log_error "services: unknown verb '$verb' (try list|status|start|stop|restart|enable|disable)"; exit 2 ;;
 esac
