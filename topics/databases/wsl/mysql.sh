@@ -48,9 +48,21 @@ _server_running() {
     pgrep -u mysql -x mysqld >/dev/null 2>&1
 }
 
+# T-006: apply this daemon's boot-state from the per-host services.default via the
+# shared services lib (svc_enable/svc_disable), instead of forcing it on at boot
+# with `enable --now`. Isolated subshell (the lib sets `set -uo pipefail`) +
+# best-effort; never fatal to the install.
+_apply_boot_state() {
+    local recon
+    recon="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)/scripts/lib/services/reconcile.sh"
+    [[ -f "$recon" ]] || return 0
+    ( . "$recon" && services_reconcile_one "$1" ) 2>/dev/null || true
+}
+
 _start_server() {
     if _has_systemd; then
-        sudo systemctl enable --now mysql >/dev/null 2>&1 || true
+        sudo systemctl start mysql >/dev/null 2>&1 || true
+        _apply_boot_state mysql            # boot-state via services.default, not enable --now
     else
         sudo service mysql start >/dev/null 2>&1 || true
     fi

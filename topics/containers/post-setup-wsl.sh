@@ -34,12 +34,24 @@ install() {
     fi
 
     if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
-        echo "[docker-post-setup] enabling docker.service via systemd"
-        sudo systemctl enable --now docker.service >/dev/null 2>&1 \
-            || echo "[docker-post-setup] systemctl enable failed — start manually with 'sudo service docker start'" >&2
+        echo "[docker-post-setup] starting docker.service (boot-state via services.default)"
+        sudo systemctl start docker.service >/dev/null 2>&1 \
+            || echo "[docker-post-setup] systemctl start failed — start manually with 'sudo service docker start'" >&2
+        # T-006: boot autostart is decoupled from install — apply it from the
+        # per-host services.default via the shared services lib, not enable --now.
+        _apply_boot_state docker
     else
         echo "[docker-post-setup] non-systemd WSL — start daemon on demand with 'sudo service docker start'"
     fi
+}
+
+# T-006: reconcile docker's boot-state toward services.default (svc_enable/
+# svc_disable). Isolated subshell + best-effort; never fatal.
+_apply_boot_state() {
+    local recon
+    recon="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/scripts/lib/services/reconcile.sh"
+    [[ -f "$recon" ]] || return 0
+    ( . "$recon" && services_reconcile_one "$1" ) 2>/dev/null || true
 }
 
 verify() {

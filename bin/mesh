@@ -116,7 +116,7 @@ Usage:
   mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
   mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
   mesh ai [term] [--agent X]        Open an AI agent in the right repo via herdr (disk-search + focus-or-create)
-  mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable) — active × enabled
+  mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable/reconcile) — active × enabled
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -306,6 +306,7 @@ Examples:
   mesh services list               List mesh-owned daemons with active/enabled badges
   mesh services stop mysql redis   Stop both now (does not change boot state)
   mesh services disable mysql      Stop mysql from starting at boot (leaves it running)
+  mesh services reconcile          Apply this host's boot-state from services.default.<alias>
 
 Configuration:
   ~/.config/mesh/mesh-status.conf       (alias map, run hosts, repos tracked, retention)
@@ -1438,6 +1439,9 @@ sub_services() {
     local runner
     runner="$(_resolve_companion "runners/services.sh")"
     [[ -n "$runner" ]] || _die "runners/services.sh not found (set \$MESH_HOME or check installation)"
+    # Export the resolved host alias so `services reconcile` finds this host's
+    # services.default.<alias> (the runner/lib falls back to hostname otherwise).
+    export MESH_SERVICES_ALIAS="${MESH_SERVICES_ALIAS:-$(_mesh_self_alias)}"
     exec bash "$runner" "$@"
 }
 

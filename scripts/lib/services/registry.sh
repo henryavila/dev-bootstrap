@@ -139,6 +139,43 @@ services_discover_all() {
     esac
 }
 
+# services_optout <id> [os] — rc0 if <id> is opt-out at boot on <os> (default
+# SERVICES_OS), per its descriptor's svcdef_<id>_optout token list (space/comma
+# separated OS tokens; T-006). An enumerated id (base@inst, e.g. php-fpm@8.2 /
+# postgres@16-main) inherits its base descriptor's opt-out. rc1 when the module
+# or the hook is absent, or <os> is not in the token list.
+services_optout() {
+    local id="$1" os="${2:-$SERVICES_OS}" base fid file tokens
+    base="${id%@*}"
+    fid="$(_svc_fn_id "$base")"
+    if ! declare -f "svcdef_${fid}_optout" >/dev/null 2>&1; then
+        file="$SERVICES_REGISTRY_DIR/$base.sh"
+        [[ -f "$file" ]] || return 1
+        # shellcheck disable=SC1090
+        . "$file"
+    fi
+    declare -f "svcdef_${fid}_optout" >/dev/null 2>&1 || return 1
+    tokens="$("svcdef_${fid}_optout")"
+    case " ${tokens//,/ } " in
+        *" $os "*) return 0 ;;
+        *)         return 1 ;;
+    esac
+}
+
+# services_optout_ids [os] — print the resolved row id of every opt-out service
+# applicable on the current SERVICES_OS, one per line, including each enumerated
+# instance (php-fpm@<ver>, postgres@<ver>-<cluster>). The set `mesh services
+# reconcile` walks (T-006). The optional <os> arg only changes which opt-out
+# token is matched; rows are always resolved for SERVICES_OS.
+services_optout_ids() {
+    local os="${1:-$SERVICES_OS}" rows id rest
+    rows="$(services_registry_resolve)"
+    while IFS='|' read -r id rest; do
+        [[ -n "$id" ]] || continue
+        services_optout "$id" "$os" && printf '%s\n' "$id"
+    done <<<"$rows"
+}
+
 # Run directly → print the resolved registry. Sourced → only define functions.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     services_registry_resolve

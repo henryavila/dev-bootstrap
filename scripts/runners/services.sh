@@ -14,6 +14,8 @@
 #   mesh services restart <name>...    Restart one or more services.
 #   mesh services enable  <name>...    Enable at boot (enabled) one or more services.
 #   mesh services disable <name>...    Disable at boot one or more services.
+#   mesh services reconcile [name]...  Reconcile boot-state to services.default.<alias>
+#                                      (enable/disable only; idempotent; never stop/start).
 # Names match a service by exact id, else substring of its id or aliases.
 # Multiple verbs exit non-zero if ANY service fails; an unknown name is a clear error.
 # A non-orthogonal backend (brew) warns when a verb also flips the other bit —
@@ -34,6 +36,8 @@ SVC_REPO="$(cd "$SVC_HERE/../.." && pwd)"
 . "$SVC_REPO/scripts/lib/services/registry.sh"   # services_registry_resolve + SERVICES_OS
 # shellcheck disable=SC1091
 . "$SVC_REPO/scripts/lib/services/driver.sh"      # svc_status/start/… + svc_orthogonal/svc_collateral
+# shellcheck disable=SC1091
+. "$SVC_REPO/scripts/lib/services/reconcile.sh"   # services_reconcile_one + services.default readers (T-006)
 
 # ─── State badges (human view) ───────────────────────────────────────────────
 _badge_active()  { case "$1" in on) printf 'running' ;; off) printf 'stopped' ;; *) printf '?' ;; esac; }
@@ -187,6 +191,30 @@ cmd_action() {
     return "$rc"
 }
 
+# cmd_reconcile [name...] — reconcile boot-state (the enabled bit ONLY) toward
+# the per-host services.default.<alias>: enable an opt-out service that is
+# opted-in, disable one that is not — but only when the current boot-state
+# differs, so a second run is a no-op (idempotent). Never starts/stops a running
+# unit (G-3: `disable` ≠ `stop`). With names, reconciles only those; with none,
+# every opt-out curated service for this OS. Driven by install + `mesh update`.
+cmd_reconcile() {
+    local rc=0 id ids
+    if [[ $# -gt 0 ]]; then
+        for id in "$@"; do services_reconcile_one "$id" || rc=1; done
+        return "$rc"
+    fi
+    ids="$(services_optout_ids "$SERVICES_OS")"
+    if [[ -z "$ids" ]]; then
+        info "services reconcile: no opt-out services for ${SERVICES_OS}"
+        return 0
+    fi
+    while IFS= read -r id; do
+        [[ -n "$id" ]] || continue
+        services_reconcile_one "$id" || rc=1
+    done <<<"$ids"
+    return "$rc"
+}
+
 # ─── Interactive (no-arg) flow ───────────────────────────────────────────────
 # Blink picker (preferred): feed the porcelain rows, read `<id>\t<verb>` back.
 # Exit codes mirror services-main so the caller tells cancel from unavailable:
@@ -263,7 +291,7 @@ cmd_interactive() {
     cmd_action "$verb" "$id"
 }
 
-usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; }
 
 verb="${1:-}"
 [[ $# -gt 0 ]] && shift
@@ -271,7 +299,8 @@ case "$verb" in
     list)                                cmd_list "$@" ;;
     status)                              cmd_status "$@" ;;
     start|stop|restart|enable|disable)   cmd_action "$verb" "$@" ;;
+    reconcile)                           cmd_reconcile "$@" ;;
     -h|--help)                           usage; exit 0 ;;
     "")                                  cmd_interactive ;;
-    *) log_error "services: unknown verb '$verb' (try list|status|start|stop|restart|enable|disable)"; exit 2 ;;
+    *) log_error "services: unknown verb '$verb' (try list|status|start|stop|restart|enable|disable|reconcile)"; exit 2 ;;
 esac

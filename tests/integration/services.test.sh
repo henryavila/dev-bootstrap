@@ -403,4 +403,162 @@ assert_not_contains "$out" "unsupported mesh subcommand" "Case 29e: 'services' i
 ASSERT_MSG="Case 30: _run_force_noninteractive covers services (a stray no-arg never hangs a host)" \
     assert_true "grep -A1 '_run_force_noninteractive()' '$MESH' | grep -q services"
 
+# ─── T-006 ───────────────────────────────────────────────────────────────────
+# Decouple install from auto-enable + per-host services.default reconcile. The
+# opt-out set grows to 5 daemons (mysql, redis, php-fpm, postgres, docker — all
+# opt-out on wsl). Topic installers apply boot-state via the shared services lib
+# (services_reconcile_one) instead of an inline `systemctl enable --now`; the
+# new `mesh services reconcile` verb flips the enabled bit ONLY toward the host's
+# services.default.<alias> and is idempotent. Reconcile logic runs over a
+# HERMETIC fixture registry + a fixture services.default (set fully controlled,
+# mirrors Case 4); the new real descriptors (postgres/docker) are asserted
+# against the shipped registry.
+
+# optq <os> <regdir> <fn> [args…] — source the aggregator in a subshell and run
+# one registry function (so services_optout/_ids are callable in isolation).
+optq() {
+    local os="$1" reg="$2"; shift 2
+    # Dummy $0 (not $AGG) so the aggregator's `BASH_SOURCE==$0` run-direct guard
+    # does NOT fire on `source` — we want only the called function's output.
+    MESH_SERVICES_OS="$os" MESH_SERVICES_REGISTRY_DIR="$reg" NO_COLOR=1 \
+        bash -c 'source "$1"; shift; "$@"' _ "$AGG" "$@"
+}
+
+# ─── Case 31: the new real descriptors resolve + are opt-out on wsl ───────────
+out="$(resolve wsl 2>&1)"
+assert_contains "$out" "docker|Docker|dockerd,docker-ce|containers|systemd|system|docker" \
+    "Case 31a: docker resolves to the wsl systemd unit"
+assert_not_contains "$(resolve mac 2>/dev/null)" "docker|" \
+    "Case 31b: docker has no mac mapping (Docker Desktop ≠ brew/launchd svc) → omitted on mac"
+out="$(MESH_PG_DIR="$SANDBOX/nopg" MESH_SERVICES_OS=wsl NO_COLOR=1 bash "$AGG" 2>&1)"
+assert_contains "$out" "postgres|PostgreSQL|psql,pg,postgresql|databases|systemd|system|postgresql" \
+    "Case 31c: postgres falls back to its static row with no clusters installed"
+
+# ─── Case 32: postgres enumerates one row per installed cluster (mirrors php) ──
+PGDIR="$SANDBOX/etcpg"
+mkdir -p "$PGDIR/16/main" "$PGDIR/15/main"
+out="$(MESH_PG_DIR="$PGDIR" MESH_SERVICES_OS=wsl NO_COLOR=1 bash "$AGG" 2>&1)"
+assert_contains "$out" "postgres@16-main|PostgreSQL 16/main|psql,pg,postgresql|databases|systemd|system|postgresql@16-main" \
+    "Case 32a: postgres 16/main enumerates to its versioned cluster unit"
+assert_contains "$out" "postgres@15-main|PostgreSQL 15/main|psql,pg,postgresql|databases|systemd|system|postgresql@15-main" \
+    "Case 32b: postgres 15/main enumerates too"
+n_pg="$(printf '%s\n' "$out" | grep -c '^postgres@')"
+assert_eq "$n_pg" 2 "Case 32c: exactly one row per installed cluster (2)"
+
+# Hermetic opt-out registry: alpha+beta are opt-out on wsl, gamma is NOT.
+OREG="$SANDBOX/optreg"
+mkdir -p "$OREG"
+cat >"$OREG/alpha.sh" <<'EOF'
+svcdef_alpha_meta()   { echo "Alpha|a|testtopic"; }
+svcdef_alpha_wsl()    { echo "systemd|system|alphaunit"; }
+svcdef_alpha_optout() { echo "wsl"; }
+EOF
+cat >"$OREG/beta.sh" <<'EOF'
+svcdef_beta_meta()   { echo "Beta|b|testtopic"; }
+svcdef_beta_wsl()    { echo "systemd|system|betaunit"; }
+svcdef_beta_optout() { echo "wsl"; }
+EOF
+cat >"$OREG/gamma.sh" <<'EOF'
+svcdef_gamma_meta() { echo "Gamma|g|testtopic"; }
+svcdef_gamma_wsl()  { echo "systemd|system|gammaunit"; }
+EOF
+
+# ─── Case 33: services_optout / services_optout_ids ──────────────────────────
+ASSERT_MSG="Case 33a: services_optout(alpha,wsl) is true" \
+    assert_true "optq wsl '$OREG' services_optout alpha wsl"
+ASSERT_MSG="Case 33b: services_optout(alpha,mac) is false (only the wsl token)" \
+    assert_false "optq wsl '$OREG' services_optout alpha mac"
+ASSERT_MSG="Case 33c: services_optout(gamma,wsl) is false (no opt-out hook)" \
+    assert_false "optq wsl '$OREG' services_optout gamma wsl"
+ids="$(optq wsl "$OREG" services_optout_ids wsl)"
+assert_contains "$ids" "alpha" "Case 33d: optout_ids lists the opt-out alpha"
+assert_contains "$ids" "beta"  "Case 33e: optout_ids lists the opt-out beta"
+assert_not_contains "$ids" "gamma" "Case 33f: optout_ids omits the non-opt-out gamma"
+# Real registry: enumerated instances inherit their descriptor's opt-out.
+ids_real="$(MESH_PHP_FPM_DIR="$PHPDIR" MESH_PG_DIR="$SANDBOX/nopg" MESH_SERVICES_OS=wsl \
+    bash -c 'source "$1"; shift; "$@"' _ "$AGG" services_optout_ids wsl)"
+assert_contains "$ids_real" "php-fpm@8.2" "Case 33g: an enumerated php-fpm instance inherits its descriptor's opt-out"
+assert_contains "$ids_real" "postgres" "Case 33h: postgres is in the real opt-out set"
+assert_contains "$ids_real" "docker"   "Case 33i: docker is in the real opt-out set"
+
+# run_svc_recon <default-contents> [args…] — runner `reconcile` over the hermetic
+# opt-out registry + a fixture services.default. STUB_ENABLED drives the current
+# boot bit the systemctl shim reports; mutations land in the sudo call-log.
+run_svc_recon() {
+    local def="$1"; shift
+    local deffile="$SANDBOX/services.default.test"
+    printf '%s' "$def" >"$deffile"
+    rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+    PATH="$SHIM:$PATH" MESH_SERVICES_OS=wsl MESH_SERVICES_REGISTRY_DIR="$OREG" \
+        MESH_SERVICES_DEFAULT="$deffile" NO_COLOR=1 bash "$RUNNER" reconcile "$@"
+}
+
+# ─── Case 34: reconcile DISABLES opt-out daemons absent from services.default ──
+export STUB_ENABLED=enabled            # every unit currently enabled-at-boot
+out="$(run_svc_recon "" 2>&1)"; rc=$?
+sudo_calls="$(calls sudo)"
+assert_eq "$rc" 0 "Case 34a: reconcile with an empty services.default exits 0"
+assert_contains "$sudo_calls" "systemctl disable alphaunit" "Case 34b: an opt-out, not-opted-in daemon is disabled at boot"
+assert_contains "$sudo_calls" "systemctl disable betaunit"  "Case 34c: ...every one of them"
+assert_not_contains "$sudo_calls" "enable" "Case 34d: nothing is enabled when services.default is empty"
+unset STUB_ENABLED
+
+# ─── Case 35: reconcile ENABLES an opted-in daemon, leaves the rest off ───────
+export STUB_ENABLED=disabled           # every unit currently disabled-at-boot
+out="$(run_svc_recon $'alpha\n' 2>&1)"; rc=$?
+sudo_calls="$(calls sudo)"
+assert_eq "$rc" 0 "Case 35a: reconcile with services.default=alpha exits 0"
+assert_contains "$sudo_calls" "systemctl enable alphaunit" "Case 35b: the opted-in daemon is enabled at boot"
+assert_not_contains "$sudo_calls" "enable betaunit" "Case 35c: a non-opted-in daemon is not enabled"
+unset STUB_ENABLED
+
+# ─── Case 36: reconcile is IDEMPOTENT — no mutation when state already matches ─
+# desired==current for every daemon (all enabled, all opted-in) ⇒ a second run is
+# a no-op. With a static is-enabled stub, "already converged" IS the second run.
+export STUB_ENABLED=enabled
+out="$(run_svc_recon $'alpha\nbeta\n' 2>&1)"; rc=$?
+sudo_calls="$(calls sudo)"
+assert_eq "$rc" 0 "Case 36a: reconcile of an already-converged host exits 0"
+assert_not_contains "$sudo_calls" "enable"  "Case 36b: ...issues no enable"
+assert_not_contains "$sudo_calls" "disable" "Case 36c: ...and no disable (idempotent)"
+unset STUB_ENABLED
+
+# ─── Case 37: reconcile touches ONLY the enabled bit — never start/stop ───────
+export STUB_ENABLED=enabled
+out="$(run_svc_recon "" 2>&1)"
+all_calls="$(calls systemctl)$(calls sudo)"
+assert_not_contains "$all_calls" "systemctl start" "Case 37a: reconcile never starts a unit"
+assert_not_contains "$all_calls" "systemctl stop"  "Case 37b: reconcile never stops a running unit (G-3: boot bit only)"
+unset STUB_ENABLED
+
+# ─── Case 38: topic installers decoupled from inline auto-enable (structural) ──
+MYSQL_TOPIC="$REPO_ROOT/topics/databases/wsl/mysql.sh"
+DOCKER_TOPIC="$REPO_ROOT/topics/containers/post-setup-wsl.sh"
+PG_TOPIC="$REPO_ROOT/topics/databases/scripts/install-postgres.sh"
+ASSERT_MSG="Case 38a: mysql.sh no longer force-enables at boot (no 'enable --now mysql')" \
+    assert_true "! grep -qF 'enable --now mysql' '$MYSQL_TOPIC'"
+ASSERT_MSG="Case 38b: mysql.sh applies boot-state via the shared services lib (_apply_boot_state mysql)" \
+    assert_true "grep -qF '_apply_boot_state mysql' '$MYSQL_TOPIC' && grep -qF 'reconcile.sh' '$MYSQL_TOPIC'"
+ASSERT_MSG="Case 38c: post-setup-wsl.sh no longer 'enable --now docker'" \
+    assert_true "! grep -qF 'enable --now docker' '$DOCKER_TOPIC'"
+ASSERT_MSG="Case 38d: post-setup-wsl.sh applies docker boot-state via the services lib (_apply_boot_state docker)" \
+    assert_true "grep -qF '_apply_boot_state docker' '$DOCKER_TOPIC' && grep -qF 'reconcile.sh' '$DOCKER_TOPIC'"
+ASSERT_MSG="Case 38e: install-postgres.sh no longer unconditionally enables the cluster unit" \
+    assert_true "! grep -qF 'systemctl enable \"\$unit\"' '$PG_TOPIC'"
+ASSERT_MSG="Case 38f: install-postgres.sh applies postgres boot-state via the services lib (_apply_boot_state postgres)" \
+    assert_true "grep -qF '_apply_boot_state postgres' '$PG_TOPIC' && grep -qF 'reconcile.sh' '$PG_TOPIC'"
+
+# ─── Case 39: `mesh update` reconciles boot-state toward services.default ──────
+AUTOUPD="$REPO_ROOT/scripts/runners/auto-update.sh"
+ASSERT_MSG="Case 39a: auto-update.sh gates a reconcile on a services.default change" \
+    assert_true "grep -qF '_services_default_changed' '$AUTOUPD'"
+ASSERT_MSG="Case 39b: auto-update.sh runs 'mesh services reconcile'" \
+    assert_true "grep -qF 'services reconcile' '$AUTOUPD'"
+
+# ─── Case 40: the runner documents + dispatches the reconcile verb ────────────
+out="$(run_svc -h 2>&1)"
+assert_contains "$out" "reconcile" "Case 40a: usage documents the reconcile verb"
+out="$(run_svc reconcile zzz-no-such-service 2>&1)"; rc=$?
+assert_ne "$rc" 0 "Case 40b: reconcile of an unknown name exits non-zero (never a crash)"
+
 summary

@@ -11,6 +11,17 @@ check() {
     dpkg-query -W -f='${Status}\n' -- "$PKG" 2>/dev/null | grep -q '^install ok installed$'
 }
 
+# T-006: apply this daemon's boot-state from the per-host services.default via the
+# shared services lib. The apt package auto-enables redis-server at boot, so a
+# fresh install reconciles it back down to the host's services.default (disabled
+# unless opted in). Isolated subshell + best-effort; never fatal.
+_apply_boot_state() {
+    local recon
+    recon="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)/scripts/lib/services/reconcile.sh"
+    [[ -f "$recon" ]] || return 0
+    ( . "$recon" && services_reconcile_one "$1" ) 2>/dev/null || true
+}
+
 install() {
     check && return 0
     sudo -v 2>/dev/null || true
@@ -19,7 +30,8 @@ install() {
     sudo apt-get install -y -q \
         -o Dpkg::Options::=--force-confdef \
         -o Dpkg::Options::=--force-confold \
-        --no-install-recommends "$PKG"
+        --no-install-recommends "$PKG" || return 1
+    _apply_boot_state redis            # apt enables redis at boot; reconcile to services.default
 }
 
 verify() { check; }
