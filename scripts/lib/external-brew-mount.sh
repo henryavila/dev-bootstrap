@@ -194,6 +194,9 @@ ebm_report_line() {
 
 # Corrective recovery. Idempotent: re-running after success detects no
 # collision and returns 0. Sets EBM_REMOUNTED=1 iff it remounted the volume.
+# EBM_REMOUNTED is a status flag for callers that source this lib; shellcheck
+# can't see those cross-file reads, so SC2034 is a false positive here.
+# shellcheck disable=SC2034
 ebm_heal() {
     EBM_REMOUNTED=0
     ebm_detect || { echo "[heal] nothing to heal (mount correct / not an external-brew mac)"; return 0; }
