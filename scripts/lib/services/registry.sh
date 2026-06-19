@@ -63,6 +63,7 @@ _svc_os_mapping() {
 services_registry_resolve() {
     local dir="$SERVICES_REGISTRY_DIR"
     local f base id fid meta display aliases owner mapping kind scope target
+    local enum inst_id inst_display inst_target emitted
     if [[ ! -d "$dir" ]]; then
         _svc_warn "descriptor dir not found: $dir"
         return 0
@@ -84,9 +85,58 @@ services_registry_resolve() {
         mapping="$(_svc_os_mapping "$fid" "$SERVICES_OS")" || continue
         [[ -n "$mapping" ]] || continue
         IFS='|' read -r kind scope target <<<"$mapping"
+        # Dynamic enumeration (T-005): a module may expand into one instance row
+        # per discovered version (e.g. php-fpm@8.2…), reusing the shared
+        # aliases/owner/kind/scope; the hook supplies per-instance id|display|
+        # target. Empty hook output ⇒ fall through to the static single row.
+        if declare -f "svcdef_${fid}_enumerate" >/dev/null 2>&1; then
+            enum="$("svcdef_${fid}_enumerate" "$SERVICES_OS")"
+            emitted=0
+            while IFS='|' read -r inst_id inst_display inst_target; do
+                [[ -n "$inst_id" ]] || continue
+                printf '%s|%s|%s|%s|%s|%s|%s\n' \
+                    "$inst_id" "$inst_display" "$aliases" "$owner" "$kind" "$scope" "$inst_target"
+                emitted=1
+            done <<<"$enum"
+            (( emitted )) && continue
+        fi
         printf '%s|%s|%s|%s|%s|%s|%s\n' \
             "$id" "$display" "$aliases" "$owner" "$kind" "$scope" "$target"
     done
+}
+
+# services_discover_all — emit a row per unit on SERVICES_OS BEYOND the curated
+# registry, in the SAME 7-field format with owner=discovered. Read-only surface
+# for `mesh services list --all` (T-005): discovered entries carry no normalised
+# descriptor, so the runner REFUSES mutating verbs on them — only curated
+# services (a descriptor module under registry/) are mutable. Skips systemd
+# template units (name ends in @). OS access is stub-friendly (systemctl / brew /
+# launchctl), mirroring the driver + the test PATH-shim.
+services_discover_all() {
+    local name label
+    case "$SERVICES_OS" in
+        wsl|linux)
+            systemctl list-unit-files --type=service --no-legend --no-pager 2>/dev/null \
+                | awk '{print $1}' \
+                | while IFS= read -r name; do
+                    name="${name%.service}"
+                    [[ -n "$name" && "$name" != *@ ]] || continue
+                    printf '%s|%s||discovered|systemd|system|%s\n' "$name" "$name" "$name"
+                done
+            ;;
+        mac)
+            brew services list 2>/dev/null | awk 'NR>1 {print $1}' \
+                | while IFS= read -r name; do
+                    [[ -n "$name" ]] || continue
+                    printf '%s|%s||discovered|brew||%s\n' "$name" "$name" "$name"
+                done
+            launchctl list 2>/dev/null | awk 'NR>1 {print $3}' \
+                | while IFS= read -r label; do
+                    [[ -n "$label" && "$label" != "-" ]] || continue
+                    printf '%s|%s||discovered|launchd||%s\n' "$label" "$label" "$label"
+                done
+            ;;
+    esac
 }
 
 # Run directly → print the resolved registry. Sourced → only define functions.

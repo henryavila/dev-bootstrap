@@ -6,7 +6,8 @@
 # two orthogonal bits every service has: active (running now) × enabled (boot).
 #
 # Usage:
-#   mesh services list [--porcelain]   List curated services with active+enabled badges.
+#   mesh services list [--porcelain] [--all]  List services with active+enabled badges.
+#                                      --all also shows discovered (non-curated) units, read-only.
 #   mesh services status <name>        Show one service's two bits + backend model.
 #   mesh services start   <name>...    Start (active) one or more services.
 #   mesh services stop    <name>...    Stop (active) one or more services.
@@ -67,13 +68,68 @@ _resolve_one() {
     printf '%s\n' "$subs"
 }
 
+# _svc_is_discovered <query> — rc0 if the name matches a `--all`-discovered unit
+# that is NOT in the curated registry. Lets cmd_action turn a bare no-match into a
+# precise "only curated services are mutable" refusal (T-005: discovered entries
+# have no descriptor, so they are list/status-only).
+_svc_is_discovered() {
+    local q="$1" discovered
+    discovered="$(services_discover_all 2>/dev/null)" || return 1
+    [[ -n "$discovered" ]] || return 1
+    printf '%s\n' "$discovered" \
+        | awk -F'|' -v q="$q" 'BEGIN{f=1} $1!="" && ($1==q || index($1,q)){f=0} END{exit f}'
+}
+
 # ─── Verbs ───────────────────────────────────────────────────────────────────
 
+# _emit_row <porcelain> <id> <display> <aliases> <owner> <kind> <scope> <target>
+# Read the live two bits via the driver and print the human or porcelain row.
+_emit_row() {
+    local porcelain="$1"; shift
+    local id="$1" display="$2" aliases="$3" owner="$4" kind="$5" scope="$6" target="$7"
+    _parse_state < <(svc_status "$kind" "$scope" "$target")
+    if (( porcelain )); then
+        printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+            "$id" "$display" "$aliases" "$owner" "$kind" "$scope" "$target" "$ACT" "$ENA"
+    else
+        printf '  %-14s %-9s %-9s %-9s %s\n' \
+            "$id" "$(_badge_active "$ACT")" "$(_badge_enabled "$ENA")" "$kind" "$owner"
+    fi
+}
+
+# _list_discovered <curated_rows> <porcelain> — the `--all` discovery block: every
+# unit BEYOND the curated registry, READ-ONLY, deduped against curated ids. These
+# carry no descriptor, so cmd_action refuses to mutate them (see _svc_is_discovered).
+_list_discovered() {
+    local curated_rows="$1" porcelain="$2"
+    local curated_ids discovered shown=0
+    curated_ids="$(printf '%s\n' "$curated_rows" | awk -F'|' 'NF{print $1}')"
+    discovered="$(services_discover_all)"
+    [[ -n "$discovered" ]] || return 0
+    local id display aliases owner kind scope target
+    while IFS='|' read -r id display aliases owner kind scope target; do
+        [[ -n "$id" ]] || continue
+        printf '%s\n' "$curated_ids" | grep -qxF "$id" && continue   # already curated
+        if (( ! porcelain )) && (( ! shown )); then
+            info "discovered (read-only — only the curated services above are mutable):"
+            shown=1
+        fi
+        _emit_row "$porcelain" "$id" "$display" "$aliases" "$owner" "$kind" "$scope" "$target"
+    done <<<"$discovered"
+}
+
 cmd_list() {
-    local porcelain=0
-    case "${1:-}" in --porcelain|--plain) porcelain=1 ;; "") : ;; *) log_error "services list: unknown flag '$1'"; return 2 ;; esac
+    local porcelain=0 all=0
+    while (( $# > 0 )); do
+        case "$1" in
+            --porcelain|--plain) porcelain=1 ;;
+            --all)               all=1 ;;
+            *) log_error "services list: unknown flag '$1'"; return 2 ;;
+        esac
+        shift
+    done
     local rows; rows="$(services_registry_resolve)"
-    if [[ -z "$rows" ]]; then
+    if [[ -z "$rows" ]] && (( ! all )); then
         info "No mesh-owned services for this platform (${SERVICES_OS})."
         return 0
     fi
@@ -84,15 +140,9 @@ cmd_list() {
     local id display aliases owner kind scope target
     while IFS='|' read -r id display aliases owner kind scope target; do
         [[ -n "$id" ]] || continue
-        _parse_state < <(svc_status "$kind" "$scope" "$target")
-        if (( porcelain )); then
-            printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
-                "$id" "$display" "$aliases" "$owner" "$kind" "$scope" "$target" "$ACT" "$ENA"
-        else
-            printf '  %-14s %-9s %-9s %-9s %s\n' \
-                "$id" "$(_badge_active "$ACT")" "$(_badge_enabled "$ENA")" "$kind" "$owner"
-        fi
+        _emit_row "$porcelain" "$id" "$display" "$aliases" "$owner" "$kind" "$scope" "$target"
     done <<<"$rows"
+    (( all )) && _list_discovered "$rows" "$porcelain"
 }
 
 cmd_status() {
@@ -116,7 +166,12 @@ cmd_action() {
     [[ $# -gt 0 ]] || { log_error "services ${verb}: needs at least one service name"; return 2; }
     local rc=0 name row id display aliases owner kind scope target collateral
     for name in "$@"; do
-        if ! row="$(_resolve_one "$name")"; then rc=1; continue; fi
+        if ! row="$(_resolve_one "$name")"; then
+            if _svc_is_discovered "$name"; then
+                log_error "services: '$name' is discovered but not curated — only curated services are mutable (add a descriptor under scripts/lib/services/registry/ to manage it)"
+            fi
+            rc=1; continue
+        fi
         IFS='|' read -r id display aliases owner kind scope target <<<"$row"
         # Never silently mutate the unrequested bit on a non-orthogonal backend.
         collateral="$(svc_collateral "$kind" "$verb")"
@@ -208,7 +263,7 @@ cmd_interactive() {
     cmd_action "$verb" "$id"
 }
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
 
 verb="${1:-}"
 [[ $# -gt 0 ]] && shift

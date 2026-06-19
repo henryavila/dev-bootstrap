@@ -1069,10 +1069,10 @@ _mesh_quote_args() {
 }
 
 # A fan-out subcommand that must NEVER block on one host's interactive pause —
-# `syncthing pair` would otherwise hang waiting for a Tier-0 device approve.
-# Forcing non-interactive makes a pending approval defer (already handled by the
-# pair runner) so the sweep continues across every host.
-_run_force_noninteractive() { [[ "${1:-}" == "syncthing" ]]; }
+# `syncthing pair` would otherwise hang waiting for a Tier-0 device approve, and
+# `services` with no subverb would open the interactive picker. Forcing
+# non-interactive makes such a case defer/usage so the sweep continues per host.
+_run_force_noninteractive() { [[ "${1:-}" == "syncthing" || "${1:-}" == "services" ]]; }
 
 _mesh_remote_command() {
     local quoted env_prefix=""
@@ -1106,7 +1106,8 @@ Default with no host flag opens a multi-select when fzf/whiptail is available.
 Online configured hosts are preselected; Tab toggles, Enter confirms. A text
 prompt is used only as fallback when no interactive selector is available.
 
-Supported subcommands: status, snap, update, syncthing pair|status.
+Supported subcommands: status, snap, update, syncthing pair|status,
+services <status|start|stop|restart|enable|disable> <name>...
 
 Examples:
   mesh run update -f
@@ -1114,6 +1115,7 @@ Examples:
   mesh run --online snap --quiet
   mesh run --all status --write
   mesh run --all syncthing pair          Reconcile every host from one place
+  mesh run --all services stop mysql     Stop a service across the mesh
 EOF
 }
 
@@ -1172,7 +1174,7 @@ sub_run() {
         esac
     done
 
-    (( $# > 0 )) || _die "run: missing mesh subcommand (status | snap | update | syncthing pair|status)"
+    (( $# > 0 )) || _die "run: missing mesh subcommand (status | snap | update | syncthing pair|status | services <verb> <name>...)"
     local mesh_subcommand="$1"
     shift
     local mesh_args=("$@")
@@ -1188,11 +1190,20 @@ sub_run() {
                 *) _die "run: only \`syncthing pair\` and \`syncthing status\` can fan out (got '${mesh_args[0]:-}')" ;;
             esac
             ;;
+        services)
+            # Fan out only the scriptable, non-interactive verbs — never the
+            # no-arg interactive picker, `list`, or `--all` discovery (read-only,
+            # low value across hosts; mutation needs a curated descriptor).
+            case "${mesh_args[0]:-}" in
+                status|start|stop|restart|enable|disable) ;;
+                *) _die "run: services can only fan out: status, start, stop, restart, enable, disable (got '${mesh_args[0]:-<none>}')" ;;
+            esac
+            ;;
         run)
             _die "run: nested 'mesh run' is not supported"
             ;;
         *)
-            _die "run: unsupported mesh subcommand '$mesh_subcommand' (supported: status, snap, update, syncthing pair|status)"
+            _die "run: unsupported mesh subcommand '$mesh_subcommand' (supported: status, snap, update, syncthing pair|status, services <verb> <name>...)"
             ;;
     esac
 

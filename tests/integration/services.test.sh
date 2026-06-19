@@ -108,6 +108,7 @@ cat >"$SHIM/systemctl" <<EOF
 echo "\$*" >> "$SHIM_LOG/systemctl.calls"
 [[ -n "\${STUB_SYSTEMCTL_FAIL:-}" && "\$*" == *"\${STUB_SYSTEMCTL_FAIL}"* ]] && exit 1
 case "\$*" in
+    *list-unit-files*) printf '%s\n' "\${STUB_UNIT_FILES:-}"; exit 0 ;;
     *is-active*)  echo "\${STUB_ACTIVE:-active}";   [[ "\${STUB_ACTIVE:-active}" == active ]] ; exit \$? ;;
     *is-enabled*) echo "\${STUB_ENABLED:-enabled}"; [[ "\${STUB_ENABLED:-enabled}" == enabled ]] ; exit \$? ;;
 esac
@@ -315,5 +316,91 @@ assert_contains "$out" "interactive"   "Case 22c: usage documents the interactiv
 out="$(run_svc -h 2>&1)"; rc=$?
 assert_eq "$rc" "0" "Case 22d: -h prints usage and exits 0"
 assert_contains "$out" "mesh services list" "Case 22e: usage lists the verbs"
+
+# ─── T-005 ───────────────────────────────────────────────────────────────────
+# Dynamic php-fpm enumeration + `--all` discovery (read-only) + the
+# `mesh run --all services` fan-out allowlist. Enumeration globs a fixture
+# /etc/php via MESH_PHP_FPM_DIR (hermetic, mirrors MESH_CLEAN_OS); discovery is
+# driven by the systemctl `list-unit-files` stub (STUB_UNIT_FILES); the fan-out
+# allowlist is exercised behaviourally on bin/mesh — it is checked BEFORE host
+# selection, and --dry-run guarantees no ssh is attempted.
+
+# php fixture: four installed versions under <root>/<ver>/fpm (the WSL layout).
+PHPDIR="$SANDBOX/etcphp"
+mkdir -p "$PHPDIR/8.2/fpm" "$PHPDIR/8.3/fpm" "$PHPDIR/8.4/fpm" "$PHPDIR/8.5/fpm"
+
+# ─── Case 23: php-fpm enumerates one row per installed version (WSL) ──────────
+out="$(MESH_PHP_FPM_DIR="$PHPDIR" MESH_SERVICES_OS=wsl NO_COLOR=1 bash "$AGG" 2>&1)"; rc=$?
+assert_eq "$rc" 0 "Case 23a: aggregator exits 0 with php enumeration"
+assert_contains "$out" "php-fpm@8.2|PHP-FPM 8.2|php,fpm|languages|systemd|system|php8.2-fpm" \
+    "Case 23b: php 8.2 enumerates to its own systemd unit row (php8.2-fpm)"
+assert_contains "$out" "php-fpm@8.5|PHP-FPM 8.5|php,fpm|languages|systemd|system|php8.5-fpm" \
+    "Case 23c: php 8.5 enumerates to php8.5-fpm"
+n_php="$(printf '%s\n' "$out" | grep -c '^php-fpm@')"
+assert_eq "$n_php" 4 "Case 23d: exactly one row per installed php version (4)"
+assert_not_contains "$out" "php-fpm|" "Case 23e: the static single php-fpm row is replaced by the enumerated rows"
+
+# ─── Case 24: no installed versions → the static fallback row ─────────────────
+EMPTYPHP="$SANDBOX/emptyphp"; mkdir -p "$EMPTYPHP"
+out="$(MESH_PHP_FPM_DIR="$EMPTYPHP" MESH_SERVICES_OS=wsl NO_COLOR=1 bash "$AGG" 2>&1)"
+assert_contains "$out" "php-fpm|PHP-FPM|php,fpm|languages|systemd|system|php-fpm" \
+    "Case 24: empty enumeration falls back to the static php-fpm row"
+
+# run_svc_php <args...> — runner under wsl with the shim AND the php fixture dir.
+run_svc_php() {
+    rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+    PATH="$SHIM:$PATH" MESH_PHP_FPM_DIR="$PHPDIR" MESH_SERVICES_OS=wsl NO_COLOR=1 bash "$RUNNER" "$@"
+}
+
+# ─── Case 25: stopping one php version leaves the others untouched ────────────
+out="$(run_svc_php stop php-fpm@8.2 2>&1)"; rc=$?
+sudo_calls="$(calls sudo)"
+assert_eq "$rc" 0 "Case 25a: 'stop php-fpm@8.2' resolves the exact version and exits 0"
+assert_contains "$sudo_calls" "systemctl stop php8.2-fpm" "Case 25b: it stops only the 8.2 unit"
+assert_not_contains "$sudo_calls" "php8.3-fpm" "Case 25c: ...and leaves 8.3 untouched"
+assert_not_contains "$sudo_calls" "php8.5-fpm" "Case 25d: ...and leaves 8.5 untouched"
+
+# ─── Case 26: `list --all` surfaces discovered (non-curated) units, deduped ───
+export STUB_UNIT_FILES='mysql.service enabled enabled
+cups.service disabled disabled
+ssh.service enabled enabled'
+out="$(run_svc list --all --porcelain 2>&1)"; rc=$?
+assert_eq "$rc" 0 "Case 26a: list --all --porcelain exits 0"
+assert_contains "$out" "cups|cups||discovered|systemd|system|cups" \
+    "Case 26b: a non-curated systemd unit is discovered read-only and marked 'discovered'"
+assert_contains "$out" "ssh|ssh||discovered|systemd|system|ssh" \
+    "Case 26c: ...every discovered unit, not just one"
+mysql_lines="$(printf '%s\n' "$out" | grep -c '^mysql|')"
+assert_eq "$mysql_lines" 1 "Case 26d: a curated unit re-seen by discovery is not duplicated (dedupe)"
+unset STUB_UNIT_FILES
+
+# ─── Case 27: plain `list` (no --all) shows ONLY the curated registry ─────────
+export STUB_UNIT_FILES='cups.service disabled disabled'
+out="$(run_svc list --porcelain 2>&1)"
+unset STUB_UNIT_FILES
+assert_not_contains "$out" "cups" "Case 27: discovery is opt-in — plain list omits non-curated units"
+
+# ─── Case 28: a mutating verb on a discovered (non-curated) unit is refused ───
+export STUB_UNIT_FILES='cups.service enabled enabled'
+out="$(run_svc stop cups 2>&1)"; rc=$?
+unset STUB_UNIT_FILES
+assert_ne "$rc" 0 "Case 28a: stopping a discovered, non-curated unit exits non-zero"
+assert_contains "$out" "only curated services are mutable" \
+    "Case 28b: ...with a clear curated-only refusal (not a bare no-match)"
+
+# ─── Case 29: `mesh run --all services` fan-out allowlist (behavioural) ───────
+# The allowlist is checked before host selection; --dry-run guarantees no ssh.
+out="$(bash "$MESH" run --dry-run --all services bogus 2>&1)"; rc=$?
+assert_ne "$rc" 0 "Case 29a: an out-of-scope services subverb is rejected by the fan-out allowlist"
+assert_contains "$out" "can only fan out" "Case 29b: ...with a clear allowlist message"
+out="$(bash "$MESH" run --dry-run --all services 2>&1)"; rc=$?
+assert_ne "$rc" 0 "Case 29c: fanning out the interactive no-subverb form is rejected"
+out="$(bash "$MESH" run --dry-run --all services status mysql 2>&1)"; rc=$?
+assert_not_contains "$out" "can only fan out"        "Case 29d: 'services status' clears the allowlist"
+assert_not_contains "$out" "unsupported mesh subcommand" "Case 29e: 'services' is a supported fan-out subcommand"
+
+# ─── Case 30: services is forced non-interactive in the fan-out (structural) ──
+ASSERT_MSG="Case 30: _run_force_noninteractive covers services (a stray no-arg never hangs a host)" \
+    assert_true "grep -A1 '_run_force_noninteractive()' '$MESH' | grep -q services"
 
 summary
