@@ -44,13 +44,17 @@ _recon_self_alias() {
         . "$conf" 2>/dev/null || true
     fi
     [[ -n "${MESH_HOST_ALIAS:-}" ]] && { printf '%s' "$MESH_HOST_ALIAS"; return 0; }
-    local hn mapped
+    local hn key mapped
     hn="$(hostname -s 2>/dev/null || hostname 2>/dev/null || printf unknown)"
+    key="${hn%%.*}"                         # first label, mirrors bin/mesh _first_label
     if [[ -n "${MESH_TAILSCALE_ALIAS_MAP:-}" ]] && command -v jq >/dev/null 2>&1; then
-        mapped="$(printf '%s' "$MESH_TAILSCALE_ALIAS_MAP" | jq -r --arg h "$hn" '.[$h] // empty' 2>/dev/null)"
+        # raw key THEN its lowercase — exactly as bin/mesh _mesh_alias_for_name does;
+        # the map is lowercase-keyed but `hostname -s` may be upper (crc: CRCMG005078).
+        mapped="$(jq -r --arg k "$key" '.[$k] // empty' <<<"$MESH_TAILSCALE_ALIAS_MAP" 2>/dev/null)"
+        [[ -n "$mapped" ]] || mapped="$(jq -r --arg k "$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')" '.[$k] // empty' <<<"$MESH_TAILSCALE_ALIAS_MAP" 2>/dev/null)"
         [[ -n "$mapped" ]] && { printf '%s' "$mapped"; return 0; }
     fi
-    printf '%s' "$hn"
+    printf '%s' "$key"
 }
 
 # services_default_path — resolve the per-host services.default file path.

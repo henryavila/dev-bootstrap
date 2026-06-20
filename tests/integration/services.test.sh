@@ -496,6 +496,18 @@ p_override="$(env -u MESH_SERVICES_DEFAULT MESH_SERVICES_ALIAS=crc \
     bash -c 'source "$1"; services_default_path' _ "$RECON_LIB")"
 assert_eq "$p_override" "/id/config/services.default.crc" \
     "Case 33k: an explicit MESH_SERVICES_ALIAS overrides the conf alias"
+# An uppercase hostname (crc: CRCMG005078) must map through MESH_TAILSCALE_ALIAS_MAP
+# (lowercase-keyed) to its alias — the metal-found gap where reconcile resolved the
+# raw hostname. Stub `hostname` + an empty conf so only the env map drives it.
+HN_SHIM="$SANDBOX/hnbin"; mkdir -p "$HN_SHIM"
+printf '#!/usr/bin/env bash\necho CRCMG005078\n' > "$HN_SHIM/hostname"; chmod +x "$HN_SHIM/hostname"
+: > "$SANDBOX/empty.conf"
+p_map="$(env -u MESH_SERVICES_ALIAS -u MESH_HOST_ALIAS -u MESH_SERVICES_DEFAULT \
+    PATH="$HN_SHIM:$PATH" MESH_STATUS_CONF="$SANDBOX/empty.conf" \
+    MESH_TAILSCALE_ALIAS_MAP='{"crcmg005078":"crc"}' MESH_IDENTITY_DIR=/id \
+    bash -c 'source "$1"; services_default_path' _ "$RECON_LIB")"
+assert_eq "$p_map" "/id/config/services.default.crc" \
+    "Case 33l: an uppercase hostname maps through MESH_TAILSCALE_ALIAS_MAP (lowercased) to the alias"
 
 # run_svc_recon <default-contents> [args…] — runner `reconcile` over the hermetic
 # opt-out registry + a fixture services.default. STUB_ENABLED drives the current
