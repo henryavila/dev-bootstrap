@@ -20,6 +20,7 @@
 #   bash scripts/runners/doctor.sh            # human-readable report
 #   bash scripts/runners/doctor.sh --quiet    # only drift/missing lines
 #   bash scripts/runners/doctor.sh --json     # structured output (for automation)
+#   bash scripts/runners/doctor.sh --fix      # re-sync drifted/missing mappings
 #
 # Override knobs (forks using a non-mesh-workstation installer):
 #   DOCTOR_MARKER_FILES   space-separated list of files to check for the
@@ -38,6 +39,8 @@ REPO="$(cd "$HERE/../.." && pwd)"
 . "$REPO/scripts/lib/managed-block.sh"
 # shellcheck disable=SC1091
 . "$REPO/scripts/lib/deploy.sh"   # deploy_map_emit() — shared deploy.map parser
+# shellcheck disable=SC1091
+. "$REPO/scripts/lib/external-brew-mount.sh"   # ebm_detect/ebm_report_line (mac-only)
 # The deploy set lives in identity's deploy.map data file (post-restructure:
 # workstation has no top-level install.sh; the set is identity-owned DATA per
 # spec D-B3 / §C18, and as of audit T-001 is a deploy.map, not a MAPPINGS array
@@ -47,10 +50,12 @@ DEPLOY_MAP="$IDENTITY/deploy.map"
 
 QUIET=0
 JSON=0
+FIX=0
 for a in "$@"; do
     case "$a" in
         --quiet|-q) QUIET=1 ;;
         --json)     JSON=1  ;;
+        --fix)      FIX=1   ;;
         --help|-h)
             sed -n '2,32p' "$0"
             exit 0
@@ -67,9 +72,11 @@ fi
 
 # ─── Accumulators ──────────────────────────────────────────────────
 count_ok=0 count_drift=0 count_missing=0 count_marker_miss=0
-count_launchd_phantom=0 count_composer_phar=0
+count_launchd_phantom=0 count_composer_phar=0 count_ext_brew_mount=0
+count_fixed=0
 drift_items=() missing_items=() marker_miss_items=()
-launchd_phantom_items=() composer_phar_items=()
+launchd_phantom_items=() composer_phar_items=() fixed_items=()
+ext_brew_mount_desc=""
 
 # ─── Parse the deploy.map (shared parser) ──────────────────────────
 # Emits one normalized "src|dst|mode|perms" row per entry via deploy_map_emit —
@@ -81,6 +88,27 @@ parse_mappings() {
     # downstream loop sees zero rows, exits at the JSON/text rendering step.
     [[ -f "$DEPLOY_MAP" ]] || return 0
     deploy_map_emit "$DEPLOY_MAP" 2>/dev/null
+}
+
+# In --fix mode, re-deploy one mapping from the identity tree to heal a drifted
+# or missing dst. deploy_one (sourced from deploy.sh above) re-applies the exact
+# entry install.sh would. On failure the item stays visible under its original
+# category so the run still exits non-zero.
+_fix_mapping() {
+    local raw="$1" dst="$2" src="$3" kind="$4"   # kind: drift | missing
+    if deploy_one "$raw" "$IDENTITY" >/dev/null 2>&1; then
+        count_fixed=$((count_fixed + 1))
+        fixed_items+=("$dst  (src=$src)")
+        return 0
+    fi
+    if [[ "$kind" == "missing" ]]; then
+        count_missing=$((count_missing + 1))
+        missing_items+=("$dst  (src=$src) — fix FAILED")
+    else
+        count_drift=$((count_drift + 1))
+        drift_items+=("$dst  (src=$src) — fix FAILED")
+    fi
+    return 1
 }
 
 check_mapping() {
@@ -95,8 +123,12 @@ check_mapping() {
     [[ ! -f "$src_abs" ]] && return 0
 
     if [[ ! -e "$dst" ]]; then
-        count_missing=$((count_missing + 1))
-        missing_items+=("$dst  (src=$src)")
+        if [[ "$FIX" == "1" ]]; then
+            _fix_mapping "$raw" "$dst" "$src" missing
+        else
+            count_missing=$((count_missing + 1))
+            missing_items+=("$dst  (src=$src)")
+        fi
         return 0
     fi
 
@@ -115,6 +147,8 @@ check_mapping() {
         # extra lines on purpose. Compare just the marker-bounded slice.
         if managed_block_in_sync "$src_abs" "$dst" "$src"; then
             count_ok=$((count_ok + 1))
+        elif [[ "$FIX" == "1" ]]; then
+            _fix_mapping "$raw" "$dst" "$src" drift
         else
             count_drift=$((count_drift + 1))
             drift_items+=("$dst  (src=$src)")
@@ -124,6 +158,8 @@ check_mapping() {
 
     if cmp -s "$src_abs" "$dst"; then
         count_ok=$((count_ok + 1))
+    elif [[ "$FIX" == "1" ]]; then
+        _fix_mapping "$raw" "$dst" "$src" drift
     else
         count_drift=$((count_drift + 1))
         drift_items+=("$dst  (src=$src)")
@@ -236,6 +272,21 @@ check_composer_phar() {
     esac
 }
 
+# ─── External-brew mount-disambiguation check (Mac only) ───────────
+# Detects the *materialized* failure (distinct from check_launchd_volume_paths,
+# which flags the racy PLISTS that cause it): brew's prefix volume is mounted
+# at a disambiguated path (e.g. "/Volumes/External 1") because a phantom dir
+# occupies its canonical mount point. Read-only here; `mesh doctor --fix` heals
+# it via scripts/runners/heal-external-brew-mount.sh. Generic + name-agnostic
+# (the volume name is read from diskutil, never hardcoded). No-op off Darwin.
+check_external_brew_mount() {
+    ebm_supported || return 0
+    if ebm_detect; then
+        count_ext_brew_mount=1
+        ext_brew_mount_desc="$(ebm_report_line)"
+    fi
+}
+
 # ─── Fragments listing ─────────────────────────────────────────────
 list_fragments() {
     local dir label
@@ -260,12 +311,13 @@ done < <(parse_mappings)
 check_markers
 check_launchd_volume_paths
 check_composer_phar
+check_external_brew_mount
 
 # ─── Output ────────────────────────────────────────────────────────
 if [[ "$JSON" == 1 ]]; then
     # Minimal JSON without jq (so the script has no runtime deps)
-    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,' \
-        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar"
+    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,"ext_brew_mount":%d,"fixed":%d,' \
+        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar" "$count_ext_brew_mount" "$count_fixed"
     printf '"drift_items":['
     sep=""
     # bash 3.2 + set -u: empty `"${arr[@]}"` is unbound; guard with size.
@@ -307,6 +359,14 @@ if [[ "$JSON" == 1 ]]; then
             sep=","
         done
     fi
+    printf '],"fixed_items":['
+    sep=""
+    if (( ${#fixed_items[@]} > 0 )); then
+        for d in "${fixed_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
     printf ']}\n'
 else
     if [[ "$QUIET" == 0 ]]; then
@@ -317,6 +377,7 @@ else
         echo "  ${C_WARN}!${C_RESET} marker miss    : $count_marker_miss"
         echo "  ${C_ERR}✗${C_RESET} launchd phantom: $count_launchd_phantom"
         echo "  ${C_ERR}✗${C_RESET} composer PHAR  : $count_composer_phar"
+        echo "  ${C_ERR}✗${C_RESET} ext-brew mount : $count_ext_brew_mount"
     fi
 
     # The `(( count_* > 0 ))` guards already imply array non-empty (only the
@@ -327,9 +388,14 @@ else
         echo "${C_WARN}Missing (install.sh never ran, or user deleted):${C_RESET}"
         for m in "${missing_items[@]}"; do echo "  ! $m"; done
     fi
+    if (( count_fixed > 0 )); then
+        echo
+        echo "${C_OK}Re-synced (deploy refreshed from src — was drifted/missing):${C_RESET}"
+        for f in "${fixed_items[@]}"; do echo "  ✓ $f"; done
+    fi
     if (( count_drift > 0 )); then
         echo
-        echo "${C_ERR}Drifted (dst differs from src — run install.sh to sync):${C_RESET}"
+        echo "${C_ERR}Drifted (dst differs from src — run 'mesh doctor --fix' to sync):${C_RESET}"
         for d in "${drift_items[@]}"; do echo "  ✗ $d"; done
     fi
     if (( count_marker_miss > 0 )); then
@@ -350,12 +416,18 @@ else
         for p in "${composer_phar_items[@]}"; do echo "  ✗ $p"; done
         echo "  ${C_DIM}fix: brew reinstall --build-from-source composer${C_RESET}"
     fi
+    if (( count_ext_brew_mount > 0 )); then
+        echo
+        echo "${C_ERR}External-brew volume mounted at a disambiguated path (phantom collision):${C_RESET}"
+        echo "  ✗ $ext_brew_mount_desc"
+        echo "  ${C_DIM}fix: mesh doctor --fix  (heals the mount, then repairs the stack)${C_RESET}"
+    fi
 
     list_fragments
 fi
 
 # Exit code: 0 iff no drift/missing/phantom
-if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 )); then
+if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 || count_ext_brew_mount > 0 )); then
     exit 1
 fi
 exit 0
