@@ -233,5 +233,6 @@ This repo **never** versions personal configs (SSH, git identity, project-specif
 
 - [`docs/SPEC.md`](docs/SPEC.md) — technical specification (architecture, acceptance criteria, roadmap).
 - [`docs/ALIASES.md`](docs/ALIASES.md) — inventory of universal aliases (shell + git) that every dev who ran the bootstrap receives.
+- [`docs/SERVICES.md`](docs/SERVICES.md) — `mesh services`: cross-platform control of mesh-owned daemons (active × enabled, install ≠ auto-enable).
 - `topics/<topic>/README.md` — per-topic customization and gotchas.
 - [`dotfiles-template`](https://github.com/henryavila/dotfiles-template) — the flip side of the layer: personal overrides.

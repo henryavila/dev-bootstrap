@@ -116,6 +116,7 @@ Usage:
   mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
   mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
   mesh ai [term] [--agent X]        Open an AI agent in the right repo via herdr (disk-search + focus-or-create)
+  mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable/reconcile) — active × enabled
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -302,6 +303,10 @@ Examples:
   mesh clean --apply               Purge Tier-1 caches
   mesh clean --apply --deep        Also purge heavy browser/model caches
   mesh clean --apply --deep --compact   Full reclaim, then shrink the WSL VHDX
+  mesh services list               List mesh-owned daemons with active/enabled badges
+  mesh services stop mysql redis   Stop both now (does not change boot state)
+  mesh services disable mysql      Stop mysql from starting at boot (leaves it running)
+  mesh services reconcile          Apply this host's boot-state from services.default.<alias>
 
 Configuration:
   ~/.config/mesh/mesh-status.conf       (alias map, run hosts, repos tracked, retention)
@@ -1084,10 +1089,10 @@ _mesh_quote_args() {
 }
 
 # A fan-out subcommand that must NEVER block on one host's interactive pause —
-# `syncthing pair` would otherwise hang waiting for a Tier-0 device approve.
-# Forcing non-interactive makes a pending approval defer (already handled by the
-# pair runner) so the sweep continues across every host.
-_run_force_noninteractive() { [[ "${1:-}" == "syncthing" ]]; }
+# `syncthing pair` would otherwise hang waiting for a Tier-0 device approve, and
+# `services` with no subverb would open the interactive picker. Forcing
+# non-interactive makes such a case defer/usage so the sweep continues per host.
+_run_force_noninteractive() { [[ "${1:-}" == "syncthing" || "${1:-}" == "services" ]]; }
 
 _mesh_remote_command() {
     local quoted env_prefix=""
@@ -1121,7 +1126,8 @@ Default with no host flag opens a multi-select when fzf/whiptail is available.
 Online configured hosts are preselected; Tab toggles, Enter confirms. A text
 prompt is used only as fallback when no interactive selector is available.
 
-Supported subcommands: status, snap, update, syncthing pair|status.
+Supported subcommands: status, snap, update, syncthing pair|status,
+services <status|start|stop|restart|enable|disable> <name>...
 
 Examples:
   mesh run update -f
@@ -1129,6 +1135,7 @@ Examples:
   mesh run --online snap --quiet
   mesh run --all status --write
   mesh run --all syncthing pair          Reconcile every host from one place
+  mesh run --all services stop mysql     Stop a service across the mesh
 EOF
 }
 
@@ -1187,7 +1194,7 @@ sub_run() {
         esac
     done
 
-    (( $# > 0 )) || _die "run: missing mesh subcommand (status | snap | update | syncthing pair|status)"
+    (( $# > 0 )) || _die "run: missing mesh subcommand (status | snap | update | syncthing pair|status | services <verb> <name>...)"
     local mesh_subcommand="$1"
     shift
     local mesh_args=("$@")
@@ -1203,11 +1210,20 @@ sub_run() {
                 *) _die "run: only \`syncthing pair\` and \`syncthing status\` can fan out (got '${mesh_args[0]:-}')" ;;
             esac
             ;;
+        services)
+            # Fan out only the scriptable, non-interactive verbs — never the
+            # no-arg interactive picker, `list`, or `--all` discovery (read-only,
+            # low value across hosts; mutation needs a curated descriptor).
+            case "${mesh_args[0]:-}" in
+                status|start|stop|restart|enable|disable) ;;
+                *) _die "run: services can only fan out: status, start, stop, restart, enable, disable (got '${mesh_args[0]:-<none>}')" ;;
+            esac
+            ;;
         run)
             _die "run: nested 'mesh run' is not supported"
             ;;
         *)
-            _die "run: unsupported mesh subcommand '$mesh_subcommand' (supported: status, snap, update, syncthing pair|status)"
+            _die "run: unsupported mesh subcommand '$mesh_subcommand' (supported: status, snap, update, syncthing pair|status, services <verb> <name>...)"
             ;;
     esac
 
@@ -1435,6 +1451,19 @@ sub_ai() {
     exec bash "$runner" "$@"
 }
 
+# `mesh services <verb> [name…]` → cross-platform service control plane.
+# Curated registry of mesh-owned daemons; two orthogonal bits active × enabled.
+# Verbs: list / status / start / stop / restart / enable / disable.
+sub_services() {
+    local runner
+    runner="$(_resolve_companion "runners/services.sh")"
+    [[ -n "$runner" ]] || _die "runners/services.sh not found (set \$MESH_HOME or check installation)"
+    # Export the resolved host alias so `services reconcile` finds this host's
+    # services.default.<alias> (the runner/lib falls back to hostname otherwise).
+    export MESH_SERVICES_ALIAS="${MESH_SERVICES_ALIAS:-$(_mesh_self_alias)}"
+    exec bash "$runner" "$@"
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
@@ -1517,6 +1546,10 @@ case "${1:-status}" in
     ai)
         shift
         sub_ai "$@"
+        ;;
+    services)
+        shift
+        sub_services "$@"
         ;;
     --*|-*)
         # Top-level flag with no subcommand → treat as status flag.

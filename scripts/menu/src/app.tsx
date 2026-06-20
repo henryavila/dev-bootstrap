@@ -33,6 +33,15 @@ async function main() {
     return;
   }
 
+  // `services` subcommand → the interactive `mesh services` flow (filter list →
+  // context-aware action). scripts/runners/services.sh feeds porcelain rows and
+  // reads `<id>\t<verb>` back, then dispatches the driver.
+  if (argv[0] === 'services') {
+    const { servicesMain } = await import('./services-main.js');
+    await servicesMain(argv.slice(1));
+    return;
+  }
+
   // The wizard is keyboard-interactive (Ink raw mode), which needs a real TTY.
   // Without one (piped stdin, CI, or a non-interactive `!`-style shell) Ink's
   // useInput would throw a raw-mode stack trace, so fail clearly instead and let

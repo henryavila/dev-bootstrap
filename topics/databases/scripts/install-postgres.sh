@@ -48,6 +48,16 @@ source "$HERE/../../../scripts/lib/log.sh"
 # shellcheck disable=SC1091
 source "$HERE/../../../scripts/lib/launch-wrapper.sh"
 
+# T-006: apply postgres boot-state from the per-host services.default via the
+# shared services lib (svc_enable/svc_disable) instead of forcing `enable` at
+# install. Isolated subshell (the lib sets `set -uo pipefail`) + best-effort.
+_apply_boot_state() {
+    local recon="$HERE/../../../scripts/lib/services/reconcile.sh"
+    [[ -f "$recon" ]] || return 0
+    # shellcheck disable=SC1090  # $recon is a computed path to the services lib
+    ( . "$recon" && services_reconcile_one "$1" ) 2>/dev/null || true
+}
+
 # ─── 1 · Capture caller intent before defaulting ─────────────────────
 # POSTGRES_VERSION_REQUESTED is set ONLY when the caller passed it via
 # env or menu; empty when we fall back to the default. Cross-major
@@ -419,24 +429,17 @@ else
                 cluster="${clusters[0]}"
                 unit="postgresql@${POSTGRES_VERSION}-${cluster}"
 
-                enable_err=""
-                if ! enable_err="$(sudo systemctl enable "$unit" 2>&1)"; then
-                    # enable() failures are typically benign (Synchronizing
-                    # state… preset-not-allowed). Inform but don't escalate
-                    # unless the unit is genuinely missing.
-                    if echo "$enable_err" | grep -qiE "not found|no such"; then
-                        followup critical "systemctl enable $unit failed: $enable_err"
-                        exit 1
-                    fi
-                    warn "systemctl enable $unit: $enable_err (non-fatal)"
-                fi
-
+                # T-006: install no longer force-enables the unit at boot. Start
+                # it for the role/db setup below, then reconcile its boot-state
+                # from the per-host services.default via the shared services lib
+                # (svc_enable/svc_disable) — installed ≠ auto-enabled.
                 start_err=""
                 if ! start_err="$(sudo systemctl start "$unit" 2>&1)"; then
                     followup critical "systemctl start $unit failed: $start_err. Diagnose: sudo journalctl -u $unit -n 50"
                     exit 1
                 fi
                 SERVICE_STARTED=1
+                _apply_boot_state postgres
             fi
             ;;
     esac

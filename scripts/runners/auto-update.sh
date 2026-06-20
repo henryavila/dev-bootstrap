@@ -308,6 +308,15 @@ _syncthing_yaml_changed() {
     echo "$1" | grep -qE '(^|/)sync/syncthing-mesh\.yaml$'
 }
 
+# T-006: a per-host config/services.default.<alias> change means boot-state may
+# need reconciling — gate the incremental `mesh services reconcile` on it.
+# Echo|grep, not a fatal-producer pipe (L21-safe), mirroring _syncthing_yaml_changed.
+# (services.default lives under config/ — a per-host, template-parity-exempt
+# namespace, not the universal shell/ scaffold.)
+_services_default_changed() {
+    echo "$1" | grep -qE '(^|/)config/services\.default(\.[^/]+)?$'
+}
+
 # ─── Accumulators ───────────────────────────────────────────────────
 SHELL_RC_CHANGED=0
 FOLLOWUPS=()
@@ -485,6 +494,17 @@ process_repo() {
                     warn "$name: \`mesh syncthing pair\` retornou non-zero (continuando)"
                 fi
             fi
+            # T-006: a --full identity re-apply reconciles service boot-state too.
+            # No diff to gate on in --full — reconcile unconditionally toward the
+            # per-host services.default.<alias>. Enabled bit only; non-fatal.
+            local mesh_bin_full="$HERE/../../bin/mesh"
+            if [[ -f "$mesh_bin_full" ]]; then
+                notice "$name: reconciliando boot-state de serviços (mesh services reconcile)…"
+                if ! NON_INTERACTIVE=1 MESH_IDENTITY_DIR="$repo" \
+                        bash "$mesh_bin_full" services reconcile 2>&1 | sed 's/^/    /'; then
+                    warn "$name: \`mesh services reconcile\` retornou non-zero (continuando)"
+                fi
+            fi
         fi
         # Defense in depth: never write empty last-applied. new_head is the
         # actual post-pull SHA; head_remote was the upstream snapshot at
@@ -636,6 +656,23 @@ process_repo() {
             if ! NON_INTERACTIVE=1 MESH_IDENTITY_DIR="$repo" \
                     bash "$st_runner" pair 2>&1 | sed 's/^/    /'; then
                 warn "$name: \`mesh syncthing pair\` retornou non-zero (continuando) — reconcilie manualmente"
+            fi
+        fi
+    fi
+
+    # ─── Apply: reconcile service boot-state when services.default changed (T-006) ──
+    # Like the Syncthing block above: the mesh replicates services.default.<alias>
+    # on pull but nothing applies it. Reconcile the enabled bit ONLY toward the
+    # per-host file (never stops a running unit). Gated on the file having changed;
+    # failure warns but never aborts the update.
+    if (( ! skip_install )) && _is_identity_repo "$repo" \
+            && _services_default_changed "$diff_paths"; then
+        local svc_mesh_bin="$HERE/../../bin/mesh"
+        if [[ -f "$svc_mesh_bin" ]]; then
+            notice "$name: services.default mudou — reconciliando boot-state (mesh services reconcile)…"
+            if ! NON_INTERACTIVE=1 MESH_IDENTITY_DIR="$repo" \
+                    bash "$svc_mesh_bin" services reconcile 2>&1 | sed 's/^/    /'; then
+                warn "$name: \`mesh services reconcile\` retornou non-zero (continuando)"
             fi
         fi
     fi
