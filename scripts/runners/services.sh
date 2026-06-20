@@ -262,9 +262,9 @@ _svc_pick_blink() {
 # MESH_SERVICES_PICKER=bash). Prints the chosen `<id>\t<verb>`.
 _svc_pick_bash() {
     local rows="$1" n=0 sel idx
-    local f_id f_display f_aliases f_owner f_kind f_scope f_target f_active f_enabled
+    local f_id f_display f_kind f_active f_enabled
     local -a ids=() displays=() actives=() enableds=()
-    while IFS='|' read -r f_id f_display f_aliases f_owner f_kind f_scope f_target f_active f_enabled; do
+    while IFS='|' read -r f_id f_display _ _ f_kind _ _ f_active f_enabled; do
         [[ -n "$f_id" ]] || continue
         n=$((n + 1))
         ids+=("$f_id"); displays+=("$f_display"); actives+=("$f_active"); enableds+=("$f_enabled")

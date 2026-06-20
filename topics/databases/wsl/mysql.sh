@@ -56,6 +56,7 @@ _apply_boot_state() {
     local recon
     recon="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)/scripts/lib/services/reconcile.sh"
     [[ -f "$recon" ]] || return 0
+    # shellcheck disable=SC1090  # $recon is a computed path to the services lib
     ( . "$recon" && services_reconcile_one "$1" ) 2>/dev/null || true
 }
 

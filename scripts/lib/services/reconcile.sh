@@ -108,10 +108,10 @@ _recon_enabled_now() {
 # (idempotent). Enabled bit only; never start/stop. Prints a per-row result line.
 # rc0 unless an enable/disable command fails; rc1 if <id> matches no curated row.
 services_reconcile_one() {
-    local id="$1" rows rid rdisp ral rown rkind rscope rtarget
+    local id="$1" rows rid rkind rscope rtarget
     local desired current rc=0 acted=0
     rows="$(services_registry_resolve)"
-    while IFS='|' read -r rid rdisp ral rown rkind rscope rtarget; do
+    while IFS='|' read -r rid _ _ _ rkind rscope rtarget; do
         [[ -n "$rid" ]] || continue
         [[ "$rid" == "$id" || "$rid" == "$id"@* ]] || continue
         acted=1
