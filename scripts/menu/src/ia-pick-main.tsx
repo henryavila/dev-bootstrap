@@ -3,7 +3,8 @@
  * over the runner's candidate set and hand the chosen row back to bash. Same
  * file-based contract as prompt-main (Ink draws on stdout, so the value goes to
  * --out, never stdout). Exit codes:
- *   0   = chosen raw line written to --out
+ *   0   = `<action>\t<chosen raw line>` written to --out (action ∈ open|new:
+ *         Enter→open focuses/opens, Ctrl-N→new opens another agent in the repo)
  *   130 = user cancelled (Esc)        → runner opens nothing
  *   1   = bad args / no TTY / empty   → runner falls back to its bash picker
  */
@@ -11,7 +12,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { render } from 'ink';
 import { ThemeProvider, detectIconSet } from '@henryavila/blink-tui';
 import { registerDomainGlyphs } from './glyphs.js';
-import { SearchPicker, parseCandidates } from './screens/SearchPicker.js';
+import { SearchPicker, parseCandidates, type IaAction } from './screens/SearchPicker.js';
 
 export interface IaPickArgs {
   in: string;
@@ -55,9 +56,11 @@ export async function iaPickMain(args: string[]): Promise<void> {
   const iconSet = await detectIconSet();
 
   let result: string | null = null;
+  let resultAction: IaAction = 'open';
   let unmountFn: (() => void) | undefined;
-  const finish = (raw: string | null) => {
+  const finish = (raw: string | null, action: IaAction = 'open') => {
     result = raw;
+    resultAction = action;
     unmountFn?.();
   };
 
@@ -70,6 +73,6 @@ export async function iaPickMain(args: string[]): Promise<void> {
   await waitUntilExit();
 
   if (result === null) process.exit(130); // cancelled
-  writeFileSync(opts.out, result);
+  writeFileSync(opts.out, `${resultAction}\t${result}`);
   process.exit(0);
 }
