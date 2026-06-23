@@ -138,14 +138,22 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 : "${CI_PHP_VERSIONS:=8.4 8.5}"
 
 # Item-level skips (MESH_SKIP_ITEMS, honored by the install engine — finer than
-# the topic-level SKIP_TOPICS above). rust-bins-wsl pulls dust/xh/procs from the
-# GitHub-release CDN; a stalled transfer there has repeatedly hung this smoke run
-# to the hard timeout. The bootstrap's own logic for that item is trivial (fetch
-# + extract to ~/.local/bin) and the download path is hardened separately, so we
-# drop just this externally-dependent item rather than hold our pipeline hostage
-# to a third-party CDN. Other cli-tools (apt-backed) still run, preserving the
-# bundle's coverage. Override with CI_SKIP_ITEMS="" to exercise it locally.
-: "${CI_SKIP_ITEMS:=rust-bins-wsl}"
+# the topic-level SKIP_TOPICS above). Override with CI_SKIP_ITEMS="" to exercise
+# any of these locally. Two reasons an item lands here:
+#
+#   rust-bins-wsl — pulls dust/xh/procs from the GitHub-release CDN; a stalled
+#     transfer there repeatedly hung this run to the hard timeout. Its bootstrap
+#     logic is trivial (fetch + extract to ~/.local/bin) and the download path is
+#     hardened separately, so we drop just this externally-dependent item rather
+#     than hold the pipeline hostage to a third-party CDN.
+#
+#   mysql-wsl / redis-wsl / postgresql — database *servers*. Their install()
+#     starts the daemon and verify() asserts it is running (systemctl/service),
+#     but this hermetic container has no init system, so the server can never
+#     come up and post-install verify can't pass. We validate the bootstrap, not
+#     a live DB runtime — same rationale as the identity/personal topic skips.
+#     (The apt-backed client/driver bits of each topic still install.)
+: "${CI_SKIP_ITEMS:=rust-bins-wsl mysql-wsl redis-wsl postgresql}"
 RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' MESH_SKIP_ITEMS='$CI_SKIP_ITEMS' NON_INTERACTIVE=1 bash ~/mesh-workstation/setup.sh"
 [[ -n "$CI_SKIP_ITEMS" ]] && printf '>>> skipping items (MESH_SKIP_ITEMS): %s\n' "$CI_SKIP_ITEMS"
 

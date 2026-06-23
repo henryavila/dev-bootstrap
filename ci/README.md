@@ -30,9 +30,12 @@ Options:
   (e.g. while bisecting a failure)
 - `CI_SKIP_ITEMS="..." bash ci/smoke-test.sh` overrides the item-level skip
   list (engine `MESH_SKIP_ITEMS`, finer than `SKIP_TOPICS`). Default:
-  `rust-bins-wsl` — it pulls dust/xh/procs from the GitHub-release CDN, whose
-  stalls have hung this run to the hard timeout; the rest of the `cli-tools`
-  bundle (apt-backed) still installs. Set `CI_SKIP_ITEMS=""` to exercise it.
+  `rust-bins-wsl mysql-wsl redis-wsl postgresql`. `rust-bins-wsl` pulls
+  dust/xh/procs from the GitHub-release CDN (stalls have hung this run to the
+  hard timeout). The three DB servers start a daemon and verify it is running
+  via systemctl/service, which a hermetic (init-less) container can't satisfy —
+  we validate the bootstrap, not a live DB runtime. The apt-backed client/driver
+  bits of each topic still install. Set `CI_SKIP_ITEMS=""` to exercise any.
 
 ## What runs
 
