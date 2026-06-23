@@ -769,19 +769,61 @@ _any_update_optin() {
     return 1
 }
 
+# rc 0 iff ≥1 manifest item under $1/topics declares `autoupdate: true` — the
+# per-item override that self-updates regardless of the global category switches.
+# Cheap grep so a zero-flag, zero-category machine never spawns the engine.
+_has_autoupdate_items() {
+    local ws="$1"
+    [[ -d "$ws/topics" ]] || return 1
+    grep -rqiE '^[[:space:]]*autoupdate:[[:space:]]*(true|yes|1)([[:space:]]|#|$)' \
+        "$ws/topics" 2>/dev/null
+}
+
+# Epoch mtime of $1 (BSD stat then GNU stat); empty + rc1 if neither works.
+_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+
+# rc 0 = throttled (the daily login package pass already ran within the window →
+# skip). MESH_UPDATE_FORCE=1 (set by `mesh upgrade`) bypasses; interval ≤0 or
+# MESH_PACKAGE_UPDATE_INTERVAL=0 disables the throttle; no stamp yet = allowed.
+_package_update_throttled() {
+    case "${MESH_UPDATE_FORCE:-0}" in 1|true|yes|on) return 1 ;; esac
+    local interval="${MESH_PACKAGE_UPDATE_INTERVAL:-86400}"
+    [[ "$interval" =~ ^[0-9]+$ ]] || interval=86400
+    (( interval <= 0 )) && return 1
+    local stamp="$STATE_DIR/last-package-update" now mtime
+    [[ -f "$stamp" ]] || return 1
+    now="$(date +%s)"; mtime="$(_mtime "$stamp")"
+    [[ -n "$mtime" ]] || return 1
+    (( now - mtime < interval ))
+}
+
 run_update_phase() {
-    # subshell so sourcing params.env in the guard never pollutes our globals
-    ( _any_update_optin ) || { dbg "update phase: no opt-in categories — skipping"; return 0; }
     local r ws=""
     for r in "${AUTO_UPDATE_REPOS[@]}"; do _is_workstation_repo "$r" && { ws="$r"; break; }; done
     [[ -n "$ws" ]] || { dbg "update phase: no workstation repo configured — skipping"; return 0; }
+    # Fire when EITHER a global category is opted in OR ≥1 item carries
+    # `autoupdate: true`. Subshell on the optin guard so sourcing params.env
+    # never pollutes our globals.
+    if ! ( _any_update_optin ) && ! _has_autoupdate_items "$ws"; then
+        dbg "update phase: no opt-in categories and no autoupdate items — skipping"; return 0
+    fi
+    # Daily throttle for the auto/login path: the package phase (a native
+    # `outdated` query per item) is heavier than the git-pull, so cap it to once
+    # per interval. `mesh upgrade` exports MESH_UPDATE_FORCE=1 to bypass.
+    if _package_update_throttled; then
+        dbg "update phase: throttled (<${MESH_PACKAGE_UPDATE_INTERVAL:-86400}s since last run) — skipping"; return 0
+    fi
     local sel="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/selections.list"
     [[ -r "$sel" ]] || { dbg "update phase: no selections.list — skipping"; return 0; }
     local engine="$ws/scripts/lib/install-engine.sh"
     [[ -r "$engine" ]] || { warn "update phase: engine not found at $engine"; return 0; }
-    notice "version-aware update phase (opt-in categories enabled)"
+    notice "version-aware update phase"
     bash "$engine" --update --non-interactive --selections "$sel" 2>&1 | sed 's/^/    /' \
         || warn "update phase: install-engine --update returned non-zero"
+    # Stamp the attempt so the throttle holds until the next interval (a transient
+    # failure waits one interval; `mesh upgrade` forces an immediate retry).
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
+    : > "$STATE_DIR/last-package-update" 2>/dev/null || true
 }
 
 # ─── Main loop ──────────────────────────────────────────────────────

@@ -102,6 +102,7 @@ Usage:
   mesh doctor [--fix]               Report deploy drift; --fix repairs broken installed items
   mesh adopt                        Backfill install markers for already-present tools (v1→v2; read-only)
   mesh update [-o NAME] [-f] [-i]   Pull and apply updates
+  mesh upgrade [--dry-run]          Upgrade autoupdate-flagged packages now (version-aware; --dry-run lists candidates)
   mesh setup [--no-update]          Update both repos, then run setup.sh
   mesh topic list                   List mesh-workstation topics
   mesh topic <NN...>                Re-apply mesh-workstation topics by number
@@ -143,6 +144,15 @@ Subcommands:
                                      unpushed local commits.
 
            Passthrough flags: --reset-auth, --from-shell-start.
+  upgrade  Version-aware upgrade of mesh-managed packages, on demand. Upgrades
+           only items marked `autoupdate: true` in the manifest (the per-item
+           override — e.g. moshi-hook, claudebar, rtk) plus any opted-in
+           MESH_UPDATE_* category, using each package manager's native outdated
+           check (never a blind reinstall, never `brew upgrade` of everything,
+           never an unflagged package). New items are never installed. The login
+           pass (`mesh update`) runs the same upgrade at most once/day (throttle);
+           `mesh upgrade` forces it now. `--dry-run` lists the candidates without
+           changing anything.
   setup    Run the bootstrap (setup.sh) from any directory. Runs `mesh update`
            (both repos) first so the install system AND the identity config
            (secrets, syncthing yaml, dotfiles) are current, then runs setup.sh.
@@ -502,6 +512,9 @@ sub_topic() {
 
 sub_update() {
     export DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0
+    # Resolve this host's alias so the engine's --update pass can read its
+    # per-host autoupdate override (config/autoupdate.default.<alias>).
+    export MESH_AUTOUPDATE_ALIAS="${MESH_AUTOUPDATE_ALIAS:-$(_mesh_self_alias)}"
 
     local motor
     motor="$(_resolve_companion "runners/auto-update.sh")"
@@ -1440,6 +1453,22 @@ sub_clean() {
     exec bash "$runner" "$@"
 }
 
+# `mesh upgrade [--dry-run]` → on-demand, version-aware upgrade of mesh-managed
+# packages: items marked `autoupdate: true` in the manifest (+ any opted-in
+# MESH_UPDATE_* category), using each package manager's native outdated check.
+# Never installs new items, never a blind `brew upgrade`. Bypasses the daily
+# login throttle. The login pass (`mesh update`) runs the same upgrade at most
+# once/day; this is the force-now verb.
+sub_upgrade() {
+    local runner
+    runner="$(_resolve_companion "runners/upgrade.sh")"
+    [[ -n "$runner" ]] || _die "runners/upgrade.sh not found (set \$MESH_HOME or check installation)"
+    # Resolve this host's alias so the engine's --update pass can read its
+    # per-host autoupdate override (config/autoupdate.default.<alias>).
+    export MESH_AUTOUPDATE_ALIAS="${MESH_AUTOUPDATE_ALIAS:-$(_mesh_self_alias)}"
+    exec bash "$runner" "$@"
+}
+
 # `mesh ai [term] [--agent X]` → open an AI agent in the right repo via herdr.
 # Discovers repos on disk (multi-root) and hands the chosen one to herdr (focus
 # if open, else create + launch). mesh-identity aliases this to `mesh ia` with
@@ -1494,6 +1523,10 @@ case "${1:-status}" in
     update)
         shift
         sub_update "$@"
+        ;;
+    upgrade)
+        shift
+        sub_upgrade "$@"
         ;;
     topic)
         shift

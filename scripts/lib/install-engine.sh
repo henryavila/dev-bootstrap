@@ -99,6 +99,8 @@ export MESH_LIB_DIR="$ENGINE_DIR"
 . "$ENGINE_DIR/conditions.sh"
 # shellcheck disable=SC1091
 . "$ENGINE_DIR/state-dir.sh"
+# shellcheck disable=SC1091
+. "$ENGINE_DIR/autoupdate-policy.sh"
 
 DRY_RUN=0
 SELECTIONS_FILE=""
@@ -142,6 +144,15 @@ _mode_count=$(( UPDATE_MODE + REPAIR_MODE + ADOPT_MODE ))
 if [[ "$_mode_count" -gt 1 ]]; then
     log_error "--update, --repair and --adopt are mutually exclusive"
     exit 64
+fi
+
+# In update mode, resolve this host's autoupdate override (mesh-identity
+# config/autoupdate.default.<alias>) into MESH_AUTOUPDATE_DENY/ALLOW once, before
+# the bundle loop — every item subshell inherits the exported lists. Honors a
+# caller-provided env (mesh upgrade / mesh update set MESH_AUTOUPDATE_ALIAS); a
+# missing alias/file leaves both empty = manifest defaults.
+if [[ "$UPDATE_MODE" -eq 1 ]]; then
+    autoupdate_policy_export
 fi
 
 [[ -d "$TOPICS_DIR" ]]     || { log_error "missing topics dir: $TOPICS_DIR"; exit 64; }
@@ -555,6 +566,7 @@ apply_bundle() {
         local mcheck="${p}_CHECK";     mcheck="${!mcheck:-}"
         local when="${p}_WHEN";        when="${!when:-}"
         local idem="${p}_IDEMPOTENT";  idem="${!idem:-0}"
+        local autoupd="${p}_AUTOUPDATE"; autoupd="${!autoupd:-0}"
         [[ -n "$name" ]] || break
         [[ -n "$type" ]] || { log_error "$bundle/$name: item missing required 'type'"; exit 64; }
 
@@ -611,7 +623,10 @@ apply_bundle() {
             fi
         fi
 
-        if [[ "$DRY_RUN" -eq 1 ]]; then
+        # Update mode runs its own dry-run report inside the gate below (it must
+        # first resolve eligibility + installed-state), so skip the generic
+        # "would process" line here when --update is set.
+        if [[ "$DRY_RUN" -eq 1 && "$UPDATE_MODE" -ne 1 ]]; then
             local idem_note=""; [[ "$idem" == "1" ]] && idem_note=" idempotent"
             log_info "[dry-run] would process: $bundle/$name ($type$idem_note) arg=$arg"
             bundle_processed=$((bundle_processed+1))
@@ -738,9 +753,22 @@ apply_bundle() {
             # Never installs new items; skips items without an updater (e.g.
             # deploy/config) — those are re-applied by `mesh update`'s apply pass.
             if [[ "$UPDATE_MODE" -eq 1 ]]; then
+                # per-host autoupdate policy: the caller resolves mesh-identity
+                # config/autoupdate.default.<alias> into these space-padded env
+                # lists. DENY hard-skips this item on this host (e.g. a corporate
+                # box that wants nothing self-updating); ALLOW opts a non-flagged
+                # item in on this host only.
+                case " ${MESH_AUTOUPDATE_DENY:-} " in
+                    *" $name "*) log_info "$bundle/$name: update skip (host autoupdate deny)"; exit 0 ;;
+                esac
+                local _eff_au="$autoupd"
+                case " ${MESH_AUTOUPDATE_ALLOW:-} " in *" $name "*) _eff_au=1 ;; esac
                 local _cat; _cat="$(_update_category "$TOPIC")"
-                if ! _update_enabled "$_cat"; then
-                    log_info "$bundle/$name: update skip (category '$_cat' off)"; exit 0
+                # per-item `autoupdate: true` (or host ALLOW) self-updates regardless
+                # of the global category switches (whose UI was deferred to T-300+,
+                # all three default OFF). A non-flagged item still needs its category.
+                if [[ "$_eff_au" != "1" ]] && ! _update_enabled "$_cat"; then
+                    log_info "$bundle/$name: update skip (category '$_cat' off, no autoupdate)"; exit 0
                 fi
                 if ! declare -f "${prefix}_update" >/dev/null 2>&1; then
                     log_info "$bundle/$name: update skip (no updater for type=$type)"; exit 0
@@ -756,7 +784,11 @@ apply_bundle() {
                 if (( _installed == 0 )); then
                     log_info "$bundle/$name: update skip (not installed)"; exit 0
                 fi
-                log_info "$bundle/$name: checking for update [$_cat]"
+                local _why="category '$_cat'"; [[ "$_eff_au" == "1" ]] && _why="autoupdate"
+                if [[ "$DRY_RUN" -eq 1 ]]; then
+                    log_info "[dry-run] $bundle/$name: would check for update ($type) [$_why]"; exit 0
+                fi
+                log_info "$bundle/$name: checking for update [$_why]"
                 local _urc=0
                 "${prefix}_update" "$arg" || _urc=$?
                 if [[ "$_urc" -ne 0 ]]; then
