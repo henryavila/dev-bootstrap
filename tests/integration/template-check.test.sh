@@ -121,6 +121,19 @@ out=$(MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
 assert_eq "$rc" "0" ".worktrees/ nested checkouts are skipped (no drift)"
 assert_not_contains "$out" ".worktrees" "drift report never names .worktrees paths"
 
+# A git worktree's ROOT .git is a FILE (a gitdir pointer), not the .git/ dir
+# that SKIP_PREFIXES covers. The pre-commit hook runs template-check with
+# MESH_IDENTITY_DIR = `git rev-parse --show-toplevel`, which inside an in-repo
+# worktree (.worktrees/<name>) is the worktree root — so that .git file must be
+# skipped, not read as un-templated identity content demanding a .git.example.
+pair="$SANDBOX/skip-worktree-gitfile"
+_build_pair "$pair"
+echo "gitdir: /home/u/mesh-identity/.git/worktrees/mesh-services" > "$pair/identity/.git"
+out=$(MESH_TEMPLATE_DIR="$pair/template" MESH_IDENTITY_DIR="$pair/identity" \
+    bash "$TC" 2>&1); rc=$?
+assert_eq "$rc" "0" "worktree root .git FILE is skipped (no drift)"
+assert_not_contains "$out" ".git.example" "drift report never demands a .git.example counterpart"
+
 # ─── Test 6: --quiet ────────────────────────────────────────────────
 echo
 echo "Test 6: --quiet suppresses output"

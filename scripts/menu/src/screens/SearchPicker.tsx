@@ -12,7 +12,8 @@
  * is the app's own keymap (blink never embeds one). Driven from bash via
  * `node index.js ia-pick --in <candidates> --out <file>`.
  *
- * Keys: type / Backspace filter · ↑↓ move · Enter open focused · Esc cancel.
+ * Keys: type / Backspace filter · ↑↓ move · Enter open focused · Ctrl-N open a
+ * NEW agent in the focused repo (a fresh tab if it is already open) · Esc cancel.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Box, useInput } from 'ink';
@@ -89,10 +90,15 @@ export function rowMeta(it: IaItem): string {
   return dir;
 }
 
+/** What to do with the chosen row: `open` focuses/opens the primary target;
+ *  `new` opens ANOTHER agent in the project (a fresh tab if it is already open). */
+export type IaAction = 'open' | 'new';
+
 export interface SearchPickerProps {
   items: IaItem[];
-  /** Called with the chosen item's raw line, or null on cancel. */
-  onDone: (raw: string | null) => void;
+  /** Called with the chosen item's raw line + the action (Enter → open, Ctrl-N →
+   *  new), or (null) on cancel. */
+  onDone: (raw: string | null, action?: IaAction) => void;
 }
 
 export function SearchPicker({ items, onDone }: SearchPickerProps) {
@@ -108,12 +114,18 @@ export function SearchPicker({ items, onDone }: SearchPickerProps) {
   }, [ids, focusId]);
   const nav = useListNavigation({ ids, focusedId: focusId, onFocusChange: setFocusId });
 
+  // Enter opens/focuses the primary target; Ctrl-N opens a NEW agent in the same
+  // repo (a fresh tab when its workspace is already open) — both act on the row
+  // currently focused.
+  const choose = (action: IaAction) => {
+    const c = filtered.find((it) => it.id === focusId) ?? filtered[0];
+    onDone(c ? c.raw : null, action);
+  };
+
   useInput((input, key) => {
     if (key.escape) return onDone(null);
-    if (key.return) {
-      const chosen = filtered.find((it) => it.id === focusId) ?? filtered[0];
-      return onDone(chosen ? chosen.raw : null);
-    }
+    if (key.return) return choose('open');
+    if (key.ctrl && input === 'n') return choose('new');
     if (key.downArrow) return nav.focusNext();
     if (key.upArrow) return nav.focusPrev();
     if (key.backspace || key.delete) return setQuery((q) => q.slice(0, -1));
@@ -132,6 +144,7 @@ export function SearchPicker({ items, onDone }: SearchPickerProps) {
     { k: 'type', desc: 'filter' },
     { k: '↑↓', desc: 'move' },
     { k: 'enter', desc: 'open' },
+    { k: '^n', desc: 'new' },
     { k: 'esc', desc: 'cancel' },
   ];
 
