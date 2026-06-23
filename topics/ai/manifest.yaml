@@ -26,6 +26,9 @@ bundles:
         type: npx
         spec: "@henryavila/claudebar@latest install"
         check: "test -f $HOME/.config/claudebar/statusline.sh && jq -e '.statusLine.command | test(\"claudebar\")' $HOME/.claude/settings.json >/dev/null 2>&1"
+        # Fast-moving leaf tool — keep fresh via the version-aware update path
+        # regardless of the global category switches. See package-autoupdate.
+        autoupdate: true
       - name: shell-fragments
         type: deploy
         spec: ./templates/claude-code
@@ -40,6 +43,7 @@ bundles:
         type: brew-formula
         spec: rjyo/moshi/moshi-hook
         platforms: [mac]
+        autoupdate: true   # ships frequently; brew_formula_update upgrades it
       - name: moshi-hook-mac-service
         type: custom
         script: ./moshi-hook-service-mac.sh
@@ -48,6 +52,7 @@ bundles:
         type: custom
         script: ./install-moshi-hook.sh
         platforms: [wsl]
+        autoupdate: true   # update() re-runs the getmoshi.app installer (latest)
       - name: moshi-hook-wsl-service
         type: custom
         script: ./moshi-hook-service-wsl.sh
@@ -85,6 +90,7 @@ bundles:
       - name: rtk
         type: custom
         script: ./install-rtk.sh
+        autoupdate: true   # leaf CLI proxy; install-rtk.sh update() keeps it fresh
 
   - name: claude-mem
     label: "claude-mem"

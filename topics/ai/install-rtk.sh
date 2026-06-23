@@ -173,6 +173,28 @@ install() {
     export PATH
 }
 
+# Version-aware update (engine --update + `mesh upgrade`): rtk ships as GitHub
+# releases, so compare the latest published tag against the one recorded in the
+# state file and only re-run install() (download + checksum + swap) when they
+# differ. install() always fetches latest, so this guard is what makes the
+# autoupdate path cheap when already current.
+update() {
+    local latest current=""
+    latest="$(_rtk_latest_tag)" || {
+        printf 'install-rtk: update — could not resolve latest rtk tag\n' >&2
+        return 1
+    }
+    if [[ -r "$RTK_STATE_FILE" ]]; then
+        current="$(sed -nE 's/^RTK_TAG=(.*)$/\1/p' "$RTK_STATE_FILE" | head -1)"
+    fi
+    if [[ -n "$current" && "$current" == "$latest" ]]; then
+        printf 'install-rtk: rtk already latest (%s)\n' "$current" >&2
+        return 0
+    fi
+    printf 'install-rtk: updating rtk %s -> %s\n' "${current:-none}" "$latest" >&2
+    install
+}
+
 rollback() {
     # A3-F-009: only delete the binary we installed, identified by both
     # recorded path AND sha256 match. Refuse if hash drifted (user may have

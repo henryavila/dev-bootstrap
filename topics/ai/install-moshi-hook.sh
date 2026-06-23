@@ -21,6 +21,16 @@ verify() {
     command -v moshi-hook >/dev/null 2>&1 || [[ -x "$HOME/.local/bin/moshi-hook" ]]
 }
 
+# Version-aware update (engine --update + `mesh upgrade`): the getmoshi.app
+# installer always fetches the latest release and replaces the binary in-place,
+# so re-running it IS the upgrade. moshi-hook ships frequently (the very reason
+# this item carries `autoupdate: true` in the manifest); on mac the brew-formula
+# item owns the upgrade via brew_formula_update, so this is the Linux/WSL path.
+update() {
+    info "updating moshi-hook to latest via getmoshi.app installer"
+    curl -fsSL https://getmoshi.app/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+}
+
 rollback() {
     rm -f "$HOME/.local/bin/moshi-hook" "$HOME/.local/bin/moshi"
 }
