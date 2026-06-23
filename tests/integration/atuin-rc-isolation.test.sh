@@ -48,5 +48,18 @@ printf '\neval "$(atuin init zsh)"\n' > "$zrc"   # atuin creates it
 _atuin_restore_rc "$zrc" ""
 [[ ! -e "$zrc" ]] && ok "an atuin-created rc file is removed (empty backup path)" || bad "atuin-created rc file was not removed"
 
+# ── 3. zinit installer must NOT be allowed to edit the real ~/.zshrc ──
+# zinit's edit_zshrc() always appends its block to $ZSHRC (default ~/.zshrc),
+# which would leave an unmarked ~/.zshrc the deploy guard then refuses. The
+# installer honours a ZSHRC override; install-zinit.sh must redirect it away
+# from $HOME so the canonical marked .zshrc can deploy.
+ZINIT_SH="$WS/topics/shell-terminal/install-zinit.sh"
+grep -qE 'ZSHRC=.*bash -c' "$ZINIT_SH" \
+  && ok "install-zinit.sh redirects ZSHRC for the installer (no ~/.zshrc edit)" \
+  || bad "install-zinit.sh does NOT override ZSHRC — zinit will pollute ~/.zshrc"
+! grep -qE '^[[:space:]]*yes n \| bash -c' "$ZINIT_SH" \
+  && ok "install-zinit.sh no longer relies on the ineffective bare 'yes n' guard" \
+  || bad "install-zinit.sh still runs the installer without a ZSHRC redirect"
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]
