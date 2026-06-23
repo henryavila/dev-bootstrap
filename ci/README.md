@@ -28,6 +28,11 @@ Options:
   pre-bootstrap apt package in the Dockerfile)
 - `EXTRA_SKIP="..." bash ci/smoke-test.sh` appends topics to the skip list
   (e.g. while bisecting a failure)
+- `CI_SKIP_ITEMS="..." bash ci/smoke-test.sh` overrides the item-level skip
+  list (engine `MESH_SKIP_ITEMS`, finer than `SKIP_TOPICS`). Default:
+  `rust-bins-wsl` — it pulls dust/xh/procs from the GitHub-release CDN, whose
+  stalls have hung this run to the hard timeout; the rest of the `cli-tools`
+  bundle (apt-backed) still installs. Set `CI_SKIP_ITEMS=""` to exercise it.
 
 ## What runs
 

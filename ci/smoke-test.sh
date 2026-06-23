@@ -136,7 +136,18 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 # the second version fails and CI catches it. Full 4-version matrix
 # belongs to a deferred Tier 3 E2E (SPEC §14).
 : "${CI_PHP_VERSIONS:=8.4 8.5}"
-RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' NON_INTERACTIVE=1 bash ~/mesh-workstation/setup.sh"
+
+# Item-level skips (MESH_SKIP_ITEMS, honored by the install engine — finer than
+# the topic-level SKIP_TOPICS above). rust-bins-wsl pulls dust/xh/procs from the
+# GitHub-release CDN; a stalled transfer there has repeatedly hung this smoke run
+# to the hard timeout. The bootstrap's own logic for that item is trivial (fetch
+# + extract to ~/.local/bin) and the download path is hardened separately, so we
+# drop just this externally-dependent item rather than hold our pipeline hostage
+# to a third-party CDN. Other cli-tools (apt-backed) still run, preserving the
+# bundle's coverage. Override with CI_SKIP_ITEMS="" to exercise it locally.
+: "${CI_SKIP_ITEMS:=rust-bins-wsl}"
+RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' MESH_SKIP_ITEMS='$CI_SKIP_ITEMS' NON_INTERACTIVE=1 bash ~/mesh-workstation/setup.sh"
+[[ -n "$CI_SKIP_ITEMS" ]] && printf '>>> skipping items (MESH_SKIP_ITEMS): %s\n' "$CI_SKIP_ITEMS"
 
 start=$(date +%s)
 # We write both stdout and stderr to the logfile AND to the terminal via tee.
