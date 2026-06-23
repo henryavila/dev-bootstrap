@@ -176,7 +176,9 @@ _oracle_datadir_init() {
 _install_oracle_tarball() {
     local tmp tarball dir arch
     tmp="$(mktemp -d)" || return 1
-    trap 'rm -rf "$tmp"' RETURN
+    # Self-clearing: a bare RETURN trap leaks past this helper and re-fires on the
+    # caller's return where `tmp` is out of scope → `set -u` abort. Disarm after.
+    trap 'rm -rf "$tmp"; trap - RETURN' RETURN
 
     tarball="$(_fetch_verify_oracle "$tmp")" || return 1
 
