@@ -177,6 +177,17 @@ assert_pattern_absent() {
 }
 
 summary() {
+    # Tripwire: if something redefined fail() AFTER assert.sh was sourced — e.g.
+    # log.sh ships a non-counting fail() and is commonly pulled in transitively by
+    # the libs under test — then failing assertions print ✗ but never increment
+    # FAIL, and the suite reports a lying green. Refuse to emit a result we can't
+    # trust. Fix: source assert.sh AFTER log.sh / the libs under test so its
+    # counting fail()/pass() win.
+    if ! declare -f fail | grep -q 'FAIL='; then
+        printf "${_c_err}✗ assert.sh: fail() is shadowed by a non-counting definition — failures are NOT counted.${_c_reset}\n" >&2
+        printf "${_c_err}  Source assert.sh after log.sh / the libs under test (see tests/integration/ia-launcher.test.sh).${_c_reset}\n" >&2
+        exit 2
+    fi
     local total=$((PASS + FAIL))
     printf "\n"
     if [[ "$FAIL" -eq 0 ]]; then
