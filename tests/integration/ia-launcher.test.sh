@@ -13,8 +13,6 @@ set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
-# shellcheck source=../lib/assert.sh
-source "$SELF_DIR/../lib/assert.sh"
 # shellcheck source=../../scripts/lib/log.sh
 source "$REPO_ROOT/scripts/lib/log.sh"
 # shellcheck source=../../scripts/lib/ia-discover.sh
@@ -23,6 +21,12 @@ source "$REPO_ROOT/scripts/lib/ia-discover.sh"
 source "$REPO_ROOT/scripts/lib/ia-herdr.sh"
 # shellcheck source=../../scripts/lib/ia-agent.sh
 source "$REPO_ROOT/scripts/lib/ia-agent.sh"
+# assert.sh LAST, on purpose: log.sh defines a non-counting fail()/ok() that
+# would otherwise SHADOW assert.sh's counting pass()/fail() — masking failures
+# (they print ✗ but never increment FAIL, so the suite stays green). Sourcing
+# assert.sh after the libs makes its fail() win so failures actually fail.
+# shellcheck source=../lib/assert.sh
+source "$SELF_DIR/../lib/assert.sh"
 RUNNER="$REPO_ROOT/scripts/runners/ia.sh"
 
 SANDBOX="$(mktemp -d -t mesh-ia.XXXXXX)"
@@ -96,6 +100,8 @@ case "$1 $2" in
     printf '%s' '{"result":{"panes":[{"cwd":"/home/henry/arch/.worktrees/feature"},{"cwd":"/other"}]}}' ;;
   "tab list")
     printf '%s' '{"result":{"tabs":[{"tab_id":"w123:1","label":"Design Brief","agent_status":"idle"},{"tab_id":"w123:2","label":"Dashboard","agent_status":"working"}]}}' ;;
+  "tab create")
+    printf '%s' '{"result":{"root_pane":{"pane_id":"wTAB-1"},"tab":{"tab_id":"w123:9"}}}' ;;
   *) : ;;
 esac
 STUB
@@ -127,6 +133,16 @@ STUB
     LOG2="$(cat "$HERDR_LOG")"
     assert_contains "$LOG2" "workspace create --cwd /abs/path --label newproj --focus" "new project → create with cwd+label"
     assert_contains "$LOG2" "pane run wNEW-1 claude --dangerously-skip-permissions" "new project → run agent in new root pane"
+
+    # Case 3: "open new" in an ALREADY-open workspace → new TAB in it + run agent
+    # in the tab's fresh pane (NOT a focus, NOT a second workspace).
+    : > "$HERDR_LOG"
+    ia_herdr_new_tab w123 "/proj/dir" "myproj" "claude --dangerously-skip-permissions" >/dev/null 2>&1
+    LOG3="$(cat "$HERDR_LOG")"
+    assert_contains "$LOG3" "tab create --workspace w123 --cwd /proj/dir --label myproj --focus" "new tab → tab create in the open workspace"
+    assert_contains "$LOG3" "pane run wTAB-1 claude --dangerously-skip-permissions" "new tab → run agent in the new tab's pane"
+    assert_not_contains "$LOG3" "workspace create" "new tab → does NOT spawn a second workspace"
+    assert_not_contains "$LOG3" "workspace focus" "new tab → is not a plain focus"
 
     export PATH="$OLD_PATH"
 fi
@@ -164,6 +180,7 @@ echo "$*" >> "$HERDR_LOG"
 case "$1 $2" in
   "workspace list")   printf '%s' '{"result":{"workspaces":[{"label":"atomic-skills","workspace_id":"w456","agent_status":"done"},{"label":"ghostws","workspace_id":"w999","agent_status":"working"},{"label":"multi","workspace_id":"w777","agent_status":"working"}]}}' ;;
   "workspace create") printf '%s' '{"result":{"root_pane":{"pane_id":"wNEW-1"},"workspace":{"workspace_id":"wNEW"}}}' ;;
+  "tab create")       printf '%s' '{"result":{"root_pane":{"pane_id":"wTAB-1"},"tab":{"tab_id":"w456:9"}}}' ;;
   "pane list")        printf '%s' '{"result":{"panes":[{"cwd":"/srv/ghost/work"}]}}' ;;
   "tab list")
     # $4 = the --workspace id; only `multi` (w777) has several tabs.
@@ -270,6 +287,36 @@ STUB
         assert_not_contains "$ELOG" "workspace focus" "Esc opens nothing (no focus)"
     else
         echo "── Esc-cancel: SKIPPED (no /dev/tty) ──"
+    fi
+
+    # Picker "new" action: choosing a row with the "new" verb opens a FRESH agent
+    # — a new TAB when the project's workspace is already open (atomic-skills/w456),
+    # instead of just focusing it. Driven by a node stub that emulates ia-pick-main
+    # writing `new<TAB><row>` to --out.
+    if ( exec </dev/tty >/dev/tty ) 2>/dev/null; then
+        NNEW="$SANDBOX/nnew"; mkdir -p "$NNEW"
+        cat > "$NNEW/node" <<'STUB'
+#!/usr/bin/env bash
+in=""; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in --in) shift; in="$1" ;; --out) shift; out="$1" ;; esac
+  shift
+done
+row="$(awk -F'\t' '$1=="atomic-skills"{print; exit}' "$in")"
+printf 'new\t%s' "$row" > "$out"
+exit 0
+STUB
+        chmod +x "$NNEW/node"
+        : > "$HERDR_LOG"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" IA_ROOTS="$R1:$R2" \
+            PATH="$NNEW:$RBIN:$PATH" MESH_IA_AGENT=claude MESH_IA_FLAGS_CLAUDE='--dangerously-skip-permissions' \
+            bash "$RUNNER" >/dev/null 2>&1
+        NEWLOG="$(cat "$HERDR_LOG")"
+        assert_contains "$NEWLOG" "tab create --workspace w456 --cwd $R1/atomic-skills --label atomic-skills --focus" "picker 'new' on an open repo → new tab in its workspace"
+        assert_contains "$NEWLOG" "pane run wTAB-1 claude --dangerously-skip-permissions" "picker 'new' → launch agent in the new tab"
+        assert_not_contains "$NEWLOG" "workspace focus w456" "picker 'new' does NOT just focus the existing workspace"
+    else
+        echo "── picker-new: SKIPPED (no /dev/tty) ──"
     fi
 else
     echo "── runner: SKIPPED (jq absent) ──"

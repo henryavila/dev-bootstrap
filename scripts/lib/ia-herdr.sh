@@ -67,7 +67,7 @@ ia_herdr_tabs() {
 ia_herdr_focus_tab() {
     local wsid="$1" tabid="$2"
     herdr workspace focus "$wsid" >/dev/null 2>&1
-    herdr tab focus "$tabid"
+    herdr tab focus "$tabid" >/dev/null
 }
 
 # Route a chosen project into herdr: focus its workspace if already open, else
@@ -85,7 +85,7 @@ ia_herdr_open() {
     wid="$(ia_herdr_workspace_id "$name")"
     if [[ -n "$wid" ]]; then
         log_info "ia: focusing open workspace '$name'"
-        herdr workspace focus "$wid"
+        herdr workspace focus "$wid" >/dev/null
         return $?
     fi
 
@@ -99,6 +99,30 @@ ia_herdr_open() {
     fi
 
     if [[ -n "$agent" ]]; then
-        herdr pane run "$pane_id" "$agent"
+        herdr pane run "$pane_id" "$agent" >/dev/null
     fi
+}
+
+# Open a NEW agent tab inside an ALREADY-open workspace: create a tab at the
+# project dir, then launch the agent in its fresh root pane. This backs the
+# "open new" action for a project whose workspace is already open — where a
+# plain focus would only switch to the agents already running there.
+#   $1 wsid   — target workspace id (must already exist)
+#   $2 path   — absolute project directory (the new tab's cwd)
+#   $3 label  — label for the new tab
+#   $4 agent  — agent command to run in the new tab's root pane (optional)
+ia_herdr_new_tab() {
+    local wsid="$1" path="$2" label="$3" agent="${4:-}"
+    ia_herdr_ready || return 1
+
+    log_info "ia: opening a new agent tab in workspace '$label'"
+    local create_json pane_id
+    create_json="$(herdr tab create --workspace "$wsid" --cwd "$path" --label "$label" --focus 2>/dev/null)"
+    pane_id="$(printf '%s' "$create_json" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)"
+    if [[ -z "$pane_id" ]]; then
+        log_error "ia: herdr tab create failed in workspace '$wsid' ($path)"
+        return 1
+    fi
+
+    [[ -n "$agent" ]] && herdr pane run "$pane_id" "$agent" >/dev/null
 }
