@@ -84,7 +84,12 @@ _add_mysql_repo() {
         echo "mysql: Oracle APT repo has no dist for '${codename}'" >&2; return 1
     fi
 
-    tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+    # Self-clearing RETURN trap: a bare `trap … RETURN` set in this helper LEAKS
+    # — it stays armed after _add_mysql_repo returns and fires again when the
+    # CALLER (install()) returns, where the local `tmp` is out of scope → under
+    # `set -u` that aborted the whole bootstrap with "tmp: unbound variable".
+    # `trap - RETURN` disarms it the moment this function's cleanup has run.
+    tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"; trap - RETURN' RETURN
     curl -fsSL "$MYSQL_GPG_KEY_URL" -o "$tmp/mysql.key" \
         || { echo "mysql: GPG key download failed" >&2; return 1; }
     GNUPGHOME="$tmp" gpg --batch --import "$tmp/mysql.key" 2>/dev/null \

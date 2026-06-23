@@ -30,20 +30,43 @@ _npx_extract_package() {
     printf '%s' "${spec%% *}"
 }
 
+# `npx` ships with Node. mesh installs Node via fnm (~/.local/share/fnm), whose
+# shell activation the engine's non-interactive per-item subshell never runs — so
+# on a FRESH bootstrap (Node installed earlier in the same run) `npx` is not yet
+# on PATH and the item dies with rc 127 (the live CI-smoke symptom for claudebar).
+# Activate the fnm-managed default Node so npx resolves, mirroring
+# topics/languages/node-fnm.sh. No-op when npx is already on PATH (brew/apt Node,
+# or a shell that already activated fnm). Best-effort: returns npx's availability.
+_npx_ensure_on_path() {
+    command -v npx >/dev/null 2>&1 && return 0
+    if ! command -v fnm >/dev/null 2>&1 && [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
+        PATH="$HOME/.local/share/fnm:$PATH"; export PATH
+    fi
+    if command -v fnm >/dev/null 2>&1; then
+        # `fnm use` needs FNM_MULTISHELL_PATH from `fnm env`; node-fnm.sh sets a
+        # default version at install, so activating it puts node/npx/npm on PATH.
+        eval "$(fnm env 2>/dev/null || true)"
+        fnm use default >/dev/null 2>&1 || true
+    fi
+    command -v npx >/dev/null 2>&1
+}
+
 npx_check() { return 1; }
 
 # shellcheck disable=SC2086  # intentional word-split: spec carries subcommand + args
-npx_install() { npx -y $1; }
+npx_install() { _npx_ensure_on_path || true; npx -y $1; }
 
 npx_verify() {
     local pkg
     pkg="$(_npx_extract_package "$1")"
+    _npx_ensure_on_path || true
     npx -y "$pkg" doctor 2>/dev/null || return 0
 }
 
 npx_rollback() {
     local pkg
     pkg="$(_npx_extract_package "$1")"
+    _npx_ensure_on_path || true
     npx -y "$pkg" uninstall 2>/dev/null || true
 }
 
@@ -51,4 +74,4 @@ npx_rollback() {
 # the spec — `npx -y` fetches the latest matching the spec (a pinned @version is
 # a no-op; @latest / unpinned picks up new releases). Same word-split as install.
 # shellcheck disable=SC2086
-npx_update() { echo "npx: re-running $1 (latest)" >&2; npx -y $1; }
+npx_update() { _npx_ensure_on_path || true; echo "npx: re-running $1 (latest)" >&2; npx -y $1; }
