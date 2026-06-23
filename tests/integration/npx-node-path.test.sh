@@ -50,5 +50,22 @@ out="$(set -e; PATH=""; HOME="$ROOT/eh"; . "$SRC"
   && ok "npx absent + no fnm ⇒ helper returns non-zero gracefully (no set -e crash)" \
   || bad "helper mishandled the no-node case (rc=$rc out=$out)"
 
+# ── the npm-global driver has the same Node-on-PATH dependency: same guard ──
+NPM_SRC="$WS/scripts/lib/installers/npm-global.sh"
+# shellcheck source=/dev/null
+. "$NPM_SRC"
+declare -f _npm_global_ensure_on_path >/dev/null \
+  && ok "npm-global.sh defines _npm_global_ensure_on_path" || bad "no _npm_global_ensure_on_path helper"
+nmiss=""
+for v in npm_global_check npm_global_install npm_global_update; do
+    declare -f "$v" | grep -q "_npm_global_ensure_on_path" || nmiss="$nmiss $v"
+done
+[[ -z "$nmiss" ]] && ok "every npm-global verb calls _npm_global_ensure_on_path" \
+                  || bad "npm-global verbs missing the activation call:$nmiss"
+mkdir -p "$ROOT/nbin"; printf '#!/bin/sh\nexit 0\n' > "$ROOT/nbin/npm"; chmod +x "$ROOT/nbin/npm"
+( PATH="$ROOT/nbin:$PATH"; _npm_global_ensure_on_path ) \
+  && ok "_npm_global_ensure_on_path is a no-op (rc 0) when npm is already on PATH" \
+  || bad "_npm_global_ensure_on_path failed even though npm was on PATH"
+
 echo "Results: $passed passed, $failed failed"
 [[ $failed -eq 0 ]]
