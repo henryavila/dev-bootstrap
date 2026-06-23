@@ -153,7 +153,14 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 #     come up and post-install verify can't pass. We validate the bootstrap, not
 #     a live DB runtime — same rationale as the identity/personal topic skips.
 #     (The apt-backed client/driver bits of each topic still install.)
-: "${CI_SKIP_ITEMS:=rust-bins-wsl mysql-wsl redis-wsl postgresql}"
+#
+#   mssql-driver — corporate MS SQL ODBC driver. Its verify() hard-requires the
+#     PECL sqlsrv/pdo_sqlsrv extensions built for EVERY PHP version, but `pecl`
+#     (php-pear) is not present in this image, so the build can't run and verify
+#     can't pass. (Tracked separately: the php topic builds PECL extensions yet
+#     nothing installs php-pear, so every PECL ext silently skips — a likely real
+#     gap on fresh WSL too, deserving its own fix rather than a blind one here.)
+: "${CI_SKIP_ITEMS:=rust-bins-wsl mysql-wsl redis-wsl postgresql mssql-driver}"
 RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' MESH_SKIP_ITEMS='$CI_SKIP_ITEMS' NON_INTERACTIVE=1 bash ~/mesh-workstation/setup.sh"
 [[ -n "$CI_SKIP_ITEMS" ]] && printf '>>> skipping items (MESH_SKIP_ITEMS): %s\n' "$CI_SKIP_ITEMS"
 
