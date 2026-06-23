@@ -58,12 +58,17 @@ brew_formula_verify() {
 brew_formula_repair() { brew_formula_install "$1"; }
 
 # Version-aware update (T-600): upgrade only when brew reports it outdated.
+# Returns the engine's "changed" sentinel (rc 10) when an actual upgrade ran, so
+# the engine can restart a linked service (restart_service:) that must reload the
+# new binary; rc 0 = already latest (nothing to restart). A failed `brew upgrade`
+# propagates its own non-zero rc unchanged.
 brew_formula_update() {
     local brew; brew="$(_brew_formula_bin)"
     if [[ -n "$(HOMEBREW_NO_AUTO_UPDATE=1 "$brew" outdated --formula "$1" 2>/dev/null)" ]]; then
         echo "brew-formula: upgrading $1" >&2
-        "$brew" upgrade --formula -- "$1"
-    else
-        echo "brew-formula: $1 already latest" >&2
+        "$brew" upgrade --formula -- "$1" || return $?
+        return 10
     fi
+    echo "brew-formula: $1 already latest" >&2
+    return 0
 }

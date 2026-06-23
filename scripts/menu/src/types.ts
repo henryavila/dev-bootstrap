@@ -72,6 +72,7 @@ export interface Item {
   when?: string;
   idempotent?: boolean;
   autoupdate?: boolean;
+  restart_service?: string;
   uninstall_tier?: number;
   post?: string;
   rollback?: string;

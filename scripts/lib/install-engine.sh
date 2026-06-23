@@ -567,6 +567,7 @@ apply_bundle() {
         local when="${p}_WHEN";        when="${!when:-}"
         local idem="${p}_IDEMPOTENT";  idem="${!idem:-0}"
         local autoupd="${p}_AUTOUPDATE"; autoupd="${!autoupd:-0}"
+        local restart_svc="${p}_RESTART_SERVICE"; restart_svc="${!restart_svc:-}"
         [[ -n "$name" ]] || break
         [[ -n "$type" ]] || { log_error "$bundle/$name: item missing required 'type'"; exit 64; }
 
@@ -791,10 +792,47 @@ apply_bundle() {
                 log_info "$bundle/$name: checking for update [$_why]"
                 local _urc=0
                 "${prefix}_update" "$arg" || _urc=$?
-                if [[ "$_urc" -ne 0 ]]; then
+                # rc 10 = the driver performed a REAL upgrade (the binary changed),
+                # NOT a failure — it is the engine's "changed" sentinel. Any other
+                # non-zero rc is a genuine update failure.
+                if [[ "$_urc" -ne 0 && "$_urc" -ne 10 ]]; then
                     log_warn "$bundle/$name: update failed (rc=$_urc)"; exit "$_urc"
                 fi
                 install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
+                # A changed binary leaves any supervised daemon running the OLD
+                # code. If this item declares restart_service: <sibling>, bounce
+                # that service so it reloads the upgrade automatically (the
+                # moshi-hook case). The sibling's restart() is the authority on
+                # HOW (brew services / launchd / systemd) and on WHEN-NOT (it
+                # no-ops when the daemon is not already running, so we never start
+                # a service the user deliberately stopped).
+                if [[ "$_urc" -eq 10 && -n "$restart_svc" ]]; then
+                    local _rsc="${!icount_var:-0}" _ri _rfound=0
+                    for ((_ri=0; _ri<_rsc; _ri++)); do
+                        local _rp="BUNDLE_${B}_ITEM_${_ri}"
+                        local _rn="${_rp}_NAME"
+                        [[ "${!_rn:-}" == "$restart_svc" ]] || continue
+                        _rfound=1
+                        local _rsk="${_rp}_SCRIPT"; _rsk="${!_rsk:-}"
+                        if [[ -z "$_rsk" || ! -r "$_rsk" ]]; then
+                            log_warn "$bundle/$name: restart_service '$restart_svc' has no readable script — skipping restart"
+                            break
+                        fi
+                        log_info "$bundle/$name: upgraded → restarting linked service '$restart_svc'"
+                        local _rrc2=0
+                        (   # shellcheck disable=SC1090
+                            . "$_rsk"
+                            if declare -f restart >/dev/null 2>&1; then
+                                restart
+                            else
+                                echo "restart_service '$restart_svc' defines no restart() — skipping" >&2
+                            fi
+                        ) || _rrc2=$?
+                        [[ "$_rrc2" -eq 0 ]] || log_warn "$bundle/$name: linked service '$restart_svc' restart returned rc=$_rrc2"
+                        break
+                    done
+                    [[ "$_rfound" -eq 1 ]] || log_warn "$bundle/$name: restart_service '$restart_svc' not found in bundle '$bundle' — skipping restart"
+                fi
                 exit 0
             fi
 

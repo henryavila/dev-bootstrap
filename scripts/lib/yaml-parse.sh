@@ -296,6 +296,8 @@ handle_item_key() {
             emit_kv "${base}_IDEMPOTENT" bool "$val" "$line" "$col";;
         autoupdate)
             emit_kv "${base}_AUTOUPDATE" bool "$val" "$line" "$col";;
+        restart_service)
+            emit_kv "${base}_RESTART_SERVICE" str "$val" "$line" "$col";;
         uninstall_tier)
             emit_kv "${base}_UNINSTALL_TIER" num "$val" "$line" "$col";;
         platforms)

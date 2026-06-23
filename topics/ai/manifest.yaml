@@ -44,6 +44,9 @@ bundles:
         spec: rjyo/moshi/moshi-hook
         platforms: [mac]
         autoupdate: true   # ships frequently; brew_formula_update upgrades it
+        # After a real upgrade, bounce the daemon so it loads the new binary
+        # (restart() no-ops if the service is not already running).
+        restart_service: moshi-hook-mac-service
       - name: moshi-hook-mac-service
         type: custom
         script: ./moshi-hook-service-mac.sh
@@ -53,6 +56,7 @@ bundles:
         script: ./install-moshi-hook.sh
         platforms: [wsl]
         autoupdate: true   # update() re-runs the getmoshi.app installer (latest)
+        restart_service: moshi-hook-wsl-service   # reload the daemon on a real upgrade
       - name: moshi-hook-wsl-service
         type: custom
         script: ./moshi-hook-service-wsl.sh

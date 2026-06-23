@@ -21,14 +21,38 @@ verify() {
     command -v moshi-hook >/dev/null 2>&1 || [[ -x "$HOME/.local/bin/moshi-hook" ]]
 }
 
+# Resolve the installed moshi-hook version (best-effort, never fails the caller).
+# Used by update() to decide whether the binary actually changed.
+_moshi_version() {
+    local bin="$HOME/.local/bin/moshi-hook"
+    [ -x "$bin" ] || bin="$(command -v moshi-hook 2>/dev/null || true)"
+    [ -n "$bin" ] || return 0
+    "$bin" --version 2>/dev/null | head -1 || true
+}
+
 # Version-aware update (engine --update + `mesh upgrade`): the getmoshi.app
 # installer always fetches the latest release and replaces the binary in-place,
 # so re-running it IS the upgrade. moshi-hook ships frequently (the very reason
 # this item carries `autoupdate: true` in the manifest); on mac the brew-formula
 # item owns the upgrade via brew_formula_update, so this is the Linux/WSL path.
+#
+# Returns the engine's "changed" sentinel (rc 10) when the binary version moved,
+# so the engine restarts the linked daemon (restart_service: moshi-hook-wsl-service)
+# to load it. Only returns 0 (no restart) when BOTH probes yield the SAME non-empty
+# version — i.e. provably unchanged; if the version cannot be read we assume a
+# change and let restart() decide (it no-ops unless the daemon is running).
 update() {
+    local before after
+    before="$(_moshi_version)"
     info "updating moshi-hook to latest via getmoshi.app installer"
     curl -fsSL https://getmoshi.app/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+    after="$(_moshi_version)"
+    if [[ -n "$before" && -n "$after" && "$before" == "$after" ]]; then
+        info "moshi-hook already at $after — no service restart needed"
+        return 0
+    fi
+    info "moshi-hook updated (${before:-?} → ${after:-?}) — signaling service restart"
+    return 10
 }
 
 rollback() {
