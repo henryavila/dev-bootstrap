@@ -4,12 +4,21 @@
 # dust + xh + procs — single-file Rust binaries not in apt 24.04.
 # Installed to ~/.local/bin via GitHub release tarballs. Idempotent.
 
+# Bounded asset download. A plain `curl -fsSL` on a release tarball has NO time
+# cap, so a stalled GitHub-CDN transfer hangs the whole bootstrap until an outer
+# wall-clock kills it (this is exactly what silently hung the CI smoke test for
+# ~10 min). Cap connect + total time and retry a few times (incl. on a timeout
+# via --retry-all-errors) so a transient blip self-heals but a real stall fails
+# in ~minutes with a clear error. The API lookups in github-api.sh are already
+# capped at --max-time 20.
+_RB_CURL=(curl -fsSL --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 2 --retry-all-errors)
+
 _install_dust() {
     local ver tmp
     ver="$(gh_latest_tag bootandy/dust)"
     [[ -n "$ver" && "$ver" != "null" ]] || return 1
     tmp="$(mktemp -d)"
-    curl -fsSL -o "$tmp/dust.tgz" \
+    "${_RB_CURL[@]}" -o "$tmp/dust.tgz" \
         "https://github.com/bootandy/dust/releases/download/${ver}/dust-${ver}-x86_64-unknown-linux-gnu.tar.gz" \
         || { rm -rf "$tmp"; return 1; }
     tar -C "$tmp" -xzf "$tmp/dust.tgz" --strip-components=1 || { rm -rf "$tmp"; return 1; }
@@ -23,7 +32,7 @@ _install_xh() {
     ver="$(gh_latest_tag ducaale/xh)"
     [[ -n "$ver" && "$ver" != "null" ]] || return 1
     tmp="$(mktemp -d)"
-    curl -fsSL -o "$tmp/xh.tgz" \
+    "${_RB_CURL[@]}" -o "$tmp/xh.tgz" \
         "https://github.com/ducaale/xh/releases/download/${ver}/xh-${ver}-x86_64-unknown-linux-musl.tar.gz" \
         || { rm -rf "$tmp"; return 1; }
     tar -C "$tmp" -xzf "$tmp/xh.tgz" --strip-components=1 || { rm -rf "$tmp"; return 1; }
@@ -37,7 +46,7 @@ _install_procs() {
     ver="$(gh_latest_tag dalance/procs)"
     [[ -n "$ver" && "$ver" != "null" ]] || return 1
     tmp="$(mktemp -d)"
-    curl -fsSL -o "$tmp/procs.zip" \
+    "${_RB_CURL[@]}" -o "$tmp/procs.zip" \
         "https://github.com/dalance/procs/releases/download/${ver}/procs-${ver}-x86_64-linux.zip" \
         || { rm -rf "$tmp"; return 1; }
     unzip -q -o "$tmp/procs.zip" -d "$tmp" || { rm -rf "$tmp"; return 1; }

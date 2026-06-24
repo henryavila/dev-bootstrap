@@ -136,7 +136,33 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 # the second version fails and CI catches it. Full 4-version matrix
 # belongs to a deferred Tier 3 E2E (SPEC §14).
 : "${CI_PHP_VERSIONS:=8.4 8.5}"
-RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' NON_INTERACTIVE=1 bash ~/mesh-workstation/setup.sh"
+
+# Item-level skips (MESH_SKIP_ITEMS, honored by the install engine — finer than
+# the topic-level SKIP_TOPICS above). Override with CI_SKIP_ITEMS="" to exercise
+# any of these locally. Two reasons an item lands here:
+#
+#   rust-bins-wsl — pulls dust/xh/procs from the GitHub-release CDN; a stalled
+#     transfer there repeatedly hung this run to the hard timeout. Its bootstrap
+#     logic is trivial (fetch + extract to ~/.local/bin) and the download path is
+#     hardened separately, so we drop just this externally-dependent item rather
+#     than hold the pipeline hostage to a third-party CDN.
+#
+#   mysql-wsl / redis-wsl / postgresql — database *servers*. Their install()
+#     starts the daemon and verify() asserts it is running (systemctl/service),
+#     but this hermetic container has no init system, so the server can never
+#     come up and post-install verify can't pass. We validate the bootstrap, not
+#     a live DB runtime — same rationale as the identity/personal topic skips.
+#     (The apt-backed client/driver bits of each topic still install.)
+#
+#   mssql-driver — corporate MS SQL ODBC driver. Its verify() hard-requires the
+#     PECL sqlsrv/pdo_sqlsrv extensions built for EVERY PHP version, but `pecl`
+#     (php-pear) is not present in this image, so the build can't run and verify
+#     can't pass. (Tracked separately: the php topic builds PECL extensions yet
+#     nothing installs php-pear, so every PECL ext silently skips — a likely real
+#     gap on fresh WSL too, deserving its own fix rather than a blind one here.)
+: "${CI_SKIP_ITEMS:=rust-bins-wsl mysql-wsl redis-wsl postgresql mssql-driver}"
+RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' MESH_SKIP_ITEMS='$CI_SKIP_ITEMS' NON_INTERACTIVE=1 bash ~/mesh-workstation/setup.sh"
+[[ -n "$CI_SKIP_ITEMS" ]] && printf '>>> skipping items (MESH_SKIP_ITEMS): %s\n' "$CI_SKIP_ITEMS"
 
 start=$(date +%s)
 # We write both stdout and stderr to the logfile AND to the terminal via tee.

@@ -571,6 +571,17 @@ apply_bundle() {
         [[ -n "$name" ]] || break
         [[ -n "$type" ]] || { log_error "$bundle/$name: item missing required 'type'"; exit 64; }
 
+        # CI/automation item drop (finer than SKIP_TOPICS, which is topic-granular
+        # and selection-level). MESH_SKIP_ITEMS is a space-separated list of item
+        # names to skip in EVERY mode. The smoke test uses it to drop items whose
+        # install depends on an external CDN we don't control (rust-bins-wsl pulls
+        # dust/xh/procs release tarballs) so a GitHub-release stall can't hang/red
+        # the pipeline — without losing coverage of the rest of the bundle. Empty
+        # (the default) leaves every run unaffected.
+        case " ${MESH_SKIP_ITEMS:-} " in
+            *" $name "*) log_info "$bundle/$name: skip (MESH_SKIP_ITEMS)"; continue ;;
+        esac
+
         # item-level platform gate
         local pc_var="${p}_PLATFORMS_COUNT" pc j ok_platform
         pc="${!pc_var:-0}"

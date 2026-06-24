@@ -161,4 +161,38 @@ describe('SearchPicker (render + keys)', () => {
     await delay(20);
     expect(calls).toEqual([null]);
   });
+
+  // The action arg distinguishes Enter (focus/open the primary) from Ctrl-N
+  // (open a NEW agent in the focused repo, even when its workspace is open).
+  function mountWithAction() {
+    const calls: Array<{ raw: string | null; action?: string }> = [];
+    const r = render(
+      <ThemeProvider iconSet="unicode">
+        <SearchPicker items={parseCandidates(CAND)} onDone={(raw, action) => calls.push({ raw, action })} />
+      </ThemeProvider>,
+    );
+    return { ...r, calls };
+  }
+
+  it('Enter carries the "open" action', async () => {
+    const { stdin, calls } = mountWithAction();
+    await delay(20);
+    stdin.write('Dashboard');
+    await delay(20);
+    stdin.write('\r');
+    await delay(20);
+    expect(calls).toEqual([
+      { raw: 'mesh-identity › Dashboard\t/srv/mesh-identity\tw123\tworking\tw123:2', action: 'open' },
+    ]);
+  });
+
+  it('Ctrl-N hands back the focused row with the "new" action', async () => {
+    const { stdin, calls } = mountWithAction();
+    await delay(20);
+    stdin.write('atomic'); // → the open atomic-skills workspace row (wsid w456)
+    await delay(20);
+    stdin.write('\x0e'); // Ctrl-N
+    await delay(20);
+    expect(calls).toEqual([{ raw: 'atomic-skills\t/srv/atomic-skills\tw456\tdone\t', action: 'new' }]);
+  });
 });

@@ -103,7 +103,11 @@ pecl_install_for_version_linux() {
     # sudo rm + ||true: pecl runs as root and writes root-owned files
     # into $tmpmeta (.registry/*, .channels/*). Plain `rm` as user
     # fails → under `set -e` the trap aborts the topic loop.
-    trap 'sudo rm -rf "$tmpbin" "$tmpmeta" 2>/dev/null || true' RETURN
+    # Self-clearing: a bare RETURN trap leaks past this per-(version,ext) helper
+    # and re-fires on a later function's return where the local tmpbin/tmpmeta are
+    # out of scope — and `set -u` errors on the unbound expansion BEFORE the
+    # `|| true` can swallow it. `trap - RETURN` disarms it right after cleanup.
+    trap 'sudo rm -rf "$tmpbin" "$tmpmeta" 2>/dev/null || true; trap - RETURN' RETURN
 
     info "PHP $ver: pecl install $ext (target: $so_path)"
     local pecl_out="" pecl_rc=0

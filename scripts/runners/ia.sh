@@ -11,6 +11,8 @@
 #   mesh ia [term]            Open the project matching <term>; single match opens
 #                             directly, multiple → picker, none → error.
 #   mesh ia                   No term → searchable picker (open workspaces + repos).
+#                             Picker keys: Enter = focus/open · Ctrl-N = open a NEW
+#                             agent in the highlighted repo (fresh tab if open).
 #   mesh ia <term> --agent X  Use agent X (claude|codex|gemini); remembered per project.
 #   mesh ia --list            Print the discovered catalogue and exit (no launch).
 # Flags: --agent <name>, --list, -h/--help.
@@ -40,7 +42,7 @@ while (( $# > 0 )); do
         --agent=*)    AGENT_OVERRIDE="${1#*=}" ;;
         --list)       LIST=1 ;;
         --candidates) CANDIDATES=1 ;;   # debug: dump the merged candidate set
-        -h|--help)    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         --)         shift; [[ $# -gt 0 ]] && TERM_ARG="$1" ;;
         -*)         log_error "ia: unknown flag '$1' (try --agent <name> --list --help)"; exit 2 ;;
         *)          TERM_ARG="$1" ;;
@@ -118,17 +120,45 @@ _ia_filter() {
     done
 }
 
-# Route a chosen `label<TAB>path<TAB>wsid<TAB>status<TAB>tabid` line: focus the
-# exact tab if it carries one, else focus the workspace, else open the repo.
+# Open a NEW agent for a chosen row: a fresh tab inside the project's workspace
+# when one is open, else a freshly-created workspace (same as opening a closed
+# repo). Honors --agent + the remember-last memory, exactly like _ia_open_repo.
+_ia_open_new() {
+    local name="$1" path="$2" wsid="$3" agent agent_cmd
+    agent="$(ia_agent_resolve "$name" "$AGENT_OVERRIDE")"
+    [[ -n "$AGENT_OVERRIDE" ]] && ia_agent_set "$name" "$agent"
+    agent_cmd="$(ia_agent_cmd "$agent")"
+    if [[ -n "$wsid" ]]; then
+        ia_herdr_new_tab "$wsid" "$path" "$name" "$agent_cmd"
+    else
+        ia_herdr_open "$name" "$path" "$agent_cmd"
+    fi
+}
+
+# Route a chosen `action<TAB>label<TAB>path<TAB>wsid<TAB>status<TAB>tabid` line.
+# action ∈ {open,new}:
+#   open → focus the exact tab if it carries one, else focus the workspace,
+#          else create+launch (a closed repo);
+#   new  → open ANOTHER agent in the project (a fresh tab in its open workspace,
+#          else a freshly-created workspace) — Enter focuses, Ctrl-N opens new.
+# Project name = the workspace label (a tab row's `<ws> › <tab>` collapses to
+# `<ws>`) so agent memory + the new tab's label track the project, not the tab.
 _ia_route() {
-    local label path wsid _status tabid
-    IFS=$'\t' read -r label path wsid _status tabid <<<"$1"
+    local action label path wsid _status tabid name
+    IFS=$'\t' read -r action label path wsid _status tabid <<<"$1"
+    name="${label%% › *}"
+
+    if [[ "$action" == new ]]; then
+        _ia_open_new "$name" "$path" "$wsid"
+        return $?
+    fi
+
     if [[ -n "$tabid" ]]; then
         log_info "ia: focusing tab '$label'"
         ia_herdr_focus_tab "$wsid" "$tabid"
     elif [[ -n "$wsid" ]]; then
         log_info "ia: focusing open workspace '$label'"
-        herdr workspace focus "$wsid"
+        herdr workspace focus "$wsid" >/dev/null
     else
         _ia_open_repo "$label" "$path"
     fi
@@ -171,11 +201,19 @@ _ia_pick_bash() {
             printf '  %2d) %-38s %s\n' "$n" "$label" "$path" >&2
         fi
     done
-    printf 'ia> pick a number (or q): ' >&2
+    printf "ia> pick a number ('n'<num> = new agent, q = cancel): " >&2
     IFS= read -r sel </dev/tty || return 1
     [[ "$sel" == q || -z "$sel" ]] && return 1
-    [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= ${#lines[@]} )) || { log_error "ia: invalid choice"; return 1; }
-    printf '%s' "${lines[$((sel - 1))]}"
+    local act=open idx
+    if [[ "$sel" =~ ^n([0-9]+)$ ]]; then
+        act=new; idx="${BASH_REMATCH[1]}"
+    elif [[ "$sel" =~ ^[0-9]+$ ]]; then
+        idx="$sel"
+    else
+        log_error "ia: invalid choice"; return 1
+    fi
+    (( idx >= 1 && idx <= ${#lines[@]} )) || { log_error "ia: invalid choice"; return 1; }
+    printf '%s\t%s' "$act" "${lines[$((idx - 1))]}"
 }
 
 # Build the merged set once, then filter by the (optional) term.
@@ -205,9 +243,10 @@ if (( N_FILTERED == 0 )); then
     exit 1
 fi
 
-# Fast path: an explicit term that resolves to exactly one row opens directly.
+# Fast path: an explicit term that resolves to exactly one row opens directly
+# (always the "open" action — focus-or-create the single match).
 if [[ -n "$TERM_ARG" ]] && (( N_FILTERED == 1 )); then
-    _ia_route "$(cat "$FILT_FILE")"
+    _ia_route "open"$'\t'"$(cat "$FILT_FILE")"
     exit $?
 fi
 
