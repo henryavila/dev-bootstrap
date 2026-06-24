@@ -69,6 +69,8 @@
         "platforms": { "$ref": "#/$defs/platforms" },
         "when": { "type": "string" },
         "idempotent": { "type": "boolean" },
+        "autoupdate": { "type": "boolean" },
+        "restart_service": { "type": "string" },
         "uninstall_tier": { "type": "integer", "minimum": 0, "maximum": 3 },
         "post": { "type": "string" },
         "rollback": { "type": "string" }

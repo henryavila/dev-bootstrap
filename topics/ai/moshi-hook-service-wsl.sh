@@ -72,6 +72,29 @@ rollback() {
     user_service_teardown moshi-hook
 }
 
+# restart() — bounce the daemon so it reloads a freshly-upgraded binary.
+# Invoked by the engine's --update pass when the moshi-hook binary actually
+# changed (manifest restart_service: moshi-hook-wsl-service). Gated on
+# _is_running: a daemon the user deliberately stopped is left down (autoupdate
+# must not resurrect it). systemd path = an in-place `restart`; the nohup
+# fallback has no supervisor to reload, so teardown + re-launch via install().
+restart() {
+    if ! _is_running; then
+        info "moshi-hook service not running — skip restart (autoupdate)"
+        return 0
+    fi
+    if user_service_has_systemd; then
+        info "restarting moshi-hook (systemd --user) to load the upgraded binary"
+        systemctl --user restart moshi-hook.service || return 1
+    else
+        info "restarting moshi-hook (nohup fallback) to load the upgraded binary"
+        rollback
+        install
+    fi
+    sleep 1
+    _is_running
+}
+
 uninstall() {
     # Reverse install() — and ONLY what install() established here. The
     # moshi-hook *binary* is owned by a separate bundle item (moshi-hook-linux

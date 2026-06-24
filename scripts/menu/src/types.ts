@@ -71,6 +71,8 @@ export interface Item {
   platforms?: Platform[];
   when?: string;
   idempotent?: boolean;
+  autoupdate?: boolean;
+  restart_service?: string;
   uninstall_tier?: number;
   post?: string;
   rollback?: string;

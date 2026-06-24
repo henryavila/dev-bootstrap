@@ -124,6 +124,31 @@ rollback() {
     fi
 }
 
+# restart() — bounce the supervised daemon so it reloads a freshly-upgraded
+# binary. Invoked by the engine's --update pass when the moshi-hook formula
+# actually changed (manifest restart_service: moshi-hook-mac-service). Gated on
+# _is_running: if the daemon is already down we do NOTHING (never start a
+# service the user deliberately stopped — autoupdate must not resurrect it).
+# Both service-manager paths keep the same opt symlink target across versions,
+# so an in-place bounce is enough; no teardown/reinstall (which would re-pair).
+restart() {
+    if ! _is_running; then
+        info "moshi-hook service not running — skip restart (autoupdate)"
+        return 0
+    fi
+    if _use_wrapper; then
+        info "restarting moshi-hook (launchd wrapper) to load the upgraded binary"
+        launchctl kickstart -k "gui/$(id -u)/com.${USER}.moshi-hook" 2>/dev/null \
+            || { echo "[moshi-hook-service-mac] launchctl kickstart failed" >&2; return 1; }
+    else
+        info "restarting moshi-hook (brew services) to load the upgraded binary"
+        "${BREW_BIN:-brew}" services restart moshi-hook >/dev/null 2>&1 \
+            || { echo "[moshi-hook-service-mac] brew services restart failed" >&2; return 1; }
+    fi
+    sleep 1
+    _is_running
+}
+
 uninstall() {
     # Reverse what install() established — the SERVICE-MANAGER state, not the
     # moshi-hook binary. install() asserts the binary is already present
