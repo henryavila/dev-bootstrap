@@ -23,6 +23,16 @@
 #             If doctor exits non-zero or doesn't exist, trusts install.
 # rollback(): extracts <package> from spec, runs `npx -y <package> uninstall`.
 #             Best-effort — swallows failure if uninstall subcommand is absent.
+#
+# stdin:      every npx call runs with stdin detached (`</dev/null`). The engine
+#             invokes drivers from a non-interactive per-item subshell; an
+#             installer that prompts on a TTY hangs the whole bootstrap.
+#             Detaching forces `process.stdin.isTTY=false`, so well-behaved
+#             installers self-skip their prompts. Live failure: claude-mem
+#             v13.8.0 added a "CMEM Online" email + "Overwrite existing
+#             installation?" confirm — gated only on isTTY, not on the spec's
+#             --ide/--provider/--runtime/--no-auto-start flags — which blocked
+#             a fresh `claude-mem` install with no way to answer.
 
 _npx_extract_package() {
     # First token of the spec is the package (possibly @scoped with @version).
@@ -54,24 +64,24 @@ _npx_ensure_on_path() {
 npx_check() { return 1; }
 
 # shellcheck disable=SC2086  # intentional word-split: spec carries subcommand + args
-npx_install() { _npx_ensure_on_path || true; npx -y $1; }
+npx_install() { _npx_ensure_on_path || true; npx -y $1 </dev/null; }
 
 npx_verify() {
     local pkg
     pkg="$(_npx_extract_package "$1")"
     _npx_ensure_on_path || true
-    npx -y "$pkg" doctor 2>/dev/null || return 0
+    npx -y "$pkg" doctor </dev/null 2>/dev/null || return 0
 }
 
 npx_rollback() {
     local pkg
     pkg="$(_npx_extract_package "$1")"
     _npx_ensure_on_path || true
-    npx -y "$pkg" uninstall 2>/dev/null || true
+    npx -y "$pkg" uninstall </dev/null 2>/dev/null || true
 }
 
 # Version-aware update (T-600): npx has no installed version to diff, so re-run
 # the spec — `npx -y` fetches the latest matching the spec (a pinned @version is
 # a no-op; @latest / unpinned picks up new releases). Same word-split as install.
 # shellcheck disable=SC2086
-npx_update() { _npx_ensure_on_path || true; echo "npx: re-running $1 (latest)" >&2; npx -y $1; }
+npx_update() { _npx_ensure_on_path || true; echo "npx: re-running $1 (latest)" >&2; npx -y $1 </dev/null; }
