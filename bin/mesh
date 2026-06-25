@@ -69,6 +69,17 @@ _die() {
     exit 1
 }
 
+# ─── Command registry kernel ───────────────────────────────────────
+
+_mesh_load_command_registry() {
+    local registry
+    registry="$(_resolve_companion "lib/mesh-command.sh")"
+    [[ -n "$registry" ]] || _die "lib/mesh-command.sh not found (set \$MESH_HOME or check installation)"
+    # shellcheck disable=SC1090
+    . "$registry"
+}
+_mesh_load_command_registry
+
 # ─── Extension hook (C3) ───────────────────────────────────────────
 # Source identity-side extensions if present, after sourcing env.sh to
 # populate MESH_IDENTITY_DIR. Extensions may define `sub_<name>`
@@ -1516,120 +1527,175 @@ sub_services() {
     exec bash "$runner" "$@"
 }
 
+sub___commands() {
+    case "${1:-}" in
+        "")
+            mesh_command_emit_tsv
+            ;;
+        --all)
+            mesh_command_emit_tsv --all
+            ;;
+        --internal)
+            mesh_command_emit_tsv --internal
+            ;;
+        -h|--help)
+            cat <<'EOF'
+Usage:
+  mesh __commands             Emit public command metadata as TSV.
+  mesh __commands --all       Include public and hidden commands.
+  mesh __commands --internal  Include public, hidden, and internal commands.
+
+Columns: name, summary, group, origin, visibility, fanout.
+EOF
+            ;;
+        *)
+            _die "__commands: unknown arg '$1' (expected --all or --internal)"
+            ;;
+    esac
+}
+
 # ─── Main dispatch ─────────────────────────────────────────────────
 
-case "${1:-status}" in
-    -h|--help)
-        _print_help
-        exit 0
-        ;;
-    -V|--version)
-        echo "mesh CLI v1 (template)"
-        exit 0
-        ;;
-    status)
+_mesh_load_command_modules() {
+    local specs="" dir file old_ifs
+    if [[ -n "${MESH_COMMAND_MODULE_DIR:-}" ]]; then
+        specs="$MESH_COMMAND_MODULE_DIR"
+    fi
+    if [[ -n "${MESH_COMMAND_MODULE_DIRS:-}" ]]; then
+        specs="${specs:+$specs:}$MESH_COMMAND_MODULE_DIRS"
+    fi
+    if [[ -d "$HERE/../scripts/commands" ]]; then
+        specs="${specs:+$specs:}$HERE/../scripts/commands"
+    fi
+
+    old_ifs="$IFS"
+    IFS=:
+    for dir in $specs; do
+        [[ -n "$dir" && -d "$dir" ]] || continue
+        for file in "$dir"/*.sh; do
+            [[ -e "$file" ]] || continue
+            _MESH_COMMAND_REGISTRY_ERROR=0
+            # shellcheck disable=SC1090
+            if ! . "$file" || [[ "${_MESH_COMMAND_REGISTRY_ERROR:-0}" == "1" ]]; then
+                _MESH_COMMAND_REGISTRY_ERROR=0
+                IFS="$old_ifs"
+                _die "command module failed to load: $file"
+            fi
+            _MESH_COMMAND_REGISTRY_ERROR=0
+        done
+    done
+    IFS="$old_ifs"
+}
+
+_mesh_register_legacy_command() {
+    local name="$1" group="$2" summary="$3" fanout="$4"
+    local handler="sub_${name//-/_}"
+    if mesh_command_registered "$name"; then
+        return 0
+    fi
+    mesh_register_command \
+        --name "$name" \
+        --summary "$summary" \
+        --group "$group" \
+        --origin core \
+        --visibility public \
+        --fanout "$fanout" \
+        --handler "$handler" || _die "failed to register legacy command: $name"
+}
+
+_mesh_register_internal_command_list() {
+    if mesh_command_registered "__commands"; then
+        return 0
+    fi
+    mesh_register_command \
+        --name "__commands" \
+        --summary "Emit command metadata TSV" \
+        --group core \
+        --origin core \
+        --visibility internal \
+        --fanout none \
+        --handler sub___commands || _die "failed to register internal command: __commands"
+}
+
+_mesh_register_legacy_commands() {
+    _mesh_register_internal_command_list
+    _mesh_register_legacy_command status core "Show cross-mesh status" allowed
+    _mesh_register_legacy_command snap core "Generate this host snapshot" allowed
+    _mesh_register_legacy_command doctor core "Report or repair mesh health" none
+    _mesh_register_legacy_command adopt core "Backfill install markers read-only" none
+    _mesh_register_legacy_command update core "Pull and apply mesh updates" allowed
+    _mesh_register_legacy_command upgrade core "Upgrade autoupdate-flagged packages" none
+    _mesh_register_legacy_command topic core "List or apply mesh topics" none
+    _mesh_register_legacy_command run core "Fan out mesh subcommands across hosts" none
+    _mesh_register_legacy_command init core "Bootstrap identity on a fresh machine" none
+    _mesh_register_legacy_command template-check core "Verify template and identity parity" none
+    _mesh_register_legacy_command lint core "Run repo invariant lints" none
+    _mesh_register_legacy_command catalog core "Regenerate derived catalog listings" none
+    _mesh_register_legacy_command personal-clone core "Clone personal repos from identity catalog" none
+    _mesh_register_legacy_command menu core "Open the interactive item selector" none
+    _mesh_register_legacy_command setup core "Update repos and run setup" none
+    _mesh_register_legacy_command secret core "Manage replicated personal secrets" none
+    _mesh_register_legacy_command syncthing core "Pair this node into the Syncthing mesh" allowed
+    _mesh_register_legacy_command clean core "Reclaim regenerable dev caches" none
+    _mesh_register_legacy_command ai core "Open an AI agent in the right repo" none
+    _mesh_register_legacy_command config core "Edit personal config from mesh-identity" none
+    _mesh_register_legacy_command services core "Control mesh-owned daemons" allowed
+}
+
+_mesh_dispatch_private_fallback() {
+    local extension_sub="sub_${1//-/_}"
+    if declare -F "$extension_sub" >/dev/null 2>&1; then
+        # shellcheck disable=SC2034  # captured for future extension dispatch
+        cmd_arg="$1"
         shift
-        sub_status "$@"
-        ;;
-    snap)
-        shift
-        sub_snap "$@"
-        ;;
-    doctor)
-        shift
-        sub_doctor "$@"
-        ;;
-    adopt)
-        shift
-        sub_adopt "$@"
-        ;;
-    update)
-        shift
-        sub_update "$@"
-        ;;
-    upgrade)
-        shift
-        sub_upgrade "$@"
-        ;;
-    topic)
-        shift
-        sub_topic "$@"
-        ;;
-    run)
-        shift
-        sub_run "$@"
-        ;;
-    init)
-        shift
-        sub_init "$@"
-        ;;
-    template-check)
-        shift
-        sub_template_check "$@"
-        ;;
-    lint)
-        shift
-        sub_lint "$@"
-        ;;
-    catalog)
-        shift
-        sub_catalog "$@"
-        ;;
-    personal-clone)
-        shift
-        sub_personal_clone "$@"
-        ;;
-    menu)
-        shift
-        sub_menu "$@"
-        ;;
-    setup)
-        shift
-        sub_setup "$@"
-        ;;
-    secret)
-        shift
-        sub_secret "$@"
-        ;;
-    syncthing)
-        shift
-        sub_syncthing "$@"
-        ;;
-    clean)
-        shift
-        sub_clean "$@"
-        ;;
-    ai)
-        shift
-        sub_ai "$@"
-        ;;
-    config)
-        shift
-        sub_config "$@"
-        ;;
-    services)
-        shift
-        sub_services "$@"
-        ;;
-    --*|-*)
-        # Top-level flag with no subcommand → treat as status flag.
-        # Lets `mesh --json` work as shorthand for `mesh status --json`.
-        sub_status "$@"
-        ;;
-    *)
-        # Try identity-provided extension subcommand (C3).
-        # Sub names may contain hyphens (e.g. mesh code-server) → map to underscores.
-        extension_sub="sub_${1//-/_}"
-        if declare -F "$extension_sub" >/dev/null 2>&1; then
-            # shellcheck disable=SC2034  # captured for future extension dispatch
-            cmd_arg="$1"
-            shift
-            "$extension_sub" "$@"
+        "$extension_sub" "$@"
+        exit $?
+    fi
+    unset extension_sub cmd_arg
+    return 1
+}
+
+_mesh_dispatch() {
+    if [[ "$#" -eq 0 ]]; then
+        set -- status
+    fi
+
+    local command_name handler status_handler
+    case "${1:-}" in
+        -h|--help)
+            _print_help
+            exit 0
+            ;;
+        -V|--version)
+            echo "mesh CLI v1 (template)"
+            exit 0
+            ;;
+        --*|-*)
+            # Top-level flag with no subcommand → treat as status flag.
+            # Lets `mesh --json` run as shorthand for `mesh status --json`.
+            status_handler="$(mesh_command_get status handler)" || _die "registered command has no handler: status"
+            "$status_handler" "$@"
             exit $?
-        fi
-        unset extension_sub cmd_arg
-        printf 'mesh: unknown subcommand %q\n\n' "$1" >&2
-        _print_help >&2
-        exit 1
-        ;;
-esac
+            ;;
+    esac
+
+    command_name="$1"
+    if mesh_command_registered "$command_name"; then
+        handler="$(mesh_command_get "$command_name" handler)" || _die "registered command has no handler: $command_name"
+        shift
+        "$handler" "$@"
+        exit $?
+    fi
+
+    if _mesh_dispatch_private_fallback "$@"; then
+        exit $?
+    fi
+
+    printf 'mesh: unknown subcommand %q\n\n' "$command_name" >&2
+    _print_help >&2
+    exit 1
+}
+
+_mesh_load_command_modules
+_mesh_register_legacy_commands
+_mesh_dispatch "$@"
