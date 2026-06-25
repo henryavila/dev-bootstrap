@@ -6,7 +6,7 @@
 #   mesh config list [term]     List deploy.map configs, optionally filtered.
 #
 # Flow: choose source -> edit it -> show git diff for that source -> run the
-# identity install script so deploy.map updates the rendered destination files.
+# identity install script -> report identity git state -> optionally commit+push.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -258,8 +258,109 @@ _config_diff() {
 _config_install() {
     [[ "$NO_INSTALL" -eq 0 ]] || { log_info "config: deploy skipped (--no-install)"; return 0; }
     [[ -f "$INSTALL_SH" ]] || _config_die "install.sh not found at $INSTALL_SH"
+    local out rc
+    out="$(mktemp -t mesh-config-install.XXXXXX)" || return 1
     log_info "config: deploying via $INSTALL_SH"
-    bash "$INSTALL_SH"
+    if bash "$INSTALL_SH" >"$out" 2>&1; then
+        rm -f "$out"
+        log_info "config: deploy complete"
+        return 0
+    fi
+    rc=$?
+    log_error "config: deploy failed (rc=$rc); install output follows"
+    cat "$out" >&2
+    rm -f "$out"
+    return "$rc"
+}
+
+_config_can_prompt() {
+    [[ -n "${MESH_PROMPT_IN:-}" && -r "$MESH_PROMPT_IN" ]] && return 0
+    [[ -r /dev/tty && -w /dev/tty ]]
+}
+
+_config_ahead_behind() {
+    local upstream counts behind ahead
+    upstream="$(git -C "$ID_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+    if [[ -z "$upstream" ]]; then
+        printf '0 0'
+        return 0
+    fi
+    counts="$(git -C "$ID_DIR" rev-list --left-right --count "$upstream"...HEAD 2>/dev/null || true)"
+    if [[ -z "$counts" ]]; then
+        printf '0 0'
+        return 0
+    fi
+    read -r behind ahead <<<"$counts"
+    printf '%s %s' "${ahead:-0}" "${behind:-0}"
+}
+
+_config_local_only() {
+    local label="$1" src="$2"
+    log_info "config: applied locally; not committed or pushed"
+    log_info "config: later: cd $ID_DIR && git add $src && git commit -m 'config(identity): update $label' && git push"
+}
+
+_config_commit_and_push() {
+    local label="$1" src="$2" msg branch upstream commit_id
+    msg="config(identity): update $label"
+    branch="$(git -C "$ID_DIR" branch --show-current 2>/dev/null || true)"
+    [[ -n "$branch" ]] || { log_error "config: cannot push from a detached identity checkout"; return 1; }
+
+    git -C "$ID_DIR" add -- "$src" || return $?
+    git -C "$ID_DIR" commit --only -m "$msg" -- "$src" >/dev/null || return $?
+    commit_id="$(git -C "$ID_DIR" rev-parse --short HEAD 2>/dev/null || true)"
+    log_info "config: committed ${commit_id:-HEAD} $msg"
+
+    upstream="$(git -C "$ID_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+    if [[ -n "$upstream" ]]; then
+        git -C "$ID_DIR" push || return $?
+        log_info "config: pushed $branch to $upstream"
+    else
+        git -C "$ID_DIR" push -u origin "$branch" || return $?
+        log_info "config: pushed $branch to origin/$branch"
+    fi
+}
+
+_config_offer_commit_push() {
+    local label="$1" src="$2" status branch ahead behind counts dirty_src=0
+    git -C "$ID_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+        log_warn "config: identity is not a git checkout; not committed or pushed"
+        return 0
+    }
+
+    git -C "$ID_DIR" diff --quiet -- "$src" 2>/dev/null || dirty_src=1
+    git -C "$ID_DIR" diff --cached --quiet -- "$src" 2>/dev/null || dirty_src=1
+    if [[ "$dirty_src" -eq 0 ]]; then
+        log_info "config: identity git clean for $src"
+        return 0
+    fi
+
+    branch="$(git -C "$ID_DIR" branch --show-current 2>/dev/null || true)"
+    counts="$(_config_ahead_behind)"
+    read -r ahead behind <<<"$counts"
+    status="$(git -C "$ID_DIR" status --short -- "$src" 2>/dev/null || true)"
+
+    log_info "config: identity git state"
+    printf '  branch: %s' "${branch:-detached}" >&2
+    if [[ "${ahead:-0}" != "0" || "${behind:-0}" != "0" ]]; then
+        printf ' (ahead %s, behind %s)' "${ahead:-0}" "${behind:-0}" >&2
+    fi
+    printf '\n' >&2
+    printf '  changed: %s\n' "${status:-$src}" >&2
+    if [[ "${ahead:-0}" != "0" ]]; then
+        printf '  note: push will also send %s existing local commit(s).\n' "$ahead" >&2
+    fi
+
+    if ! _config_can_prompt; then
+        _config_local_only "$label" "$src"
+        return 0
+    fi
+
+    if confirm "Commit and push this config change?" "n"; then
+        _config_commit_and_push "$label" "$src"
+    else
+        _config_local_only "$label" "$src"
+    fi
 }
 
 _config_edit_row() {
@@ -283,7 +384,8 @@ _config_edit_row() {
     rm -f "$before"
 
     _config_diff "$src" || return $?
-    _config_install
+    _config_install || return $?
+    [[ "$NO_INSTALL" -eq 0 ]] && _config_offer_commit_push "$label" "$src"
 }
 
 while (( $# > 0 )); do

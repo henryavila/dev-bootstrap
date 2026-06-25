@@ -117,7 +117,7 @@ Usage:
   mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
   mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
   mesh ai [term] [--agent X]        Open an AI agent in the right repo via herdr (disk-search + focus-or-create)
-  mesh config [term]                 Edit personal config from mesh-identity/deploy.map, then diff + deploy
+  mesh config [term]                 Edit personal config from mesh-identity/deploy.map, then diff, deploy, and ask to push
   mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable/reconcile) — active × enabled
   mesh -h | --help                  This help
   mesh -V | --version               Version
@@ -288,7 +288,8 @@ Subcommands:
            `mesh config` opens a picker; `mesh config aliases` opens the single
            matching source file directly. After the editor exits, changed files
            are shown with `git diff -- <source>`, then the identity install
-           script runs so the deploy.map destinations are refreshed.
+           script runs so the deploy.map destinations are refreshed. Finally it
+           shows the identity Git state and asks whether to commit + push.
            Flags:
              list [term]     list source -> destinations, optionally filtered.
              --no-install    edit + diff only; skip deploy.
