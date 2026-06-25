@@ -120,6 +120,7 @@ _mesh() {
         'update:pull and apply dotfiles ecosystem updates'
         'topic:list or run mesh-workstation topics by number'
         'run:run a mesh subcommand on selected hosts'
+        'config:edit personal config from mesh-identity deploy.map'
     )
 
     if (( CURRENT == 2 )); then
@@ -180,6 +181,21 @@ _mesh() {
                     _describe -t topics 'mesh-workstation topic' topic_specs
                     ;;
             esac
+            ;;
+        config)
+            local -a config_actions
+            config_actions=(
+                'list:list personal config sources and deployed destinations'
+            )
+            _arguments \
+                '(-h --help)'{-h,--help}'[show config help]' \
+                '--no-install[edit and diff, but skip deploy]' \
+                '--no-diff[edit and deploy without printing git diff]' \
+                '1:config name or action:->config_arg' \
+                '*:config term:_files'
+            if [[ "$state" == "config_arg" ]]; then
+                _describe -t commands 'mesh config command' config_actions
+            fi
             ;;
         run)
             local -a run_subcommands

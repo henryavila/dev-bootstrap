@@ -117,6 +117,7 @@ Usage:
   mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
   mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
   mesh ai [term] [--agent X]        Open an AI agent in the right repo via herdr (disk-search + focus-or-create)
+  mesh config [term]                 Edit personal config from mesh-identity/deploy.map, then diff + deploy
   mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable/reconcile) — active × enabled
   mesh -h | --help                  This help
   mesh -V | --version               Version
@@ -283,6 +284,16 @@ Subcommands:
              --list     print the discovered catalogue and exit (no launch).
            mesh-identity aliases this to `mesh ia` with claude + its own flags.
 
+  config   Edit personal config files declared in mesh-identity/deploy.map.
+           `mesh config` opens a picker; `mesh config aliases` opens the single
+           matching source file directly. After the editor exits, changed files
+           are shown with `git diff -- <source>`, then the identity install
+           script runs so the deploy.map destinations are refreshed.
+           Flags:
+             list [term]     list source -> destinations, optionally filtered.
+             --no-install    edit + diff only; skip deploy.
+             --no-diff       edit + deploy without printing git diff.
+
 Examples:
   mesh                              Open the panel
   mesh status crc                   Drill-down on host 'crc'
@@ -313,6 +324,8 @@ Examples:
   mesh clean --apply               Purge Tier-1 caches
   mesh clean --apply --deep        Also purge heavy browser/model caches
   mesh clean --apply --deep --compact   Full reclaim, then shrink the WSL VHDX
+  mesh config aliases              Edit personal aliases, show diff, deploy
+  mesh config list claude          List Claude-related personal config files
   mesh services list               List mesh-owned daemons with active/enabled badges
   mesh services stop mysql redis   Stop both now (does not change boot state)
   mesh services disable mysql      Stop mysql from starting at boot (leaves it running)
@@ -1480,6 +1493,15 @@ sub_ai() {
     exec bash "$runner" "$@"
 }
 
+# `mesh config [term]` → edit a source file from mesh-identity/deploy.map, show
+# the source diff, then run the identity install script to refresh destinations.
+sub_config() {
+    local runner
+    runner="$(_resolve_companion "runners/config.sh")"
+    [[ -n "$runner" ]] || _die "runners/config.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$runner" "$@"
+}
+
 # `mesh services <verb> [name…]` → cross-platform service control plane.
 # Curated registry of mesh-owned daemons; two orthogonal bits active × enabled.
 # Verbs: list / status / start / stop / restart / enable / disable.
@@ -1579,6 +1601,10 @@ case "${1:-status}" in
     ai)
         shift
         sub_ai "$@"
+        ;;
+    config)
+        shift
+        sub_config "$@"
         ;;
     services)
         shift
