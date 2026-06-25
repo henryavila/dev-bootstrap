@@ -297,11 +297,12 @@ unset STUB_SYSTEMCTL_FAIL
 assert_ne "$rc" 0 "Case 20a: a failing driver mutation makes the verb exit non-zero"
 assert_contains "$out" "MySQL: stop failed" "Case 20b: the failing service is reported as failed"
 
-# ─── Case 21: bin/mesh wiring (structural; live dispatch is G-2) ─────────────
+# ─── Case 21: command-module wiring (structural; live dispatch is G-2) ───────
 MESH="$REPO_ROOT/bin/mesh"
-ASSERT_MSG="Case 21a: bin/mesh defines sub_services()" assert_true "grep -q 'sub_services()' '$MESH'"
-ASSERT_MSG="Case 21b: bin/mesh registers the 'services' subcommand through the bridge" \
-    assert_true "grep -qE '_mesh_register_legacy_command[[:space:]]+services[[:space:]]+core' '$MESH'"
+SERVICES_MODULE="$REPO_ROOT/scripts/commands/services.sh"
+ASSERT_MSG="Case 21a: services command module exists" assert_true "test -f '$SERVICES_MODULE'"
+ASSERT_MSG="Case 21b: services registers through the command module" \
+    assert_true "grep -q 'mesh_register_command' '$SERVICES_MODULE'"
 
 # ─── T-004 (shell side) ──────────────────────────────────────────────────────
 # The interactive no-arg flow lives in the blink-tui menu (TS, covered by the
@@ -402,7 +403,7 @@ assert_not_contains "$out" "unsupported mesh subcommand" "Case 29e: 'services' i
 
 # ─── Case 30: services carries the non-interactive fan-out env (structural) ──
 ASSERT_MSG="Case 30: services registers its fan-out validator and non-interactive env provider" \
-    assert_true "grep -q '_mesh_register_legacy_command services .* _mesh_fanout_validate_services _mesh_fanout_env_noninteractive' '$MESH'"
+    assert_true "grep -q -- '--fanout-validator _mesh_fanout_validate_services' '$SERVICES_MODULE' && grep -q -- '--fanout-env-provider _mesh_fanout_env_noninteractive' '$SERVICES_MODULE'"
 
 # ─── T-006 ───────────────────────────────────────────────────────────────────
 # Decouple install from auto-enable + per-host services.default reconcile. The

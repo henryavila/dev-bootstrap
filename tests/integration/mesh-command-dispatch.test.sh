@@ -70,39 +70,29 @@ echo
 echo "real module wins"
 MODULES_REAL="$SANDBOX/modules-real"
 mkdir -p "$MODULES_REAL"
-cat > "$MODULES_REAL/10-status.sh" <<'SH'
-cmd_real_status() {
-    printf 'REAL_STATUS:%s\n' "$*"
+cat > "$MODULES_REAL/10-doctor.sh" <<'SH'
+cmd_real_doctor() {
+    printf 'REAL_DOCTOR:%s\n' "$*"
 }
 mesh_register_command \
-    --name status \
-    --summary "Real status module" \
+    --name doctor \
+    --summary "Real doctor module" \
     --group core \
     --origin core \
     --visibility public \
-    --fanout allowed \
-    --handler cmd_real_status
+    --fanout none \
+    --handler cmd_real_doctor
 SH
 
 out="$(
     MESH_HOME="$MESH_HOME_FAKE" \
     MESH_IDENTITY_DIR="$IDENTITY_EMPTY" \
     MESH_COMMAND_MODULE_DIR="$MODULES_REAL" \
-    "$MESH" status from-module 2>&1
+    "$MESH" doctor from-module 2>&1
 )"
 rc=$?
-assert_eq "$rc" 0 "real status module exits 0"
-assert_eq "$out" "REAL_STATUS:from-module" "real module registered before bridge wins"
-
-out="$(
-    MESH_HOME="$MESH_HOME_FAKE" \
-    MESH_IDENTITY_DIR="$IDENTITY_EMPTY" \
-    MESH_COMMAND_MODULE_DIR="$MODULES_REAL" \
-    "$MESH" --json 2>&1
-)"
-rc=$?
-assert_eq "$rc" 0 "top-level status flag uses registered status handler"
-assert_eq "$out" "REAL_STATUS:--json" "real status module handles top-level status flags"
+assert_eq "$rc" 0 "real doctor module exits 0"
+assert_eq "$out" "REAL_DOCTOR:from-module" "real module registered before bridge wins"
 
 echo
 echo "duplicate real modules"

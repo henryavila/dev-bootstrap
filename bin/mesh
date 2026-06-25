@@ -346,33 +346,6 @@ EOF
 
 # ─── Subcommand handlers ───────────────────────────────────────────
 
-sub_status() {
-    local lib
-    lib="$(_resolve_companion "internal/mesh-status")"
-    [[ -n "$lib" ]] || _die "internal/mesh-status not found (set \$MESH_HOME or check installation)"
-
-    # First non-flag arg becomes positional alias → translates to --detail.
-    # If first arg is a flag (or no args), pass through as-is.
-    local first="${1:-}"
-    case "$first" in
-        --*|-*|"")
-            exec "$lib" "$@"
-            ;;
-        *)
-            local alias_arg="$1"
-            shift
-            exec "$lib" --detail "$alias_arg" "$@"
-            ;;
-    esac
-}
-
-sub_snap() {
-    local lib
-    lib="$(_resolve_companion "internal/mesh-snap")"
-    [[ -n "$lib" ]] || _die "internal/mesh-snap not found (set \$MESH_HOME or check installation)"
-    exec "$lib" "$@"
-}
-
 # `mesh doctor`        → identity deploy-drift + system-phantom report (read-only).
 # `mesh doctor --fix`  → engine --repair sweep: verify every INSTALLED item with
 #   its strongest probe and repair broken-but-kept ones THROUGH the installer
@@ -459,16 +432,6 @@ EOF
     exec bash "$repo/setup.sh" --adopt
 }
 
-# `mesh syncthing <verb>` → REST-driven Syncthing mesh pairing (workstation
-# runner). Replaces the old passive post-install banner: a declarative reconcile
-# from the identity syncthing-mesh.yaml (pair/init-hub/status/password/url).
-sub_syncthing() {
-    local runner
-    runner="$(_resolve_companion "runners/syncthing.sh")"
-    [[ -n "$runner" ]] || _die "runners/syncthing.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$runner" "$@"
-}
-
 _normalize_topic_spec() {
     local raw="$*"
     raw="${raw//,/ }"
@@ -491,41 +454,6 @@ _resolve_workstation_repo() {
         return 0
     fi
     return 1
-}
-
-_print_topic_help() {
-    cat <<'EOF'
-Usage:
-  mesh topic list
-  mesh topic <NN|NN-name> [...]
-
-Examples:
-  mesh topic list
-  mesh topic 20 30
-  mesh topic 20-terminal-ux 30-shell
-EOF
-}
-
-sub_topic() {
-    case "${1:-}" in
-        -h|--help|"")
-            _print_topic_help
-            return 0
-            ;;
-        list)
-            shift
-            (( $# == 0 )) || _die "topic list: unexpected arg '$1'"
-            local repo
-            repo="$(_resolve_workstation_repo)" || \
-                _die "mesh-workstation repo not found (set MESH_WORKSTATION_DIR)"
-            exec bash "$repo/setup.sh" --list-bundles
-            ;;
-    esac
-
-    local topics
-    topics="$(_normalize_topic_spec "$@")"
-    [[ -n "$topics" ]] || _die "topic: missing topic number"
-    sub_update --topics "$topics"
 }
 
 sub_update() {
@@ -1362,71 +1290,6 @@ sub_run() {
     return "$failed"
 }
 
-sub_init() {
-    local lib
-    lib="$(_resolve_companion "lib/init.sh")"
-    [[ -n "$lib" ]] || _die "lib/init.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$lib" "$@"
-}
-
-sub_template_check() {
-    local lib
-    lib="$(_resolve_companion "lib/template-check.sh")"
-    [[ -n "$lib" ]] || _die "lib/template-check.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$lib" "$@"
-}
-
-sub_lint() {
-    local lib
-    lib="$(_resolve_companion "lib/lint.sh")"
-    [[ -n "$lib" ]] || _die "lib/lint.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$lib" "$@"
-}
-
-sub_catalog() {
-    local action="${1:-}"
-    case "$action" in
-        generate)
-            shift
-            local lib
-            lib="$(_resolve_companion "lib/catalog.sh")"
-            [[ -n "$lib" ]] || _die "lib/catalog.sh not found (set \$MESH_HOME or check installation)"
-            exec bash "$lib" "$@"
-            ;;
-        ""|-h|--help)
-            cat <<'EOF'
-Usage: mesh catalog generate
-
-Regenerates .catalog/ with 4 derived files + index:
-  resources.txt   files under topics/*/resources/
-  opt-ins.txt     INCLUDE_* env-var toggles
-  cli.txt         mesh subcommands (parsed from bin/mesh)
-  drivers.txt     installer drivers in scripts/lib/installers/
-  README.md       index + pointer to docs/catalog/behaviors.md
-
-Output is byte-stable; CI can diff two runs to detect drift.
-EOF
-            ;;
-        *)
-            _die "catalog: unknown action '$action' (try: mesh catalog generate)"
-            ;;
-    esac
-}
-
-sub_personal_clone() {
-    local lib
-    lib="$(_resolve_companion "lib/personal-clone.sh")"
-    [[ -n "$lib" ]] || _die "lib/personal-clone.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$lib" "$@"
-}
-
-sub_secret() {
-    local lib
-    lib="$(_resolve_companion "lib/secret.sh")"
-    [[ -n "$lib" ]] || _die "lib/secret.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$lib" "$@"
-}
-
 # ─── mesh setup ────────────────────────────────────────────────────
 # Run the bootstrap (setup.sh) from anywhere — no `cd` into the checkout, no
 # `bash setup.sh`. By default it first runs `mesh update --force` (BOTH repos)
@@ -1481,53 +1344,6 @@ EOF
     exec bash "$setup_sh" "${pass[@]+"${pass[@]}"}"
 }
 
-sub_menu() {
-    local runner apply=0
-    runner="$(_resolve_companion "runners/menu.sh")"
-    [[ -n "$runner" ]] || _die "runners/menu.sh not found (set \$MESH_HOME or check installation)"
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --apply) apply=1; shift ;;
-            -h|--help)
-                echo "Usage: mesh menu [--apply]"
-                echo "  mesh menu          Run the interactive selector (standalone)"
-                echo "  mesh menu --apply  Run selector + execute install/uninstall delta"
-                return 0 ;;
-            *) _die "menu: unknown arg '$1'" ;;
-        esac
-    done
-    if (( apply )); then
-        exec bash "$runner" --apply
-    else
-        exec bash "$runner"
-    fi
-}
-
-# `mesh clean [--apply] [--deep] [--compact] [--yes]` → OS-aware disk reclaim.
-# Iterates the cleaner registry (scripts/lib/cleaners/*.sh); dry-run by default.
-sub_clean() {
-    local runner
-    runner="$(_resolve_companion "runners/clean.sh")"
-    [[ -n "$runner" ]] || _die "runners/clean.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$runner" "$@"
-}
-
-# `mesh upgrade [--dry-run]` → on-demand, version-aware upgrade of mesh-managed
-# packages: items marked `autoupdate: true` in the manifest (+ any opted-in
-# MESH_UPDATE_* category), using each package manager's native outdated check.
-# Never installs new items, never a blind `brew upgrade`. Bypasses the daily
-# login throttle. The login pass (`mesh update`) runs the same upgrade at most
-# once/day; this is the force-now verb.
-sub_upgrade() {
-    local runner
-    runner="$(_resolve_companion "runners/upgrade.sh")"
-    [[ -n "$runner" ]] || _die "runners/upgrade.sh not found (set \$MESH_HOME or check installation)"
-    # Resolve this host's alias so the engine's --update pass can read its
-    # per-host autoupdate override (config/autoupdate.default.<alias>).
-    export MESH_AUTOUPDATE_ALIAS="${MESH_AUTOUPDATE_ALIAS:-$(_mesh_self_alias)}"
-    exec bash "$runner" "$@"
-}
-
 # `mesh ai [term] [--agent X]` → open an AI agent in the right repo via herdr.
 # Discovers repos on disk (multi-root) and hands the chosen one to herdr (focus
 # if open, else create + launch). mesh-identity aliases this to `mesh ia` with
@@ -1536,28 +1352,6 @@ sub_ai() {
     local runner
     runner="$(_resolve_companion "runners/ia.sh")"
     [[ -n "$runner" ]] || _die "runners/ia.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$runner" "$@"
-}
-
-# `mesh config [term]` → edit a source file from mesh-identity/deploy.map, show
-# the source diff, then run the identity install script to refresh destinations.
-sub_config() {
-    local runner
-    runner="$(_resolve_companion "runners/config.sh")"
-    [[ -n "$runner" ]] || _die "runners/config.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$runner" "$@"
-}
-
-# `mesh services <verb> [name…]` → cross-platform service control plane.
-# Curated registry of mesh-owned daemons; two orthogonal bits active × enabled.
-# Verbs: list / status / start / stop / restart / enable / disable.
-sub_services() {
-    local runner
-    runner="$(_resolve_companion "runners/services.sh")"
-    [[ -n "$runner" ]] || _die "runners/services.sh not found (set \$MESH_HOME or check installation)"
-    # Export the resolved host alias so `services reconcile` finds this host's
-    # services.default.<alias> (the runner/lib falls back to hostname otherwise).
-    export MESH_SERVICES_ALIAS="${MESH_SERVICES_ALIAS:-$(_mesh_self_alias)}"
     exec bash "$runner" "$@"
 }
 
