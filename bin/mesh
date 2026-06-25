@@ -1385,7 +1385,7 @@ EOF
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 _mesh_load_command_modules() {
-    local specs="" dir file old_ifs
+    local specs="" dir file old_ifs identity_command_dir
     if [[ -n "${MESH_COMMAND_MODULE_DIR:-}" ]]; then
         specs="$MESH_COMMAND_MODULE_DIR"
     fi
@@ -1394,6 +1394,10 @@ _mesh_load_command_modules() {
     fi
     if [[ -d "$HERE/../scripts/commands" ]]; then
         specs="${specs:+$specs:}$HERE/../scripts/commands"
+    fi
+    identity_command_dir="${MESH_IDENTITY_DIR:-$HOME/mesh-identity}/extensions/mesh/commands"
+    if [[ -d "$identity_command_dir" ]]; then
+        specs="${specs:+$specs:}$identity_command_dir"
     fi
 
     old_ifs="$IFS"
