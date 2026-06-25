@@ -8,7 +8,7 @@
 # Outputs in $ROOT/.catalog/:
 #   resources.txt  files under topics/*/resources/
 #   opt-ins.txt    INCLUDE_* env-var toggles surfaced anywhere in scripts/topics
-#   cli.txt        mesh subcommands (parsed from bin/mesh case dispatch)
+#   cli.txt        public mesh subcommands (from `mesh __commands`)
 #   drivers.txt    installer driver names (scripts/lib/installers/*.sh)
 #   README.md      hand-readable index + pointer to curated narrative at
 #                  docs/catalog/behaviors.md (hand-maintained, out-of-scope here)
@@ -40,14 +40,20 @@ grep -rhoE '\bINCLUDE_[A-Z][A-Z0-9_]*' \
     > "$OUT/opt-ins.txt"
 
 # ─── cli.txt ───────────────────────────────────────────────────────
-# mesh subcommands taken from the case dispatch block in bin/mesh.
-# We rely on the convention that each subcommand case label sits at the
-# start of its own line as "    <name>)".
-if [[ -f "$ROOT/bin/mesh" ]]; then
-    grep -E '^    [a-z][a-z-]+\)$' "$ROOT/bin/mesh" \
-        | sed -E 's/^[[:space:]]+//; s/\)$//' \
-        | LC_ALL=C sort -u \
-        > "$OUT/cli.txt"
+# Public mesh subcommands from the command registry. Point the identity hook at
+# an absent directory so private extensions cannot leak into the public catalog.
+if [[ -x "$ROOT/bin/mesh" ]]; then
+    cli_tmp="$OUT/cli.txt.tmp.$$"
+    if MESH_IDENTITY_DIR="$OUT/.identity-empty" "$ROOT/bin/mesh" __commands > "$cli_tmp"; then
+        awk -F '\t' 'NF >= 1 { print $1 }' "$cli_tmp" \
+            | LC_ALL=C sort -u \
+            > "$OUT/cli.txt"
+        rm -f "$cli_tmp"
+    else
+        rc=$?
+        rm -f "$cli_tmp"
+        exit "$rc"
+    fi
 else
     : > "$OUT/cli.txt"
 fi
@@ -83,7 +89,7 @@ Re-generation is byte-stable: two consecutive runs produce identical output.
 |---|---:|---|
 | [resources.txt](resources.txt) | $res_n | \`topics/*/resources/\` |
 | [opt-ins.txt](opt-ins.txt) | $opt_n | \`INCLUDE_*\` toggles in scripts/topics |
-| [cli.txt](cli.txt) | $cli_n | \`mesh\` subcommands in bin/mesh case dispatch |
+| [cli.txt](cli.txt) | $cli_n | public commands from \`mesh __commands\` |
 | [drivers.txt](drivers.txt) | $drv_n | \`scripts/lib/installers/*.sh\` |
 
 ## Curated narrative

@@ -102,36 +102,28 @@ _mesh_load_extensions
 
 # ─── Help ──────────────────────────────────────────────────────────
 
+_mesh_print_public_command_table() {
+    local name summary _group _origin _visibility _fanout
+    mesh_command_emit_tsv | while IFS=$'\t' read -r name summary _group _origin _visibility _fanout; do
+        [[ -n "$name" ]] || continue
+        printf '  %-22s %s\n' "$name" "$summary"
+    done
+}
+
 _print_help() {
     cat <<'EOF'
 Mesh CLI — unified entrypoint for ecosystem maintenance.
 
 Usage:
   mesh                              Show cross-mesh status panel (= mesh status)
-  mesh status [<alias>] [flags]     Cross-mesh dashboard; positional drill-down
-  mesh snap [flags]                 Generate this host's snapshot
-  mesh doctor [--fix]               Report deploy drift; --fix repairs broken installed items
-  mesh adopt                        Backfill install markers for already-present tools (v1→v2; read-only)
-  mesh update [-o NAME] [-f] [-i]   Pull and apply updates
-  mesh upgrade [--dry-run]          Upgrade autoupdate-flagged packages now (version-aware; --dry-run lists candidates)
-  mesh setup [--no-update]          Update both repos, then run setup.sh
-  mesh topic list                   List mesh-workstation topics
-  mesh topic <NN...>                Re-apply mesh-workstation topics by number
-  mesh run [flags] <subcommand>     Run mesh subcommands on selected hosts
-  mesh lint                         Run repo invariant lints (scripts/lib/lints/L*.sh)
-  mesh catalog generate             Regenerate .catalog/ derived listings
-  mesh init [MODE | FLAGS]          Bootstrap identity (adopt-url/create-new/skip/interactive)
-  mesh template-check [flags]       Verify template/ ↔ identity parity (C16.1)
-  mesh personal-clone [flags]       Clone personal repos from identity catalog
-  mesh menu [--apply]               Interactive item selector (standalone or with apply)
-  mesh secret <verb>                Manage replicated personal secrets (git-crypt 2-tier)
-  mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
-  mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
-  mesh ai [term] [--agent X]        Open an AI agent in the right repo via herdr (disk-search + focus-or-create)
-  mesh config [term]                 Edit personal config from mesh-identity/deploy.map, then diff, deploy, and ask to push
-  mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable/reconcile) — active × enabled
+  mesh <command> [args...]          Run a registered mesh command
   mesh -h | --help                  This help
   mesh -V | --version               Version
+
+Commands:
+EOF
+    _mesh_print_public_command_table
+    cat <<'EOF'
 
 Subcommands:
   status   View cross-mesh state. `mesh status crc` → drill-down on host 'crc'.
@@ -201,7 +193,8 @@ Subcommands:
              --all                   Run on all configured hosts, no selector.
              --dry-run               Show what would run, execute nothing.
 
-           Supported remote subcommands: status, snap, update.
+           Supported fanout subcommands: status, snap, update, syncthing pair|status,
+           services <status|start|stop|restart|enable|disable> <name>...
            `mesh run update ... -i` is intentionally rejected; interactive
            update menus belong on one host at a time.
 
@@ -1126,23 +1119,8 @@ _mesh_quote_args() {
     printf '%s' "$out"
 }
 
-# A fan-out subcommand that must NEVER block on one host's interactive pause —
-# `syncthing pair` would otherwise hang waiting for a Tier-0 device approve, and
-# `services` with no subverb would open the interactive picker. Forcing
-# non-interactive makes such a case defer/usage so the sweep continues per host.
-_run_force_noninteractive() { [[ "${1:-}" == "syncthing" || "${1:-}" == "services" ]]; }
-
-_mesh_remote_command() {
-    local quoted env_prefix=""
-    quoted="$(_mesh_quote_args "$@")"
-    if _run_force_noninteractive "${1:-}"; then
-        env_prefix="NON_INTERACTIVE=1; export NON_INTERACTIVE; "
-    fi
-    printf "%sDEV_BOOTSTRAP_TMUX_AUTO_MAIN=0; export DEV_BOOTSTRAP_TMUX_AUTO_MAIN; if command -v mesh >/dev/null 2>&1; then mesh %s; elif [ -x \"\$HOME/.local/bin/mesh\" ]; then \"\$HOME/.local/bin/mesh\" %s; else echo \"mesh: remote mesh command not found\" >&2; exit 127; fi" "$env_prefix" "$quoted" "$quoted"
-}
-
-_mesh_command_display() {
-    printf 'mesh %s' "$(_mesh_quote_args "$@")"
+_mesh_fanout_validate_any() {
+    return 0
 }
 
 _run_update_args_are_interactive() {
@@ -1153,6 +1131,85 @@ _run_update_args_are_interactive() {
         esac
     done
     return 1
+}
+
+_mesh_fanout_validate_update() {
+    if _run_update_args_are_interactive "$@"; then
+        _die "run: update -i/--interactive is not supported across hosts; run it on one host at a time"
+    fi
+}
+
+_mesh_fanout_validate_syncthing() {
+    case "${1:-}" in
+        pair|status) ;;
+        *) _die "run: only \`syncthing pair\` and \`syncthing status\` can fan out (got '${1:-}')" ;;
+    esac
+}
+
+_mesh_fanout_validate_services() {
+    case "${1:-}" in
+        status|start|stop|restart|enable|disable) ;;
+        *) _die "run: services can only fan out: status, start, stop, restart, enable, disable (got '${1:-<none>}')" ;;
+    esac
+}
+
+_mesh_fanout_env_noninteractive() {
+    printf 'NON_INTERACTIVE=1\n'
+}
+
+_mesh_collect_fanout_env() {
+    local provider="$1" out line
+    shift || true
+    [[ -n "$provider" ]] || return 0
+
+    out="$("$provider" "$@")" || _die "run: fanout env provider failed: $provider"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        if [[ ! "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            _die "run: fanout env provider $provider emitted malformed record: $line"
+        fi
+    done <<<"$out"
+    [[ -n "$out" ]] && printf '%s\n' "$out"
+}
+
+_mesh_env_records_to_remote_prefix() {
+    local records="$1" line key value q out=""
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        key="${line%%=*}"
+        value="${line#*=}"
+        printf -v q '%q' "$value"
+        out="${out}${key}=${q}; export ${key}; "
+    done <<<"$records"
+    printf '%s' "$out"
+}
+
+_mesh_remote_command() {
+    local env_records="$1"
+    shift || true
+    local quoted env_prefix=""
+    quoted="$(_mesh_quote_args "$@")"
+    env_prefix="$(_mesh_env_records_to_remote_prefix "$env_records")"
+    printf "%sDEV_BOOTSTRAP_TMUX_AUTO_MAIN=0; export DEV_BOOTSTRAP_TMUX_AUTO_MAIN; if command -v mesh >/dev/null 2>&1; then mesh %s; elif [ -x \"\$HOME/.local/bin/mesh\" ]; then \"\$HOME/.local/bin/mesh\" %s; else echo \"mesh: remote mesh command not found\" >&2; exit 127; fi" "$env_prefix" "$quoted" "$quoted"
+}
+
+_mesh_command_display() {
+    printf 'mesh %s' "$(_mesh_quote_args "$@")"
+}
+
+_mesh_run_local_with_env() {
+    local env_records="$1"
+    shift || true
+    (
+        local line
+        DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0
+        export DEV_BOOTSTRAP_TMUX_AUTO_MAIN
+        while IFS= read -r line; do
+            [[ -n "$line" ]] || continue
+            export "$line"
+        done <<<"$env_records"
+        bash "${BASH_SOURCE[0]}" "$@"
+    )
 }
 
 _print_run_help() {
@@ -1236,38 +1293,19 @@ sub_run() {
     local mesh_subcommand="$1"
     shift
     local mesh_args=("$@")
-
-    case "$mesh_subcommand" in
-        status|snap|update)
-            ;;
-        syncthing)
-            # Fan out only the safe, idempotent verbs — never password (rotates a
-            # secret), init-hub or topology (hub-local / mesh-wide mutations).
-            case "${mesh_args[0]:-}" in
-                pair|status) ;;
-                *) _die "run: only \`syncthing pair\` and \`syncthing status\` can fan out (got '${mesh_args[0]:-}')" ;;
-            esac
-            ;;
-        services)
-            # Fan out only the scriptable, non-interactive verbs — never the
-            # no-arg interactive picker, `list`, or `--all` discovery (read-only,
-            # low value across hosts; mutation needs a curated descriptor).
-            case "${mesh_args[0]:-}" in
-                status|start|stop|restart|enable|disable) ;;
-                *) _die "run: services can only fan out: status, start, stop, restart, enable, disable (got '${mesh_args[0]:-<none>}')" ;;
-            esac
-            ;;
-        run)
-            _die "run: nested 'mesh run' is not supported"
-            ;;
-        *)
-            _die "run: unsupported mesh subcommand '$mesh_subcommand' (supported: status, snap, update, syncthing pair|status, services <verb> <name>...)"
-            ;;
-    esac
-
-    if [[ "$mesh_subcommand" == "update" ]] && _run_update_args_are_interactive "${mesh_args[@]+"${mesh_args[@]}"}"; then
-        _die "run: update -i/--interactive is not supported across hosts; run it on one host at a time"
+    local fanout validator env_provider fanout_env_records
+    if ! mesh_command_registered "$mesh_subcommand"; then
+        _die "run: unsupported mesh subcommand '$mesh_subcommand' (supported commands are registered with fanout validators)"
     fi
+    fanout="$(mesh_command_get "$mesh_subcommand" fanout)" || _die "run: command has no fanout metadata: $mesh_subcommand"
+    validator="$(mesh_command_get "$mesh_subcommand" fanout_validator)" || _die "run: command has no fanout validator metadata: $mesh_subcommand"
+    env_provider="$(mesh_command_get "$mesh_subcommand" fanout_env_provider)" || _die "run: command has no fanout env metadata: $mesh_subcommand"
+
+    if [[ "$fanout" != "allowed" || -z "$validator" ]]; then
+        _die "run: unsupported mesh subcommand '$mesh_subcommand' (no registered fanout validator)"
+    fi
+    "$validator" "${mesh_args[@]+"${mesh_args[@]}"}" || return $?
+    fanout_env_records="$(_mesh_collect_fanout_env "$env_provider" "${mesh_args[@]+"${mesh_args[@]}"}")" || return $?
 
     _mesh_load_run_hosts
     _mesh_collect_online_aliases
@@ -1302,11 +1340,7 @@ sub_run() {
                 continue
             fi
             printf '\n== %s (local) ==\n' "$alias" >&2
-            if _run_force_noninteractive "$mesh_subcommand"; then
-                NON_INTERACTIVE=1 DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0 bash "${BASH_SOURCE[0]}" "$mesh_subcommand" "${mesh_args[@]+"${mesh_args[@]}"}"
-            else
-                DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0 bash "${BASH_SOURCE[0]}" "$mesh_subcommand" "${mesh_args[@]+"${mesh_args[@]}"}"
-            fi
+            _mesh_run_local_with_env "$fanout_env_records" "$mesh_subcommand" "${mesh_args[@]+"${mesh_args[@]}"}"
             rc=$?
         else
             if (( dry_run )); then
@@ -1314,7 +1348,7 @@ sub_run() {
                 continue
             fi
             printf '\n== %s (ssh %s) ==\n' "$alias" "$target" >&2
-            remote_cmd="$(_mesh_remote_command "$mesh_subcommand" "${mesh_args[@]+"${mesh_args[@]}"}")"
+            remote_cmd="$(_mesh_remote_command "$fanout_env_records" "$mesh_subcommand" "${mesh_args[@]+"${mesh_args[@]}"}")"
             "${MESH_RUN_SSH:-ssh}" -tt "$target" "$remote_cmd"
             rc=$?
         fi
@@ -1588,19 +1622,28 @@ _mesh_load_command_modules() {
 }
 
 _mesh_register_legacy_command() {
-    local name="$1" group="$2" summary="$3" fanout="$4"
+    local name="$1" group="$2" summary="$3" fanout="$4" fanout_validator="${5:-}" fanout_env_provider="${6:-}"
     local handler="sub_${name//-/_}"
+    local -a args
     if mesh_command_registered "$name"; then
         return 0
     fi
-    mesh_register_command \
+    args=(
         --name "$name" \
         --summary "$summary" \
         --group "$group" \
         --origin core \
         --visibility public \
         --fanout "$fanout" \
-        --handler "$handler" || _die "failed to register legacy command: $name"
+        --handler "$handler"
+    )
+    if [[ -n "$fanout_validator" ]]; then
+        args+=(--fanout-validator "$fanout_validator")
+    fi
+    if [[ -n "$fanout_env_provider" ]]; then
+        args+=(--fanout-env-provider "$fanout_env_provider")
+    fi
+    mesh_register_command "${args[@]}" || _die "failed to register legacy command: $name"
 }
 
 _mesh_register_internal_command_list() {
@@ -1619,11 +1662,11 @@ _mesh_register_internal_command_list() {
 
 _mesh_register_legacy_commands() {
     _mesh_register_internal_command_list
-    _mesh_register_legacy_command status core "Show cross-mesh status" allowed
-    _mesh_register_legacy_command snap core "Generate this host snapshot" allowed
+    _mesh_register_legacy_command status core "Show cross-mesh status" allowed _mesh_fanout_validate_any
+    _mesh_register_legacy_command snap core "Generate this host snapshot" allowed _mesh_fanout_validate_any
     _mesh_register_legacy_command doctor core "Report or repair mesh health" none
     _mesh_register_legacy_command adopt core "Backfill install markers read-only" none
-    _mesh_register_legacy_command update core "Pull and apply mesh updates" allowed
+    _mesh_register_legacy_command update core "Pull and apply mesh updates" allowed _mesh_fanout_validate_update
     _mesh_register_legacy_command upgrade core "Upgrade autoupdate-flagged packages" none
     _mesh_register_legacy_command topic core "List or apply mesh topics" none
     _mesh_register_legacy_command run core "Fan out mesh subcommands across hosts" none
@@ -1635,11 +1678,11 @@ _mesh_register_legacy_commands() {
     _mesh_register_legacy_command menu core "Open the interactive item selector" none
     _mesh_register_legacy_command setup core "Update repos and run setup" none
     _mesh_register_legacy_command secret core "Manage replicated personal secrets" none
-    _mesh_register_legacy_command syncthing core "Pair this node into the Syncthing mesh" allowed
+    _mesh_register_legacy_command syncthing core "Pair this node into the Syncthing mesh" allowed _mesh_fanout_validate_syncthing _mesh_fanout_env_noninteractive
     _mesh_register_legacy_command clean core "Reclaim regenerable dev caches" none
     _mesh_register_legacy_command ai core "Open an AI agent in the right repo" none
     _mesh_register_legacy_command config core "Edit personal config from mesh-identity" none
-    _mesh_register_legacy_command services core "Control mesh-owned daemons" allowed
+    _mesh_register_legacy_command services core "Control mesh-owned daemons" allowed _mesh_fanout_validate_services _mesh_fanout_env_noninteractive
 }
 
 _mesh_dispatch_private_fallback() {

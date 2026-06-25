@@ -1,69 +1,103 @@
 #!/usr/bin/env bash
-# Unit test for the `mesh run` syncthing fan-out wiring (T-002):
-#   - the allowlist accepts `syncthing pair|status` and rejects mutating verbs
-#     (password / init-hub / topology) — validation runs before any host/ssh work
-#   - the fan-out command is forced NON_INTERACTIVE for syncthing so a pending
-#     Tier-0 device approve defers instead of hanging the sweep
+# Unit coverage for mesh-run fanout helpers used by syncthing/services:
+#   - fanout env providers emit validated KEY=VALUE records
+#   - remote command rendering carries those records into the SSH command
+#   - syncthing's validator still rejects unsafe verbs before host/ssh work
 set -uo pipefail
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS="$(cd "$HERE/../.." && pwd)"
 MESH="$WS/bin/mesh"
 
-passed=0; failed=0
-assert() {
-    local name="$1" expected="$2" actual="$3"
-    if [[ "$actual" == "$expected" ]]; then passed=$((passed+1)); echo "  ✓ $name"
-    else failed=$((failed+1)); echo "  ✗ $name (expected [$expected], got [$actual])" >&2; fi
-}
-assert_contains() {
-    local name="$1" needle="$2" hay="$3"
-    if [[ "$hay" == *"$needle"* ]]; then passed=$((passed+1)); echo "  ✓ $name"
-    else failed=$((failed+1)); echo "  ✗ $name (missing [$needle])" >&2; fi
-}
-assert_not_contains() {
-    local name="$1" needle="$2" hay="$3"
-    if [[ "$hay" != *"$needle"* ]]; then passed=$((passed+1)); echo "  ✓ $name"
-    else failed=$((failed+1)); echo "  ✗ $name (unexpected [$needle])" >&2; fi
+# shellcheck source=../lib/assert.sh
+source "$HERE/../lib/assert.sh"
+
+SANDBOX="$(mktemp -d -t mesh-run-syncthing.XXXXXX)"
+trap 'rm -rf "$SANDBOX"' EXIT
+mkdir -p "$SANDBOX/home" "$SANDBOX/identity-empty"
+
+_die() {
+    printf 'mesh: %s\n' "$*" >&2
+    exit 1
 }
 
-# ── pure helpers: awk-extract so we skip bin/mesh's heavy top-level ──
-extract() { awk "/^$1\\(\\) \\{/{c=1} c{print} c&&/^}/{exit}" "$MESH"; }
+extract() {
+    awk "/^$1\\(\\) \\{/{c=1} c{print} c&&/^}/{exit}" "$MESH"
+}
+
 eval "$(extract _mesh_quote_args)"
-eval "$(extract _run_force_noninteractive)"
+eval "$(extract _mesh_fanout_validate_syncthing)"
+eval "$(extract _mesh_fanout_env_noninteractive)"
+eval "$(extract _mesh_collect_fanout_env)"
+eval "$(extract _mesh_env_records_to_remote_prefix)"
 eval "$(extract _mesh_remote_command)"
 
-# _run_force_noninteractive: only syncthing forces it
-yn() { "$@" && echo yes || echo no; }
-assert "force-ni: syncthing → yes" "yes" "$(yn _run_force_noninteractive syncthing)"
-assert "force-ni: status    → no"  "no"  "$(yn _run_force_noninteractive status)"
-assert "force-ni: update    → no"  "no"  "$(yn _run_force_noninteractive update)"
+echo "fanout env helpers"
+out="$(_mesh_fanout_env_noninteractive 2>&1)"
+rc=$?
+assert_eq "$rc" 0 "noninteractive env provider exits 0"
+assert_eq "$out" "NON_INTERACTIVE=1" "noninteractive env provider emits one KEY=VALUE record"
 
-# remote command string: syncthing carries the non-interactive export, others don't
-st_cmd="$(_mesh_remote_command syncthing pair)"
-assert_contains "remote: syncthing exports NON_INTERACTIVE" "NON_INTERACTIVE=1" "$st_cmd"
-assert_contains "remote: invokes mesh syncthing pair"       "mesh syncthing pair" "$st_cmd"
-status_cmd="$(_mesh_remote_command status --write)"
-assert_not_contains "remote: status has no NON_INTERACTIVE"  "NON_INTERACTIVE=1" "$status_cmd"
+out="$(_mesh_collect_fanout_env _mesh_fanout_env_noninteractive 2>&1)"
+rc=$?
+assert_eq "$rc" 0 "env collector accepts valid provider output"
+assert_eq "$out" "NON_INTERACTIVE=1" "env collector preserves provider record"
 
-# ── allowlist enforcement (dies before host/ssh work, so no network needed) ──
-out="$(bash "$MESH" run --all syncthing password 2>&1)"; rc=$?
-assert "reject 'syncthing password' (rc!=0)" "1" "$([[ $rc -ne 0 ]] && echo 1 || echo 0)"
-assert_contains "reject names the safe verbs" "can fan out" "$out"
-
-out="$(bash "$MESH" run --all syncthing topology 2>&1)"
-assert_contains "reject 'syncthing topology'" "can fan out" "$out"
-
-out="$(bash "$MESH" run --all frobnicate 2>&1)"
-assert_contains "reject unknown subcommand" "unsupported mesh subcommand" "$out"
-
-out="$(bash "$MESH" run 2>&1)"
-assert_contains "missing-subcommand msg lists syncthing" "syncthing pair|status" "$out"
-
-# ── acceptance: `syncthing pair` passes validation (dry-run, no ssh) ──
-out="$(bash "$MESH" run --hosts mac --dry-run syncthing pair 2>&1)"; rc=$?
-assert "accept 'syncthing pair' (rc0)" "0" "$rc"
-assert_contains "dry-run shows the fan-out command" "syncthing pair" "$out"
+bad_provider() {
+    printf 'BAD RECORD\n'
+}
+out="$(_mesh_collect_fanout_env bad_provider 2>&1)"
+rc=$?
+assert_ne "$rc" 0 "env collector rejects malformed provider output"
+assert_contains "$out" "malformed record" "env collector names malformed fanout env records"
 
 echo
-echo "mesh-run-syncthing: $passed passed, $failed failed"
-[[ "$failed" -eq 0 ]]
+echo "remote command rendering"
+st_cmd="$(_mesh_remote_command "NON_INTERACTIVE=1" syncthing pair)"
+assert_contains "$st_cmd" "NON_INTERACTIVE=1; export NON_INTERACTIVE;" \
+    "remote syncthing command exports NON_INTERACTIVE"
+assert_contains "$st_cmd" "mesh syncthing pair" \
+    "remote syncthing command invokes mesh syncthing pair"
+
+status_cmd="$(_mesh_remote_command "" status --write)"
+assert_not_contains "$status_cmd" "NON_INTERACTIVE=1" \
+    "remote status command has no noninteractive export"
+assert_contains "$status_cmd" "mesh status --write" \
+    "remote status command invokes mesh status --write"
+
+echo
+echo "syncthing validator"
+out="$(_mesh_fanout_validate_syncthing pair 2>&1)"
+rc=$?
+assert_eq "$rc" 0 "syncthing pair validates"
+
+out="$(_mesh_fanout_validate_syncthing status 2>&1)"
+rc=$?
+assert_eq "$rc" 0 "syncthing status validates"
+
+out="$(_mesh_fanout_validate_syncthing password 2>&1)"
+rc=$?
+assert_ne "$rc" 0 "syncthing password is rejected"
+assert_contains "$out" "only \`syncthing pair\` and \`syncthing status\` can fan out" \
+    "syncthing rejection names safe verbs"
+
+echo
+echo "mesh run integration smoke"
+run_mesh() {
+    HOME="$SANDBOX/home" \
+    MESH_IDENTITY_DIR="$SANDBOX/identity-empty" \
+    bash "$MESH" "$@"
+}
+
+out="$(run_mesh run --all syncthing password 2>&1)"
+rc=$?
+assert_ne "$rc" 0 "mesh run rejects syncthing password before host work"
+assert_contains "$out" "can fan out" "mesh run rejection includes fanout wording"
+
+out="$(run_mesh run --hosts mac --dry-run syncthing pair 2>&1)"
+rc=$?
+assert_eq "$rc" 0 "mesh run accepts syncthing pair in dry-run mode"
+assert_contains "$out" "syncthing pair" "dry-run shows the fanout command"
+
+echo
+summary

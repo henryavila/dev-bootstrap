@@ -300,7 +300,8 @@ assert_contains "$out" "MySQL: stop failed" "Case 20b: the failing service is re
 # ─── Case 21: bin/mesh wiring (structural; live dispatch is G-2) ─────────────
 MESH="$REPO_ROOT/bin/mesh"
 ASSERT_MSG="Case 21a: bin/mesh defines sub_services()" assert_true "grep -q 'sub_services()' '$MESH'"
-ASSERT_MSG="Case 21b: bin/mesh dispatches the 'services' subcommand" assert_true "grep -qE '^[[:space:]]*services\\)' '$MESH'"
+ASSERT_MSG="Case 21b: bin/mesh registers the 'services' subcommand through the bridge" \
+    assert_true "grep -qE '_mesh_register_legacy_command[[:space:]]+services[[:space:]]+core' '$MESH'"
 
 # ─── T-004 (shell side) ──────────────────────────────────────────────────────
 # The interactive no-arg flow lives in the blink-tui menu (TS, covered by the
@@ -399,9 +400,9 @@ out="$(bash "$MESH" run --dry-run --all services status mysql 2>&1)"; rc=$?
 assert_not_contains "$out" "can only fan out"        "Case 29d: 'services status' clears the allowlist"
 assert_not_contains "$out" "unsupported mesh subcommand" "Case 29e: 'services' is a supported fan-out subcommand"
 
-# ─── Case 30: services is forced non-interactive in the fan-out (structural) ──
-ASSERT_MSG="Case 30: _run_force_noninteractive covers services (a stray no-arg never hangs a host)" \
-    assert_true "grep -A1 '_run_force_noninteractive()' '$MESH' | grep -q services"
+# ─── Case 30: services carries the non-interactive fan-out env (structural) ──
+ASSERT_MSG="Case 30: services registers its fan-out validator and non-interactive env provider" \
+    assert_true "grep -q '_mesh_register_legacy_command services .* _mesh_fanout_validate_services _mesh_fanout_env_noninteractive' '$MESH'"
 
 # ─── T-006 ───────────────────────────────────────────────────────────────────
 # Decouple install from auto-enable + per-host services.default reconcile. The
