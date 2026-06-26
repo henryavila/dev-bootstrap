@@ -111,6 +111,21 @@ assert_eq "$out" "STUB:template-check.sh:--quiet" "template-check delegates to l
 out="$(run_mesh lint 2>&1)"
 assert_eq "$out" "STUB:lint.sh:" "lint delegates to lib/lint.sh"
 
+out="$(run_mesh lint --json 2>&1)"
+assert_eq "$out" "STUB:lint.sh:--json" "lint non-help args delegate to lib/lint.sh"
+
+out="$(run_mesh lint --help 2>&1)"
+rc=$?
+assert_eq "$rc" 0 "lint --help exits 0"
+assert_contains "$out" "Usage: mesh lint" "lint --help prints command help"
+assert_not_contains "$out" "STUB:lint.sh" "lint --help does not run lint orchestrator"
+
+out="$(run_mesh lint -h 2>&1)"
+rc=$?
+assert_eq "$rc" 0 "lint -h exits 0"
+assert_contains "$out" "Usage: mesh lint" "lint -h prints command help"
+assert_not_contains "$out" "STUB:lint.sh" "lint -h does not run lint orchestrator"
+
 out="$(run_mesh catalog generate 2>&1)"
 assert_eq "$out" "STUB:catalog.sh:" "catalog generate delegates to lib/catalog.sh"
 
