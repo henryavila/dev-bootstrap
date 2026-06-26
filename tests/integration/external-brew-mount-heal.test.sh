@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/integration/external-brew-mount-heal.test.sh
 #
-# Covers scripts/lib/external-brew-mount.sh + the heal runner + the doctor /
-# bin/mesh wiring for the macOS external-brew mount-disambiguation failure
+# Covers scripts/lib/external-brew-mount.sh + the heal runner + the doctor
+# command wiring for the macOS external-brew mount-disambiguation failure
 # (incident 2026-05-02; recurred 2026-06-16 after a macOS update regenerated
 # the daemon plists).
 #
@@ -24,6 +24,7 @@ source "$ROOT/tests/lib/assert.sh"
 
 LIB="$ROOT/scripts/lib/external-brew-mount.sh"
 RUNNER="$ROOT/scripts/runners/heal-external-brew-mount.sh"
+DOCTOR_MODULE="$ROOT/scripts/commands/doctor.sh"
 
 assert_pattern_present() {
     local file="$1" pattern="$2" msg="$3"
@@ -166,11 +167,12 @@ assert_pattern_present "$ROOT/scripts/runners/doctor.sh" 'check_external_brew_mo
 assert_pattern_present "$ROOT/scripts/runners/doctor.sh" 'count_ext_brew_mount > 0' \
     "doctor.sh — ext-brew-mount contributes to the non-zero exit"
 
-# bin/mesh runs the healer BEFORE setup.sh --repair and guards the stale path.
-assert_pattern_present "$ROOT/bin/mesh" 'heal-external-brew-mount\.sh' \
-    "bin/mesh — doctor --fix invokes the heal runner"
-assert_pattern_present "$ROOT/bin/mesh" '! -d "\$repo/topics"' \
-    "bin/mesh — detects the post-remount stale repo path and asks for a re-run"
+# The doctor command module runs the healer BEFORE setup.sh --repair and guards
+# the stale path.
+assert_pattern_present "$DOCTOR_MODULE" 'heal-external-brew-mount\.sh' \
+    "doctor module — doctor --fix invokes the heal runner"
+assert_pattern_present "$DOCTOR_MODULE" '! -d "\$repo/topics"' \
+    "doctor module — detects the post-remount stale repo path and asks for a re-run"
 
 # Runner is platform-safe + has a read-only mode.
 assert_pattern_present "$RUNNER" 'ebm_supported' \

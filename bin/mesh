@@ -344,94 +344,6 @@ Spec: docs/2026-05-02-mesh-cli-refactor-spec.md
 EOF
 }
 
-# ─── Subcommand handlers ───────────────────────────────────────────
-
-# `mesh doctor`        → identity deploy-drift + system-phantom report (read-only).
-# `mesh doctor --fix`  → engine --repair sweep: verify every INSTALLED item with
-#   its strongest probe and repair broken-but-kept ones THROUGH the installer
-#   (e.g. `brew reinstall` a formula whose dylib a dependency bump removed, or
-#   re-run `valet install` on a dead serving stack). rc 0 healthy/repaired, 67
-#   unresolved. (verify/operational plan §C — no manual fixes.)
-sub_doctor() {
-    local fix=0
-    local passthrough=()
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --fix) fix=1; shift ;;
-            -h|--help)
-                cat <<'EOF'
-Usage:
-  mesh doctor            Report identity deploy drift + system phantoms (read-only).
-  mesh doctor --fix      Verify every installed item's strongest probe and REPAIR
-                         broken-but-installed items through the installer (engine
-                         --repair). Reinstalls a brew formula whose dylib a
-                         dependency bump removed, restarts a dead valet stack, etc.
-                         rc 0 = healthy/repaired, 67 = unresolved.
-EOF
-                return 0 ;;
-            *) passthrough+=("$1"); shift ;;
-        esac
-    done
-    if [[ "$fix" -eq 1 ]]; then
-        local repo
-        repo="$(_resolve_workstation_repo)" || \
-            _die "mesh-workstation repo not found (set MESH_WORKSTATION_DIR) — needed for doctor --fix"
-        # External-brew mount self-heal (macOS; clean no-op elsewhere). MUST run
-        # before the engine repair sweep so the stack is repaired on the corrected
-        # mount. If it remounts the volume, this repo's path (…/External 1) becomes
-        # stale (…/External) — exec'ing setup.sh from the old path would ENOENT, so
-        # detect that and ask for a re-run instead.
-        local healer="$repo/scripts/runners/heal-external-brew-mount.sh"
-        if [[ -f "$healer" ]]; then
-            bash "$healer" || true
-            if [[ ! -d "$repo/topics" ]]; then
-                echo "mesh doctor --fix: volume was remounted to its canonical path — re-run 'mesh doctor --fix' to finish the service repair on the corrected mount." >&2
-                return 0
-            fi
-        fi
-        # Re-sync identity deploy drift first. setup.sh --repair (below) fixes
-        # installed-but-broken items, not config drift — without this, `mesh
-        # doctor --fix` detected drift but never healed it (2026-06-17).
-        local drift_runner
-        drift_runner="$(_resolve_companion "runners/doctor.sh" 2>/dev/null || true)"
-        [[ -n "$drift_runner" ]] && bash "$drift_runner" --fix --quiet || true
-        exec bash "$repo/setup.sh" --repair "${passthrough[@]+"${passthrough[@]}"}"
-    fi
-    local runner
-    runner="$(_resolve_companion "runners/doctor.sh")"
-    [[ -n "$runner" ]] || _die "runners/doctor.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$runner" "${passthrough[@]+"${passthrough[@]}"}"
-}
-
-# `mesh adopt` → READ-ONLY install-marker backfill (setup.sh --adopt → engine
-# --adopt). A machine provisioned by the older v1 system has the tools but zero
-# v2 install markers, so the v2 setup menu shows every bundle as "not installed"
-# (false negative — the menu reads markers only). `mesh adopt` runs each item's
-# strongest probe and writes the marker for every item that is ALREADY present,
-# WITHOUT install/deploy/sudo. Idempotent + safe to re-run; an absent tool gets
-# no marker. (scanner-marker-coherence handoff §A.)
-sub_adopt() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -h|--help)
-                cat <<'EOF'
-Usage:
-  mesh adopt     Read-only: for every tool already installed but missing its
-                 mesh install marker (e.g. a machine set up by the older v1
-                 system), write the marker WITHOUT running any install/deploy/
-                 sudo. Makes the setup menu show the true install state.
-                 Idempotent + safe to re-run; an absent tool gets no marker.
-EOF
-                return 0 ;;
-            *) _die "adopt: unexpected arg '$1' (mesh adopt takes no arguments)" ;;
-        esac
-    done
-    local repo
-    repo="$(_resolve_workstation_repo)" || \
-        _die "mesh-workstation repo not found (set MESH_WORKSTATION_DIR) — needed for adopt"
-    exec bash "$repo/setup.sh" --adopt
-}
-
 _normalize_topic_spec() {
     local raw="$*"
     raw="${raw//,/ }"
@@ -454,71 +366,6 @@ _resolve_workstation_repo() {
         return 0
     fi
     return 1
-}
-
-# ─── mesh setup ────────────────────────────────────────────────────
-# Run the bootstrap (setup.sh) from anywhere — no `cd` into the checkout, no
-# `bash setup.sh`. By default it first runs `mesh update --force` (BOTH repos)
-# so the install system AND the identity (config/secrets/syncthing yaml) are
-# current, THEN execs the freshly-pulled setup.sh. --force updates the current
-# branch even when it is not `main` (a fleet may run a feature/release branch);
-# the main-only restriction is only for the shell-start AUTO update, not this
-# explicit one. (setup.sh's identity bundle also ff-pulls identity, but updating
-# up-front gives a predictable clean state even if that bundle is deselected.)
-# `--no-update` skips the refresh (offline / testing a local checkout). Remaining
-# args pass through to setup.sh.
-sub_setup() {
-    local do_update=1
-    local pass=()
-    while (( $# > 0 )); do
-        case "$1" in
-            --no-update) do_update=0; shift ;;
-            -h|--help)
-                cat <<'EOF'
-Usage: mesh setup [--no-update] [setup.sh args...]
-  Run the bootstrap from anywhere. By default runs `mesh update --force` (both
-  repos, current branch) first so the install system + identity config are
-  current, then runs setup.sh.
-    --no-update   skip the refresh; run the current checkout's setup.sh as-is
-  Extra args pass through to setup.sh (e.g. --non-interactive, --repair).
-EOF
-                return 0
-                ;;
-            --) shift; while (( $# > 0 )); do pass+=("$1"); shift; done; break ;;
-            *) pass+=("$1"); shift ;;
-        esac
-    done
-
-    local ws setup_sh
-    ws="$(cd "$HERE/.." 2>/dev/null && pwd -P)"
-    setup_sh="$ws/setup.sh"
-    [[ -f "$setup_sh" ]] || _die "setup: setup.sh not found at $setup_sh"
-
-    if (( do_update )); then
-        printf 'mesh setup: refreshing both repos (mesh update --force)…\n' >&2
-        # --force so a fleet on a feature/release branch (not `main`) still gets
-        # pulled — `mesh setup` is explicit intent, unlike the main-only
-        # shell-start auto-update. Run as a child (NOT exec) so control returns
-        # here to launch setup.sh. A failed refresh (offline / dirty tree) is
-        # non-fatal — fall through to the current checkout's setup.sh.
-        local urc=0
-        bash "${BASH_SOURCE[0]}" update --force || urc=$?
-        (( urc == 0 )) || printf 'mesh setup: warning — update returned rc %d; continuing with the current checkout\n' "$urc" >&2
-    fi
-
-    printf 'mesh setup: running %s\n' "$setup_sh" >&2
-    exec bash "$setup_sh" "${pass[@]+"${pass[@]}"}"
-}
-
-# `mesh ai [term] [--agent X]` → open an AI agent in the right repo via herdr.
-# Discovers repos on disk (multi-root) and hands the chosen one to herdr (focus
-# if open, else create + launch). mesh-identity aliases this to `mesh ia` with
-# the personal default agent + flags (see extensions/mesh.sh).
-sub_ai() {
-    local runner
-    runner="$(_resolve_companion "runners/ia.sh")"
-    [[ -n "$runner" ]] || _die "runners/ia.sh not found (set \$MESH_HOME or check installation)"
-    exec bash "$runner" "$@"
 }
 
 sub___commands() {
@@ -585,31 +432,6 @@ _mesh_load_command_modules() {
     IFS="$old_ifs"
 }
 
-_mesh_register_legacy_command() {
-    local name="$1" group="$2" summary="$3" fanout="$4" fanout_validator="${5:-}" fanout_env_provider="${6:-}"
-    local handler="sub_${name//-/_}"
-    local -a args
-    if mesh_command_registered "$name"; then
-        return 0
-    fi
-    args=(
-        --name "$name" \
-        --summary "$summary" \
-        --group "$group" \
-        --origin core \
-        --visibility public \
-        --fanout "$fanout" \
-        --handler "$handler"
-    )
-    if [[ -n "$fanout_validator" ]]; then
-        args+=(--fanout-validator "$fanout_validator")
-    fi
-    if [[ -n "$fanout_env_provider" ]]; then
-        args+=(--fanout-env-provider "$fanout_env_provider")
-    fi
-    mesh_register_command "${args[@]}" || _die "failed to register legacy command: $name"
-}
-
 _mesh_register_internal_command_list() {
     if mesh_command_registered "__commands"; then
         return 0
@@ -622,31 +444,6 @@ _mesh_register_internal_command_list() {
         --visibility internal \
         --fanout none \
         --handler sub___commands || _die "failed to register internal command: __commands"
-}
-
-_mesh_register_legacy_commands() {
-    _mesh_register_internal_command_list
-    _mesh_register_legacy_command status core "Show cross-mesh status" allowed _mesh_fanout_validate_any
-    _mesh_register_legacy_command snap core "Generate this host snapshot" allowed _mesh_fanout_validate_any
-    _mesh_register_legacy_command doctor core "Report or repair mesh health" none
-    _mesh_register_legacy_command adopt core "Backfill install markers read-only" none
-    _mesh_register_legacy_command update core "Pull and apply mesh updates" allowed _mesh_fanout_validate_update
-    _mesh_register_legacy_command upgrade core "Upgrade autoupdate-flagged packages" none
-    _mesh_register_legacy_command topic core "List or apply mesh topics" none
-    _mesh_register_legacy_command run core "Fan out mesh subcommands across hosts" none
-    _mesh_register_legacy_command init core "Bootstrap identity on a fresh machine" none
-    _mesh_register_legacy_command template-check core "Verify template and identity parity" none
-    _mesh_register_legacy_command lint core "Run repo invariant lints" none
-    _mesh_register_legacy_command catalog core "Regenerate derived catalog listings" none
-    _mesh_register_legacy_command personal-clone core "Clone personal repos from identity catalog" none
-    _mesh_register_legacy_command menu core "Open the interactive item selector" none
-    _mesh_register_legacy_command setup core "Update repos and run setup" none
-    _mesh_register_legacy_command secret core "Manage replicated personal secrets" none
-    _mesh_register_legacy_command syncthing core "Pair this node into the Syncthing mesh" allowed _mesh_fanout_validate_syncthing _mesh_fanout_env_noninteractive
-    _mesh_register_legacy_command clean core "Reclaim regenerable dev caches" none
-    _mesh_register_legacy_command ai core "Open an AI agent in the right repo" none
-    _mesh_register_legacy_command config core "Edit personal config from mesh-identity" none
-    _mesh_register_legacy_command services core "Control mesh-owned daemons" allowed _mesh_fanout_validate_services _mesh_fanout_env_noninteractive
 }
 
 _mesh_dispatch_private_fallback() {
@@ -704,5 +501,5 @@ _mesh_dispatch() {
 }
 
 _mesh_load_command_modules
-_mesh_register_legacy_commands
+_mesh_register_internal_command_list
 _mesh_dispatch "$@"

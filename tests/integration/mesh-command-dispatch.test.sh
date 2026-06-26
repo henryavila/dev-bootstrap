@@ -3,8 +3,7 @@
 #
 # Contract for the registry-first mesh dispatcher:
 #   - bare mesh and top-level status flags still route to status
-#   - legacy sub_* handlers are registered through the bridge
-#   - real modules loaded before the bridge win without duplicate failure
+#   - public built-ins are registered by command modules
 #   - duplicate real modules fail during load with a clear registry error
 #   - unregistered identity sub_* functions remain a private fallback
 set -uo pipefail
@@ -54,20 +53,21 @@ assert_eq "$rc" 0 "top-level --json exits 0"
 assert_eq "$out" "STATUS:--json" "top-level --json routes to status"
 
 echo
-echo "legacy bridge"
+echo "module-backed public commands"
 expected_commands="status snap doctor adopt update upgrade topic run init template-check lint catalog personal-clone menu setup secret syncthing clean ai config services"
+commands_out="$(run_mesh __commands 2>&1)"
 for name in $expected_commands; do
-    ASSERT_MSG="legacy bridge registers $name" \
-        assert_true "grep -q '_mesh_register_legacy_command $name ' '$MESH'"
+    count="$(printf '%s\n' "$commands_out" | awk -F '\t' -v n="$name" '$1 == n { c++ } END { print c + 0 }')"
+    assert_eq "$count" "1" "module registry emits one $name row"
 done
 
 out="$(run_mesh config list git 2>&1)"
 rc=$?
-assert_eq "$rc" 0 "legacy config delegator exits 0"
-assert_eq "$out" "CONFIG:list git" "legacy config delegator dispatches to runner"
+assert_eq "$rc" 0 "config module exits 0"
+assert_eq "$out" "CONFIG:list git" "config module dispatches to runner"
 
 echo
-echo "real module wins"
+echo "core command duplicate is rejected"
 MODULES_REAL="$SANDBOX/modules-real"
 mkdir -p "$MODULES_REAL"
 cat > "$MODULES_REAL/10-doctor.sh" <<'SH'
@@ -91,8 +91,9 @@ out="$(
     "$MESH" doctor from-module 2>&1
 )"
 rc=$?
-assert_eq "$rc" 0 "real doctor module exits 0"
-assert_eq "$out" "REAL_DOCTOR:from-module" "real module registered before bridge wins"
+assert_ne "$rc" 0 "duplicate doctor module exits non-zero"
+assert_contains "$out" "duplicate command: doctor" "duplicate doctor module surfaces registry error"
+assert_contains "$out" "command module failed to load" "duplicate doctor module names module-load failure"
 
 echo
 echo "duplicate real modules"
@@ -195,8 +196,8 @@ out="$(
     "$MESH" config list 2>&1
 )"
 rc=$?
-assert_eq "$rc" 0 "legacy bridge shadows identity config fallback"
-assert_eq "$out" "CONFIG:list" "registered public config delegator wins over private sub_config"
+assert_eq "$rc" 0 "registered public command shadows identity config fallback"
+assert_eq "$out" "CONFIG:list" "registered public config module wins over private sub_config"
 
 echo
 summary
