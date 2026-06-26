@@ -89,11 +89,16 @@ fi
 
 echo
 echo "completion source"
-if cmp -s "$REPO_ROOT/topics/shell-terminal/templates/zsh/zsh-site-functions/_mesh" \
-          "$REPO_ROOT/template/shell/completions/_mesh.example"; then
-    pass "_mesh.example matches the public registry-backed completion"
+if [[ -f "$REPO_ROOT/topics/shell-terminal/templates/zsh/zsh-site-functions/_mesh" ]]; then
+    pass "public registry-backed _mesh completion source exists"
 else
-    fail "_mesh.example matches the public registry-backed completion"
+    fail "public registry-backed _mesh completion source exists"
+fi
+
+if [[ -e "$REPO_ROOT/template/shell/completions/_mesh.example" ]]; then
+    fail "identity template does not ship a private _mesh completion"
+else
+    pass "identity template does not ship a private _mesh completion"
 fi
 
 if command -v zsh >/dev/null 2>&1; then
