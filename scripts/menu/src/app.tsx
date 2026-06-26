@@ -42,6 +42,14 @@ async function main() {
     return;
   }
 
+  // `help` subcommand → the interactive `mesh help` browser. The shell runner
+  // feeds command metadata plus precomputed `mesh <cmd> --help` text.
+  if (argv[0] === 'help') {
+    const { helpMain } = await import('./help-main.js');
+    await helpMain(argv.slice(1));
+    return;
+  }
+
   // The wizard is keyboard-interactive (Ink raw mode), which needs a real TTY.
   // Without one (piped stdin, CI, or a non-interactive `!`-style shell) Ink's
   // useInput would throw a raw-mode stack trace, so fail clearly instead and let

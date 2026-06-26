@@ -33,7 +33,7 @@ help_command_names() {
 }
 
 echo "final command modules"
-for name in doctor adopt setup ai; do
+for name in doctor adopt setup ai help; do
     module="$REPO_ROOT/scripts/commands/$name.sh"
     assert_file_exists "$module" "module exists for $name"
     assert_file_contains "$module" "mesh_register_command" "module registers $name"
@@ -58,13 +58,13 @@ _die() { printf 'DIE:%s\n' "$*" >&2; exit 1; }
 _resolve_companion() { printf '/nonexistent/%s\n' "$1"; }
 _resolve_workstation_repo() { printf '/nonexistent/workstation\n'; }
 HERE="$REPO_ROOT/bin"
-for module in run doctor adopt setup ai; do
+for module in run doctor adopt setup ai help; do
     source "$REPO_ROOT/scripts/commands/$module.sh"
 done
 mesh_command_emit_tsv --internal
 SH
 )"
-for name in doctor adopt setup ai run; do
+for name in doctor adopt setup ai help run; do
     count="$(printf '%s\n' "$source_check" | awk -F '\t' -v n="$name" '$1 == n { c++ } END { print c + 0 }')"
     assert_eq "$count" "1" "source registers $name exactly once"
 done

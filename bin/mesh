@@ -117,6 +117,30 @@ Mesh CLI — unified entrypoint for ecosystem maintenance.
 Usage:
   mesh                              Show cross-mesh status panel (= mesh status)
   mesh <command> [args...]          Run a registered mesh command
+  mesh help [command]               Browse command help
+  mesh -h | --help                  Open interactive help on a TTY; plain help otherwise
+  mesh -V | --version               Version
+
+Commands:
+EOF
+    _mesh_print_public_command_table
+    cat <<'EOF'
+
+Help:
+  mesh help                         Interactive command browser
+  mesh help <command>               Open help focused on one command
+  mesh help --plain                 Print this compact help
+  mesh <command> --help             Print detailed help for one command
+EOF
+}
+
+_print_help_legacy() {
+    cat <<'EOF'
+Mesh CLI — unified entrypoint for ecosystem maintenance.
+
+Usage:
+  mesh                              Show cross-mesh status panel (= mesh status)
+  mesh <command> [args...]          Run a registered mesh command
   mesh -h | --help                  This help
   mesh -V | --version               Version
 
@@ -467,6 +491,13 @@ _mesh_dispatch() {
     local command_name handler status_handler
     case "${1:-}" in
         -h|--help)
+            if [[ "${MESH_HELP_PLAIN:-0}" != "1" && -t 0 && -t 1 ]]; then
+                handler="$(mesh_command_get help handler 2>/dev/null || true)"
+                if [[ -n "$handler" ]]; then
+                    "$handler"
+                    exit $?
+                fi
+            fi
             _print_help
             exit 0
             ;;
