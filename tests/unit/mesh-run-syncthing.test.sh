@@ -8,7 +8,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS="$(cd "$HERE/../.." && pwd)"
 MESH="$WS/bin/mesh"
-
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
@@ -21,16 +20,10 @@ _die() {
     exit 1
 }
 
-extract() {
-    awk "/^$1\\(\\) \\{/{c=1} c{print} c&&/^}/{exit}" "$MESH"
-}
-
-eval "$(extract _mesh_quote_args)"
-eval "$(extract _mesh_fanout_validate_syncthing)"
-eval "$(extract _mesh_fanout_env_noninteractive)"
-eval "$(extract _mesh_collect_fanout_env)"
-eval "$(extract _mesh_env_records_to_remote_prefix)"
-eval "$(extract _mesh_remote_command)"
+# shellcheck source=../../scripts/lib/mesh-command.sh
+source "$WS/scripts/lib/mesh-command.sh"
+# shellcheck source=../../scripts/commands/run.sh
+source "$WS/scripts/commands/run.sh"
 
 echo "fanout env helpers"
 out="$(_mesh_fanout_env_noninteractive 2>&1)"
