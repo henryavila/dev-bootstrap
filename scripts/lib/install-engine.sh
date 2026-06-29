@@ -369,6 +369,40 @@ _in_list() {
     return 1
 }
 
+# ─── orphan-tolerance: drop selections that resolve to no bundle ─────────────
+# A stale selections.list can name a bundle that was renamed/split/removed
+# (e.g. ai/agent-tools after the per-tool split). Skip such entries with a loud
+# warn instead of aborting the whole run — a single orphan must not poison the
+# version-aware --update pass for the items the user actually wants upgraded.
+# But fail loud (exit 64) when EVERY selection is an orphan, so a fully-broken
+# manifest can't silently no-op. A topic whose manifest is PRESENT but unparseable
+# is real corruption (not an orphan): exit 65 so it is never masked as "stale".
+# The requires_bundles closure below + topo-sort run on this filtered set.
+_valid=()
+for entry in "${SEL_ENTRIES[@]+"${SEL_ENTRIES[@]}"}"; do
+    topic="${entry%%/*}"; bundle="${entry#*/}"
+    mf="$TOPICS_DIR/$topic/manifest.yaml"
+    if [[ ! -r "$mf" ]]; then
+        log_warn "selected bundle does not exist: $entry — skipping (topic '$topic' has no manifest; stale selections.list?)"
+        continue
+    fi
+    if ! _ensure_topic_parsed "$topic" 2>/dev/null; then
+        log_error "manifest for topic '$topic' failed to parse (corruption, not an orphan) — aborting"
+        exit 65
+    fi
+    if _bundle_index "$topic" "$bundle" >/dev/null 2>&1; then
+        _valid+=("$entry")
+    else
+        log_warn "selected bundle does not exist: $entry — skipping (bundle '$bundle' not in topic '$topic'; renamed/split/removed?)"
+    fi
+done
+if [[ "${#_valid[@]}" -eq 0 ]]; then
+    log_error "no resolvable selections (every entry is an orphan bundle) — refusing to no-op"
+    exit 64
+fi
+SEL_ENTRIES=("${_valid[@]}")
+unset _valid
+
 # ─── dependency closure (auto-select required bundles, spec §5.1) ─────────────
 # BFS over requires_bundles. A selected bundle's deps are added to the working
 # set even if not explicitly chosen; the menu surfaces this as an auto-select

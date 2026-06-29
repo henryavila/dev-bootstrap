@@ -178,12 +178,36 @@ _topic_order() {
 }
 _in_list() { local n="$1"; shift; local x; for x in "$@"; do [[ "$x" == "$n" ]] && return 0; done; return 1; }
 
-# Parse every selected topic + verify each bundle exists.
-for entry in "${SEL_ENTRIES[@]}"; do
+# Orphan-tolerance: verify each selection, drop unresolvable ones (a stale
+# selections.list after a bundle rename/split/remove), but exit 64 when EVERY
+# selection is an orphan. A present-but-unparseable manifest is real corruption
+# (exit 65), never masked as a stale selection. Mirrors install-engine.sh's
+# pre-closure filter. SEL_ENTRIES is reassigned to the survivors so the
+# topo-sort + Kahn loop below only see resolvable bundles.
+_valid=()
+for entry in "${SEL_ENTRIES[@]+"${SEL_ENTRIES[@]}"}"; do
     topic="${entry%%/*}"; bundle="${entry#*/}"
-    _ensure_topic_parsed "$topic" || exit 65
-    _bundle_index "$topic" "$bundle" >/dev/null || { log_error "bundle does not exist: $entry"; exit 64; }
+    mf="$TOPICS_DIR/$topic/manifest.yaml"
+    if [[ ! -r "$mf" ]]; then
+        log_warn "selected bundle does not exist: $entry — skipping (topic '$topic' has no manifest; stale selections.list?)"
+        continue
+    fi
+    if ! _ensure_topic_parsed "$topic" 2>/dev/null; then
+        log_error "manifest for topic '$topic' failed to parse (corruption, not an orphan) — aborting"
+        exit 65
+    fi
+    if _bundle_index "$topic" "$bundle" >/dev/null 2>&1; then
+        _valid+=("$entry")
+    else
+        log_warn "selected bundle does not exist: $entry — skipping (bundle '$bundle' not in topic '$topic'; renamed/split/removed?)"
+    fi
 done
+if [[ "${#_valid[@]}" -eq 0 ]]; then
+    log_error "no resolvable selections (every entry is an orphan bundle) — refusing to no-op"
+    exit 64
+fi
+SEL_ENTRIES=("${_valid[@]}")
+unset _valid
 
 # ─── order: install topo order, then reversed ────────────────────────────────
 _sorted=()
