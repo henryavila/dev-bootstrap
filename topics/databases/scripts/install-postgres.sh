@@ -141,7 +141,7 @@ _port_5432_in_foreign_use() {
             local line
             line=$(ss -ltnp 'sport = :5432' 2>/dev/null | awk 'NR==2')
             [[ -z "$line" ]] && return 1
-            echo "$line" | grep -q '"postgres"' && return 1
+            grep -q '"postgres"' <<<"$line" && return 1
             pg_isready -h 127.0.0.1 -p 5432 2>/dev/null | grep -q 'accepting connections' && return 1
             pg_isready -h 127.0.0.1 -p 5432 2>/dev/null | grep -q 'no response' && return 0
             return 0

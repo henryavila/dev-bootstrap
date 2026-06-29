@@ -303,18 +303,20 @@ _affected_selected_bundles() {
 # only `mesh syncthing pair` applies a topology/peer change to the local daemon.
 # Pure + deterministic so the reconcile decision is unit-tested; the pair itself
 # is metal-validated (needs the daemon). The `\.yaml$` anchor excludes the
-# shipped `.example` template. Echo|grep, not a fatal-producer pipe (L21-safe).
+# shipped `.example` template. here-string (not `echo "$1" | grep -q`): this
+# runner is under `set -o pipefail`, so a large input would EPIPE echo on the
+# early match → false negative. (L21-safe; F-D class.)
 _syncthing_yaml_changed() {
-    echo "$1" | grep -qE '(^|/)sync/syncthing-mesh\.yaml$'
+    grep -qE '(^|/)sync/syncthing-mesh\.yaml$' <<<"$1"
 }
 
 # T-006: a per-host config/services.default.<alias> change means boot-state may
 # need reconciling — gate the incremental `mesh services reconcile` on it.
-# Echo|grep, not a fatal-producer pipe (L21-safe), mirroring _syncthing_yaml_changed.
-# (services.default lives under config/ — a per-host, template-parity-exempt
-# namespace, not the universal shell/ scaffold.)
+# here-string mirroring _syncthing_yaml_changed (not `echo "$1" | grep -q`;
+# same F-D/pipefail class). (services.default lives under config/ — a per-host,
+# template-parity-exempt namespace, not the universal shell/ scaffold.)
 _services_default_changed() {
-    echo "$1" | grep -qE '(^|/)config/services\.default(\.[^/]+)?$'
+    grep -qE '(^|/)config/services\.default(\.[^/]+)?$' <<<"$1"
 }
 
 # ─── Accumulators ───────────────────────────────────────────────────
@@ -380,7 +382,7 @@ process_repo() {
     fetch_err="$(_run_with_timeout "$AUTO_UPDATE_FETCH_TIMEOUT" git -C "$repo" fetch --quiet 2>&1)" \
         && fetch_rc=0 || fetch_rc=$?
     if (( fetch_rc != 0 )); then
-        if echo "$fetch_err" | grep -qE 'Authentication failed|Permission denied|could not read Username|HTTP/.*40[13]'; then
+        if grep -qE 'Authentication failed|Permission denied|could not read Username|HTTP/.*40[13]' <<<"$fetch_err"; then
             warn "$name: auth failed — rode \`gh auth refresh\` então \`$wrap --reset-auth\`"
             touch "$STATE_DIR/auth-failed-$name"
         fi
@@ -585,7 +587,16 @@ process_repo() {
 
     # ─── Apply: sudo heuristic + prompt ─────────────────────────────
     local needs_sudo=0
-    if echo "$diff_content" | grep -qE "$AUTO_UPDATE_SUDO_REGEX"; then
+    # here-string, NOT `echo "$diff_content" | grep -q`: this runner is under
+    # `set -o pipefail` (line 32). With a large diff, `grep -q` matches early +
+    # closes the pipe → echo hits EPIPE → the pipeline returns non-zero →
+    # needs_sudo wrongly stays 0 → sudo prompt skipped → install scripts fail
+    # partway. 100% reproducible on diffs > the pipe buffer (root of "quase
+    # sempre falha"; F-D). A here-string is a single command, not a pipeline,
+    # so pipefail/EPIPE cannot apply. Keep `grep` (not [[ =~ ]]): the regex uses
+    # \b, which BSD grep -E supports but bash 3.2 [[ =~ ]] does not.
+    # See feedback_engine_pipefail_grep_q_broken_pipe + lint L21.
+    if grep -qE "$AUTO_UPDATE_SUDO_REGEX" <<<"$diff_content"; then
         needs_sudo=1
     fi
 
