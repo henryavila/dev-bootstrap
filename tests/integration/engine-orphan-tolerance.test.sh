@@ -80,9 +80,11 @@ clean()  { rm -f "$SENT"/* "$STATE"/* 2>/dev/null; }
 writes() { printf '%s\n' "$@" > "$ROOT/sel"; }
 
 # install engine over a selections file; --update switches to the version pass.
-eng_install() { bash "$ENGINE"    --topics-dir "$TOPICS" --platform mac --selections "$ROOT/sel" "$@" > "$ROOT/log" 2>&1; }
-eng_update()  { bash "$ENGINE"    --topics-dir "$TOPICS" --platform mac --selections "$ROOT/sel" --update "$@" > "$ROOT/log" 2>&1; }
-eng_uninst()  { bash "$UNINSTALL" --topics-dir "$TOPICS" --platform mac --selections "$ROOT/sel" "$@" > "$ROOT/log" 2>&1; }
+# no caller passes extra flags, so these take no args (dropping the dead "$@"
+# pass-through; was flagged SC2120 under CI shellcheck -S warning).
+eng_install() { bash "$ENGINE"    --topics-dir "$TOPICS" --platform mac --selections "$ROOT/sel" > "$ROOT/log" 2>&1; }
+eng_update()  { bash "$ENGINE"    --topics-dir "$TOPICS" --platform mac --selections "$ROOT/sel" --update > "$ROOT/log" 2>&1; }
+eng_uninst()  { bash "$UNINSTALL" --topics-dir "$TOPICS" --platform mac --selections "$ROOT/sel" > "$ROOT/log" 2>&1; }
 
 # ── 1. install: orphan skipped, valid bundles proceed, rc 0 ───────────────────
 clean
