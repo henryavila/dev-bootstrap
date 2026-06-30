@@ -36,6 +36,17 @@ PINS="$SANDBOX/pins.list"
 # Isolate the runner from the real ~/.config/mesh/config.env and point every
 # path at the sandbox. Verbs only touch $MESH_IA_PINNED; --list also takes IA_ROOTS.
 run_verb() { HOME="$HOME_SANDBOX" MESH_IA_PINNED="$PINS" MESH_IDENTITY_DIR="$SANDBOX" bash "$RUNNER" "$@"; }
+run_verb_prompt() {
+    local input="$1"; shift
+    printf '%b' "$input" > "$SANDBOX/prompt.in"
+    HOME="$HOME_SANDBOX" \
+        MESH_IA_PINNED="$PINS" \
+        MESH_IDENTITY_DIR="$SANDBOX" \
+        MESH_PROMPT_IN="$SANDBOX/prompt.in" \
+        MESH_PROMPT_OUT="$SANDBOX/prompt.out" \
+        MESH_PROMPT_TUI=off \
+        bash "$RUNNER" "$@"
+}
 
 # ── ia_pinned: parse, alternates, skip-missing, ~, comments, non-git ─────────
 echo "── ia_pinned ──"
@@ -106,6 +117,39 @@ SNAP="$(cat "$PINS")"
 ASSERT_MSG="add rejects a non-existent path (exit 2)" assert_exit_code 2 'run_verb add "'"$SANDBOX"'/does-not-exist"'
 assert_eq "$(cat "$PINS")" "$SNAP"                          "rejected add leaves the manifest unchanged"
 
+# If the pinned manifest lives inside a git identity repo, a successful add must
+# not leave the user thinking "saved" means replicated. It prompts to commit and
+# push; accepting creates the commit and pushes it to the upstream.
+echo "── mesh ia add: git persistence prompt ──"
+GITROOT="$SANDBOX/git-identity"
+GITROOT_REAL="$(cd "$GITROOT" 2>/dev/null && pwd -P || true)"
+REMOTE="$SANDBOX/remote.git"
+mkdir -p "$GITROOT/shell" "$SANDBOX/gitproj"
+git init -q --bare "$REMOTE"
+git -C "$GITROOT" init -q
+git -C "$GITROOT" config user.name "Mesh Test"
+git -C "$GITROOT" config user.email "mesh@example.test"
+git -C "$GITROOT" remote add origin "$REMOTE"
+printf '# pins\n' > "$GITROOT/shell/ia-pinned.list"
+git -C "$GITROOT" add shell/ia-pinned.list
+git -C "$GITROOT" commit -qm "init pins"
+git -C "$GITROOT" branch -M main
+git -C "$GITROOT" push -q -u origin main
+GITROOT_REAL="$(cd "$GITROOT" && pwd -P)"
+PINS="$GITROOT/shell/ia-pinned.list"
+ADD_PUSH_OUT="$(run_verb_prompt "y\n" add "$SANDBOX/gitproj" gitproj 2>&1)"
+assert_contains "$ADD_PUSH_OUT" "Commitar e enviar"          "add asks whether to push the new pin"
+assert_contains "$ADD_PUSH_OUT" "pin manifest committed and pushed" "accepted add commits and pushes"
+assert_eq "$(git -C "$GITROOT" rev-list --count '@{upstream}..HEAD')" "0" "accepted add leaves no unpushed commit"
+ASSERT_MSG="accepted add reaches the remote" assert_true "git -C '$REMOTE' show main:shell/ia-pinned.list | grep -q '^gitproj|'"
+
+# Declining the prompt is allowed, but it must be loud and actionable.
+mkdir -p "$SANDBOX/localonly"
+ADD_LOCAL_OUT="$(run_verb_prompt "n\n" add "$SANDBOX/localonly" localonly 2>&1)"
+assert_contains "$ADD_LOCAL_OUT" "saved only locally"        "declined add warns that the pin is local-only"
+assert_contains "$ADD_LOCAL_OUT" "git -C '$GITROOT_REAL' add 'shell/ia-pinned.list'" "declined add prints the exact recovery command"
+PINS="$SANDBOX/pins.list"
+
 # ── mesh ia remove: by name, unknown ────────────────────────────────────────
 echo "── mesh ia remove ──"
 ASSERT_MSG="remove an existing pin succeeds" assert_exit_code 0 'run_verb remove myproj'
@@ -115,6 +159,29 @@ assert_file_contains "$PINS" '^projA|'                      "remove leaves other
 SNAP2="$(cat "$PINS")"
 ASSERT_MSG="remove of unknown name exits 1" assert_exit_code 1 'run_verb remove never-pinned'
 assert_eq "$(cat "$PINS")" "$SNAP2"                         "unknown remove leaves the manifest unchanged"
+
+echo "── mesh ia remove: git persistence prompt ──"
+GITROOT_RM="$SANDBOX/git-identity-remove"
+REMOTE_RM="$SANDBOX/remote-remove.git"
+mkdir -p "$GITROOT_RM/shell"
+git init -q --bare "$REMOTE_RM"
+git -C "$GITROOT_RM" init -q
+git -C "$GITROOT_RM" config user.name "Mesh Test"
+git -C "$GITROOT_RM" config user.email "mesh@example.test"
+git -C "$GITROOT_RM" remote add origin "$REMOTE_RM"
+printf 'remove-me|%s\nkeep-me|%s\n' "$SANDBOX/projA" "$SANDBOX/projA2" > "$GITROOT_RM/shell/ia-pinned.list"
+git -C "$GITROOT_RM" add shell/ia-pinned.list
+git -C "$GITROOT_RM" commit -qm "init remove pins"
+git -C "$GITROOT_RM" branch -M main
+git -C "$GITROOT_RM" push -q -u origin main
+PINS="$GITROOT_RM/shell/ia-pinned.list"
+RM_PUSH_OUT="$(run_verb_prompt "y\n" remove remove-me 2>&1)"
+assert_contains "$RM_PUSH_OUT" "Commitar e enviar"          "remove asks whether to push the deleted pin"
+assert_contains "$RM_PUSH_OUT" "pin manifest committed and pushed" "accepted remove commits and pushes"
+assert_eq "$(git -C "$GITROOT_RM" rev-list --count '@{upstream}..HEAD')" "0" "accepted remove leaves no unpushed commit"
+ASSERT_MSG="accepted remove reaches the remote" assert_false "git -C '$REMOTE_RM' show main:shell/ia-pinned.list | grep -q '^remove-me|'"
+ASSERT_MSG="accepted remove preserves other remote pins" assert_true "git -C '$REMOTE_RM' show main:shell/ia-pinned.list | grep -q '^keep-me|'"
+PINS="$SANDBOX/pins.list"
 
 # ── mesh ia list ────────────────────────────────────────────────────────────
 echo "── mesh ia list ──"

@@ -16,7 +16,8 @@
 #   mesh ia <term> --agent X  Use agent X (claude|codex|gemini); remembered per project.
 #   mesh ia --list            Print the merged catalogue (discovered + pinned) and exit.
 #   mesh ia add <path> [name] Pin a dir to the catalogue (non-git OK; idempotent).
-#   mesh ia remove <name>     Unpin by name.
+#                            If the manifest is in git, offers to commit+push.
+#   mesh ia remove <name>     Unpin by name; also offers commit+push when in git.
 #   mesh ia list              Show pinned projects resolvable on this host.
 # Flags: --agent <name>, --list, -h/--help.
 set -uo pipefail
@@ -59,6 +60,99 @@ _ia_pinned_file() {
     printf '%s' "${MESH_IA_PINNED:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}/shell/ia-pinned.list}"
 }
 
+_ia_pin_git_root() {
+    local file="$1" dir
+    dir="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)" || return 1
+    git -C "$dir" rev-parse --show-toplevel 2>/dev/null
+}
+
+_ia_pin_relpath() {
+    local repo="$1" file="$2" dir abs
+    dir="$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)" || return 1
+    abs="$dir/$(basename "$file")"
+    case "$abs" in
+        "$repo"/*) printf '%s' "${abs#"$repo"/}" ;;
+        *) return 1 ;;
+    esac
+}
+
+_ia_pin_has_local_change() {
+    local repo="$1" rel="$2"
+    if ! git -C "$repo" diff --quiet -- "$rel" 2>/dev/null; then
+        return 0
+    fi
+    if ! git -C "$repo" diff --cached --quiet -- "$rel" 2>/dev/null; then
+        return 0
+    fi
+    [[ -z "$(git -C "$repo" ls-files --others --exclude-standard -- "$rel" 2>/dev/null)" ]] && return 1
+    return 0
+}
+
+_ia_pin_quote_sq() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+_ia_pin_commit_msg() {
+    local action="$1" name="$2"
+    case "$action" in
+        add)    printf 'chore(identity): pin %s for mesh ia' "$name" ;;
+        update) printf 'chore(identity): update mesh ia pin %s' "$name" ;;
+        remove) printf 'chore(identity): unpin %s from mesh ia' "$name" ;;
+        *)      printf 'chore(identity): update mesh ia pins' ;;
+    esac
+}
+
+_ia_pin_commit_and_push() {
+    local repo="$1" rel="$2" msg="$3" remote staged_other
+    staged_other="$(git -C "$repo" diff --cached --name-only -- . 2>/dev/null | awk -v rel="$rel" '$0 != rel { print; exit }')"
+    if [[ -n "$staged_other" ]]; then
+        log_warn "ia: cannot auto-commit because the identity index already has staged changes ($staged_other)."
+        log_warn "ia: saved only locally; commit/push it manually after handling the staged work."
+        return 3
+    fi
+
+    git -C "$repo" add -- "$rel" || { log_error "ia: git add failed for $rel"; return 1; }
+    if git -C "$repo" diff --cached --quiet -- "$rel"; then
+        log_info "ia: pin manifest already committed"
+        return 0
+    fi
+    git -C "$repo" commit -q -m "$msg" -- "$rel" || { log_error "ia: commit failed"; return 1; }
+
+    remote="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
+    if git -C "$repo" push -q 2>/dev/null; then
+        log_info "ia: pin manifest committed and pushed to ${remote:-origin}"
+        return 0
+    fi
+
+    log_warn "ia: committed locally, but PUSH FAILED — it is NOT yet replicated."
+    log_warn "ia: fix connectivity/auth, then run: git -C $(_ia_pin_quote_sq "$repo") push"
+    return 3
+}
+
+_ia_pin_offer_persist() {
+    local action="$1" name="$2" file="$3" repo rel msg repo_q rel_q
+    repo="$(_ia_pin_git_root "$file")" || return 0
+    rel="$(_ia_pin_relpath "$repo" "$file")" || return 0
+    _ia_pin_has_local_change "$repo" "$rel" || return 0
+
+    msg="$(_ia_pin_commit_msg "$action" "$name")"
+    repo_q="$(_ia_pin_quote_sq "$repo")"
+    rel_q="$(_ia_pin_quote_sq "$rel")"
+
+    log_warn "ia: $rel saved only locally in $repo; it is not replicated yet."
+    log_info "ia: Commitar e enviar '$rel' agora?"
+    if confirm "Commitar e enviar '$rel' agora?" n; then
+        _ia_pin_commit_and_push "$repo" "$rel" "$msg"
+        return $?
+    fi
+
+    log_warn "ia: saved only locally. To replicate later, run:"
+    log_warn "    git -C $repo_q add $rel_q"
+    log_warn "    git -C $repo_q commit -m $(_ia_pin_quote_sq "$msg")"
+    log_warn "    git -C $repo_q push"
+    return 0
+}
+
 _ia_verb_add() {
     local path="${1:-}" name="${2:-}"
     [[ -n "$path" ]] || { log_error "ia add: missing <path> (usage: mesh ia add <path> [name])"; return 2; }
@@ -84,8 +178,10 @@ _ia_verb_add() {
     mv "$tmp" "$file"
     if (( existed )); then
         log_info "ia: updated pin '$name' → $path"
+        _ia_pin_offer_persist update "$name" "$file"
     else
         log_info "ia: pinned '$name' → $path"
+        _ia_pin_offer_persist add "$name" "$file"
     fi
 }
 
@@ -101,6 +197,7 @@ _ia_verb_remove() {
     awk -F'|' -v n="$name" '$1!=n' "$file" > "$tmp"
     mv "$tmp" "$file"
     log_info "ia: removed pin '$name'"
+    _ia_pin_offer_persist remove "$name" "$file"
 }
 
 _ia_verb_list() {

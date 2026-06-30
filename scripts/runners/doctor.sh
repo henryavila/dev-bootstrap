@@ -6,11 +6,13 @@
 #        ✓ src matches dst byte-for-byte (deploy up to date)
 #        ! dst missing (install.sh never ran, or user deleted)
 #        ✗ dst drifted (content differs from src)
-#   2. For mesh-workstation-managed files (~/.bashrc, ~/.zshrc, ~/.tmux.conf):
+#   2. Identity git state:
+#        ✗ uncommitted changes or unpushed commits (config exists only locally)
+#   3. For mesh-workstation-managed files (~/.bashrc, ~/.zshrc, ~/.tmux.conf):
 #        ✓ header "managed by mesh-workstation" present
 #        ! marker absent (hand-edited or deployed by another tool)
-#   3. Fragments in ~/.bashrc.d/ and ~/.zshrc.d/:
-#        Lists owners (topic NN-name) inferred from filename prefix.
+#   4. Optional fragment inventory (--fragments):
+#        Lists active files in ~/.bashrc.d/ and ~/.zshrc.d/.
 #
 # Exit codes:
 #   0  everything in sync
@@ -21,6 +23,8 @@
 #   bash scripts/runners/doctor.sh --quiet    # only drift/missing lines
 #   bash scripts/runners/doctor.sh --json     # structured output (for automation)
 #   bash scripts/runners/doctor.sh --fix      # re-sync drifted/missing mappings
+#   bash scripts/runners/doctor.sh --fragments       # include active fragment inventory
+#   bash scripts/runners/doctor.sh --all-fragments   # include backups too
 #
 # Override knobs (forks using a non-mesh-workstation installer):
 #   DOCTOR_MARKER_FILES   space-separated list of files to check for the
@@ -51,13 +55,18 @@ DEPLOY_MAP="$IDENTITY/deploy.map"
 QUIET=0
 JSON=0
 FIX=0
+SHOW_FRAGMENTS=0
+ALL_FRAGMENTS=0
 for a in "$@"; do
     case "$a" in
-        --quiet|-q) QUIET=1 ;;
-        --json)     JSON=1  ;;
-        --fix)      FIX=1   ;;
+        --quiet|-q)      QUIET=1 ;;
+        --json)          JSON=1  ;;
+        --fix)           FIX=1   ;;
+        --fragments|--verbose)
+                         SHOW_FRAGMENTS=1 ;;
+        --all-fragments) SHOW_FRAGMENTS=1; ALL_FRAGMENTS=1 ;;
         --help|-h)
-            sed -n '2,32p' "$0"
+            sed -n '2,34p' "$0"
             exit 0
             ;;
     esac
@@ -73,9 +82,10 @@ fi
 # ─── Accumulators ──────────────────────────────────────────────────
 count_ok=0 count_drift=0 count_missing=0 count_marker_miss=0
 count_launchd_phantom=0 count_composer_phar=0 count_ext_brew_mount=0
-count_fixed=0
+count_local_only=0 count_fixed=0
 drift_items=() missing_items=() marker_miss_items=()
 launchd_phantom_items=() composer_phar_items=() fixed_items=()
+local_only_items=()
 ext_brew_mount_desc=""
 
 # ─── Parse the deploy.map (shared parser) ──────────────────────────
@@ -191,6 +201,27 @@ check_markers() {
     done
 }
 
+# ─── Identity local-only git state ─────────────────────────────────
+# The identity repo is the persisted config source. A file changed but not
+# committed, or a commit not pushed to the upstream, exists only on this machine.
+check_identity_local_only() {
+    git -C "$IDENTITY" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+    local line path ahead
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -n "$line" ]] || continue
+        path="${line#???}"
+        count_local_only=$((count_local_only + 1))
+        local_only_items+=("uncommitted: $path")
+    done < <(git -C "$IDENTITY" status --porcelain=v1 --untracked-files=all 2>/dev/null)
+
+    ahead="$(git -C "$IDENTITY" rev-list --count '@{upstream}..HEAD' 2>/dev/null || printf '0')"
+    if [[ "$ahead" != "0" ]]; then
+        count_local_only=$((count_local_only + 1))
+        local_only_items+=("unpushed: $ahead commit(s) ahead of upstream")
+    fi
+}
+
 # ─── LaunchDaemon volume-path check (Mac only) ─────────────────────
 # Detects `homebrew.mxcl.*.plist` files in /Library/LaunchDaemons/ that
 # have Standard{Error,Out}Path inside /Volumes/* — these create a phantom
@@ -289,16 +320,28 @@ check_external_brew_mount() {
 
 # ─── Fragments listing ─────────────────────────────────────────────
 list_fragments() {
-    local dir label
+    local pair dir label entries name backup_count
     for pair in "$HOME/.bashrc.d:bash" "$HOME/.zshrc.d:zsh"; do
         dir="${pair%%:*}"
         label="${pair##*:}"
         [[ ! -d "$dir" ]] && continue
         if [[ "$QUIET" == 0 ]] && [[ "$JSON" == 0 ]]; then
+            entries="$(ls -1 "$dir" 2>/dev/null || true)"
+            [[ -n "$entries" ]] || continue
             echo
             echo "${C_DIM}Fragments in $dir ($label):${C_RESET}"
-            # shellcheck disable=SC2012  # human-readable listing
-            ls -1 "$dir" 2>/dev/null | sed 's/^/  /'
+            backup_count=0
+            while IFS= read -r name || [[ -n "$name" ]]; do
+                [[ -n "$name" ]] || continue
+                if [[ "$name" == *.bak || "$name" == *.bak-* ]]; then
+                    backup_count=$((backup_count + 1))
+                    (( ALL_FRAGMENTS == 1 )) || continue
+                fi
+                printf '  %s\n' "$name"
+            done <<< "$entries"
+            if (( ALL_FRAGMENTS == 0 && backup_count > 0 )); then
+                printf '  %s\n' "... $backup_count backup fragment(s) hidden (use --all-fragments)"
+            fi
         fi
     done
 }
@@ -309,6 +352,7 @@ while IFS= read -r line; do
 done < <(parse_mappings)
 
 check_markers
+check_identity_local_only
 check_launchd_volume_paths
 check_composer_phar
 check_external_brew_mount
@@ -316,8 +360,8 @@ check_external_brew_mount
 # ─── Output ────────────────────────────────────────────────────────
 if [[ "$JSON" == 1 ]]; then
     # Minimal JSON without jq (so the script has no runtime deps)
-    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,"ext_brew_mount":%d,"fixed":%d,' \
-        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar" "$count_ext_brew_mount" "$count_fixed"
+    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,"ext_brew_mount":%d,"local_only":%d,"fixed":%d,' \
+        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar" "$count_ext_brew_mount" "$count_local_only" "$count_fixed"
     printf '"drift_items":['
     sep=""
     # bash 3.2 + set -u: empty `"${arr[@]}"` is unbound; guard with size.
@@ -359,6 +403,14 @@ if [[ "$JSON" == 1 ]]; then
             sep=","
         done
     fi
+    printf '],"local_only_items":['
+    sep=""
+    if (( ${#local_only_items[@]} > 0 )); then
+        for d in "${local_only_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
     printf '],"fixed_items":['
     sep=""
     if (( ${#fixed_items[@]} > 0 )); then
@@ -378,6 +430,7 @@ else
         echo "  ${C_ERR}✗${C_RESET} launchd phantom: $count_launchd_phantom"
         echo "  ${C_ERR}✗${C_RESET} composer PHAR  : $count_composer_phar"
         echo "  ${C_ERR}✗${C_RESET} ext-brew mount : $count_ext_brew_mount"
+        echo "  ${C_ERR}✗${C_RESET} local-only cfg : $count_local_only"
     fi
 
     # The `(( count_* > 0 ))` guards already imply array non-empty (only the
@@ -422,12 +475,20 @@ else
         echo "  ✗ $ext_brew_mount_desc"
         echo "  ${C_DIM}fix: mesh doctor --fix  (heals the mount, then repairs the stack)${C_RESET}"
     fi
+    if (( count_local_only > 0 )); then
+        echo
+        echo "${C_ERR}Local-only identity config (not replicated to the mesh):${C_RESET}"
+        for p in "${local_only_items[@]}"; do echo "  ✗ $p"; done
+        echo "  ${C_DIM}fix: commit and push the identity repo, or rerun the command and accept its push prompt${C_RESET}"
+    fi
 
-    list_fragments
+    if (( SHOW_FRAGMENTS == 1 )); then
+        list_fragments
+    fi
 fi
 
 # Exit code: 0 iff no drift/missing/phantom
-if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 || count_ext_brew_mount > 0 )); then
+if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 || count_ext_brew_mount > 0 || count_local_only > 0 )); then
     exit 1
 fi
 exit 0
