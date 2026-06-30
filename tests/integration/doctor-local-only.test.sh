@@ -24,8 +24,8 @@ git -C "$ID" config user.name "Mesh Test"
 git -C "$ID" config user.email "mesh@example.test"
 git -C "$ID" remote add origin "$REMOTE"
 printf '# empty deploy map\n' > "$ID/deploy.map"
-printf 'mesh-identity|~/mesh-identity\n' > "$ID/shell/ia-pinned.list"
-git -C "$ID" add deploy.map shell/ia-pinned.list
+printf 'mesh-identity|~/mesh-identity\n' > "$ID/shell/ai-pinned.list"
+git -C "$ID" add deploy.map shell/ai-pinned.list
 git -C "$ID" commit -qm "init identity"
 git -C "$ID" branch -M main
 git -C "$ID" push -q -u origin main
@@ -45,15 +45,15 @@ assert_eq "$?" "0" "clean identity exits 0"
 assert_not_contains "$CLEAN_OUT" "Local-only identity config" "clean identity has no local-only warning"
 
 echo "── uncommitted identity config ──"
-printf 'Keyboard Maestro|/tmp/km\n' >> "$ID/shell/ia-pinned.list"
+printf 'Keyboard Maestro|/tmp/km\n' >> "$ID/shell/ai-pinned.list"
 DIRTY_OUT="$(run_doctor --quiet 2>&1)"
 DIRTY_RC=$?
 assert_eq "$DIRTY_RC" "1" "uncommitted identity config makes doctor non-zero"
 assert_contains "$DIRTY_OUT" "Local-only identity config" "doctor labels local-only config"
-assert_contains "$DIRTY_OUT" "uncommitted: shell/ia-pinned.list" "doctor names the dirty config file"
+assert_contains "$DIRTY_OUT" "uncommitted: shell/ai-pinned.list" "doctor names the dirty config file"
 
 echo "── unpushed identity commit ──"
-git -C "$ID" add shell/ia-pinned.list
+git -C "$ID" add shell/ai-pinned.list
 git -C "$ID" commit -qm "pin Keyboard Maestro"
 AHEAD_OUT="$(run_doctor --json 2>&1)"
 AHEAD_RC=$?

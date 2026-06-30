@@ -25,11 +25,11 @@ async function main() {
     return;
   }
 
-  // `ia-pick` subcommand → the realtime-filter project picker for `mesh ia`
-  // (scripts/runners/ia.sh feeds candidates, reads the chosen line back).
-  if (argv[0] === 'ia-pick') {
-    const { iaPickMain } = await import('./ia-pick-main.js');
-    await iaPickMain(argv.slice(1));
+  // `ai-pick` subcommand → the realtime-filter project picker for `mesh ai`
+  // (scripts/runners/ai.sh feeds candidates, reads the chosen line back).
+  if (argv[0] === 'ai-pick') {
+    const { aiPickMain } = await import('./ai-pick-main.js');
+    await aiPickMain(argv.slice(1));
     return;
   }
 

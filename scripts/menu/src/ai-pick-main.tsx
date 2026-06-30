@@ -1,5 +1,5 @@
 /**
- * ia-pick-main — the `node index.js ia-pick …` entry: render the SearchPicker
+ * ai-pick-main — the `node index.js ai-pick …` entry: render the SearchPicker
  * over the runner's candidate set and hand the chosen row back to bash. Same
  * file-based contract as prompt-main (Ink draws on stdout, so the value goes to
  * --out, never stdout). Exit codes:
@@ -12,16 +12,16 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { render } from 'ink';
 import { ThemeProvider, detectIconSet } from '@henryavila/blink-tui';
 import { registerDomainGlyphs } from './glyphs.js';
-import { SearchPicker, parseCandidates, type IaAction } from './screens/SearchPicker.js';
+import { SearchPicker, parseCandidates, type AiAction } from './screens/SearchPicker.js';
 
-export interface IaPickArgs {
+export interface AiPickArgs {
   in: string;
   out: string;
 }
 
-/** Parse the ia-pick argv (everything AFTER the subcommand). Pure. Returns null
+/** Parse the ai-pick argv (everything AFTER the subcommand). Pure. Returns null
  *  when --in or --out is missing. */
-export function parseIaPickArgs(argv: string[]): IaPickArgs | null {
+export function parseAiPickArgs(argv: string[]): AiPickArgs | null {
   const get = (flag: string): string | undefined => {
     const i = argv.indexOf(flag);
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
@@ -32,10 +32,10 @@ export function parseIaPickArgs(argv: string[]): IaPickArgs | null {
   return { in: inPath, out };
 }
 
-export async function iaPickMain(args: string[]): Promise<void> {
-  const opts = parseIaPickArgs(args);
+export async function aiPickMain(args: string[]): Promise<void> {
+  const opts = parseAiPickArgs(args);
   if (!opts) {
-    process.stderr.write('mesh ia-pick: usage: ia-pick --in <candidates> --out <file>\n');
+    process.stderr.write('mesh ai-pick: usage: ai-pick --in <candidates> --out <file>\n');
     process.exit(1);
   }
 
@@ -56,9 +56,9 @@ export async function iaPickMain(args: string[]): Promise<void> {
   const iconSet = await detectIconSet();
 
   let result: string | null = null;
-  let resultAction: IaAction = 'open';
+  let resultAction: AiAction = 'open';
   let unmountFn: (() => void) | undefined;
-  const finish = (raw: string | null, action: IaAction = 'open') => {
+  const finish = (raw: string | null, action: AiAction = 'open') => {
     result = raw;
     resultAction = action;
     unmountFn?.();

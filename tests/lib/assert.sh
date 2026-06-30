@@ -185,7 +185,7 @@ summary() {
     # counting fail()/pass() win.
     if ! declare -f fail | grep -q 'FAIL='; then
         printf "${_c_err}✗ assert.sh: fail() is shadowed by a non-counting definition — failures are NOT counted.${_c_reset}\n" >&2
-        printf "${_c_err}  Source assert.sh after log.sh / the libs under test (see tests/integration/ia-launcher.test.sh).${_c_reset}\n" >&2
+        printf "${_c_err}  Source assert.sh after log.sh / the libs under test (see tests/integration/ai-launcher.test.sh).${_c_reset}\n" >&2
         exit 2
     fi
     local total=$((PASS + FAIL))

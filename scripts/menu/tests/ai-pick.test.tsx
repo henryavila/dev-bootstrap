@@ -1,6 +1,6 @@
 /**
- * ia-pick.test.tsx — the SearchPicker (realtime-filter project/tab picker for
- * `mesh ia`) + its pure helpers. Covers the runner→TUI contract: parse the
+ * ai-pick.test.tsx — the SearchPicker (realtime-filter project/tab picker for
+ * `mesh ai`) + its pure helpers. Covers the runner→TUI contract: parse the
  * merged candidate set (`label<TAB>path<TAB>wsid<TAB>status<TAB>tabid`), filter
  * by substring (including tab names), render open vs closed rows, Enter hands
  * back the chosen raw line, Esc cancels.
@@ -15,7 +15,7 @@ import {
   abbrevHome,
   rowMeta,
 } from '../src/screens/SearchPicker.js';
-import { parseIaPickArgs } from '../src/ia-pick-main.js';
+import { parseAiPickArgs } from '../src/ai-pick-main.js';
 import { registerDomainGlyphs } from '../src/glyphs.js';
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -103,14 +103,14 @@ describe('rowMeta', () => {
   });
 });
 
-describe('parseIaPickArgs (runner → picker contract)', () => {
+describe('parseAiPickArgs (runner → picker contract)', () => {
   it('parses --in + --out', () => {
-    expect(parseIaPickArgs(['--in', '/tmp/c', '--out', '/tmp/o'])).toEqual({ in: '/tmp/c', out: '/tmp/o' });
+    expect(parseAiPickArgs(['--in', '/tmp/c', '--out', '/tmp/o'])).toEqual({ in: '/tmp/c', out: '/tmp/o' });
   });
   it('null when either is missing', () => {
-    expect(parseIaPickArgs(['--in', '/tmp/c'])).toBeNull();
-    expect(parseIaPickArgs(['--out', '/tmp/o'])).toBeNull();
-    expect(parseIaPickArgs([])).toBeNull();
+    expect(parseAiPickArgs(['--in', '/tmp/c'])).toBeNull();
+    expect(parseAiPickArgs(['--out', '/tmp/o'])).toBeNull();
+    expect(parseAiPickArgs([])).toBeNull();
   });
 });
 

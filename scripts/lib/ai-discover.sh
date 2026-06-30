@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# scripts/lib/ia-discover.sh — multi-root disk discovery for `mesh ia`.
+# scripts/lib/ai-discover.sh — multi-root disk discovery for `mesh ai`.
 # Source-only (no top-level execution).
 #
 # herdr (the agent multiplexer) only knows already-OPEN workspaces; it has no
@@ -8,17 +8,17 @@
 # emits the git repos found as `name<TAB>path` rows — the catalogue the picker
 # and the focus-or-create handoff consume.
 #
-# Roots come from $IA_ROOTS (a `:`- or newline-separated list, personal → set in
+# Roots come from $AI_ROOTS (a `:`- or newline-separated list, personal → set in
 # mesh-identity). When unset, a per-OS default is derived so a fork without
-# IA_ROOTS still gets something sensible:
+# AI_ROOTS still gets something sensible:
 #   mac        → /Volumes/External/Code + $HOME
 #   wsl|linux  → ${CODE_DIR:-$HOME/code} + $HOME
 # Only existing roots are scanned; a missing root contributes nothing (never an
-# error) so the same IA_ROOTS can be shared across machines.
+# error) so the same AI_ROOTS can be shared across machines.
 
 # Per-OS default roots, one per line. CODE_DIR (if exported via config.env) wins
 # over the ~/code fallback on WSL/Linux.
-ia_default_roots() {
+ai_default_roots() {
     case "$(uname -s)" in
         Darwin)
             printf '%s\n%s\n' "/Volumes/External/Code" "$HOME"
@@ -29,13 +29,13 @@ ia_default_roots() {
     esac
 }
 
-# Resolved roots, one per line: $IA_ROOTS split on `:` and newlines, `~`
-# expanded, blanks dropped. Falls back to ia_default_roots when IA_ROOTS unset.
-ia_roots() {
+# Resolved roots, one per line: $AI_ROOTS split on `:` and newlines, `~`
+# expanded, blanks dropped. Falls back to ai_default_roots when AI_ROOTS unset.
+ai_roots() {
     local raw r
-    raw="${IA_ROOTS:-}"
+    raw="${AI_ROOTS:-}"
     if [[ -z "$raw" ]]; then
-        ia_default_roots
+        ai_default_roots
         return 0
     fi
     # `:`-separated OR newline-separated; normalise both to newlines. The
@@ -53,7 +53,7 @@ ia_roots() {
 # two distinct repos that share a basename are both kept — the picker shows the
 # path to disambiguate). A repo is any child dir containing `.git` (dir OR file,
 # so submodules/worktrees count).
-ia_discover() {
+ai_discover() {
     {
         local root d
         while IFS= read -r root; do
@@ -64,16 +64,16 @@ ia_discover() {
                 [[ -e "$d/.git" ]] || continue       # git repo (dir or gitfile)
                 printf '%s\t%s\n' "${d##*/}" "$d"
             done
-        done < <(ia_roots)
+        done < <(ai_roots)
     } | LC_ALL=C sort -u
 }
 
 # Filter the catalogue by a case-insensitive substring on the NAME (any
 # position). Emits matching `name<TAB>path` rows. Empty term → everything.
-ia_match() {
+ai_match() {
     local term="${1:-}"
     if [[ -z "$term" ]]; then
-        ia_discover
+        ai_discover
         return 0
     fi
     local lc name path
@@ -82,5 +82,5 @@ ia_match() {
         case "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" in
             *"$lc"*) printf '%s\t%s\n' "$name" "$path" ;;
         esac
-    done < <(ia_discover)
+    done < <(ai_discover)
 }

@@ -271,7 +271,7 @@ Subcommands:
            Never deletes source, venvs, secrets, or ~/.local/share data.
 
   ai       Open an AI agent in the right repo via herdr (the agent multiplexer).
-           Discovers repos one level under each root in $IA_ROOTS (default per OS
+           Discovers repos one level under each root in $AI_ROOTS (default per OS
            — mac: /Volumes/External/Code + ~; WSL/Linux: $CODE_DIR + ~), then:
              • a <term> that matches exactly one repo opens it directly;
              • no term / an ambiguous term → a searchable picker listing open
@@ -282,7 +282,7 @@ Subcommands:
              --agent X  use claude|codex|gemini for this run (remembered per
                         project; default + personal flags come from mesh-identity).
              --list     print the discovered catalogue and exit (no launch).
-           mesh-identity aliases this to `mesh ia` with claude + its own flags.
+           mesh-identity supplies personal defaults (agent, flags, pins).
 
   config   Edit personal config files declared in mesh-identity/deploy.map.
            `mesh config` opens a picker; `mesh config aliases` opens the single
@@ -1484,12 +1484,12 @@ sub_upgrade() {
 
 # `mesh ai [term] [--agent X]` → open an AI agent in the right repo via herdr.
 # Discovers repos on disk (multi-root) and hands the chosen one to herdr (focus
-# if open, else create + launch). mesh-identity aliases this to `mesh ia` with
-# the personal default agent + flags (see extensions/mesh.sh).
+# if open, else create + launch). mesh-identity may supply personal defaults
+# (agent, flags, pins) through its extension environment.
 sub_ai() {
     local runner
-    runner="$(_resolve_companion "runners/ia.sh")"
-    [[ -n "$runner" ]] || _die "runners/ia.sh not found (set \$MESH_HOME or check installation)"
+    runner="$(_resolve_companion "runners/ai.sh")"
+    [[ -n "$runner" ]] || _die "runners/ai.sh not found (set \$MESH_HOME or check installation)"
     exec bash "$runner" "$@"
 }
 

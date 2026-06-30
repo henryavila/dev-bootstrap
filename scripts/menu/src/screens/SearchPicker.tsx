@@ -1,5 +1,5 @@
 /**
- * SearchPicker — the realtime-filter project picker for `mesh ia`. herdr has no
+ * SearchPicker — the realtime-filter project picker for `mesh ai`. herdr has no
  * fuzzy discovery of repos on disk, so this is the blink front-end that fills
  * it: type any part of a name, the list filters live, Enter hands the chosen
  * row back to bash (the runner then focuses/creates the herdr workspace).
@@ -10,7 +10,7 @@
  *
  * BLINK-ONLY visuals (Header/Input/List/Footer); Ink <Box> is layout, useInput
  * is the app's own keymap (blink never embeds one). Driven from bash via
- * `node index.js ia-pick --in <candidates> --out <file>`.
+ * `node index.js ai-pick --in <candidates> --out <file>`.
  *
  * Keys: type / Backspace filter · ↑↓ move · Enter open focused · Ctrl-N open a
  * NEW agent in the focused repo (a fresh tab if it is already open) · Esc cancel.
@@ -27,7 +27,7 @@ import {
   type HotkeyDef,
 } from '@henryavila/blink-tui';
 
-export interface IaItem {
+export interface AiItem {
   /** Unique id (tab_id, else wsid, else path) — React key + focus lookups. */
   id: string;
   label: string;
@@ -48,7 +48,7 @@ export interface IaItem {
 /** Parse the runner's candidate file (one
  *  `label<TAB>path<TAB>wsid<TAB>status<TAB>tabid` per line) into items. Blank and
  *  label-less rows are dropped. Pure. */
-export function parseCandidates(text: string): IaItem[] {
+export function parseCandidates(text: string): AiItem[] {
   return text
     .split('\n')
     .map((l) => l.replace(/\r$/, ''))
@@ -67,7 +67,7 @@ export function parseCandidates(text: string): IaItem[] {
 
 /** Case-insensitive substring filter on the label (any position). Empty query →
  *  everything. Pure. */
-export function filterItems(items: IaItem[], query: string): IaItem[] {
+export function filterItems(items: AiItem[], query: string): AiItem[] {
   const q = query.trim().toLowerCase();
   if (!q) return items;
   return items.filter((it) => it.label.toLowerCase().includes(q));
@@ -81,7 +81,7 @@ export function abbrevHome(path: string, home = process.env.HOME ?? ''): string 
 
 /** The right-aligned aside for a row: open workspaces read `herdr <status> · <dir>`
  *  (so you see it is live AND which project it is); closed repos read the dir. Pure. */
-export function rowMeta(it: IaItem): string {
+export function rowMeta(it: AiItem): string {
   const dir = abbrevHome(it.path);
   if (it.open) {
     const status = it.status || 'idle';
@@ -92,13 +92,13 @@ export function rowMeta(it: IaItem): string {
 
 /** What to do with the chosen row: `open` focuses/opens the primary target;
  *  `new` opens ANOTHER agent in the project (a fresh tab if it is already open). */
-export type IaAction = 'open' | 'new';
+export type AiAction = 'open' | 'new';
 
 export interface SearchPickerProps {
-  items: IaItem[];
+  items: AiItem[];
   /** Called with the chosen item's raw line + the action (Enter → open, Ctrl-N →
    *  new), or (null) on cancel. */
-  onDone: (raw: string | null, action?: IaAction) => void;
+  onDone: (raw: string | null, action?: AiAction) => void;
 }
 
 export function SearchPicker({ items, onDone }: SearchPickerProps) {
@@ -117,7 +117,7 @@ export function SearchPicker({ items, onDone }: SearchPickerProps) {
   // Enter opens/focuses the primary target; Ctrl-N opens a NEW agent in the same
   // repo (a fresh tab when its workspace is already open) — both act on the row
   // currently focused.
-  const choose = (action: IaAction) => {
+  const choose = (action: AiAction) => {
     const c = filtered.find((it) => it.id === focusId) ?? filtered[0];
     onDone(c ? c.raw : null, action);
   };
@@ -150,7 +150,7 @@ export function SearchPicker({ items, onDone }: SearchPickerProps) {
 
   return (
     <Box flexDirection="column">
-      <Header title="mesh ia" subtitle="open in herdr" right={`${filtered.length}/${items.length}`} />
+      <Header title="mesh ai" subtitle="open in herdr" right={`${filtered.length}/${items.length}`} />
       <Input title="search" value={query} placeholder="type any part of a repo name…" focused />
       <List rows={rows} focusedId={focusId} height={12} />
       <Footer keys={keys} />
