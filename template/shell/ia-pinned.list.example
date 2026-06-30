@@ -1,0 +1,12 @@
+# shell/ia-pinned.list — manually pinned projects for `mesh ia`.
+#
+# Format: <name>|<path[:alt-path[:...]]>
+#  • Engine picks the FIRST existing alt (so one file serves all machines).
+#  • '~' expands to $HOME. Non-git dirs are allowed (pinned = explicit).
+#  • Reserved chars: | (field)   : (alternate)   # (comment).
+#  • `mesh ia add/remove/list` edits this file; the engine only READS it.
+#  • A pinned name overrides a discovered repo of the same name (explicit wins).
+#
+# Example:
+# my-project|/Volumes/External/Code/my-project:~/code/my-project
+# scratch-kb|~/notes/knowledge-base

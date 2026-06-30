@@ -14,7 +14,10 @@
 #                             Picker keys: Enter = focus/open · Ctrl-N = open a NEW
 #                             agent in the highlighted repo (fresh tab if open).
 #   mesh ia <term> --agent X  Use agent X (claude|codex|gemini); remembered per project.
-#   mesh ia --list            Print the discovered catalogue and exit (no launch).
+#   mesh ia --list            Print the merged catalogue (discovered + pinned) and exit.
+#   mesh ia add <path> [name] Pin a dir to the catalogue (non-git OK; idempotent).
+#   mesh ia remove <name>     Unpin by name.
+#   mesh ia list              Show pinned projects resolvable on this host.
 # Flags: --agent <name>, --list, -h/--help.
 set -uo pipefail
 
@@ -28,12 +31,90 @@ REPO="$(cd "$HERE/../.." && pwd)"
 . "$REPO/scripts/lib/ia-herdr.sh"
 # shellcheck disable=SC1091
 . "$REPO/scripts/lib/ia-agent.sh"
+# shellcheck disable=SC1091
+. "$REPO/scripts/lib/ia-pinned.sh"
 # Honor per-host config (CODE_DIR, optional IA_ROOTS) so discovery roots match
 # what the interactive shell uses.
 if [[ -r "$HOME/.config/mesh/config.env" ]]; then
     # shellcheck disable=SC1091
     . "$HOME/.config/mesh/config.env"
 fi
+
+# ─── merged catalogue: discovered (auto) + pinned (explicit) ────────────────
+# Pinned entries (read from $MESH_IA_PINNED via ia_pinned) come FIRST so a pin
+# WINS on a name collision with a discovered repo — it is the explicit override.
+# Dedup is by name (col 1). Optional substring filter on the name, mirroring
+# ia_match. Emits `name<TAB>path`.
+ia_catalogue() {
+    local term="${1:-}" lc=""
+    [[ -n "$term" ]] && lc="$(printf '%s' "$term" | tr '[:upper:]' '[:lower:]')"
+    { ia_pinned; ia_discover; } | awk -F'\t' -v lc="$lc" \
+        '!seen[$1]++ && (lc == "" || index(tolower($1), lc))'
+}
+
+# ─── pinned-manifest editor verbs ────────────────────────────────────────────
+# Generic edit logic over whatever path $MESH_IA_PINNED resolves to; knows no
+# personal paths (the default mirrors personal-clone.sh's identity fallback).
+_ia_pinned_file() {
+    printf '%s' "${MESH_IA_PINNED:-${MESH_IDENTITY_DIR:-$HOME/mesh-identity}/shell/ia-pinned.list}"
+}
+
+_ia_verb_add() {
+    local path="${1:-}" name="${2:-}"
+    [[ -n "$path" ]] || { log_error "ia add: missing <path> (usage: mesh ia add <path> [name])"; return 2; }
+    path="${path/#\~/$HOME}"
+    path="$(cd "$path" 2>/dev/null && pwd)" || { log_error "ia add: path not found: $1"; return 2; }
+    [[ -n "$name" ]] || name="$(basename "$path")"
+    local file; file="$(_ia_pinned_file)"
+    if [[ ! -f "$file" ]]; then
+        mkdir -p "$(dirname "$file")"
+        # shellcheck disable=SC2016  # \n is printf syntax, not shell expansion
+        printf '# shell/ia-pinned.list — manually pinned projects for `mesh ia`.\n# Format: <name>|<path[:alt-path[:...]]>\n\n' > "$file"
+    fi
+    local existed=0 tmp
+    awk -F'|' -v n="$name" '$1==n{f=1} END{exit f?0:1}' "$file" && existed=1
+    tmp="$(mktemp -t mesh-ia-pin.XXXXXX)"
+    # Upsert: the line for this name appears exactly once with the new path, in
+    # its first original position (or appended if new). String-exact field match.
+    awk -F'|' -v n="$name" -v p="$path" '
+        $1==n { if (!e) { print n "|" p; e=1 } next }
+        { print }
+        END { if (!e) print n "|" p }
+    ' "$file" > "$tmp"
+    mv "$tmp" "$file"
+    if (( existed )); then
+        log_info "ia: updated pin '$name' → $path"
+    else
+        log_info "ia: pinned '$name' → $path"
+    fi
+}
+
+_ia_verb_remove() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || { log_error "ia remove: missing <name>"; return 2; }
+    local file; file="$(_ia_pinned_file)"
+    [[ -f "$file" ]] || { log_error "ia remove: manifest not found: $file"; return 2; }
+    local existed=0 tmp
+    awk -F'|' -v n="$name" '$1==n{f=1} END{exit f?0:1}' "$file" && existed=1
+    (( existed )) || { log_error "ia remove: no pin named '$name'"; return 1; }
+    tmp="$(mktemp -t mesh-ia-pin.XXXXXX)"
+    awk -F'|' -v n="$name" '$1!=n' "$file" > "$tmp"
+    mv "$tmp" "$file"
+    log_info "ia: removed pin '$name'"
+}
+
+_ia_verb_list() {
+    ia_pinned
+}
+
+# Sub-verbs routed BEFORE the flag loop so `mesh ia add …` isn't parsed as a
+# search term. `mesh ia -- add` still searches literally for "add" (the `--`
+# handler below sets TERM_ARG after this block falls through).
+case "${1:-}" in
+    add)    shift; _ia_verb_add "$@"; exit $? ;;
+    remove) shift; _ia_verb_remove "$@"; exit $? ;;
+    list)   shift; _ia_verb_list "$@"; exit $? ;;
+esac
 
 AGENT_OVERRIDE=""; LIST=0; CANDIDATES=0; TERM_ARG=""
 while (( $# > 0 )); do
@@ -42,7 +123,7 @@ while (( $# > 0 )); do
         --agent=*)    AGENT_OVERRIDE="${1#*=}" ;;
         --list)       LIST=1 ;;
         --candidates) CANDIDATES=1 ;;   # debug: dump the merged candidate set
-        -h|--help)    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         --)         shift; [[ $# -gt 0 ]] && TERM_ARG="$1" ;;
         -*)         log_error "ia: unknown flag '$1' (try --agent <name> --list --help)"; exit 2 ;;
         *)          TERM_ARG="$1" ;;
@@ -51,7 +132,7 @@ while (( $# > 0 )); do
 done
 
 if (( LIST )); then
-    ia_match "$TERM_ARG"
+    ia_catalogue "$TERM_ARG"
     exit 0
 fi
 
@@ -76,7 +157,7 @@ _ia_open_repo() {
 # tabid set ⇒ focus that tab; else wsid set ⇒ focus workspace; else ⇒ create.
 _ia_candidates() {
     local repos open_ws label wsid status path name tabs ntabs tid tlabel tstatus
-    repos="$(ia_discover)"
+    repos="$(ia_catalogue)"
     open_ws=""
     ia_herdr_ready 2>/dev/null && open_ws="$(ia_herdr_workspaces)"
 
