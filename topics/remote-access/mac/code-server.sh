@@ -13,6 +13,9 @@ check() {
     local label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
     local plist="${HOME}/Library/LaunchAgents/${label}.plist"
     local config="${HOME}/.config/code-server/config.yaml"
+    local user_data="${HOME}/.local/share/code-server"
+    local user_dir="${user_data}/User"
+    local global_storage="${user_dir}/globalStorage"
 
     # F9.6 §D filesystem hardening (2026-06-03): `[[ -x ]]` on the
     # ~/.local/bin/code-server symlink follows the link, but a present exec
@@ -34,7 +37,35 @@ check() {
 
     [[ -f "$plist" ]] || return 1
     [[ -f "$config" ]] || return 1
+    [[ -d "$user_data" && -d "$user_dir" && -d "$global_storage" ]] || return 1
+    [[ -w "$user_data" && -w "$user_dir" && -w "$global_storage" ]] || return 1
     return 0
+}
+
+write_code_server_codex_compat_script() {
+    local script="$1" tmp
+    mkdir -p "$(dirname "$script")" || return 1
+    tmp="$(mktemp "${script}.XXXXXX")" || return 1
+    cat > "$tmp" <<'SH'
+#!/usr/bin/env bash
+set -u
+
+root="${1:-$HOME/.local/share/code-server}"
+extensions_root="$root/extensions"
+needle='typeof navigator<"u"&&navigator?.userAgent?.includes("Cloudflare")'
+replacement='false'
+
+for js in "$extensions_root"/openai.chatgpt-*/out/extension.js; do
+    [[ -f "$js" ]] || continue
+    if grep -Fq "$needle" "$js"; then
+        backup="${js}.bak-mesh-navigator"
+        [[ -f "$backup" ]] || cp -p "$js" "$backup"
+        NEEDLE="$needle" REPLACEMENT="$replacement" perl -0pi -e 's/\Q$ENV{NEEDLE}\E/$ENV{REPLACEMENT}/g' "$js"
+    fi
+done
+SH
+    mv "$tmp" "$script"
+    chmod 0700 "$script"
 }
 
 install() {
@@ -61,6 +92,7 @@ CODE_SERVER_CONFIG_DIR=""
 CODE_SERVER_CONFIG_FILE=""
 CODE_SERVER_STATE_DIR=""
 CODE_SERVER_USER_DATA_DIR=""
+CODE_SERVER_CODEX_COMPAT_SCRIPT=""
 CODE_SERVER_PLIST=""
 CODE_SERVER_WORKDIR="${CODE_SERVER_WORKDIR:-$HOME}"
 CODE_SERVER_EXTRA_PATH=""
@@ -222,6 +254,7 @@ detect_code_server_env() {
     CODE_SERVER_CONFIG_FILE="${CODE_SERVER_CONFIG_DIR}/config.yaml"
     CODE_SERVER_STATE_DIR="${HOME}/.local/state/code-server"
     CODE_SERVER_USER_DATA_DIR="${HOME}/.local/share/code-server"
+    CODE_SERVER_CODEX_COMPAT_SCRIPT="${CODE_SERVER_INSTALL_PREFIX}/bin/code-server-codex-compat"
     CODE_SERVER_PLIST="${HOME}/Library/LaunchAgents/${CODE_SERVER_LABEL}.plist"
 
     if [[ -z "${BREW_PREFIX:-}" ]]; then
@@ -357,8 +390,12 @@ write_code_server_config() {
 }
 
 ensure_code_server_config() {
-    mkdir -p "$CODE_SERVER_CONFIG_DIR" "$CODE_SERVER_USER_DATA_DIR/User"
-    chmod 0700 "$CODE_SERVER_CONFIG_DIR" "$CODE_SERVER_USER_DATA_DIR" "$CODE_SERVER_USER_DATA_DIR/User"
+    mkdir -p "$CODE_SERVER_CONFIG_DIR" "$CODE_SERVER_USER_DATA_DIR/User/globalStorage"
+    chmod 0700 \
+        "$CODE_SERVER_CONFIG_DIR" \
+        "$CODE_SERVER_USER_DATA_DIR" \
+        "$CODE_SERVER_USER_DATA_DIR/User" \
+        "$CODE_SERVER_USER_DATA_DIR/User/globalStorage"
 
     if [[ -f "$CODE_SERVER_CONFIG_FILE" && "${CODE_SERVER_REWRITE_CONFIG:-0}" == "1" ]]; then
         local backup
@@ -411,6 +448,9 @@ write_code_server_service_wrapper() {
         printf 'export HOME=%q\n' "$HOME"
         printf 'export PATH=%q\n' "${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}"
         printf '[[ -f /etc/ssl/cert.pem ]] && export NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem\n\n'
+        printf 'if [[ -x %q ]]; then\n' "$CODE_SERVER_CODEX_COMPAT_SCRIPT"
+        printf '    %q %q >/dev/null 2>&1 || true\n' "$CODE_SERVER_CODEX_COMPAT_SCRIPT" "$CODE_SERVER_USER_DATA_DIR"
+        printf 'fi\n\n'
         printf 'token=""\n'
         printf 'if command -v gh >/dev/null 2>&1; then\n'
         printf '    gh_bin="$(command -v gh 2>/dev/null || true)"\n'
@@ -444,10 +484,10 @@ write_code_server_service_wrapper() {
 
     if PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" command -v gh >/dev/null 2>&1; then
         if ! PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 gh auth token >/dev/null 2>&1; then
-            followup manual "gh is installed but no token is available. Run 'gh auth login' so code-server can inject GitHub auth at service start."
+            followup manual "gh is installed but no token is available. Run 'gh auth login' if CLI/subprocess GitHub access inside code-server should inherit GITHUB_TOKEN. VS Code GitHub OAuth remains a separate browser login stored in code-server user data."
         fi
     else
-        followup manual "gh was not found in the code-server service PATH. GitHub extensions may ask for OAuth until gh is installed/authenticated."
+        followup manual "gh was not found in the code-server service PATH, so CLI/subprocess GitHub access inside code-server will not inherit GITHUB_TOKEN. VS Code GitHub OAuth remains a separate browser login stored in code-server user data."
     fi
 }
 
@@ -756,6 +796,8 @@ require_macos
 detect_code_server_env
 install_code_server_standalone
 ensure_code_server_config
+write_code_server_codex_compat_script "$CODE_SERVER_CODEX_COMPAT_SCRIPT"
+"$CODE_SERVER_CODEX_COMPAT_SCRIPT" "$CODE_SERVER_USER_DATA_DIR" >/dev/null 2>&1 || true
 write_code_server_service_wrapper
 migrate_legacy_launchagents
 write_launchagent_plist
