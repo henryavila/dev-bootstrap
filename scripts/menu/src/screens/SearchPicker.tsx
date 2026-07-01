@@ -90,6 +90,10 @@ export function rowMeta(it: AiItem): string {
   return dir;
 }
 
+export function preferenceSummary(defaultAgent: string, defaultAction: string, openExisting: string): string {
+  return `agent=${defaultAgent} · open=${defaultAction} · open existing=${openExisting}`;
+}
+
 /** What to do with the chosen row:
  *  `open` uses the saved default; `new` opens another default agent; `shell`
  *  opens the directory without running an agent; `agent:<name>` forces a named
@@ -143,13 +147,14 @@ export function SearchPicker({ items, onDone }: SearchPickerProps) {
   const defaultAgent = process.env.MESH_AI_DEFAULT_AGENT || process.env.MESH_AI_AGENT || 'claude';
   const defaultAction = process.env.MESH_AI_DEFAULT_ACTION || 'agent';
   const openExisting = process.env.MESH_AI_OPEN_EXISTING || 'focus';
+  const currentLabel = (label: string, current: boolean) => (current ? `${label} (current)` : label);
   const prefItems: MenuItem[] = [
-    { id: 'pref-agent-claude', label: 'Default agent: Claude', meta: defaultAgent === 'claude' ? 'current' : '', action: 'pref:agent:claude' },
-    { id: 'pref-agent-codex', label: 'Default agent: Codex', meta: defaultAgent === 'codex' ? 'current' : '', action: 'pref:agent:codex' },
-    { id: 'pref-action-agent', label: 'Enter opens agent', meta: defaultAction === 'agent' ? 'current' : '', action: 'pref:action:agent' },
-    { id: 'pref-action-shell', label: 'Enter opens shell', meta: defaultAction === 'shell' ? 'current' : '', action: 'pref:action:shell' },
-    { id: 'pref-open-focus', label: 'Open existing: focus', meta: openExisting === 'focus' ? 'current' : '', action: 'pref:open:focus' },
-    { id: 'pref-open-new', label: 'Open existing: new tab', meta: openExisting === 'new' ? 'current' : '', action: 'pref:open:new' },
+    { id: 'pref-agent-claude', label: currentLabel('Default agent: Claude', defaultAgent === 'claude'), meta: '', action: 'pref:agent:claude' },
+    { id: 'pref-agent-codex', label: currentLabel('Default agent: Codex', defaultAgent === 'codex'), meta: '', action: 'pref:agent:codex' },
+    { id: 'pref-action-agent', label: currentLabel('Enter opens agent', defaultAction === 'agent'), meta: '', action: 'pref:action:agent' },
+    { id: 'pref-action-shell', label: currentLabel('Enter opens shell', defaultAction === 'shell'), meta: '', action: 'pref:action:shell' },
+    { id: 'pref-open-focus', label: currentLabel('Open existing: focus', openExisting === 'focus'), meta: '', action: 'pref:open:focus' },
+    { id: 'pref-open-new', label: currentLabel('Open existing: new tab', openExisting === 'new'), meta: '', action: 'pref:open:new' },
   ];
 
   const menuItems = mode === 'prefs' ? prefItems : actionItems;
@@ -232,7 +237,12 @@ export function SearchPicker({ items, onDone }: SearchPickerProps) {
         ];
 
   const title = mode === 'prefs' ? 'mesh ai preferences' : mode === 'actions' ? selected?.label ?? 'actions' : 'mesh ai';
-  const subtitle = mode === 'search' ? 'open in herdr' : mode === 'actions' ? 'choose action' : 'local defaults';
+  const subtitle =
+    mode === 'search'
+      ? 'open in herdr'
+      : mode === 'actions'
+        ? 'choose action'
+        : preferenceSummary(defaultAgent, defaultAction, openExisting);
   const focusedId = mode === 'search' ? searchFocusId : menuFocusId;
   const right = mode === 'search' ? `${filtered.length}/${items.length}` : `${menuItems.length}`;
 

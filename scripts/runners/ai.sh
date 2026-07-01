@@ -515,11 +515,21 @@ fi
 # Otherwise (no term, or an ambiguous term) → the picker over the filtered set.
 # Esc in the blink picker (rc 130) cancels outright; only an *unavailable* blink
 # (rc 1) falls back to the bash picker.
-CHOICE="$(_ai_pick_blink "$FILT_FILE")"; PICK_RC=$?
-if (( PICK_RC == 130 )); then
-    exit 0
-elif (( PICK_RC != 0 )); then
-    CHOICE="$(_ai_pick_bash "$FILT_FILE")" || exit 0
-fi
-[[ -n "$CHOICE" ]] || exit 0
-_ai_route "$CHOICE"
+while :; do
+    CHOICE="$(_ai_pick_blink "$FILT_FILE")"; PICK_RC=$?
+    if (( PICK_RC == 130 )); then
+        exit 0
+    elif (( PICK_RC != 0 )); then
+        CHOICE="$(_ai_pick_bash "$FILT_FILE")" || exit 0
+    fi
+    [[ -n "$CHOICE" ]] || exit 0
+
+    if [[ "$CHOICE" == pref:*$'\t'* ]]; then
+        _ai_route "$CHOICE" || exit $?
+        ai_prefs_load
+        continue
+    fi
+
+    _ai_route "$CHOICE"
+    exit $?
+done

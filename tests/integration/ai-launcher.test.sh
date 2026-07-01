@@ -326,6 +326,7 @@ STUB
     # — a new TAB when the project's workspace is already open (atomic-skills/w456),
     # instead of just focusing it. Driven by a node stub that emulates ai-pick-main
     # writing `new<TAB><row>` to --out.
+    rm -f "$SANDBOX/rstate/mesh/ai-agents.env"
     if ( exec </dev/tty >/dev/tty ) 2>/dev/null; then
         NNEW="$SANDBOX/nnew"; mkdir -p "$NNEW"
         cat > "$NNEW/node" <<'STUB'
@@ -367,6 +368,18 @@ row="$(awk -F'\t' '$1=="atomic-skills"{print; exit}' "$in")"
 case "${MESH_TEST_PICK_ACTION:-shell}" in
   agent-codex) printf 'agent:codex\t%s' "$row" > "$out" ;;
   pref-codex)  printf 'pref:agent:codex\t%s' "$row" > "$out" ;;
+  pref-codex-once)
+    count_file="${MESH_TEST_PICK_COUNT:?}"
+    count=0
+    [ -r "$count_file" ] && count="$(cat "$count_file")"
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$count_file"
+    if [ "$count" -eq 1 ]; then
+      printf 'pref:agent:codex\t%s' "$row" > "$out"
+    else
+      exit 130
+    fi
+    ;;
   *)           printf 'shell\t%s' "$row" > "$out" ;;
 esac
 exit 0
@@ -389,10 +402,47 @@ STUB
         assert_contains "$PICK_CODEX" "pane run wTAB-1 codex" "picker 'agent:codex' → launches codex"
 
         rm -f "$RHOME/.config/mesh/ai.env"
+        PREF_COUNT="$SANDBOX/pref-count"
         HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
-            PATH="$NACTION:$RBIN:$PATH" MESH_TEST_PICK_ACTION=pref-codex MESH_AI_AGENT=claude \
+            PATH="$NACTION:$RBIN:$PATH" MESH_TEST_PICK_ACTION=pref-codex-once MESH_TEST_PICK_COUNT="$PREF_COUNT" MESH_AI_AGENT=claude \
             bash "$RUNNER" >/dev/null 2>&1
         assert_contains "$(cat "$RHOME/.config/mesh/ai.env")" "MESH_AI_DEFAULT_AGENT=codex" "picker preference action saves local default agent"
+
+        NREOPEN="$SANDBOX/nreopen"; mkdir -p "$NREOPEN"
+        cat > "$NREOPEN/node" <<'STUB'
+#!/usr/bin/env bash
+in=""; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in --in) shift; in="$1" ;; --out) shift; out="$1" ;; esac
+  shift
+done
+count_file="${MESH_TEST_PICK_COUNT:?}"
+count=0
+[ -r "$count_file" ] && count="$(cat "$count_file")"
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+row="$(awk -F'\t' '$1=="atomic-skills"{print; exit}' "$in")"
+case "$count" in
+  1) printf 'pref:agent:codex\t%s' "$row" > "$out" ;;
+  *)
+    printf '%s\n' "${MESH_AI_DEFAULT_AGENT:-}" > "${MESH_TEST_PICK_ENV:?}"
+    printf 'open\t%s' "$row" > "$out"
+    ;;
+esac
+exit 0
+STUB
+        chmod +x "$NREOPEN/node"
+        rm -f "$RHOME/.config/mesh/ai.env"
+        PICK_COUNT="$SANDBOX/pick-count"
+        PICK_ENV="$SANDBOX/pick-env"
+        : > "$HERDR_LOG"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NREOPEN:$RBIN:$PATH" MESH_TEST_PICK_COUNT="$PICK_COUNT" MESH_TEST_PICK_ENV="$PICK_ENV" MESH_AI_AGENT=claude \
+            bash "$RUNNER" >/dev/null 2>&1
+        assert_eq "$(cat "$PICK_COUNT")" "2" "picker preference action returns to mesh ai picker"
+        assert_eq "$(cat "$PICK_ENV")" "codex" "reopened picker sees the saved default agent"
+        assert_contains "$(cat "$RHOME/.config/mesh/ai.env")" "MESH_AI_DEFAULT_AGENT=codex" "reopened picker keeps saved default agent"
+        assert_contains "$(cat "$HERDR_LOG")" "workspace focus w456" "second picker choice routes after saving preference"
     else
         echo "── picker-actions: SKIPPED (no /dev/tty) ──"
     fi
