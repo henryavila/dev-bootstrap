@@ -11,15 +11,17 @@
 #   mesh ai [term]            Open the project matching <term>; single match opens
 #                             directly, multiple → picker, none → error.
 #   mesh ai                   No term → searchable picker (open workspaces + repos).
-#                             Picker keys: Enter = focus/open · Ctrl-N = open a NEW
-#                             agent in the highlighted repo (fresh tab if open).
+#                             Picker keys: Enter = saved default · Tab = actions
+#                             for the highlighted repo · Ctrl-P = local prefs.
 #   mesh ai <term> --agent X  Use agent X (claude|codex|gemini); remembered per project.
+#   mesh ai <term> --codex    Shortcut for --agent codex.
+#   mesh ai <term> --shell    Open the project directory without running an agent.
 #   mesh ai --list            Print the merged catalogue (discovered + pinned) and exit.
 #   mesh ai add <path> [name] Pin a dir to the catalogue (non-git OK; idempotent).
 #                            If the manifest is in git, offers to commit+push.
 #   mesh ai remove <name>     Unpin by name; also offers commit+push when in git.
 #   mesh ai list              Show pinned projects resolvable on this host.
-# Flags: --agent <name>, --list, -h/--help.
+# Flags: --agent <name>, --claude, --codex, --shell/--dir, --list, -h/--help.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,12 +36,15 @@ REPO="$(cd "$HERE/../.." && pwd)"
 . "$REPO/scripts/lib/ai-agent.sh"
 # shellcheck disable=SC1091
 . "$REPO/scripts/lib/ai-pinned.sh"
+# shellcheck disable=SC1091
+. "$REPO/scripts/lib/ai-prefs.sh"
 # Honor per-host config (CODE_DIR, optional AI_ROOTS) so discovery roots match
 # what the interactive shell uses.
 if [[ -r "$HOME/.config/mesh/config.env" ]]; then
     # shellcheck disable=SC1091
     . "$HOME/.config/mesh/config.env"
 fi
+ai_prefs_load
 
 # ─── merged catalogue: discovered (auto) + pinned (explicit) ────────────────
 # Pinned entries (read from $MESH_AI_PINNED via ai_pinned) come FIRST so a pin
@@ -213,16 +218,19 @@ case "${1:-}" in
     list)   shift; _ai_verb_list "$@"; exit $? ;;
 esac
 
-AGENT_OVERRIDE=""; LIST=0; CANDIDATES=0; TERM_ARG=""
+AGENT_OVERRIDE=""; FORCE_SHELL=0; LIST=0; CANDIDATES=0; TERM_ARG=""
 while (( $# > 0 )); do
     case "$1" in
         --agent)      shift; AGENT_OVERRIDE="${1:-}" ;;
         --agent=*)    AGENT_OVERRIDE="${1#*=}" ;;
+        --claude)     AGENT_OVERRIDE="claude" ;;
+        --codex)      AGENT_OVERRIDE="codex" ;;
+        --shell|--dir) FORCE_SHELL=1 ;;
         --list)       LIST=1 ;;
         --candidates) CANDIDATES=1 ;;   # debug: dump the merged candidate set
-        -h|--help)    sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         --)         shift; [[ $# -gt 0 ]] && TERM_ARG="$1" ;;
-        -*)         log_error "ai: unknown flag '$1' (try --agent <name> --list --help)"; exit 2 ;;
+        -*)         log_error "ai: unknown flag '$1' (try --agent <name> --codex --shell --list --help)"; exit 2 ;;
         *)          TERM_ARG="$1" ;;
     esac
     shift
@@ -240,6 +248,26 @@ _ai_open_repo() {
     [[ -n "$AGENT_OVERRIDE" ]] && ai_agent_set "$name" "$agent"
     agent_cmd="$(ai_agent_cmd "$agent")"
     ai_herdr_open "$name" "$path" "$agent_cmd"
+}
+
+_ai_open_agent_explicit() {
+    local name="$1" path="$2" wsid="$3" agent="$4" remember="${5:-0}" agent_cmd
+    (( remember )) && ai_agent_set "$name" "$agent"
+    agent_cmd="$(ai_agent_cmd "$agent")"
+    if [[ -n "$wsid" ]]; then
+        ai_herdr_new_tab "$wsid" "$path" "$name" "$agent_cmd"
+    else
+        ai_herdr_open "$name" "$path" "$agent_cmd"
+    fi
+}
+
+_ai_open_shell() {
+    local name="$1" path="$2" wsid="$3"
+    if [[ -n "$wsid" ]]; then
+        ai_herdr_new_tab "$wsid" "$path" "$name" ""
+    else
+        ai_herdr_open "$name" "$path" ""
+    fi
 }
 
 # Build the MERGED candidate set, one `label<TAB>path<TAB>wsid<TAB>status<TAB>tabid`
@@ -313,12 +341,31 @@ _ai_open_new() {
     fi
 }
 
+# Persist a picker preference action (`pref:<field>:<value>`). Preferences are
+# intentionally local to this user+machine.
+_ai_apply_pref() {
+    local action="$1" field value key label
+    IFS=':' read -r _pref field value <<<"$action"
+    case "$field:$value" in
+        agent:*)  key="MESH_AI_DEFAULT_AGENT"; label="default agent" ;;
+        action:agent|action:shell)
+                  key="MESH_AI_DEFAULT_ACTION"; label="default action" ;;
+        open:focus|open:new)
+                  key="MESH_AI_OPEN_EXISTING"; label="open existing" ;;
+        *)        log_error "ai: invalid preference action '$action'"; return 2 ;;
+    esac
+    ai_prefs_set "$key" "$value" || { log_error "ai: failed to save preference '$key'"; return 1; }
+    log_info "ai: saved $label = $value in $(ai_prefs_file)"
+}
+
 # Route a chosen `action<TAB>label<TAB>path<TAB>wsid<TAB>status<TAB>tabid` line.
-# action ∈ {open,new}:
+# action ∈ {open,new,shell,agent:<name>,pref:<field>:<value>}:
 #   open → focus the exact tab if it carries one, else focus the workspace,
 #          else create+launch (a closed repo);
 #   new  → open ANOTHER agent in the project (a fresh tab in its open workspace,
 #          else a freshly-created workspace) — Enter focuses, Ctrl-N opens new.
+#   shell → open the project directory without running an agent.
+#   agent:<name> → guarantee a fresh agent when already open, else create+run.
 # Project name = the workspace label (a tab row's `<ws> › <tab>` collapses to
 # `<ws>`) so agent memory + the new tab's label track the project, not the tab.
 _ai_route() {
@@ -326,7 +373,42 @@ _ai_route() {
     IFS=$'\t' read -r action label path wsid _status tabid <<<"$1"
     name="${label%% › *}"
 
+    if [[ "$action" == pref:* ]]; then
+        _ai_apply_pref "$action"
+        return $?
+    fi
+
+    if [[ "$action" == agent:* ]]; then
+        _ai_open_agent_explicit "$name" "$path" "$wsid" "${action#agent:}" 0
+        return $?
+    fi
+
+    if [[ "$action" == shell ]]; then
+        _ai_open_shell "$name" "$path" "$wsid"
+        return $?
+    fi
+
     if [[ "$action" == new ]]; then
+        _ai_open_new "$name" "$path" "$wsid"
+        return $?
+    fi
+
+    if (( FORCE_SHELL )); then
+        _ai_open_shell "$name" "$path" "$wsid"
+        return $?
+    fi
+
+    if [[ -n "$AGENT_OVERRIDE" ]]; then
+        _ai_open_agent_explicit "$name" "$path" "$wsid" "$AGENT_OVERRIDE" 1
+        return $?
+    fi
+
+    if [[ "$(ai_pref_default_action)" == shell ]]; then
+        _ai_open_shell "$name" "$path" "$wsid"
+        return $?
+    fi
+
+    if [[ -n "$wsid" && "$(ai_pref_open_existing)" == new ]]; then
         _ai_open_new "$name" "$path" "$wsid"
         return $?
     fi
@@ -379,12 +461,14 @@ _ai_pick_bash() {
             printf '  %2d) %-38s %s\n' "$n" "$label" "$path" >&2
         fi
     done
-    printf "ai> pick a number ('n'<num> = new agent, q = cancel): " >&2
+    printf "ai> pick a number ('n'<num> = new agent, 's'<num> = shell, q = cancel): " >&2
     IFS= read -r sel </dev/tty || return 1
     [[ "$sel" == q || -z "$sel" ]] && return 1
     local act=open idx
     if [[ "$sel" =~ ^n([0-9]+)$ ]]; then
         act=new; idx="${BASH_REMATCH[1]}"
+    elif [[ "$sel" =~ ^s([0-9]+)$ ]]; then
+        act=shell; idx="${BASH_REMATCH[1]}"
     elif [[ "$sel" =~ ^[0-9]+$ ]]; then
         idx="$sel"
     else

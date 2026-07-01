@@ -116,7 +116,7 @@ Usage:
   mesh secret <verb>                Manage replicated personal secrets (git-crypt 2-tier)
   mesh syncthing <verb>             Pair this node into the Syncthing mesh (pair/init-hub/status/password/url)
   mesh clean [--apply] [--deep]     Reclaim disk: purge regenerable dev caches (dry-run default); --compact (WSL) shrinks the VHDX
-  mesh ai [term] [--agent X]        Open an AI agent in the right repo via herdr (disk-search + focus-or-create)
+  mesh ai [term] [--agent X]        Open an AI agent or shell in the right repo via herdr (disk-search + focus-or-create)
   mesh config [term]                 Edit personal config from mesh-identity/deploy.map, then diff + deploy
   mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable/reconcile) — active × enabled
   mesh -h | --help                  This help
@@ -281,7 +281,12 @@ Subcommands:
            Flags:
              --agent X  use claude|codex|gemini for this run (remembered per
                         project; default + personal flags come from mesh-identity).
+             --claude / --codex  shortcuts for --agent claude/codex.
+             --shell   open the directory without running an agent.
              --list     print the discovered catalogue and exit (no launch).
+           Picker:
+             Enter uses the saved local default; Tab opens actions for the row;
+             Ctrl-P edits machine-local defaults in ~/.config/mesh/ai.env.
            mesh-identity supplies personal defaults (agent, flags, pins).
 
   config   Edit personal config files declared in mesh-identity/deploy.map.

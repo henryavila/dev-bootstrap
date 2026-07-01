@@ -180,12 +180,21 @@ workspace if that project is already open, else creating one at its directory
 and launching the agent.
 
 - `mesh ai`                    → searchable picker of every open workspace + on-disk repo.
-                                 `Enter` focuses/opens · `Ctrl-N` opens a NEW agent tab.
+                                 `Enter` uses your saved default · `Tab` opens
+                                 an action menu · `Ctrl-P` edits local defaults.
 - `mesh ai <term>`             → open the project matching `<term>`; a single match opens
                                  directly, several open the picker, none errors out.
 - `mesh ai --list`             → print the full catalogue (discovered + pinned) and exit.
 - `mesh ai <term> --agent X`   → use agent `X` for this launch (claude | codex | gemini);
                                  the choice is remembered per project.
+- `mesh ai <term> --codex`     → shortcut for `--agent codex`.
+- `mesh ai <term> --shell`     → open the project directory in herdr without
+                                 starting an agent.
+
+Picker preferences are local to the current user+machine and live in
+`~/.config/mesh/ai.env`. They are not committed to mesh-identity. The current
+preferences cover the default agent, whether Enter opens an agent or a shell,
+and whether an already-open workspace is focused or receives a new tab.
 
 ### Pinned projects
 

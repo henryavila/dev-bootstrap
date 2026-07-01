@@ -159,6 +159,7 @@ assert_eq "$(MESH_AI_FLAGS_CLAUDE='--dangerously-skip-permissions' ai_agent_cmd 
           "claude --dangerously-skip-permissions" "flags env appended to agent cmd"
 assert_eq "$(ai_agent_resolve repoA 'codex')" "codex" "override wins in resolve"
 assert_eq "$(MESH_AI_AGENT=gemini ai_agent_resolve repoA '')" "gemini" "MESH_AI_AGENT default when no override/memory"
+assert_eq "$(MESH_AI_DEFAULT_AGENT=codex MESH_AI_AGENT=claude ai_agent_resolve repoA '')" "codex" "local preference wins over identity default"
 assert_eq "$(ai_agent_resolve repoA '')" "claude" "falls back to 'claude' with nothing set"
 ai_agent_set repoA codex
 assert_eq "$(ai_agent_get repoA)" "codex" "remembers agent per project"
@@ -258,6 +259,38 @@ STUB
     run_ia repoA --agent codex >/dev/null 2>&1
     assert_eq "$(grep '^repoA=' "$SANDBOX/rstate/mesh/ai-agents.env" 2>/dev/null)" "repoA=codex" "--agent override is remembered"
 
+    # --agent/--codex are explicit launch intents: on an already-open workspace,
+    # they open a fresh tab with that agent instead of merely focusing.
+    : > "$HERDR_LOG"
+    run_ia atomic-skills --codex >/dev/null 2>&1
+    CODLOG="$(cat "$HERDR_LOG")"
+    assert_contains "$CODLOG" "tab create --workspace w456 --cwd $R1/atomic-skills --label atomic-skills --focus" "--codex on open repo → new tab"
+    assert_contains "$CODLOG" "pane run wTAB-1 codex" "--codex on open repo → launches codex"
+    assert_not_contains "$CODLOG" "workspace focus w456" "--codex does not just focus the existing workspace"
+
+    # --shell opens the directory in herdr without running an agent command.
+    : > "$HERDR_LOG"
+    run_ia repoC --shell >/dev/null 2>&1
+    SHELL_CLOSED="$(cat "$HERDR_LOG")"
+    assert_contains "$SHELL_CLOSED" "workspace create --cwd $R2/repoC --label repoC --focus" "--shell on closed repo → create workspace"
+    assert_not_contains "$SHELL_CLOSED" "pane run" "--shell on closed repo → no agent run"
+    : > "$HERDR_LOG"
+    run_ia atomic-skills --shell >/dev/null 2>&1
+    SHELL_OPEN="$(cat "$HERDR_LOG")"
+    assert_contains "$SHELL_OPEN" "tab create --workspace w456 --cwd $R1/atomic-skills --label atomic-skills --focus" "--shell on open repo → new shell tab"
+    assert_not_contains "$SHELL_OPEN" "pane run" "--shell on open repo → no agent run"
+
+    # Local preferences are sourced from ~/.config/mesh/ai.env. A shell default
+    # makes Enter/fast-path open the directory without an agent.
+    mkdir -p "$RHOME/.config/mesh"
+    printf 'MESH_AI_DEFAULT_ACTION=shell\n' > "$RHOME/.config/mesh/ai.env"
+    : > "$HERDR_LOG"
+    run_ia repoC >/dev/null 2>&1
+    PREF_SHELL="$(cat "$HERDR_LOG")"
+    assert_contains "$PREF_SHELL" "workspace create --cwd $R2/repoC --label repoC --focus" "local shell default → create workspace"
+    assert_not_contains "$PREF_SHELL" "pane run" "local shell default → no agent run"
+    rm -f "$RHOME/.config/mesh/ai.env"
+
     # Unknown term → exit 1; a read-only list is fine, but NEVER a mutation.
     : > "$HERDR_LOG"
     assert_exit_code 1 'run_ia no-such-repo-xyz' "unknown term exits 1"
@@ -317,6 +350,51 @@ STUB
         assert_not_contains "$NEWLOG" "workspace focus w456" "picker 'new' does NOT just focus the existing workspace"
     else
         echo "── picker-new: SKIPPED (no /dev/tty) ──"
+    fi
+
+    # Picker one-off actions can force shell/agent, and prefs actions persist to
+    # the local config file without touching mesh-identity.
+    if ( exec </dev/tty >/dev/tty ) 2>/dev/null; then
+        NACTION="$SANDBOX/naction"; mkdir -p "$NACTION"
+        cat > "$NACTION/node" <<'STUB'
+#!/usr/bin/env bash
+in=""; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in --in) shift; in="$1" ;; --out) shift; out="$1" ;; esac
+  shift
+done
+row="$(awk -F'\t' '$1=="atomic-skills"{print; exit}' "$in")"
+case "${MESH_TEST_PICK_ACTION:-shell}" in
+  agent-codex) printf 'agent:codex\t%s' "$row" > "$out" ;;
+  pref-codex)  printf 'pref:agent:codex\t%s' "$row" > "$out" ;;
+  *)           printf 'shell\t%s' "$row" > "$out" ;;
+esac
+exit 0
+STUB
+        chmod +x "$NACTION/node"
+
+        : > "$HERDR_LOG"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NACTION:$RBIN:$PATH" MESH_AI_AGENT=claude \
+            bash "$RUNNER" >/dev/null 2>&1
+        PICK_SHELL="$(cat "$HERDR_LOG")"
+        assert_contains "$PICK_SHELL" "tab create --workspace w456 --cwd $R1/atomic-skills --label atomic-skills --focus" "picker 'shell' → new tab in open workspace"
+        assert_not_contains "$PICK_SHELL" "pane run" "picker 'shell' → no agent run"
+
+        : > "$HERDR_LOG"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NACTION:$RBIN:$PATH" MESH_TEST_PICK_ACTION=agent-codex MESH_AI_AGENT=claude \
+            bash "$RUNNER" >/dev/null 2>&1
+        PICK_CODEX="$(cat "$HERDR_LOG")"
+        assert_contains "$PICK_CODEX" "pane run wTAB-1 codex" "picker 'agent:codex' → launches codex"
+
+        rm -f "$RHOME/.config/mesh/ai.env"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NACTION:$RBIN:$PATH" MESH_TEST_PICK_ACTION=pref-codex MESH_AI_AGENT=claude \
+            bash "$RUNNER" >/dev/null 2>&1
+        assert_contains "$(cat "$RHOME/.config/mesh/ai.env")" "MESH_AI_DEFAULT_AGENT=codex" "picker preference action saves local default agent"
+    else
+        echo "── picker-actions: SKIPPED (no /dev/tty) ──"
     fi
 else
     echo "── runner: SKIPPED (jq absent) ──"

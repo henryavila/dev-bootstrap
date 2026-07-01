@@ -42,7 +42,7 @@ ai_agent_set() {
 }
 
 # Resolve the default agent name for a project: explicit override > remembered
-# for this project > MESH_AI_AGENT > 'claude'.
+# for this project > local UI preference > MESH_AI_AGENT > 'claude'.
 #   $1 project name   $2 override (may be empty)
 ai_agent_resolve() {
     local proj="$1" override="${2:-}" remembered
@@ -53,6 +53,10 @@ ai_agent_resolve() {
     remembered="$(ai_agent_get "$proj")"
     if [[ -n "$remembered" ]]; then
         printf '%s' "$remembered"
+        return 0
+    fi
+    if [[ -n "${MESH_AI_DEFAULT_AGENT:-}" ]]; then
+        printf '%s' "$MESH_AI_DEFAULT_AGENT"
         return 0
     fi
     printf '%s' "${MESH_AI_AGENT:-claude}"

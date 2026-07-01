@@ -3,7 +3,8 @@
  * `mesh ai`) + its pure helpers. Covers the runner→TUI contract: parse the
  * merged candidate set (`label<TAB>path<TAB>wsid<TAB>status<TAB>tabid`), filter
  * by substring (including tab names), render open vs closed rows, Enter hands
- * back the chosen raw line, Esc cancels.
+ * back the chosen raw line, Tab opens an action menu, Ctrl-P opens local
+ * preferences, Esc cancels.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render } from 'ink-testing-library';
@@ -162,8 +163,8 @@ describe('SearchPicker (render + keys)', () => {
     expect(calls).toEqual([null]);
   });
 
-  // The action arg distinguishes Enter (focus/open the primary) from Ctrl-N
-  // (open a NEW agent in the focused repo, even when its workspace is open).
+  // The action arg distinguishes Enter (saved default) from explicit menu
+  // choices such as shell, named agents, and local preference updates.
   function mountWithAction() {
     const calls: Array<{ raw: string | null; action?: string }> = [];
     const r = render(
@@ -186,13 +187,63 @@ describe('SearchPicker (render + keys)', () => {
     ]);
   });
 
-  it('Ctrl-N hands back the focused row with the "new" action', async () => {
+  it('Tab opens an actions menu and Enter chooses the focused action', async () => {
     const { stdin, calls } = mountWithAction();
     await delay(20);
     stdin.write('atomic'); // → the open atomic-skills workspace row (wsid w456)
     await delay(20);
-    stdin.write('\x0e'); // Ctrl-N
+    stdin.write('\t'); // actions
     await delay(20);
-    expect(calls).toEqual([{ raw: 'atomic-skills\t/srv/atomic-skills\tw456\tdone\t', action: 'new' }]);
+    stdin.write('\x1B[B'); // down: Open with Claude
+    await delay(20);
+    stdin.write('\x1B[B'); // down: Open with Codex
+    await delay(20);
+    stdin.write('\r');
+    await delay(20);
+    expect(calls).toEqual([{ raw: 'atomic-skills\t/srv/atomic-skills\tw456\tdone\t', action: 'agent:codex' }]);
+  });
+
+  it('action menu can choose shell', async () => {
+    const { stdin, calls } = mountWithAction();
+    await delay(20);
+    stdin.write('arch');
+    await delay(20);
+    stdin.write('\t');
+    await delay(20);
+    stdin.write('\x1B[B'); // Claude
+    await delay(20);
+    stdin.write('\x1B[B'); // Codex
+    await delay(20);
+    stdin.write('\x1B[B'); // Shell
+    await delay(20);
+    stdin.write('\r');
+    await delay(20);
+    expect(calls).toEqual([{ raw: 'arch\t/srv/ext/arch\t\t\t', action: 'shell' }]);
+  });
+
+  it('Ctrl-P opens preferences and returns a pref action', async () => {
+    const { stdin, calls } = mountWithAction();
+    await delay(20);
+    stdin.write('\x10'); // Ctrl-P
+    await delay(20);
+    stdin.write('\x1B[B'); // Default agent: Codex
+    await delay(20);
+    stdin.write('\r');
+    await delay(20);
+    expect(calls).toEqual([{ raw: 'mesh-identity\t/srv/mesh-identity\tw123\tblocked\t', action: 'pref:agent:codex' }]);
+  });
+
+  it('Esc backs out of a submenu before cancelling search', async () => {
+    const { stdin, lastFrame, calls } = mountWithAction();
+    await delay(20);
+    stdin.write('\t');
+    await delay(20);
+    expect(lastFrame() ?? '').toContain('Open with Codex');
+    stdin.write('\x1B');
+    await delay(20);
+    const f = lastFrame() ?? '';
+    expect(f).toContain('mesh-identity');
+    expect(f).not.toContain('Open with Codex');
+    expect(calls).toEqual([]);
   });
 });

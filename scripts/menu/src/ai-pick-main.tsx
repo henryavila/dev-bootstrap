@@ -3,8 +3,8 @@
  * over the runner's candidate set and hand the chosen row back to bash. Same
  * file-based contract as prompt-main (Ink draws on stdout, so the value goes to
  * --out, never stdout). Exit codes:
- *   0   = `<action>\t<chosen raw line>` written to --out (action ∈ open|new:
- *         Enter→open focuses/opens, Ctrl-N→new opens another agent in the repo)
+ *   0   = `<action>\t<chosen raw line>` written to --out
+ *         (Enter→open, Tab action menu→shell/agent/new, Ctrl-P→pref)
  *   130 = user cancelled (Esc)        → runner opens nothing
  *   1   = bad args / no TTY / empty   → runner falls back to its bash picker
  */

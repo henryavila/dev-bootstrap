@@ -12,8 +12,8 @@
  * is the app's own keymap (blink never embeds one). Driven from bash via
  * `node index.js ai-pick --in <candidates> --out <file>`.
  *
- * Keys: type / Backspace filter · ↑↓ move · Enter open focused · Ctrl-N open a
- * NEW agent in the focused repo (a fresh tab if it is already open) · Esc cancel.
+ * Keys: type / Backspace filter · ↑↓ move · Enter open focused with the saved
+ * default · Tab actions for the focused row · Ctrl-P local preferences · Esc.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Box, useInput } from 'ink';
@@ -90,9 +90,25 @@ export function rowMeta(it: AiItem): string {
   return dir;
 }
 
-/** What to do with the chosen row: `open` focuses/opens the primary target;
- *  `new` opens ANOTHER agent in the project (a fresh tab if it is already open). */
-export type AiAction = 'open' | 'new';
+/** What to do with the chosen row:
+ *  `open` uses the saved default; `new` opens another default agent; `shell`
+ *  opens the directory without running an agent; `agent:<name>` forces a named
+ *  agent; `pref:<field>:<value>` updates local machine preferences. */
+export type AiAction =
+  | 'open'
+  | 'new'
+  | 'shell'
+  | `agent:${string}`
+  | `pref:${string}:${string}`;
+
+type PickerMode = 'search' | 'actions' | 'prefs';
+
+interface MenuItem {
+  id: string;
+  label: string;
+  meta: string;
+  action: AiAction;
+}
 
 export interface SearchPickerProps {
   items: AiItem[];
@@ -103,56 +119,128 @@ export interface SearchPickerProps {
 
 export function SearchPicker({ items, onDone }: SearchPickerProps) {
   const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<PickerMode>('search');
   const filtered = useMemo(() => filterItems(items, query), [items, query]);
-  const ids = useMemo(() => filtered.map((it) => it.id), [filtered]);
+  const searchIds = useMemo(() => filtered.map((it) => it.id), [filtered]);
 
   // Controlled focus: keep it inside the current (filtered) id set — when the
   // filter narrows and the focused row disappears, snap to the first match.
-  const [focusId, setFocusId] = useState<string | null>(ids[0] ?? null);
+  const [searchFocusId, setSearchFocusId] = useState<string | null>(searchIds[0] ?? null);
   useEffect(() => {
-    if (focusId === null || !ids.includes(focusId)) setFocusId(ids[0] ?? null);
-  }, [ids, focusId]);
-  const nav = useListNavigation({ ids, focusedId: focusId, onFocusChange: setFocusId });
+    if (searchFocusId === null || !searchIds.includes(searchFocusId)) setSearchFocusId(searchIds[0] ?? null);
+  }, [searchIds, searchFocusId]);
 
-  // Enter opens/focuses the primary target; Ctrl-N opens a NEW agent in the same
-  // repo (a fresh tab when its workspace is already open) — both act on the row
-  // currently focused.
+  const selected = filtered.find((it) => it.id === searchFocusId) ?? filtered[0];
+
+  const actionItems: MenuItem[] = [
+    { id: 'open', label: 'Open with default', meta: selected?.label ?? '', action: 'open' },
+    { id: 'agent-claude', label: 'Open with Claude', meta: 'one time', action: 'agent:claude' },
+    { id: 'agent-codex', label: 'Open with Codex', meta: 'one time', action: 'agent:codex' },
+    { id: 'shell', label: 'Open shell', meta: 'directory only', action: 'shell' },
+    { id: 'new', label: 'New default agent tab', meta: 'fresh tab if open', action: 'new' },
+  ];
+
+  const defaultAgent = process.env.MESH_AI_DEFAULT_AGENT || process.env.MESH_AI_AGENT || 'claude';
+  const defaultAction = process.env.MESH_AI_DEFAULT_ACTION || 'agent';
+  const openExisting = process.env.MESH_AI_OPEN_EXISTING || 'focus';
+  const prefItems: MenuItem[] = [
+    { id: 'pref-agent-claude', label: 'Default agent: Claude', meta: defaultAgent === 'claude' ? 'current' : '', action: 'pref:agent:claude' },
+    { id: 'pref-agent-codex', label: 'Default agent: Codex', meta: defaultAgent === 'codex' ? 'current' : '', action: 'pref:agent:codex' },
+    { id: 'pref-action-agent', label: 'Enter opens agent', meta: defaultAction === 'agent' ? 'current' : '', action: 'pref:action:agent' },
+    { id: 'pref-action-shell', label: 'Enter opens shell', meta: defaultAction === 'shell' ? 'current' : '', action: 'pref:action:shell' },
+    { id: 'pref-open-focus', label: 'Open existing: focus', meta: openExisting === 'focus' ? 'current' : '', action: 'pref:open:focus' },
+    { id: 'pref-open-new', label: 'Open existing: new tab', meta: openExisting === 'new' ? 'current' : '', action: 'pref:open:new' },
+  ];
+
+  const menuItems = mode === 'prefs' ? prefItems : actionItems;
+  const menuIds = useMemo(() => menuItems.map((it) => it.id), [menuItems]);
+  const [menuFocusId, setMenuFocusId] = useState<string | null>(menuIds[0] ?? null);
+  useEffect(() => {
+    if (menuFocusId === null || !menuIds.includes(menuFocusId)) setMenuFocusId(menuIds[0] ?? null);
+  }, [menuIds, menuFocusId]);
+
+  const searchNav = useListNavigation({ ids: searchIds, focusedId: searchFocusId, onFocusChange: setSearchFocusId });
+  const menuNav = useListNavigation({ ids: menuIds, focusedId: menuFocusId, onFocusChange: setMenuFocusId });
+
+  // Enter in search opens the primary target with the saved default. The action
+  // and preferences menus return explicit actions for the same focused row.
   const choose = (action: AiAction) => {
-    const c = filtered.find((it) => it.id === focusId) ?? filtered[0];
-    onDone(c ? c.raw : null, action);
+    onDone(selected ? selected.raw : null, action);
+  };
+
+  const chooseMenu = () => {
+    const item = menuItems.find((it) => it.id === menuFocusId) ?? menuItems[0];
+    if (item) choose(item.action);
   };
 
   useInput((input, key) => {
+    if (mode !== 'search') {
+      if (key.escape || key.tab) return setMode('search');
+      if (key.return) return chooseMenu();
+      if (key.downArrow) return menuNav.focusNext();
+      if (key.upArrow) return menuNav.focusPrev();
+      return;
+    }
+
     if (key.escape) return onDone(null);
     if (key.return) return choose('open');
-    if (key.ctrl && input === 'n') return choose('new');
-    if (key.downArrow) return nav.focusNext();
-    if (key.upArrow) return nav.focusPrev();
+    if (key.tab) {
+      setMode('actions');
+      setMenuFocusId(actionItems[0]?.id ?? null);
+      return;
+    }
+    if (key.ctrl && input === 'p') {
+      setMode('prefs');
+      setMenuFocusId(prefItems[0]?.id ?? null);
+      return;
+    }
+    if (key.downArrow) return searchNav.focusNext();
+    if (key.upArrow) return searchNav.focusPrev();
     if (key.backspace || key.delete) return setQuery((q) => q.slice(0, -1));
     if (input.length > 0 && !key.ctrl && !key.meta && !key.tab) {
       setQuery((q) => q + input);
     }
   });
 
-  const rows: ListRowData[] = filtered.map((it) => ({
-    id: it.id,
-    label: it.label,
-    meta: rowMeta(it),
-  }));
+  const rows: ListRowData[] =
+    mode === 'search'
+      ? filtered.map((it) => ({
+          id: it.id,
+          label: it.label,
+          meta: rowMeta(it),
+        }))
+      : menuItems.map((it) => ({
+          id: it.id,
+          label: it.label,
+          meta: it.meta,
+        }));
 
-  const keys: HotkeyDef[] = [
-    { k: 'type', desc: 'filter' },
-    { k: '↑↓', desc: 'move' },
-    { k: 'enter', desc: 'open' },
-    { k: '^n', desc: 'new' },
-    { k: 'esc', desc: 'cancel' },
-  ];
+  const keys: HotkeyDef[] =
+    mode === 'search'
+      ? [
+          { k: 'type', desc: 'filter' },
+          { k: '↑↓', desc: 'move' },
+          { k: 'enter', desc: 'default' },
+          { k: 'tab', desc: 'actions' },
+          { k: '^p', desc: 'prefs' },
+          { k: 'esc', desc: 'cancel' },
+        ]
+      : [
+          { k: '↑↓', desc: 'move' },
+          { k: 'enter', desc: 'select' },
+          { k: 'tab/esc', desc: 'back' },
+        ];
+
+  const title = mode === 'prefs' ? 'mesh ai preferences' : mode === 'actions' ? selected?.label ?? 'actions' : 'mesh ai';
+  const subtitle = mode === 'search' ? 'open in herdr' : mode === 'actions' ? 'choose action' : 'local defaults';
+  const focusedId = mode === 'search' ? searchFocusId : menuFocusId;
+  const right = mode === 'search' ? `${filtered.length}/${items.length}` : `${menuItems.length}`;
 
   return (
     <Box flexDirection="column">
-      <Header title="mesh ai" subtitle="open in herdr" right={`${filtered.length}/${items.length}`} />
-      <Input title="search" value={query} placeholder="type any part of a repo name…" focused />
-      <List rows={rows} focusedId={focusId} height={12} />
+      <Header title={title} subtitle={subtitle} right={right} />
+      {mode === 'search' && <Input title="search" value={query} placeholder="type any part of a repo name…" focused />}
+      <List rows={rows} focusedId={focusedId} height={12} />
       <Footer keys={keys} />
     </Box>
   );
