@@ -5,9 +5,11 @@
  * dialog. Top-level `mesh help` needs command content instead, so it has its own
  * screen with a command list and a focused detail pane.
  */
+import { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import {
   Header,
+  Input,
   Pane,
   List,
   DescriptionList,
@@ -209,8 +211,28 @@ export const MESH_HELP_COMMANDS: HelpCommand[] = [
   },
 ];
 
+function matchesCommand(cmd: HelpCommand, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return [cmd.id, cmd.usage, cmd.summary, ...cmd.details].some((text) =>
+    text.toLowerCase().includes(q),
+  );
+}
+
 export function MeshHelpScreen({ onClose }: { onClose: () => void }) {
-  const nav = useListNavigation({ ids: MESH_HELP_COMMANDS.map((c) => c.id) });
+  const [query, setQuery] = useState('');
+  const filtered = useMemo(
+    () => MESH_HELP_COMMANDS.filter((cmd) => matchesCommand(cmd, query)),
+    [query],
+  );
+  const commandIds = useMemo(() => filtered.map((c) => c.id), [filtered]);
+  const [focusId, setFocusId] = useState<string | null>(commandIds[0] ?? null);
+  useEffect(() => {
+    if (focusId === null || !commandIds.includes(focusId)) {
+      setFocusId(commandIds[0] ?? null);
+    }
+  }, [commandIds, focusId]);
+  const nav = useListNavigation({ ids: commandIds, focusedId: focusId, onFocusChange: setFocusId });
   const { rows: rawRows, columns: rawCols } = useStdoutDimensions();
   const rows = rawRows >= 12 ? rawRows : 24;
   const cols = rawCols >= 60 ? rawCols : 88;
@@ -218,37 +240,49 @@ export function MeshHelpScreen({ onClose }: { onClose: () => void }) {
   // Leave one spare row under the fixed header/body/footer bands. A frame that
   // exactly fills the TTY can trigger Ink's full-screen redraw path and hide the
   // bottom footer in real terminals even when ink-testing-library sees it.
-  const contentH = Math.max(6, screenH - 3);
+  const contentH = Math.max(5, screenH - 6);
   const commandWidth = Math.max(28, Math.min(42, Math.round(cols * 0.36)));
-  const focused = MESH_HELP_COMMANDS.find((c) => c.id === nav.focusedId) ?? MESH_HELP_COMMANDS[0];
+  const focused = filtered.find((c) => c.id === nav.focusedId) ?? filtered[0] ?? null;
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) return onClose();
-    if (key.downArrow || input === 'j') return nav.focusNext();
-    if (key.upArrow || input === 'k') return nav.focusPrev();
+    if (key.downArrow) return nav.focusNext();
+    if (key.upArrow) return nav.focusPrev();
+    if (key.backspace || key.delete) return setQuery((q) => q.slice(0, -1));
+    if (input.length > 0 && !key.ctrl && !key.meta && !key.tab) {
+      setQuery((q) => q + input);
+    }
   });
 
-  const commandRows: ListRowData[] = MESH_HELP_COMMANDS.map((cmd) => ({
-    id: cmd.id,
-    label: cmd.id,
-  }));
-  const detail: DescriptionItem[] = [
-    { value: focused.summary, state: 'info' },
-    { value: ' ' },
-    { term: 'Usage', value: focused.usage },
-    ...focused.details.map((value) => ({ value })),
-  ];
+  const commandRows: ListRowData[] =
+    filtered.length > 0
+      ? filtered.map((cmd) => ({
+          id: cmd.id,
+          label: cmd.id,
+        }))
+      : [{ id: 'no-results', label: 'No commands match', muted: true }];
+  const detail: DescriptionItem[] = focused
+    ? [
+        { value: focused.summary, state: 'info' },
+        { value: ' ' },
+        { term: 'Usage', value: focused.usage },
+        ...focused.details.map((value) => ({ value })),
+      ]
+    : [{ value: 'No command matches the current search.', state: 'warn' }];
 
   return (
     <Box flexDirection="column" height={screenH}>
       <Box flexShrink={0}>
         <Header title="mesh help" subtitle={`interactive command reference - ${MESH_HELP_COMMANDS.length} commands`} />
       </Box>
+      <Box flexShrink={0}>
+        <Input title="search" value={query} placeholder="type command or keyword..." focused />
+      </Box>
       <Box flexDirection="row" height={contentH} flexShrink={1} minHeight={0} overflow="hidden">
         <Pane title="Commands" tone="focus" width={commandWidth} flexGrow={0}>
-          <List rows={commandRows} focusedId={nav.focusedId} height={contentH - 2} scrolloff={2} />
+          <List rows={commandRows} focusedId={filtered.length > 0 ? nav.focusedId : null} height={contentH - 2} scrolloff={2} />
         </Pane>
-        <Pane title={focused.id} flexGrow={1}>
+        <Pane title={focused?.id ?? 'No match'} flexGrow={1}>
           <DescriptionList items={detail} gutter={8} />
         </Pane>
       </Box>

@@ -182,6 +182,7 @@ describe('MeshHelpScreen', () => {
     await delay(30);
     const initial = lastFrame()!;
     expect(initial).toContain('mesh help');
+    expect(initial).toContain('search');
     expect(initial).toContain('Commands');
     expect(initial).toContain('status');
     expect(initial).toContain('update');
@@ -189,12 +190,28 @@ describe('MeshHelpScreen', () => {
     expect(initial).toContain('close');
     expect(initial).not.toContain('Choose the bundles to install');
 
-    stdin.write('j');
+    stdin.write('\u001B[B');
     await delay(20);
     const update = lastFrame()!;
     expect(update).toContain('update');
     expect(update).toContain('Pull and apply updates');
     expect(update).toContain('mesh update [-o NAME] [-f] [-i]');
+    unmount();
+  });
+
+  it('filters commands by typed search text', async () => {
+    const { stdin, lastFrame, unmount } = render(
+      <ThemeProvider iconSet="unicode">
+        <MeshHelpScreen onClose={() => {}} />
+      </ThemeProvider>,
+    );
+    await delay(30);
+    stdin.write('topic');
+    await delay(30);
+    const f = lastFrame()!;
+    expect(f).toContain('topic');
+    expect(f).toContain('Re-apply selected topics');
+    expect(f).not.toContain('status');
     unmount();
   });
 });
