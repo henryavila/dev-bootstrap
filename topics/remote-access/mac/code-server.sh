@@ -63,6 +63,15 @@ for js in "$extensions_root"/openai.chatgpt-*/out/extension.js; do
         NEEDLE="$needle" REPLACEMENT="$replacement" perl -0pi -e 's/\Q$ENV{NEEDLE}\E/$ENV{REPLACEMENT}/g' "$js"
     fi
 done
+
+for js in "$extensions_root"/openai.chatgpt-*/webview/assets/index-*.js; do
+    [[ -f "$js" ]] || continue
+    if grep -Fq 'import(`./app-main' "$js" && grep -Fq '),__vite__mapDeps([' "$js"; then
+        backup="${js}.bak-mesh-preload"
+        [[ -f "$backup" ]] || cp -p "$js" "$backup"
+        perl -0pi -e 's/await ([A-Za-z_\$][A-Za-z0-9_\$]*)\(\(\)=>import\(`(\.\/app-main[^`]*\.js)`\),__vite__mapDeps\(\[[0-9,\s]+\]\),import\.meta\.url\);/await $1(()=>import(`$2`),[],import.meta.url);/g' "$js"
+    fi
+done
 SH
     mv "$tmp" "$script"
     chmod 0700 "$script"
