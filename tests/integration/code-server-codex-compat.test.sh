@@ -69,11 +69,15 @@ assert_contains "$(cat "$EXT")" 'navigator.userAgent' \
 
 ROOT="$SANDBOX/webview-preload"
 INDEX="$ROOT/extensions/openai.chatgpt-26.623.61825-darwin-arm64/webview/assets/index-fixture.js"
+HTML="$ROOT/extensions/openai.chatgpt-26.623.61825-darwin-arm64/webview/index.html"
 mkdir -p "$(dirname "$INDEX")"
 cat > "$INDEX" <<'JS'
 const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./app-main.js","./chunk-a.js","./chunk-b.css"])))=>i.map(i=>d[i]);
 import{t as e}from"./preload-helper.js";await e(()=>import(`./app-main.js`),__vite__mapDeps([0,1,2]),import.meta.url);
 JS
+cat > "$HTML" <<'HTML'
+<!doctype html><script type="module" crossorigin src="./assets/index-fixture.js"></script>
+HTML
 
 ASSERT_MSG="compat script removes Codex webview eager preload dependency list" \
     assert_true '"$SCRIPT" "$ROOT"'
@@ -85,12 +89,28 @@ assert_file_exists "${INDEX}.bak-mesh-preload" \
     "webview preload patch keeps a backup of the original entry bundle"
 assert_contains "$(cat "${INDEX}.bak-mesh-preload")" '__vite__mapDeps([0,1,2])' \
     "webview preload backup preserves the original eager preload map"
+assert_file_exists "${INDEX%.js}.mesh-preload.js" \
+    "compat script writes a cache-busted Codex webview entry"
+assert_contains "$(cat "${INDEX%.js}.mesh-preload.js")" 'await e(()=>import(`./app-main.js`),[],import.meta.url);' \
+    "cache-busted Codex entry contains the patched preload call"
+assert_contains "$(cat "$HTML")" './assets/index-fixture.mesh-preload.js' \
+    "Codex webview HTML points at the cache-busted entry"
+assert_file_exists "${HTML}.bak-mesh-preload" \
+    "Codex webview HTML patch keeps a backup"
+assert_contains "$(cat "${HTML}.bak-mesh-preload")" './assets/index-fixture.js' \
+    "Codex webview HTML backup preserves the original entry URL"
 
 before_preload_second_run="$(cat "$INDEX")"
+before_html_second_run="$(cat "$HTML")"
+before_busted_second_run="$(cat "${INDEX%.js}.mesh-preload.js")"
 ASSERT_MSG="compat script preload patch is idempotent" \
     assert_true '"$SCRIPT" "$ROOT"'
 assert_eq "$(cat "$INDEX")" "$before_preload_second_run" \
     "second preload patch run leaves webview entry unchanged"
+assert_eq "$(cat "$HTML")" "$before_html_second_run" \
+    "second preload patch run leaves Codex webview HTML unchanged"
+assert_eq "$(cat "${INDEX%.js}.mesh-preload.js")" "$before_busted_second_run" \
+    "second preload patch run leaves cache-busted Codex entry unchanged"
 
 ROOT="$SANDBOX/unrelated-preload"
 INDEX="$ROOT/extensions/openai.chatgpt-26.623.61825-darwin-arm64/webview/assets/index-fixture.js"
@@ -102,5 +122,41 @@ ASSERT_MSG="compat script ignores non app-main preload calls" \
     assert_true '"$SCRIPT" "$ROOT"'
 assert_contains "$(cat "$INDEX")" '__vite__mapDeps([0,1])' \
     "non app-main preload call remains unchanged"
+
+ROOT="$SANDBOX/claude-cache-bust"
+CLAUDE_EXT="$ROOT/extensions/anthropic.claude-code-2.1.197-darwin-arm64"
+mkdir -p "$CLAUDE_EXT/webview"
+printf 'console.log("claude webview");\n' > "$CLAUDE_EXT/webview/index.js"
+printf 'body{color:var(--vscode-foreground)}\n' > "$CLAUDE_EXT/webview/index.css"
+cat > "$CLAUDE_EXT/extension.js" <<'JS'
+let js=yt.Uri.joinPath(this.extensionUri,"webview","index.js");
+let css=yt.Uri.joinPath(this.extensionUri,"webview","index.css");
+JS
+
+ASSERT_MSG="compat script cache-busts Claude Code webview assets" \
+    assert_true '"$SCRIPT" "$ROOT"'
+assert_file_exists "$CLAUDE_EXT/webview/index.mesh-cache.js" \
+    "Claude webview JS is copied to a cache-busted name"
+assert_file_exists "$CLAUDE_EXT/webview/index.mesh-cache.css" \
+    "Claude webview CSS is copied to a cache-busted name"
+assert_contains "$(cat "$CLAUDE_EXT/extension.js")" '"webview","index.mesh-cache.js"' \
+    "Claude extension loads the cache-busted JS"
+assert_contains "$(cat "$CLAUDE_EXT/extension.js")" '"webview","index.mesh-cache.css"' \
+    "Claude extension loads the cache-busted CSS"
+assert_not_contains "$(cat "$CLAUDE_EXT/extension.js")" '"webview","index.js"' \
+    "Claude extension no longer references the stable JS URL"
+assert_file_exists "$CLAUDE_EXT/extension.js.bak-mesh-webview-cache" \
+    "Claude extension patch keeps a backup"
+assert_contains "$(cat "$CLAUDE_EXT/extension.js.bak-mesh-webview-cache")" '"webview","index.js"' \
+    "Claude backup preserves the original stable webview URL"
+
+before_claude_extension_second_run="$(cat "$CLAUDE_EXT/extension.js")"
+before_claude_js_second_run="$(cat "$CLAUDE_EXT/webview/index.mesh-cache.js")"
+ASSERT_MSG="compat script Claude cache-bust patch is idempotent" \
+    assert_true '"$SCRIPT" "$ROOT"'
+assert_eq "$(cat "$CLAUDE_EXT/extension.js")" "$before_claude_extension_second_run" \
+    "second Claude cache-bust run leaves extension bundle unchanged"
+assert_eq "$(cat "$CLAUDE_EXT/webview/index.mesh-cache.js")" "$before_claude_js_second_run" \
+    "second Claude cache-bust run leaves copied webview JS unchanged"
 
 summary

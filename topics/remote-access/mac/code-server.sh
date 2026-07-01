@@ -66,10 +66,49 @@ done
 
 for js in "$extensions_root"/openai.chatgpt-*/webview/assets/index-*.js; do
     [[ -f "$js" ]] || continue
+    case "$js" in
+        *.mesh-preload.js) continue ;;
+    esac
     if grep -Fq 'import(`./app-main' "$js" && grep -Fq '),__vite__mapDeps([' "$js"; then
         backup="${js}.bak-mesh-preload"
         [[ -f "$backup" ]] || cp -p "$js" "$backup"
         perl -0pi -e 's/await ([A-Za-z_\$][A-Za-z0-9_\$]*)\(\(\)=>import\(`(\.\/app-main[^`]*\.js)`\),__vite__mapDeps\(\[[0-9,\s]+\]\),import\.meta\.url\);/await $1(()=>import(`$2`),[],import.meta.url);/g' "$js"
+    fi
+    if grep -Fq 'import(`./app-main' "$js" && grep -Fq '[],import.meta.url);' "$js"; then
+        busted="${js%.js}.mesh-preload.js"
+        if [[ ! -f "$busted" ]] || ! cmp -s "$js" "$busted"; then
+            cp -p "$js" "$busted"
+        fi
+        html="$(dirname "$(dirname "$js")")/index.html"
+        old_src="./assets/$(basename "$js")"
+        new_src="./assets/$(basename "$busted")"
+        if [[ -f "$html" ]] && grep -Fq "$old_src" "$html"; then
+            backup="${html}.bak-mesh-preload"
+            [[ -f "$backup" ]] || cp -p "$html" "$backup"
+            OLD_SRC="$old_src" NEW_SRC="$new_src" perl -0pi -e 's/\Q$ENV{OLD_SRC}\E/$ENV{NEW_SRC}/g' "$html"
+        fi
+    fi
+done
+
+for ext in "$extensions_root"/anthropic.claude-code-* "$extensions_root"/Anthropic.claude-code-*; do
+    [[ -d "$ext" ]] || continue
+    extension_js="$ext/extension.js"
+    webview_dir="$ext/webview"
+    src_js="$webview_dir/index.js"
+    src_css="$webview_dir/index.css"
+    busted_js="$webview_dir/index.mesh-cache.js"
+    busted_css="$webview_dir/index.mesh-cache.css"
+
+    if [[ -f "$src_js" ]] && { [[ ! -f "$busted_js" ]] || ! cmp -s "$src_js" "$busted_js"; }; then
+        cp -p "$src_js" "$busted_js"
+    fi
+    if [[ -f "$src_css" ]] && { [[ ! -f "$busted_css" ]] || ! cmp -s "$src_css" "$busted_css"; }; then
+        cp -p "$src_css" "$busted_css"
+    fi
+    if [[ -f "$extension_js" ]] && { grep -Fq '"webview","index.js"' "$extension_js" || grep -Fq '"webview","index.css"' "$extension_js"; }; then
+        backup="${extension_js}.bak-mesh-webview-cache"
+        [[ -f "$backup" ]] || cp -p "$extension_js" "$backup"
+        perl -0pi -e 's/"webview","index\.js"/"webview","index.mesh-cache.js"/g; s/"webview","index\.css"/"webview","index.mesh-cache.css"/g' "$extension_js"
     fi
 done
 SH
