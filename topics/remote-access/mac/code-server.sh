@@ -42,78 +42,45 @@ check() {
     return 0
 }
 
-write_code_server_codex_compat_script() {
-    local script="$1" tmp
-    mkdir -p "$(dirname "$script")" || return 1
-    tmp="$(mktemp "${script}.XXXXXX")" || return 1
-    cat > "$tmp" <<'SH'
-#!/usr/bin/env bash
-set -u
+remove_legacy_codex_compat_shim() {
+    # Until 2026-07 a generated ~/.local/bin/code-server-codex-compat script
+    # patched installed extension bundles (openai.chatgpt / anthropic.claude-code)
+    # to work around the Node navigator global (PendingMigrationError) and
+    # webview preload issues under code-server. That approach broke on every
+    # extension auto-update. Replaced by the official VS Code setting
+    # "extensions.supportNodeGlobalNavigator": true in the identity-owned
+    # code-server settings.json. This migration restores patched bundles from
+    # their backups and removes the shim so already-provisioned machines heal
+    # on the next run.
+    local shim="${CODE_SERVER_INSTALL_PREFIX}/bin/code-server-codex-compat"
+    local extensions_root="${CODE_SERVER_USER_DATA_DIR}/extensions"
+    local bak orig cleaned=0
 
-root="${1:-$HOME/.local/share/code-server}"
-extensions_root="$root/extensions"
-needle='typeof navigator<"u"&&navigator?.userAgent?.includes("Cloudflare")'
-replacement='false'
+    if [[ -d "$extensions_root" ]]; then
+        # Restore .bak-mesh-navigator LAST: it is the pristine copy taken
+        # before any other patch layered on top (.bak-mesh-webview-cache holds
+        # an already navigator-patched bundle of the same file).
+        while IFS= read -r -d '' bak; do
+            orig="${bak%.bak-mesh-*}"
+            cp -p "$bak" "$orig" && rm -f "$bak" && cleaned=1
+        done < <(find "$extensions_root" -name '*.bak-mesh-*' ! -name '*.bak-mesh-navigator' -type f -print0 2>/dev/null)
+        while IFS= read -r -d '' bak; do
+            orig="${bak%.bak-mesh-navigator}"
+            cp -p "$bak" "$orig" && rm -f "$bak" && cleaned=1
+        done < <(find "$extensions_root" -name '*.bak-mesh-navigator' -type f -print0 2>/dev/null)
+        while IFS= read -r -d '' bak; do
+            rm -f "$bak" && cleaned=1
+        done < <(find "$extensions_root" \( -name '*.mesh-preload-css.js' -o -name '*.mesh-cache.js' -o -name '*.mesh-cache.css' \) -type f -print0 2>/dev/null)
+    fi
 
-for js in "$extensions_root"/openai.chatgpt-*/out/extension.js; do
-    [[ -f "$js" ]] || continue
-    if grep -Fq "$needle" "$js"; then
-        backup="${js}.bak-mesh-navigator"
-        [[ -f "$backup" ]] || cp -p "$js" "$backup"
-        NEEDLE="$needle" REPLACEMENT="$replacement" perl -0pi -e 's/\Q$ENV{NEEDLE}\E/$ENV{REPLACEMENT}/g' "$js"
+    if [[ -e "$shim" ]]; then
+        rm -f "$shim"
+        cleaned=1
     fi
-done
 
-for js in "$extensions_root"/openai.chatgpt-*/webview/assets/index-*.js; do
-    [[ -f "$js" ]] || continue
-    case "$js" in
-        *.mesh-preload*.js) continue ;;
-    esac
-    if grep -Fq 'import(`./app-main' "$js" && grep -Fq '),__vite__mapDeps([' "$js"; then
-        backup="${js}.bak-mesh-preload"
-        [[ -f "$backup" ]] || cp -p "$js" "$backup"
-        perl -0pi -e 'my @deps=(); if (/m\.f\|\|\(m\.f=\[([^\]]*)\]\)/s) { @deps = ($1 =~ /"((?:\\.|[^"\\])*)"/g); } s{await ([A-Za-z_\$][A-Za-z0-9_\$]*)\(\(\)=>import\(`(\.\/app-main[^`]*\.js)`\),__vite__mapDeps\(\[([0-9,\s]+)\]\),import\.meta\.url\);}{my ($loader,$entry,$idxs)=($1,$2,$3); my @keep=grep { defined $deps[$_] && $deps[$_] =~ /\.css$/ } ($idxs =~ /\d+/g); "await $loader(()=>import(`$entry`)," . (@keep ? "__vite__mapDeps([" . join(",", @keep) . "])" : "[]") . ",import.meta.url);"}eg' "$js"
+    if [[ "$cleaned" -eq 1 ]]; then
+        ok "removed legacy code-server-codex-compat shim and restored patched extension bundles"
     fi
-    if grep -Fq 'import(`./app-main' "$js" && { grep -Fq '[],import.meta.url);' "$js" || grep -Fq '),__vite__mapDeps([' "$js"; }; then
-        busted="${js%.js}.mesh-preload-css.js"
-        if [[ ! -f "$busted" ]] || ! cmp -s "$js" "$busted"; then
-            cp -p "$js" "$busted"
-        fi
-        html="$(dirname "$(dirname "$js")")/index.html"
-        old_src="./assets/$(basename "$js")"
-        new_src="./assets/$(basename "$busted")"
-        if [[ -f "$html" ]] && grep -Fq "$old_src" "$html"; then
-            backup="${html}.bak-mesh-preload"
-            [[ -f "$backup" ]] || cp -p "$html" "$backup"
-            OLD_SRC="$old_src" NEW_SRC="$new_src" perl -0pi -e 's/\Q$ENV{OLD_SRC}\E/$ENV{NEW_SRC}/g' "$html"
-        fi
-    fi
-done
-
-for ext in "$extensions_root"/anthropic.claude-code-* "$extensions_root"/Anthropic.claude-code-*; do
-    [[ -d "$ext" ]] || continue
-    extension_js="$ext/extension.js"
-    webview_dir="$ext/webview"
-    src_js="$webview_dir/index.js"
-    src_css="$webview_dir/index.css"
-    busted_js="$webview_dir/index.mesh-cache.js"
-    busted_css="$webview_dir/index.mesh-cache.css"
-
-    if [[ -f "$src_js" ]] && { [[ ! -f "$busted_js" ]] || ! cmp -s "$src_js" "$busted_js"; }; then
-        cp -p "$src_js" "$busted_js"
-    fi
-    if [[ -f "$src_css" ]] && { [[ ! -f "$busted_css" ]] || ! cmp -s "$src_css" "$busted_css"; }; then
-        cp -p "$src_css" "$busted_css"
-    fi
-    if [[ -f "$extension_js" ]] && { grep -Fq '"webview","index.js"' "$extension_js" || grep -Fq '"webview","index.css"' "$extension_js"; }; then
-        backup="${extension_js}.bak-mesh-webview-cache"
-        [[ -f "$backup" ]] || cp -p "$extension_js" "$backup"
-        perl -0pi -e 's/"webview","index\.js"/"webview","index.mesh-cache.js"/g; s/"webview","index\.css"/"webview","index.mesh-cache.css"/g' "$extension_js"
-    fi
-done
-SH
-    mv "$tmp" "$script"
-    chmod 0700 "$script"
 }
 
 install() {
@@ -140,7 +107,6 @@ CODE_SERVER_CONFIG_DIR=""
 CODE_SERVER_CONFIG_FILE=""
 CODE_SERVER_STATE_DIR=""
 CODE_SERVER_USER_DATA_DIR=""
-CODE_SERVER_CODEX_COMPAT_SCRIPT=""
 CODE_SERVER_PLIST=""
 CODE_SERVER_WORKDIR="${CODE_SERVER_WORKDIR:-$HOME}"
 CODE_SERVER_EXTRA_PATH=""
@@ -302,7 +268,6 @@ detect_code_server_env() {
     CODE_SERVER_CONFIG_FILE="${CODE_SERVER_CONFIG_DIR}/config.yaml"
     CODE_SERVER_STATE_DIR="${HOME}/.local/state/code-server"
     CODE_SERVER_USER_DATA_DIR="${HOME}/.local/share/code-server"
-    CODE_SERVER_CODEX_COMPAT_SCRIPT="${CODE_SERVER_INSTALL_PREFIX}/bin/code-server-codex-compat"
     CODE_SERVER_PLIST="${HOME}/Library/LaunchAgents/${CODE_SERVER_LABEL}.plist"
 
     if [[ -z "${BREW_PREFIX:-}" ]]; then
@@ -496,9 +461,6 @@ write_code_server_service_wrapper() {
         printf 'export HOME=%q\n' "$HOME"
         printf 'export PATH=%q\n' "${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}"
         printf '[[ -f /etc/ssl/cert.pem ]] && export NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem\n\n'
-        printf 'if [[ -x %q ]]; then\n' "$CODE_SERVER_CODEX_COMPAT_SCRIPT"
-        printf '    %q %q >/dev/null 2>&1 || true\n' "$CODE_SERVER_CODEX_COMPAT_SCRIPT" "$CODE_SERVER_USER_DATA_DIR"
-        printf 'fi\n\n'
         printf 'token=""\n'
         printf 'if command -v gh >/dev/null 2>&1; then\n'
         printf '    gh_bin="$(command -v gh 2>/dev/null || true)"\n'
@@ -844,8 +806,7 @@ require_macos
 detect_code_server_env
 install_code_server_standalone
 ensure_code_server_config
-write_code_server_codex_compat_script "$CODE_SERVER_CODEX_COMPAT_SCRIPT"
-"$CODE_SERVER_CODEX_COMPAT_SCRIPT" "$CODE_SERVER_USER_DATA_DIR" >/dev/null 2>&1 || true
+remove_legacy_codex_compat_shim
 write_code_server_service_wrapper
 migrate_legacy_launchagents
 write_launchagent_plist
