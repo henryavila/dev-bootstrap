@@ -19,7 +19,7 @@ import {
   type ListRowData,
 } from '@henryavila/blink-tui';
 
-interface HelpCommand {
+export interface HelpCommand {
   id: string;
   usage: string;
   summary: string;
@@ -211,19 +211,69 @@ export const MESH_HELP_COMMANDS: HelpCommand[] = [
   },
 ];
 
-function matchesCommand(cmd: HelpCommand, query: string): boolean {
+function commandSearchScore(cmd: HelpCommand, query: string): number | null {
   const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return [cmd.id, cmd.usage, cmd.summary, ...cmd.details].some((text) =>
-    text.toLowerCase().includes(q),
-  );
+  if (!q) return 0;
+
+  const id = cmd.id.toLowerCase();
+  const usage = cmd.usage.toLowerCase();
+  const summary = cmd.summary.toLowerCase();
+  const details = cmd.details.map((text) => text.toLowerCase());
+  if (id === q) return 1;
+  if (id.startsWith(q)) return 2;
+  if (id.includes(q)) return 3;
+  if (usage.includes(q)) return 4;
+  if (summary.includes(q)) return 5;
+  if (details.some((text) => text.includes(q))) return 6;
+  return null;
 }
 
-export function MeshHelpScreen({ onClose }: { onClose: () => void }) {
+function filterHelpCommands(commands: HelpCommand[], query: string): HelpCommand[] {
+  const q = query.trim();
+  if (!q) return commands;
+
+  return commands
+    .map((cmd, index) => ({ cmd, index, score: commandSearchScore(cmd, q) }))
+    .filter((entry): entry is { cmd: HelpCommand; index: number; score: number } => entry.score !== null)
+    .sort((a, b) => a.score - b.score || a.index - b.index)
+    .map((entry) => entry.cmd);
+}
+
+export function parseHelpExtensionCommands(raw = ''): HelpCommand[] {
+  return raw
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [id, usage, summary, ...details] = line.split('\t').map((part) => part.trim());
+      if (!id || !usage || !summary) return null;
+      return {
+        id,
+        usage,
+        summary,
+        details: details.filter((value) => value.length > 0),
+      };
+    })
+    .filter((cmd): cmd is HelpCommand => cmd !== null);
+}
+
+function mergeHelpCommands(extensionCommands: HelpCommand[]): HelpCommand[] {
+  const builtInIds = new Set(MESH_HELP_COMMANDS.map((cmd) => cmd.id));
+  return [...MESH_HELP_COMMANDS, ...extensionCommands.filter((cmd) => !builtInIds.has(cmd.id))];
+}
+
+export function MeshHelpScreen({
+  onClose,
+  extensionCommands = parseHelpExtensionCommands(process.env.MESH_HELP_EXTENSION_COMMANDS),
+}: {
+  onClose: () => void;
+  extensionCommands?: HelpCommand[];
+}) {
   const [query, setQuery] = useState('');
+  const commands = useMemo(() => mergeHelpCommands(extensionCommands), [extensionCommands]);
   const filtered = useMemo(
-    () => MESH_HELP_COMMANDS.filter((cmd) => matchesCommand(cmd, query)),
-    [query],
+    () => filterHelpCommands(commands, query),
+    [commands, query],
   );
   const commandIds = useMemo(() => filtered.map((c) => c.id), [filtered]);
   const [focusId, setFocusId] = useState<string | null>(commandIds[0] ?? null);
@@ -273,7 +323,7 @@ export function MeshHelpScreen({ onClose }: { onClose: () => void }) {
   return (
     <Box flexDirection="column" height={screenH}>
       <Box flexShrink={0}>
-        <Header title="mesh help" subtitle={`interactive command reference - ${MESH_HELP_COMMANDS.length} commands`} />
+        <Header title="mesh help" subtitle={`interactive command reference - ${commands.length} commands`} />
       </Box>
       <Box flexShrink={0}>
         <Input title="search" value={query} placeholder="type command or keyword..." focused />

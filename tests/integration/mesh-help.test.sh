@@ -73,4 +73,36 @@ rc=$?
 assert_eq "$rc" 0 "extension-defined subcommand exits 0"
 assert_contains "$out" "hello extension: world" "extension-defined subcommand still routes through fallback"
 
+echo
+echo "Extension help metadata reaches the help runner"
+
+HELP_HOME="$SANDBOX/help-home"
+HELP_IDENTITY="$SANDBOX/help-identity"
+mkdir -p "$HELP_HOME/runners" "$HELP_IDENTITY/extensions"
+cat > "$HELP_HOME/runners/menu.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'argv=%s\n' "$*"
+printf 'extension-help=%s\n' "${MESH_HELP_EXTENSION_COMMANDS:-}"
+EOF
+cat > "$HELP_IDENTITY/extensions/mesh.sh" <<'EOF'
+mesh_help_entries() {
+    printf '%s\t%s\t%s\t%s\n' \
+        "code-server" \
+        "mesh code-server [status|url|verify|password|update|restart|logs]" \
+        "Browser VS Code endpoint" \
+        "status, url, verify, password, update, restart, and logs"
+}
+EOF
+
+out="$(
+    MESH_IDENTITY_DIR="$HELP_IDENTITY" \
+        MESH_HOME="$HELP_HOME" \
+        "$MESH" help 2>&1
+)"
+rc=$?
+assert_eq "$rc" 0 "mesh help exports extension metadata before invoking the runner"
+assert_contains "$out" "argv=help" "help runner still receives the help subcommand"
+assert_contains "$out" "code-server" "help runner receives extension command metadata"
+assert_contains "$out" "Browser VS Code endpoint" "help runner receives extension command summary"
+
 summary

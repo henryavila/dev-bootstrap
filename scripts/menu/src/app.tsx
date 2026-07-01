@@ -13,7 +13,7 @@ import { render, useApp } from 'ink';
 import { ThemeProvider, detectIconSet } from '@henryavila/blink-tui';
 import { registerDomainGlyphs } from './glyphs.js';
 import { App, EXIT_CANCEL } from './wizard.js';
-import { MeshHelpScreen } from './screens/MeshHelpScreen.js';
+import { MeshHelpScreen, parseHelpExtensionCommands } from './screens/MeshHelpScreen.js';
 
 function requireInteractive(label: string) {
   if (process.stdin.isTTY) return;
@@ -28,6 +28,7 @@ function StandaloneHelp({ onExit }: { onExit: (code: number) => void }) {
   const ink = useApp();
   return (
     <MeshHelpScreen
+      extensionCommands={parseHelpExtensionCommands(process.env.MESH_HELP_EXTENSION_COMMANDS)}
       onClose={() => {
         onExit(0);
         ink.exit();
