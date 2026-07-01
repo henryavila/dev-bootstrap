@@ -67,15 +67,15 @@ done
 for js in "$extensions_root"/openai.chatgpt-*/webview/assets/index-*.js; do
     [[ -f "$js" ]] || continue
     case "$js" in
-        *.mesh-preload.js) continue ;;
+        *.mesh-preload*.js) continue ;;
     esac
     if grep -Fq 'import(`./app-main' "$js" && grep -Fq '),__vite__mapDeps([' "$js"; then
         backup="${js}.bak-mesh-preload"
         [[ -f "$backup" ]] || cp -p "$js" "$backup"
-        perl -0pi -e 's/await ([A-Za-z_\$][A-Za-z0-9_\$]*)\(\(\)=>import\(`(\.\/app-main[^`]*\.js)`\),__vite__mapDeps\(\[[0-9,\s]+\]\),import\.meta\.url\);/await $1(()=>import(`$2`),[],import.meta.url);/g' "$js"
+        perl -0pi -e 'my @deps=(); if (/m\.f\|\|\(m\.f=\[([^\]]*)\]\)/s) { @deps = ($1 =~ /"((?:\\.|[^"\\])*)"/g); } s{await ([A-Za-z_\$][A-Za-z0-9_\$]*)\(\(\)=>import\(`(\.\/app-main[^`]*\.js)`\),__vite__mapDeps\(\[([0-9,\s]+)\]\),import\.meta\.url\);}{my ($loader,$entry,$idxs)=($1,$2,$3); my @keep=grep { defined $deps[$_] && $deps[$_] =~ /\.css$/ } ($idxs =~ /\d+/g); "await $loader(()=>import(`$entry`)," . (@keep ? "__vite__mapDeps([" . join(",", @keep) . "])" : "[]") . ",import.meta.url);"}eg' "$js"
     fi
-    if grep -Fq 'import(`./app-main' "$js" && grep -Fq '[],import.meta.url);' "$js"; then
-        busted="${js%.js}.mesh-preload.js"
+    if grep -Fq 'import(`./app-main' "$js" && { grep -Fq '[],import.meta.url);' "$js" || grep -Fq '),__vite__mapDeps([' "$js"; }; then
+        busted="${js%.js}.mesh-preload-css.js"
         if [[ ! -f "$busted" ]] || ! cmp -s "$js" "$busted"; then
             cp -p "$js" "$busted"
         fi

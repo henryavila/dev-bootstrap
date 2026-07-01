@@ -79,21 +79,21 @@ cat > "$HTML" <<'HTML'
 <!doctype html><script type="module" crossorigin src="./assets/index-fixture.js"></script>
 HTML
 
-ASSERT_MSG="compat script removes Codex webview eager preload dependency list" \
+ASSERT_MSG="compat script filters Codex webview eager preload dependency list" \
     assert_true '"$SCRIPT" "$ROOT"'
-assert_contains "$(cat "$INDEX")" 'await e(()=>import(`./app-main.js`),[],import.meta.url);' \
-    "webview entry still imports app-main without preloading every chunk"
+assert_contains "$(cat "$INDEX")" 'await e(()=>import(`./app-main.js`),__vite__mapDeps([2]),import.meta.url);' \
+    "webview entry still imports app-main while preserving CSS preload"
 assert_not_contains "$(cat "$INDEX")" '__vite__mapDeps([0,1,2])' \
-    "webview entry no longer requests the eager preload map"
+    "webview entry no longer requests JS preloads"
 assert_file_exists "${INDEX}.bak-mesh-preload" \
     "webview preload patch keeps a backup of the original entry bundle"
 assert_contains "$(cat "${INDEX}.bak-mesh-preload")" '__vite__mapDeps([0,1,2])' \
     "webview preload backup preserves the original eager preload map"
-assert_file_exists "${INDEX%.js}.mesh-preload.js" \
+assert_file_exists "${INDEX%.js}.mesh-preload-css.js" \
     "compat script writes a cache-busted Codex webview entry"
-assert_contains "$(cat "${INDEX%.js}.mesh-preload.js")" 'await e(()=>import(`./app-main.js`),[],import.meta.url);' \
+assert_contains "$(cat "${INDEX%.js}.mesh-preload-css.js")" 'await e(()=>import(`./app-main.js`),__vite__mapDeps([2]),import.meta.url);' \
     "cache-busted Codex entry contains the patched preload call"
-assert_contains "$(cat "$HTML")" './assets/index-fixture.mesh-preload.js' \
+assert_contains "$(cat "$HTML")" './assets/index-fixture.mesh-preload-css.js' \
     "Codex webview HTML points at the cache-busted entry"
 assert_file_exists "${HTML}.bak-mesh-preload" \
     "Codex webview HTML patch keeps a backup"
@@ -102,14 +102,14 @@ assert_contains "$(cat "${HTML}.bak-mesh-preload")" './assets/index-fixture.js' 
 
 before_preload_second_run="$(cat "$INDEX")"
 before_html_second_run="$(cat "$HTML")"
-before_busted_second_run="$(cat "${INDEX%.js}.mesh-preload.js")"
+before_busted_second_run="$(cat "${INDEX%.js}.mesh-preload-css.js")"
 ASSERT_MSG="compat script preload patch is idempotent" \
     assert_true '"$SCRIPT" "$ROOT"'
 assert_eq "$(cat "$INDEX")" "$before_preload_second_run" \
     "second preload patch run leaves webview entry unchanged"
 assert_eq "$(cat "$HTML")" "$before_html_second_run" \
     "second preload patch run leaves Codex webview HTML unchanged"
-assert_eq "$(cat "${INDEX%.js}.mesh-preload.js")" "$before_busted_second_run" \
+assert_eq "$(cat "${INDEX%.js}.mesh-preload-css.js")" "$before_busted_second_run" \
     "second preload patch run leaves cache-busted Codex entry unchanged"
 
 ROOT="$SANDBOX/unrelated-preload"
