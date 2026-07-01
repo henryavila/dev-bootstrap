@@ -3,6 +3,7 @@
 #
 # Usage:
 #   bash menu.sh [--apply]
+#   bash menu.sh help
 #
 # Without --apply: runs the selector, writes selections.list + params.env.
 # With --apply: runs the selector, then executes the install/uninstall delta
@@ -21,12 +22,19 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 PLATFORM="$(bash "$ROOT/scripts/lib/detect-os.sh" 2>/dev/null || echo unknown)"
 
 APPLY=0
+MODE="wizard"
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        help) MODE="help"; shift ;;
         --apply) APPLY=1; shift ;;
         *) log_error "unknown arg: $1"; exit 64 ;;
     esac
 done
+
+if [[ "$MODE" == "help" && "$APPLY" -eq 1 ]]; then
+    log_error "help cannot be combined with --apply"
+    exit 64
+fi
 
 if ! command -v node >/dev/null 2>&1; then
     log_error "Node.js is required for the interactive menu."
@@ -39,7 +47,11 @@ MENU_DIR="$ROOT/scripts/menu"
 # the single entry every path runs, so it `npm ci`s against the committed
 # lockfile on a missing OR drifted node_modules — no guard duplicated here. If
 # it cannot provision (offline), index.js exits non-zero, propagated below.
-node "$MENU_DIR/index.js" "$@"
+if [[ "$MODE" == "help" ]]; then
+    node "$MENU_DIR/index.js" help
+else
+    node "$MENU_DIR/index.js" "$@"
+fi
 menu_exit=$?
 
 if (( menu_exit != 0 )); then

@@ -119,7 +119,7 @@ Usage:
   mesh ai [term] [--agent X]        Open an AI agent or shell in the right repo via herdr (disk-search + focus-or-create)
   mesh config [term]                 Edit personal config from mesh-identity/deploy.map, then diff + deploy
   mesh services <verb> [name…]      Control mesh-owned daemons (list/status/start/stop/restart/enable/disable/reconcile) — active × enabled
-  mesh -h | --help                  This help
+  mesh help | -h | --help           Interactive help
   mesh -V | --version               Version
 
 Subcommands:
@@ -1462,6 +1462,13 @@ sub_menu() {
     fi
 }
 
+sub_help() {
+    local runner
+    runner="$(_resolve_companion "runners/menu.sh")"
+    [[ -n "$runner" ]] || _die "runners/menu.sh not found (set \$MESH_HOME or check installation)"
+    exec bash "$runner" help
+}
+
 # `mesh clean [--apply] [--deep] [--compact] [--yes]` → OS-aware disk reclaim.
 # Iterates the cleaner registry (scripts/lib/cleaners/*.sh); dry-run by default.
 sub_clean() {
@@ -1523,9 +1530,8 @@ sub_services() {
 # ─── Main dispatch ─────────────────────────────────────────────────
 
 case "${1:-status}" in
-    -h|--help)
-        _print_help
-        exit 0
+    help|-h|--help)
+        sub_help
         ;;
     -V|--version)
         echo "mesh CLI v1 (template)"

@@ -9,10 +9,47 @@
  * silently installing defaults the user never chose. The App component lives in
  * wizard.tsx so it stays side-effect-free and testable.
  */
-import { render } from 'ink';
+import { render, useApp } from 'ink';
 import { ThemeProvider, detectIconSet } from '@henryavila/blink-tui';
 import { registerDomainGlyphs } from './glyphs.js';
 import { App, EXIT_CANCEL } from './wizard.js';
+import { MeshHelpScreen } from './screens/MeshHelpScreen.js';
+
+function requireInteractive(label: string) {
+  if (process.stdin.isTTY) return;
+  process.stderr.write(
+    `${label}: needs an interactive terminal (no TTY on stdin).\n` +
+      'Run it directly in your terminal.\n',
+  );
+  process.exit(1);
+}
+
+function StandaloneHelp({ onExit }: { onExit: (code: number) => void }) {
+  const ink = useApp();
+  return (
+    <MeshHelpScreen
+      onClose={() => {
+        onExit(0);
+        ink.exit();
+      }}
+    />
+  );
+}
+
+async function renderStandaloneHelp() {
+  requireInteractive('mesh help');
+  registerDomainGlyphs();
+  const iconSet = await detectIconSet();
+
+  let code = 0;
+  const { waitUntilExit } = render(
+    <ThemeProvider iconSet={iconSet}>
+      <StandaloneHelp onExit={(c) => (code = c)} />
+    </ThemeProvider>,
+  );
+  await waitUntilExit();
+  process.exit(code);
+}
 
 async function main() {
   // `prompt` subcommand → a single-field blink-tui input for bash (the secret
@@ -42,19 +79,18 @@ async function main() {
     return;
   }
 
+  // `help` subcommand → open the standalone mesh command reference, without
+  // first entering the setup flow.
+  if (argv[0] === 'help') {
+    await renderStandaloneHelp();
+    return;
+  }
+
   // The wizard is keyboard-interactive (Ink raw mode), which needs a real TTY.
   // Without one (piped stdin, CI, or a non-interactive `!`-style shell) Ink's
   // useInput would throw a raw-mode stack trace, so fail clearly instead and let
   // the caller fall back to the saved/default selection.
-  if (!process.stdin.isTTY) {
-    process.stderr.write(
-      'mesh menu: needs an interactive terminal (no TTY on stdin).\n' +
-        'Run it directly in your terminal, e.g.\n' +
-        '  node scripts/menu/index.js\n' +
-        'or use the non-interactive flow: NON_INTERACTIVE=1 bash setup.sh\n',
-    );
-    process.exit(1);
-  }
+  requireInteractive('mesh menu');
 
   registerDomainGlyphs();
   const dryRun = process.argv.slice(2).includes('--dry-run');

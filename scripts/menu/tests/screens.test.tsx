@@ -16,6 +16,7 @@
  * for the scroll behaviour.
  */
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { render } from 'ink-testing-library';
 import { ThemeProvider } from '@henryavila/blink-tui';
 import { App } from '../src/wizard.js';
@@ -23,6 +24,7 @@ import { TopicPicker } from '../src/screens/TopicPicker.js';
 import type { Topic } from '../src/types.js';
 import { OptionsForm } from '../src/screens/OptionsForm.js';
 import { UpdatesScreen } from '../src/screens/UpdatesScreen.js';
+import { MeshHelpScreen, MESH_HELP_COMMANDS } from '../src/screens/MeshHelpScreen.js';
 import { registerDomainGlyphs, resolveDomain } from '../src/glyphs.js';
 import { readAllManifests, flattenBundles, indexByKey } from '../src/core/manifest-reader.js';
 import { buildFormSpec } from '../src/core/form-spec.js';
@@ -157,6 +159,42 @@ describe('Help dialog', () => {
     expect(f).toContain('installed');
     expect(f).toContain('partial');
     expect(f).toContain('required');
+    unmount();
+  });
+});
+
+describe('MeshHelpScreen', () => {
+  it('covers the catalogued top-level commands', () => {
+    const catalogued = readFileSync(new URL('../../../.catalog/cli.txt', import.meta.url), 'utf8')
+      .trim()
+      .split(/\n+/)
+      .sort();
+    const rendered = MESH_HELP_COMMANDS.map((cmd) => cmd.id).sort();
+    expect(rendered).toEqual(catalogued);
+  });
+
+  it('renders command help content, not only the wizard how-to dialog', async () => {
+    const { stdin, lastFrame, unmount } = render(
+      <ThemeProvider iconSet="unicode">
+        <MeshHelpScreen onClose={() => {}} />
+      </ThemeProvider>,
+    );
+    await delay(30);
+    const initial = lastFrame()!;
+    expect(initial).toContain('mesh help');
+    expect(initial).toContain('Commands');
+    expect(initial).toContain('status');
+    expect(initial).toContain('update');
+    expect(initial).toContain('Cross-mesh dashboard');
+    expect(initial).toContain('close');
+    expect(initial).not.toContain('Choose the bundles to install');
+
+    stdin.write('j');
+    await delay(20);
+    const update = lastFrame()!;
+    expect(update).toContain('update');
+    expect(update).toContain('Pull and apply updates');
+    expect(update).toContain('mesh update [-o NAME] [-f] [-i]');
     unmount();
   });
 });
