@@ -176,7 +176,12 @@ for line in "${PECL_LINES[@]}"; do
 done
 
 # ─── Composer (bound to PHP default) ─────────────────────────────────
-if ! command -v composer >/dev/null 2>&1; then
+# Guard on the FUNCTIONAL probe verify() uses (`composer --version` runs),
+# not mere presence: a present-but-broken composer (corrupt phar, or the
+# default PHP changed under it) must be re-fetched during `mesh doctor --fix`
+# / repair() → install(). A presence-only guard would skip it and the engine
+# re-probe would report "still broken after repair".
+if ! command -v composer >/dev/null 2>&1 || ! composer --version >/dev/null 2>&1; then
     info "installing Composer (with checksum verification)"
     expected_checksum="$(curl -fsSL https://composer.github.io/installer.sig)"
     php -r "copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');"
@@ -270,6 +275,8 @@ verify() {
     check || return 1
     composer --version >/dev/null 2>&1
 }
+
+repair() { install; }
 
 rollback() {
     :

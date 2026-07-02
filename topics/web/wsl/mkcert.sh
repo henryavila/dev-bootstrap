@@ -47,17 +47,39 @@ install() {
         rm -rf "$tmp"
     fi
 
-    # Install rootCA into WSL trust stores.
+    # Snapshot whether a trusted CA already exists BEFORE (re)installing. If it
+    # is missing, any wildcard PEMs on disk were signed by a now-lost CA and are
+    # orphaned — browsers reject them — so they must be regenerated against the
+    # CA that `mkcert -install` (re)creates below, not left in place. verify()
+    # rejects a missing rootCA, so a repair that skipped this would loop the
+    # engine to "still broken after repair".
+    local _caroot_before rootca_existed=0
+    _caroot_before="$(mkcert -CAROOT 2>/dev/null)"
+    [[ -n "$_caroot_before" && -f "$_caroot_before/rootCA.pem" ]] && rootca_existed=1
+
+    # Install rootCA into WSL trust stores. The NSS/Firefox trust step may need a
+    # TTY (best-effort), but CREATING the CA files in CAROOT does not — so after
+    # this we hard-assert rootCA.pem exists. That converts a silently-unfixable
+    # smoke-screen (verify keeps failing on a missing rootCA while repair returns
+    # 0) into a loud, actionable failure.
     mkcert -install \
         || echo "[mkcert] mkcert -install had issues — Firefox profile may need a TTY" >&2
 
-    # Generate wildcard cert if missing.
+    local _caroot
+    _caroot="$(mkcert -CAROOT 2>/dev/null)"
+    if [[ -z "$_caroot" || ! -f "$_caroot/rootCA.pem" ]]; then
+        echo "[mkcert] rootCA.pem missing after 'mkcert -install' (CAROOT='$_caroot') — CAROOT unwritable or mkcert broken; cannot establish a trust root" >&2
+        return 1
+    fi
+
+    # Generate wildcard cert if missing OR orphaned (CA was just recreated, so
+    # any pre-existing PEMs no longer chain to the trusted root).
     # This block is load-bearing for verify()=check() (asserts both PEMs
     # exist). Guard each step and return 1 on real failure so the engine
     # reports a clean 'mkcert install failed' instead of a confusing rc67
     # post-verify abort that masks the real cause.
     sudo mkdir -p "$CERT_DIR"
-    if ! sudo test -f "$WILDCARD_PEM" || ! sudo test -f "$WILDCARD_KEY"; then
+    if [[ "$rootca_existed" -eq 0 ]] || ! sudo test -f "$WILDCARD_PEM" || ! sudo test -f "$WILDCARD_KEY"; then
         local tmp
         tmp="$(mktemp -d)"
         if ! ( cd "$tmp" && mkcert \
@@ -119,6 +141,8 @@ install() {
 verify() {
     check
 }
+
+repair() { install; }
 
 rollback() {
     # Cert state has system-wide effects; don't auto-uninstall.

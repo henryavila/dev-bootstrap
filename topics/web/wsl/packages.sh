@@ -77,10 +77,22 @@ install() {
         -o Dpkg::Options::="--force-confdef"
         -o Dpkg::Options::="--force-confold")
 
-    local missing=() p
+    # Finish any interrupted/half-configured packages first — a dpkg left in
+    # "install ok half-configured" satisfies `dpkg -s` (rc 0) yet fails
+    # verify()'s functional probe (`php-fpm<ver> --version` won't run), so a
+    # repair that only reinstalls truly-absent packages would loop the engine
+    # to "still broken after repair". `--configure -a` is cheap + idempotent.
+    sudo dpkg --configure -a >/dev/null 2>&1 || true
+
+    # A package needs (re)install when it is absent OR present but NOT fully
+    # "install ok installed" — mirrors the functional gate verify() applies
+    # (cf. foundation/wsl/core.sh _pkg_healthy), so a half-configured package
+    # the strong probe rejects is actually reconciled by repair().
+    local missing=() p _status
     while IFS= read -r p; do
         [[ -z "$p" ]] && continue
-        dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
+        _status="$(dpkg -s "$p" 2>/dev/null | sed -n 's/^Status: //p')"
+        [[ "$_status" == "install ok installed" ]] || missing+=("$p")
     done < <(_required_packages)
 
     if (( ${#missing[@]} > 0 )); then
@@ -122,6 +134,8 @@ verify() {
     done < <(_php_fpm_versions)
     return 0
 }
+
+repair() { install; }
 
 rollback() {
     # Don't auto-uninstall — data-loss risk for mysql + user expectation.
