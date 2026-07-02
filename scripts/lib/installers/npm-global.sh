@@ -27,7 +27,9 @@ npm_global_check()   {
     out=$(npm list -g --depth=0 --parseable "$1" 2>/dev/null) || return 1
     [[ -n "$out" ]]
 }
+npm_global_verify() { npm_global_check "$1"; }
 npm_global_install() { _npm_global_ensure_on_path || true; npm install -g "$1"; }
+npm_global_repair() { _npm_global_ensure_on_path || true; npm install -g --force "$1"; }
 # Version-aware update (T-600): `npm outdated -g <pkg>` exits 0 when the package
 # is current, non-zero when a newer version exists — only reinstall if stale.
 npm_global_update() {

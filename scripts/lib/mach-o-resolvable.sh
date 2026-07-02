@@ -83,12 +83,18 @@ while IFS= read -r rp; do
     RPATH_DIRS+=("$(_subst_at "$rp")")
 done < <(otool -l "$bin" 2>/dev/null | awk '
     /^[ \t]*cmd LC_RPATH$/ { inrp=1; next }
-    inrp && /^[ \t]*path /  { print $2; inrp=0 }
+    inrp && /^[ \t]*path /  {
+        sub(/^[ \t]*path /, "")
+        sub(/ \([^()]*\)$/, "")
+        print
+        inrp=0
+    }
 ')
 
 # Walk the direct load-command dylib paths. otool -L line 1 is the binary itself
 # (and per-arch banners on fat binaries) — both end in ":" so we skip them; dep
-# lines are "<tab><path> (compatibility version ...)" → field 1 is the path.
+# lines are "<tab><path> (compatibility version ...)" → trim the metadata
+# suffix; the path itself may contain spaces.
 missing=""
 while IFS= read -r dep; do
     [[ -n "$dep" ]] || continue
@@ -115,7 +121,14 @@ while IFS= read -r dep; do
         *)
             continue ;;                              # relative/bare → dyld default search
     esac
-done < <(otool -L "$bin" 2>/dev/null | awk 'NR>1 && !/:$/ {print $1}')
+    done < <(otool -L "$bin" 2>/dev/null | awk '
+        NR == 1 || /:$/ { next }
+        {
+            sub(/^[ \t]+/, "")
+            sub(/ \([^()]*\)$/, "")
+            print
+        }
+    ')
 
 if [[ -n "$missing" ]]; then
     echo "mach-o-resolvable: $bin → unresolved load command: $missing" >&2

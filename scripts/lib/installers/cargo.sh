@@ -5,4 +5,12 @@
 # Note: END runs after any `exit` — use a flag pattern, not `exit 0` in body.
 cargo_check()   { cargo install --list 2>/dev/null \
     | awk -v pkg="$1" 'index($0, pkg " v") == 1 { found=1 } END { exit !found }'; }
+
+cargo_verify() { cargo_check "$1"; }
+
 cargo_install() { cargo install --locked "$1"; }
+
+cargo_repair() {
+    echo "cargo: reinstalling $1 (repair)" >&2
+    cargo install --locked --force "$1"
+}

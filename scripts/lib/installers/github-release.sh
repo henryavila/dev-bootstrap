@@ -2,6 +2,7 @@
 # Driver: github-release. Downloads latest release tarball into ~/.local/bin.
 # spec format: owner/repo
 github_release_check()   { command -v "$(basename "$1")" >/dev/null 2>&1; }
+github_release_verify() { github_release_check "$1"; }
 github_release_install() {
     local repo="$1" tmp
     # Self-clearing RETURN trap: a bare one leaks past this function and re-fires
@@ -14,3 +15,4 @@ github_release_install() {
     tar -xzf "$tmp"/*.tar.gz -C "$tmp"
     mv "$tmp"/*/bin/* ~/.local/bin/ 2>/dev/null || mv "$tmp"/* ~/.local/bin/
 }
+github_release_repair() { github_release_install "$1"; }
