@@ -3,6 +3,43 @@
 # Bundles ~500 LOC of the original install.mac.sh verbatim, wrapped in
 # the engine contract.
 
+_php_versions_for_stack() {
+    local PHP_VERSIONS_FILE versions
+    PHP_VERSIONS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/php-versions.conf"
+    versions="${PHP_VERSIONS:-}"
+    if [[ -z "$versions" && -f "$PHP_VERSIONS_FILE" ]]; then
+        versions="$(grep -vE '^\s*(#|$)' "$PHP_VERSIONS_FILE" | xargs)"
+    fi
+    [[ -n "$versions" ]] || return 1
+    printf '%s\n' "$versions"
+}
+
+_php_cli_starts_clean() {
+    local ver="$1"
+    local php_bin="${BREW_PREFIX:-}/opt/php@${ver}/bin/php"
+    [[ -x "$php_bin" ]] || {
+        echo "php@${ver}: php binary missing at $php_bin" >&2
+        return 1
+    }
+
+    local tmp rc
+    tmp="$(mktemp -d -t mesh-php-verify.XXXXXX)" || return 1
+    "$php_bin" --ini >"$tmp/out" 2>"$tmp/err"; rc=$?
+    cat "$tmp/out" "$tmp/err" > "$tmp/all"
+    if [[ "$rc" -ne 0 ]]; then
+        cat "$tmp/all" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q 'PHP Startup: Unable to load dynamic library' "$tmp/all"; then
+        grep 'PHP Startup: Unable to load dynamic library' "$tmp/all" | head -4 >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+    return 0
+}
+
 check() {
     command -v composer >/dev/null 2>&1 || return 1
     command -v python3 >/dev/null 2>&1 || return 1
@@ -10,13 +47,8 @@ check() {
     # ANY php on PATH. That passed on the system php while skipping
     # multi-PHP install. Now require all declared PHP_VERSIONS installed
     # via brew. Empty PHP_VERSIONS = no version constraint (initial install).
-    local PHP_VERSIONS_FILE
-    PHP_VERSIONS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/php-versions.conf"
-    local versions="${PHP_VERSIONS:-}"
-    if [[ -z "$versions" ]] && [[ -f "$PHP_VERSIONS_FILE" ]]; then
-        versions="$(grep -vE '^\s*(#|$)' "$PHP_VERSIONS_FILE" | xargs)"
-    fi
-    [[ -n "$versions" ]] || return 1
+    local versions
+    versions="$(_php_versions_for_stack)" || return 1
     local ver
     for ver in $versions; do
         "${BREW_BIN:-brew}" list --formula "php@${ver}" >/dev/null 2>&1 || return 1
@@ -571,7 +603,16 @@ verify() {
     # runs — `command -v` passing is not enough for the broken-bottle case
     # install_composer guards against.
     check || return 1
+    local versions ver
+    versions="$(_php_versions_for_stack)" || return 1
+    for ver in $versions; do
+        _php_cli_starts_clean "$ver" || return 1
+    done
     composer --version >/dev/null 2>&1
+}
+
+repair() {
+    install
 }
 
 rollback() {
