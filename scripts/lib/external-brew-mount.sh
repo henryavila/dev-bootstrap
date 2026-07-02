@@ -235,14 +235,19 @@ ebm_heal() {
     }
     local du; du="${EBM_DISKUTIL:-diskutil}"
     if ! "$du" unmount "$EBM_ACTUAL_MNT" >/dev/null 2>&1; then
-        # NEVER auto-enumerate holders with `lsof +D` here: it walks the entire
-        # mounted tree and hangs for minutes on a large (multi-hundred-GB)
-        # volume. The corrective work (phantom removed + plists hardened) is
-        # already done, so a reboot is a clean, sufficient completion.
-        echo "[heal] could not unmount '$EBM_ACTUAL_MNT' — it is in use (open files / a shell cwd on the volume)." >&2
-        echo "[heal] The phantom is removed and the daemon plists are hardened, so a REBOOT now mounts '$EBM_VOLUME_NAME' at '$EBM_CANONICAL_MNT' and the disambiguation will not recur." >&2
-        echo "[heal] To remount WITHOUT a reboot: quit apps/shells using the volume, then re-run. (List holders yourself with: lsof +D \"$EBM_ACTUAL_MNT\" — slow on large volumes.)" >&2
-        return 0
+        # The usual invocation is from inside the affected checkout, so the
+        # parent shell's cwd can keep the volume busy. A forced unmount is the
+        # only automatic path that can close that parent-held mount reference.
+        echo "[heal] normal unmount reported '$EBM_ACTUAL_MNT' in use; trying forced unmount..." >&2
+        if ! "$du" unmount force "$EBM_ACTUAL_MNT" >/dev/null 2>&1; then
+            # NEVER auto-enumerate holders with `lsof +D` here: it walks the
+            # entire mounted tree and hangs for minutes on a large volume.
+            echo "[heal] could not unmount '$EBM_ACTUAL_MNT' even with force." >&2
+            echo "[heal] The phantom is removed and the daemon plists are hardened, so a REBOOT now mounts '$EBM_VOLUME_NAME' at '$EBM_CANONICAL_MNT' and the disambiguation will not recur." >&2
+            echo "[heal] To remount WITHOUT a reboot: quit apps/shells using the volume, then re-run. (List holders yourself with: lsof +D \"$EBM_ACTUAL_MNT\" — slow on large volumes.)" >&2
+            return 1
+        fi
+        echo "[heal] forced unmount succeeded for '$EBM_ACTUAL_MNT'"
     fi
     if "$du" mount "$EBM_DEVICE" >/dev/null 2>&1; then
         local now; now="$(ebm_diskutil_field "$EBM_CANONICAL_MNT" MountPoint || true)"
