@@ -14,6 +14,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     if [[ -x "$HOME/.local/bin/claude" ]]; then
         rm -f "$HOME/.local/bin/claude"

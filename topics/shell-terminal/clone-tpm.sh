@@ -37,6 +37,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Rollback of OUR install — we cloned this dir, we own removing it.
     # Aliased to `dir` so the L05 unguarded-rm-rf lint allowlist applies.

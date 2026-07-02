@@ -113,6 +113,8 @@ verify() {
     return 0
 }
 
+repair() { install; }
+
 rollback() {
     :
 }

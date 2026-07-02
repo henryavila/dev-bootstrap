@@ -81,6 +81,8 @@ install() {
 
 verify() { check; }
 
+repair() { install; }
+
 rollback() {
     local b
     for b in dust xh procs; do

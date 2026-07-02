@@ -37,6 +37,8 @@ verify() {
     pgrep -u "$USER" -f 'syncthing serve' >/dev/null 2>&1
 }
 
+repair() { install; }
+
 rollback() {
     systemctl --user disable --now syncthing.service 2>/dev/null || true
 }

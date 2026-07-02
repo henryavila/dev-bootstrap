@@ -895,6 +895,8 @@ verify() {
     # `mesh code-server status` / `mesh code-server verify`.
     check
 }
+repair() { install; }
+
 rollback() {
     :   # code-server carries user state (workspace settings); no auto-uninstall
 }

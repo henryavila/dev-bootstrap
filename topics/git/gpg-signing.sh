@@ -52,6 +52,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Don't touch signing config — user may rely on it from other sources.
     :

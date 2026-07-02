@@ -113,6 +113,8 @@ verify() {
     _is_running
 }
 
+repair() { install; }
+
 rollback() {
     local ws_dir="${MESH_WORKSTATION_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
     # shellcheck disable=SC1091

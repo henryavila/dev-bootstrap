@@ -12,4 +12,6 @@ install()  {
     git clone --quiet --depth 1 --recurse-submodules https://github.com/romkatv/powerlevel10k "$DEST"
 }
 verify()   { check; }
+repair() { install; }
+
 rollback() { local dir="$DEST"; [[ -d "$dir" ]] && rm -rf "$dir"; }

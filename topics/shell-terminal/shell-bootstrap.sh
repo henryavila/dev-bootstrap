@@ -136,6 +136,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     local here
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

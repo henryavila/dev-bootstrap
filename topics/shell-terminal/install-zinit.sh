@@ -22,4 +22,6 @@ install()  {
     check || { echo "[zinit] install state check failed — shell will degrade gracefully" >&2; return 1; }
 }
 verify()   { check; }
+repair() { install; }
+
 rollback() { local dir="$ZINIT_DIR"; [[ -d "$dir" ]] && rm -rf "$dir"; }

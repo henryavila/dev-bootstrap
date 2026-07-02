@@ -81,6 +81,8 @@ verify() {
     return 0
 }
 
+repair() { install; }
+
 rollback() {
     local f
     f="$(_dropin_file)"

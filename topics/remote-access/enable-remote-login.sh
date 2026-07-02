@@ -29,6 +29,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Don't auto-disable — the user may have enabled it for other reasons.
     :

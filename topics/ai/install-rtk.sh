@@ -195,6 +195,8 @@ update() {
     install
 }
 
+repair() { install; }
+
 rollback() {
     # A3-F-009: only delete the binary we installed, identified by both
     # recorded path AND sha256 match. Refuse if hash drifted (user may have

@@ -70,6 +70,8 @@ verify() {
     _is_running
 }
 
+repair() { install; }
+
 rollback() {
     if _use_wrapper; then
         launchctl bootout "gui/$(id -u)/com.${USER}.syncthing" 2>/dev/null || true

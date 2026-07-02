@@ -220,6 +220,8 @@ check() {
 
 verify() { check; }
 
+repair() { install; }
+
 rollback() {
     # Homebrew + core tooling underpin every later topic — never auto-remove.
     :
