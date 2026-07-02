@@ -48,10 +48,10 @@ remove_legacy_codex_compat_shim() {
     # to work around the Node navigator global (PendingMigrationError) and
     # webview preload issues under code-server. That approach broke on every
     # extension auto-update. Replaced by the official VS Code setting
-    # "extensions.supportNodeGlobalNavigator": true in the identity-owned
-    # code-server settings.json. This migration restores patched bundles from
-    # their backups and removes the shim so already-provisioned machines heal
-    # on the next run.
+    # "extensions.supportNodeGlobalNavigator": true written by
+    # write_code_server_machine_settings(). This migration restores patched
+    # bundles from their backups and removes the shim so already-provisioned
+    # machines heal on the next run.
     local shim="${CODE_SERVER_INSTALL_PREFIX}/bin/code-server-codex-compat"
     local extensions_root="${CODE_SERVER_USER_DATA_DIR}/extensions"
     local bak orig cleaned=0
@@ -81,6 +81,56 @@ remove_legacy_codex_compat_shim() {
     if [[ "$cleaned" -eq 1 ]]; then
         ok "removed legacy code-server-codex-compat shim and restored patched extension bundles"
     fi
+}
+
+write_code_server_machine_settings() {
+    # Agent extensions (Claude Code, OpenAI Codex) touch the Node navigator
+    # global; without --supportGlobalNavigator the extension host throws
+    # PendingMigrationError on activation and their webviews hang. The SERVER
+    # side configuration service reads REMOTE MACHINE settings
+    # (<user-data>/Machine/settings.json) when forking the extension host —
+    # NOT <user-data>/User/settings.json (verified against server-main.js:
+    # `new ...(a.machineSettingsResource, ...)` feeds the getValue that pushes
+    # the flag). So the setting must live here to take effect.
+    local machine_dir="${CODE_SERVER_USER_DATA_DIR}/Machine"
+    local machine_settings="${machine_dir}/settings.json"
+
+    if [[ -f "$machine_settings" ]] \
+        && grep -Fq '"extensions.supportNodeGlobalNavigator": true' "$machine_settings"; then
+        ok "code-server machine settings already enable supportNodeGlobalNavigator"
+        return 0
+    fi
+
+    mkdir -p "$machine_dir"
+
+    if [[ ! -f "$machine_settings" ]] || ! grep -q '[^[:space:]]' "$machine_settings"; then
+        printf '{\n  "extensions.supportNodeGlobalNavigator": true\n}\n' > "$machine_settings"
+        ok "wrote code-server machine settings with supportNodeGlobalNavigator"
+        return 0
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        if python3 - "$machine_settings" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+data["extensions.supportNodeGlobalNavigator"] = True
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+import os
+os.replace(tmp, path)
+PY
+        then
+            ok "merged supportNodeGlobalNavigator into existing code-server machine settings"
+            return 0
+        fi
+    fi
+
+    followup manual "could not merge extensions.supportNodeGlobalNavigator into $machine_settings — add \"extensions.supportNodeGlobalNavigator\": true manually and restart code-server, or agent extensions (Claude/Codex) will fail with PendingMigrationError."
+    return 0
 }
 
 install() {
@@ -807,6 +857,7 @@ detect_code_server_env
 install_code_server_standalone
 ensure_code_server_config
 remove_legacy_codex_compat_shim
+write_code_server_machine_settings
 write_code_server_service_wrapper
 migrate_legacy_launchagents
 write_launchagent_plist
