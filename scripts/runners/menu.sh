@@ -63,12 +63,30 @@ if (( APPLY == 0 )); then
 fi
 
 SELECTIONS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/selections.list"
+REMOVALS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/removals.list"
 if [[ ! -f "$SELECTIONS_FILE" ]]; then
     log_error "No selections file found after menu run."
     exit 1
 fi
 
 info "Applying selections..."
+
+# The TUI writes bundles deselected since the previous apply to removals.list.
+# Run uninstall before install so a re-selected dependency can be installed
+# cleanly by the install pass below. uninstall-engine itself expands bundles to
+# their listed items and keeps markers honest when custom uninstall() is absent.
+if [[ -s "$REMOVALS_FILE" ]] && grep -qvE '^[[:space:]]*(#|$)' "$REMOVALS_FILE"; then
+    info "Applying removals..."
+    uninstall_rc=0
+    bash "$ROOT/scripts/lib/uninstall-engine.sh" \
+        --selections "$REMOVALS_FILE" \
+        --platform "$PLATFORM" || uninstall_rc=$?
+    if [[ "$uninstall_rc" -ne 0 ]]; then
+        log_warn "uninstall pass exited rc=$uninstall_rc — continuing to install"
+    else
+        rm -f "$REMOVALS_FILE"
+    fi
+fi
 
 # Manifest v2: the engine consumes the whole selections.list (topic/bundle
 # entries), computes the requires_bundles closure + topological order, and

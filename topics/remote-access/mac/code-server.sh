@@ -42,6 +42,138 @@ check() {
     return 0
 }
 
+_code_server_uninstall_clear_tailscale_serve() {
+    local port="$1" status state reset_rc=0
+
+    [[ "${CODE_SERVER_TAILSCALE_SERVE:-1}" == "1" ]] || return 0
+    command -v tailscale >/dev/null 2>&1 || return 0
+
+    status="$(tailscale serve status --json 2>/dev/null)" || return 0
+    [[ -n "$status" ]] || return 0
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        printf 'code-server uninstall: python3 unavailable; leaving Tailscale Serve config untouched\n' >&2
+        return 0
+    fi
+
+    state="$(CODE_SERVER_PORT="$port" TS_STATUS_JSON="$status" python3 - <<'PY'
+import json
+import os
+import sys
+
+want = f"http://127.0.0.1:{os.environ['CODE_SERVER_PORT']}"
+try:
+    data = json.loads(os.environ["TS_STATUS_JSON"])
+except Exception:
+    print("unknown")
+    sys.exit(0)
+
+web = data.get("Web") if isinstance(data, dict) else {}
+tcp = data.get("TCP") if isinstance(data, dict) else {}
+proxies = []
+
+if isinstance(web, dict):
+    for host, cfg in web.items():
+        if not isinstance(cfg, dict):
+            continue
+        handlers = cfg.get("Handlers")
+        if not isinstance(handlers, dict):
+            continue
+        for path, handler in handlers.items():
+            if isinstance(handler, dict) and handler.get("Proxy"):
+                proxies.append((host, path, handler.get("Proxy")))
+
+if not proxies:
+    print("empty")
+    sys.exit(0)
+
+tcp_ok = not tcp
+if isinstance(tcp, dict) and set(tcp.keys()) == {"443"}:
+    v = tcp.get("443")
+    tcp_ok = isinstance(v, dict) and v.get("HTTPS") is True and len(v) == 1
+
+if len(proxies) == 1 and proxies[0][1] == "/" and proxies[0][2] == want and tcp_ok:
+    print("dedicated")
+elif any(proxy == want for _, _, proxy in proxies):
+    print("mixed")
+else:
+    print("other")
+PY
+)" || state="unknown"
+
+    case "$state" in
+        dedicated)
+            tailscale serve reset >/dev/null 2>&1 || reset_rc=$?
+            if [[ "$reset_rc" -ne 0 ]]; then
+                printf 'code-server uninstall: tailscale serve reset failed (rc=%s)\n' "$reset_rc" >&2
+                return "$reset_rc"
+            fi
+            ;;
+        mixed)
+            printf 'code-server uninstall: Tailscale Serve has other handlers; leaving Serve config untouched\n' >&2
+            ;;
+    esac
+    return 0
+}
+
+uninstall() {
+    # Remove only the runtime footprint installed by this bundle. Preserve
+    # VS Code user data (extensions, globalStorage, sessions) unless the caller
+    # explicitly asks for a destructive purge.
+    [[ "$(uname -s)" == "Darwin" ]] || return 0
+
+    local label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
+    local port="${CODE_SERVER_PORT:-8080}"
+    local prefix="${CODE_SERVER_INSTALL_PREFIX:-$HOME/.local}"
+    local plist="$HOME/Library/LaunchAgents/${label}.plist"
+    local wrapper="${prefix}/bin/code-server-service"
+    local bin="${prefix}/bin/code-server"
+    local config_dir="$HOME/.config/code-server"
+    local state_dir="$HOME/.local/state/code-server"
+    local user_data_dir="$HOME/.local/share/code-server"
+    local uid dir rc=0
+
+    if [[ "$prefix" != "$HOME/.local" ]]; then
+        printf 'code-server uninstall: refusing unsupported CODE_SERVER_INSTALL_PREFIX=%s\n' "$prefix" >&2
+        return 1
+    fi
+
+    uid="$(id -u)"
+    if command -v launchctl >/dev/null 2>&1; then
+        if launchctl print "gui/${uid}/${label}" >/dev/null 2>&1; then
+            local i
+            launchctl bootout "gui/${uid}/${label}" >/dev/null 2>&1 || return 1
+            for i in 1 2 3 4 5; do
+                launchctl print "gui/${uid}/${label}" >/dev/null 2>&1 || break
+                sleep 1
+            done
+            if launchctl print "gui/${uid}/${label}" >/dev/null 2>&1; then
+                printf 'code-server uninstall: LaunchAgent still loaded after bootout: %s\n' "$label" >&2
+                return 1
+            fi
+        fi
+    fi
+
+    _code_server_uninstall_clear_tailscale_serve "$port" || rc=$?
+
+    rm -f "$plist" "$wrapper" "$bin" 2>/dev/null || rc=1
+    for dir in "$prefix/lib/code-server" "$prefix"/lib/code-server-* "$config_dir" "$state_dir"; do
+        if [[ -e "$dir" ]]; then
+            rm -rf "$dir" 2>/dev/null || rc=1
+        fi
+    done
+
+    if [[ "${CODE_SERVER_PURGE_USER_DATA:-0}" == "1" ]]; then
+        dir="$user_data_dir"
+        if [[ -e "$dir" ]]; then
+            rm -rf "$dir" 2>/dev/null || rc=1
+        fi
+    fi
+
+    [[ "$rc" -eq 0 ]] || return "$rc"
+    ! check
+}
+
 remove_legacy_codex_compat_shim() {
     # Until 2026-07 a generated ~/.local/bin/code-server-codex-compat script
     # patched installed extension bundles (openai.chatgpt / anthropic.claude-code)
