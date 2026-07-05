@@ -127,6 +127,17 @@ idem
 mk-dep" "$(cat "$OUT/runlog.txt")"
 assert "platform: wsl-only skipped on mac" "yes" "$(echo "$out" | grep -q 'wsl-only: skip (platforms' && echo yes || echo no)"
 
+reset_state
+closure_out="$(
+    ENGTEST_OUT="$OUT" HOME="$HOMEDIR" MESH_INSTALL_STATE_DIR="$ST" \
+        bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+        --selections "$TMP/sel.list" --non-interactive --print-closure 2>"$TMP/closure.err"
+)"
+assert "print-closure: stdout is dependency-closed topo order" "t1/base
+t2/dependent" "$closure_out"
+assert "print-closure: does not install items" "no" "$(test -f "$OUT/runlog.txt" && echo yes || echo no)"
+out="$(run_engine --selections "$TMP/sel.list" --non-interactive)"
+
 # ── Test 2: marker written on success ──
 assert "marker: t1__mk-base.env written" "yes" "$(test -f "$ST/t1__mk-base.env" && echo yes || echo no)"
 

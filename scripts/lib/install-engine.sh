@@ -10,7 +10,7 @@
 #   bash install-engine.sh [--selections FILE] [--bundle topic/bundle ...]
 #                          [--topics-dir DIR] [--params FILE] [--secrets FILE]
 #                          [--platform OS] [--non-interactive] [--dry-run]
-#                          [--update | --repair | --adopt]
+#                          [--print-closure] [--update | --repair | --adopt]
 #
 # Selections come from --selections (one `topic/bundle` per line; blank lines
 # and `#` comments ignored) and/or repeated --bundle flags. The two combine.
@@ -114,6 +114,7 @@ NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 UPDATE_MODE=0
 REPAIR_MODE=0
 ADOPT_MODE=0
+PRINT_CLOSURE=0
 CLI_BUNDLES=()
 
 while [[ $# -gt 0 ]]; do
@@ -127,6 +128,7 @@ while [[ $# -gt 0 ]]; do
         --platform)         PLATFORM_OVERRIDE="$2"; shift 2 ;;
         --non-interactive)  NON_INTERACTIVE=1; shift ;;
         --dry-run)          DRY_RUN=1; shift ;;
+        --print-closure)    PRINT_CLOSURE=1; shift ;;
         --update)           UPDATE_MODE=1; shift ;;
         --repair)           REPAIR_MODE=1; shift ;;
         --adopt)            ADOPT_MODE=1; shift ;;
@@ -143,6 +145,10 @@ done
 _mode_count=$(( UPDATE_MODE + REPAIR_MODE + ADOPT_MODE ))
 if [[ "$_mode_count" -gt 1 ]]; then
     log_error "--update, --repair and --adopt are mutually exclusive"
+    exit 64
+fi
+if [[ "$PRINT_CLOSURE" -eq 1 && "$_mode_count" -gt 0 ]]; then
+    log_error "--print-closure cannot be combined with --update, --repair or --adopt"
     exit 64
 fi
 
@@ -485,6 +491,11 @@ while [[ "${#remaining[@]}" -gt 0 ]]; do
         exit 70
     fi
 done
+
+if [[ "$PRINT_CLOSURE" -eq 1 ]]; then
+    printf '%s\n' "${ORDERED[@]}"
+    exit 0
+fi
 
 # ─── per-bundle apply ─────────────────────────────────────────────────────────
 

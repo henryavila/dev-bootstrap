@@ -105,6 +105,8 @@ fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/mesh-uninstall.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
+BUNDLES_CHANGED_FILE="$WORK/bundles-changed"
+: > "$BUNDLES_CHANGED_FILE"
 
 # ─── selection collection (no closure — see header) ──────────────────────────
 SEL_ENTRIES=()
@@ -320,9 +322,19 @@ uninstall_bundle() {
             esac
         fi
 
+        local marker_present=0
+        if install_state_has "$TOPIC" "$name" >/dev/null 2>&1; then
+            marker_present=1
+        fi
+
         if [[ "$DRY_RUN" -eq 1 ]]; then
             log_info "[dry-run] would uninstall: $bundle/$name (type=$type)"
-            removed=$((removed+1)); continue
+            if [[ "$marker_present" -eq 1 ]]; then
+                removed=$((removed+1))
+            else
+                log_info "$bundle/$name: marker already absent — no tracked removal"
+            fi
+            continue
         fi
 
         # item_removed gates the marker drop (D4). The marker is the menu's
@@ -374,13 +386,20 @@ uninstall_bundle() {
         # Drop the marker only on a real removal (D4): a kept marker keeps the
         # item visible as installed in the menu, so it can't falsely show "removed".
         if [[ "$item_removed" -eq 1 ]]; then
-            install_state_remove "$TOPIC" "$name" 2>/dev/null || true
-            removed=$((removed+1))
+            if [[ "$marker_present" -eq 1 ]]; then
+                install_state_remove "$TOPIC" "$name" 2>/dev/null || true
+                removed=$((removed+1))
+            else
+                log_info "$bundle/$name: marker already absent — no tracked removal"
+            fi
         else
             log_info "$bundle/$name: marker kept — not removed"
         fi
     done
     log_info "$topic/$bundle: uninstalled ($removed item(s) on $PLATFORM)"
+    if [[ "$removed" -gt 0 ]]; then
+        printf '%s/%s\n' "$topic" "$bundle" >> "$BUNDLES_CHANGED_FILE"
+    fi
 }
 
 bundles_done=0
@@ -394,8 +413,8 @@ for entry in "${UNINSTALL_ORDER[@]}"; do
         continue
     fi
     ( uninstall_bundle "$topic" "$bundle" ) || { _rc=$?; log_error "$entry: bundle uninstall failed (rc=$_rc)"; exit $_rc; }
-    bundles_done=$((bundles_done+1))
 done
+bundles_done="$(wc -l < "$BUNDLES_CHANGED_FILE" | tr -d '[:space:]')"
 
 if (( bundles_skipped > 0 )); then
     log_info "uninstall-engine: removed $bundles_done bundle(s) on $PLATFORM ($bundles_skipped skipped by platforms:)"

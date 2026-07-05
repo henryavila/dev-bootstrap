@@ -85,6 +85,21 @@ exit 1
 SH
 chmod +x "$BIN/"*
 
+echo "code-server uninstall script loads without MESH_WORKSTATION_DIR"
+load_home="$SANDBOX/no-default-repo-home"
+mkdir -p "$load_home"
+set +e
+load_out="$(
+    HOME="$load_home" \
+    USER="tester" \
+    PATH="$BIN:$PATH" \
+    env -u MESH_WORKSTATION_DIR bash -e -c '. "$1"; declare -f uninstall >/dev/null' _ "$SCRIPT" 2>&1
+)"
+load_rc=$?
+set +e
+assert_eq "$load_rc" "0" "script can be sourced for uninstall without a default mesh-workstation checkout"
+assert_eq "$load_out" "" "script load is quiet when only uninstall helpers are needed"
+
 echo "code-server uninstall refuses unsupported install prefix"
 bad_out="$(
     HOME="$HOME_DIR" \

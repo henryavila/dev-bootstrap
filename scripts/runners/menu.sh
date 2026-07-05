@@ -72,18 +72,51 @@ fi
 info "Applying selections..."
 
 # The TUI writes bundles deselected since the previous apply to removals.list.
-# Run uninstall before install so a re-selected dependency can be installed
-# cleanly by the install pass below. uninstall-engine itself expands bundles to
-# their listed items and keeps markers honest when custom uninstall() is absent.
+# Compute the final install closure first so a bundle re-selected directly or
+# still required by another selected bundle is never removed by a stale
+# removals.list entry.
+uninstall_rc=0
 if [[ -s "$REMOVALS_FILE" ]] && grep -qvE '^[[:space:]]*(#|$)' "$REMOVALS_FILE"; then
-    info "Applying removals..."
-    uninstall_rc=0
-    bash "$ROOT/scripts/lib/uninstall-engine.sh" \
-        --selections "$REMOVALS_FILE" \
-        --platform "$PLATFORM" || uninstall_rc=$?
-    if [[ "$uninstall_rc" -ne 0 ]]; then
-        log_warn "uninstall pass exited rc=$uninstall_rc — continuing to install"
+    MENU_APPLY_WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/mesh-menu-apply.XXXXXX")"
+    trap 'rm -rf "$MENU_APPLY_WORKDIR"' EXIT
+    CLOSURE_FILE="$MENU_APPLY_WORKDIR/closure.list"
+    FILTERED_REMOVALS_FILE="$MENU_APPLY_WORKDIR/removals.list"
+
+    if ! bash "$ROOT/scripts/lib/install-engine.sh" \
+        --selections "$SELECTIONS_FILE" \
+        --platform "$PLATFORM" \
+        --print-closure > "$CLOSURE_FILE"
+    then
+        log_error "failed to compute selected bundle closure"
+        exit 1
+    fi
+
+    : > "$FILTERED_REMOVALS_FILE"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%%#*}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [[ -z "$line" ]] && continue
+
+        if grep -Fxq -- "$line" "$CLOSURE_FILE"; then
+            log_warn "skipping removal for $line; still selected or required"
+            continue
+        fi
+        printf '%s\n' "$line" >> "$FILTERED_REMOVALS_FILE"
+    done < "$REMOVALS_FILE"
+
+    if [[ -s "$FILTERED_REMOVALS_FILE" ]]; then
+        info "Applying removals..."
+        bash "$ROOT/scripts/lib/uninstall-engine.sh" \
+            --selections "$FILTERED_REMOVALS_FILE" \
+            --platform "$PLATFORM" || uninstall_rc=$?
+        if [[ "$uninstall_rc" -ne 0 ]]; then
+            log_warn "uninstall pass exited rc=$uninstall_rc; continuing to install"
+        else
+            rm -f "$REMOVALS_FILE"
+        fi
     else
+        info "No removals to apply after dependency closure."
         rm -f "$REMOVALS_FILE"
     fi
 fi
@@ -94,5 +127,10 @@ fi
 bash "$ROOT/scripts/lib/install-engine.sh" \
     --selections "$SELECTIONS_FILE" \
     --platform "$PLATFORM"
+
+if [[ "$uninstall_rc" -ne 0 ]]; then
+    log_error "uninstall pass failed; pending removals kept at $REMOVALS_FILE"
+    exit "$uninstall_rc"
+fi
 
 info "All selections applied."

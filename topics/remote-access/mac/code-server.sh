@@ -1,8 +1,29 @@
 #!/usr/bin/env bash
-# shellcheck source=/dev/null
-. "${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib/github-api.sh"
 # Custom: code-server (mac) — bundles the original 697-LOC install.mac.sh
 # verbatim under the engine contract.
+
+_code_server_workstation_root() {
+    local here root
+    if [[ -n "${MESH_WORKSTATION_DIR:-}" ]]; then
+        [[ -d "$MESH_WORKSTATION_DIR/scripts/lib" ]] || return 1
+        (cd "$MESH_WORKSTATION_DIR" && pwd -P)
+        return
+    fi
+
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+    root="$(cd "$here/../../.." && pwd -P)" || return 1
+    [[ -d "$root/scripts/lib" ]] || return 1
+    printf '%s\n' "$root"
+}
+
+_code_server_load_github_api() {
+    declare -f gh_api_curl >/dev/null 2>&1 && return 0
+
+    local root
+    root="$(_code_server_workstation_root)" || return 1
+    # shellcheck source=/dev/null
+    . "$root/scripts/lib/github-api.sh"
+}
 
 check() {
     # Idempotency requires all 3 pieces present, not just the binary.
@@ -124,9 +145,8 @@ _code_server_uninstall_user_data_size() {
 
 _code_server_uninstall_load_log_lib() {
     declare -f confirm >/dev/null 2>&1 && return 0
-    local here root
-    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    root="${MESH_WORKSTATION_DIR:-$(cd "$here/../../.." && pwd)}"
+    local root
+    root="$(_code_server_workstation_root)" || return 1
     # shellcheck disable=SC1091
     . "$root/scripts/lib/log.sh"
 }
@@ -423,6 +443,7 @@ fetch_latest_code_server_version() {
     fi
 
     command -v curl >/dev/null 2>&1 || return 1
+    _code_server_load_github_api || return 1
     body="$(gh_api_curl "https://api.github.com/repos/coder/code-server/releases/latest" 2>/dev/null)" || return 1
     tag="$(printf '%s\n' "$body" | awk -F'"' '/"tag_name"[[:space:]]*:/ { print $4; exit }')"
     normalize_code_server_version "$tag"
