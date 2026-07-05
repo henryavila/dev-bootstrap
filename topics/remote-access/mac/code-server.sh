@@ -116,10 +116,44 @@ PY
     return 0
 }
 
+_code_server_uninstall_user_data_size() {
+    local dir="$1" size
+    size="$(du -sh "$dir" 2>/dev/null | awk '{print $1}' || true)"
+    printf '%s' "${size:-unknown size}"
+}
+
+_code_server_uninstall_load_log_lib() {
+    declare -f confirm >/dev/null 2>&1 && return 0
+    local here root
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    root="${MESH_WORKSTATION_DIR:-$(cd "$here/../../.." && pwd)}"
+    # shellcheck disable=SC1091
+    . "$root/scripts/lib/log.sh"
+}
+
+_code_server_uninstall_prompt_purge_user_data() {
+    local dir="$1" size answer="${CODE_SERVER_PURGE_USER_DATA:-ask}"
+    [[ -d "$dir" ]] || return 1
+
+    case "$answer" in
+        1|yes|true|on) return 0 ;;
+        0|no|false|off) return 1 ;;
+    esac
+
+    size="$(_code_server_uninstall_user_data_size "$dir")"
+    if [[ "${NON_INTERACTIVE:-0}" == "1" || ! -e "${MESH_PROMPT_IN:-/dev/tty}" ]]; then
+        printf 'code-server uninstall: preserving user data at %s (%s). Remove that directory manually if you do not want to keep personal code-server data.\n' "$dir" "$size" >&2
+        return 1
+    fi
+
+    _code_server_uninstall_load_log_lib
+    confirm "Remove code-server user data at $dir ($size)?" n
+}
+
 uninstall() {
     # Remove only the runtime footprint installed by this bundle. Preserve
-    # VS Code user data (extensions, globalStorage, sessions) unless the caller
-    # explicitly asks for a destructive purge.
+    # VS Code user data (extensions, globalStorage, sessions) unless the user
+    # confirms the destructive purge.
     [[ "$(uname -s)" == "Darwin" ]] || return 0
 
     local label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
@@ -163,7 +197,7 @@ uninstall() {
         fi
     done
 
-    if [[ "${CODE_SERVER_PURGE_USER_DATA:-0}" == "1" ]]; then
+    if _code_server_uninstall_prompt_purge_user_data "$user_data_dir"; then
         dir="$user_data_dir"
         if [[ -e "$dir" ]]; then
             rm -rf "$dir" 2>/dev/null || rc=1

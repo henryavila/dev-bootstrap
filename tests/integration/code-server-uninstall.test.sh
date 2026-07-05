@@ -109,12 +109,13 @@ out="$(
     PATH="$BIN:$PATH" \
     CALLS="$CALLS" \
     LOADED="$LOADED" \
+    NON_INTERACTIVE=1 \
     CODE_SERVER_LABEL="com.tester.code-server" \
     bash -c '. "$1"; uninstall' _ "$SCRIPT" 2>&1
 )"
 rc=$?
 assert_eq "$rc" "0" "uninstall exits 0"
-assert_eq "$out" "" "uninstall is quiet on successful dedicated removal"
+assert_contains "$out" "preserving user data at $HOME_DIR/.local/share/code-server" "non-interactive uninstall warns about preserved user data"
 assert_false "[ -e '$HOME_DIR/Library/LaunchAgents/com.tester.code-server.plist' ]"
 assert_false "[ -e '$HOME_DIR/.local/bin/code-server' ]"
 assert_false "[ -e '$HOME_DIR/.local/bin/code-server-service' ]"
@@ -124,5 +125,26 @@ assert_false "[ -e '$HOME_DIR/.local/state/code-server' ]"
 assert_true "[ -f '$HOME_DIR/.local/share/code-server/User/globalStorage/state.txt' ]"
 assert_contains "$(cat "$CALLS")" "launchctl:bootout" "launchd service is booted out"
 assert_contains "$(cat "$CALLS")" "tailscale:serve reset" "dedicated Tailscale Serve config is reset"
+
+echo "code-server uninstall prompts before purging user data"
+printf 'y\n' > "$SANDBOX/prompt.in"
+prompt_out="$SANDBOX/prompt.out"
+out="$(
+    HOME="$HOME_DIR" \
+    USER="tester" \
+    MESH_WORKSTATION_DIR="$ROOT" \
+    PATH="$BIN:$PATH" \
+    CALLS="$CALLS" \
+    LOADED="$LOADED" \
+    MESH_PROMPT_IN="$SANDBOX/prompt.in" \
+    MESH_PROMPT_OUT="$prompt_out" \
+    CODE_SERVER_LABEL="com.tester.code-server" \
+    bash -c '. "$1"; uninstall' _ "$SCRIPT" 2>&1
+)"
+rc=$?
+assert_eq "$rc" "0" "uninstall exits 0 after user-data purge confirmation"
+assert_eq "$out" "" "confirmed purge is quiet on stderr"
+assert_contains "$(cat "$prompt_out")" "Remove code-server user data at $HOME_DIR/.local/share/code-server" "uninstall asks before purging user data"
+assert_false "[ -e '$HOME_DIR/.local/share/code-server' ]"
 
 summary
