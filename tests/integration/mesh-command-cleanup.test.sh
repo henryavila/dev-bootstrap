@@ -79,6 +79,7 @@ help_out="$(MESH_IDENTITY_DIR="$IDENTITY_EMPTY" "$MESH" --help 2>&1)"
 actual_help_names="$(printf '%s\n' "$help_out" | help_command_names)"
 assert_eq "$actual_help_names" "$expected_names" "help command table matches public __commands names"
 
+MESH_IDENTITY_DIR="$IDENTITY_EMPTY" "$MESH" catalog generate >/dev/null
 if [[ -f "$REPO_ROOT/.catalog/cli.txt" ]]; then
     catalog_names="$(cat "$REPO_ROOT/.catalog/cli.txt")"
     expected_catalog="$(printf '%s\n' "$expected_names" | LC_ALL=C sort -u)"
