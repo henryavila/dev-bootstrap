@@ -47,6 +47,8 @@ assert_pattern_absent "$REPO_ROOT/bin/mesh" '_mesh_register_legacy_command' \
     "bin/mesh has no legacy public command registration helper"
 assert_pattern_absent "$REPO_ROOT/bin/mesh" '_mesh_register_legacy_commands' \
     "bin/mesh has no legacy public command registration list"
+assert_pattern_absent "$REPO_ROOT/bin/mesh" '^_print_help_legacy\(\)' \
+    "bin/mesh has no legacy static help block"
 
 echo
 echo "source-pure registration"
