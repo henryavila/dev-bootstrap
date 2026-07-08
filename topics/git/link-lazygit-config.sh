@@ -32,6 +32,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     local src dst
     src="$(_src)"

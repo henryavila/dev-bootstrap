@@ -5,8 +5,8 @@
 # §7 must-fix). Uses a synthetic temp topic of custom items (no brew/network) so
 # it runs on any platform. Covers:
 #   - --repair and --update are mutually exclusive (rc 64)
-#   - keep/skip uses ONLY check() — verify() is bypassed on the skip path (the
-#     root-cause gap the plan fixes)
+#   - normal keep/skip verifies a check-present item before accepting it; a
+#     check=0/verify=1 custom item without repair() is reported unresolved
 #   - --repair: healthy item is OK; broken+repair() item is repaired; broken
 #     item WITHOUT repair() (custom) is reported unresolved (rc 67)
 #   - --repair only touches marker-present items (no-marker probe-fail is skipped)
@@ -25,8 +25,8 @@ ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
 TOPICS="$ROOT/topics"; STATE="$ROOT/state"; SENT="$ROOT/sentinels"
 mkdir -p "$TOPICS/demo" "$STATE" "$SENT"
 
-# Two bundles: `b` exercises the repair sweep; `sv` isolates the skip-path test
-# (an item whose check passes but verify fails — kept in normal mode).
+# Two bundles: `b` exercises the repair sweep; `sv` isolates the normal
+# check-present/verify-broken path.
 cat > "$TOPICS/demo/manifest.yaml" <<'YAML'
 topic:
   label: "Demo"
@@ -100,13 +100,14 @@ engine() { bash "$ENGINE" --topics-dir "$TOPICS" --platform mac "$@" > "$ROOT/lo
 engine --bundle demo/b --repair --update; rc=$?
 [[ "$rc" -eq 64 ]] && ok "--repair --update rejected (rc 64)" || bad "--repair --update not rejected (rc=$rc)"
 
-# ── 2. skip-path bypasses verify() (normal install mode) ──
+# ── 2. normal apply verifies before skip (check=0 / verify=1) ──
 rm -f "$SENT/skipverify-VERIFY-RAN"
 engine --bundle demo/sv; rc=$?
-if [[ "$rc" -eq 0 && ! -f "$SENT/skipverify-VERIFY-RAN" ]]; then
-    ok "normal keep/skip uses only check() — verify() bypassed on the skip path"
+if [[ "$rc" -eq 67 && -f "$SENT/skipverify-VERIFY-RAN" ]] \
+    && grep -qi "no safe auto-repair" "$ROOT/log"; then
+    ok "normal apply verifies check-present items and reports no-safe-repair"
 else
-    bad "skip path invoked verify() or did not skip (rc=$rc, sentinel=$([[ -f "$SENT/skipverify-VERIFY-RAN" ]] && echo present || echo absent))"
+    bad "normal apply did not verify/report check-present broken item (rc=$rc, sentinel=$([[ -f "$SENT/skipverify-VERIFY-RAN" ]] && echo present || echo absent))"
 fi
 
 # ── 3. repair sweep: fixable repaired, healthy ok, unrepairable unresolved ──

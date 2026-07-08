@@ -23,6 +23,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Aliased to `dir` so the L05 unguarded-rm-rf lint allowlist applies.
     local dir="$HOME/.bun"

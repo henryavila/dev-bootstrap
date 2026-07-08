@@ -28,9 +28,13 @@ EOF
         # before the engine repair sweep so the stack is repaired on the corrected
         # mount. If it remounts the volume, this repo's path (.../External 1)
         # becomes stale (.../External), so detect that and ask for a re-run.
-        local healer="$repo/scripts/runners/heal-external-brew-mount.sh"
+        local healer="$repo/scripts/runners/heal-external-brew-mount.sh" healer_rc
         if [[ -f "$healer" ]]; then
-            bash "$healer" || true
+            bash "$healer"
+            healer_rc=$?
+            if (( healer_rc != 0 )); then
+                return "$healer_rc"
+            fi
             if [[ ! -d "$repo/topics" ]]; then
                 echo "mesh doctor --fix: volume was remounted to its canonical path -- re-run 'mesh doctor --fix' to finish the service repair on the corrected mount." >&2
                 return 0

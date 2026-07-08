@@ -585,6 +585,8 @@ _mesh_run_local_with_env() {
         export DEV_BOOTSTRAP_TMUX_AUTO_MAIN
         while IFS= read -r line; do
             [[ -n "$line" ]] || continue
+            # line is a validated KEY=value record from fanout_env.
+            # shellcheck disable=SC2163
             export "$line"
         done <<<"$env_records"
         bash "$HERE/mesh" "$@"

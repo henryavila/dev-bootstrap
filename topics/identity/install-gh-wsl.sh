@@ -29,6 +29,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     if dpkg -s gh >/dev/null 2>&1; then
         sudo apt-get remove -y -qq gh 2>/dev/null || true

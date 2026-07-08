@@ -1,9 +1,10 @@
 /**
- * ia-pick.test.tsx — the SearchPicker (realtime-filter project/tab picker for
- * `mesh ia`) + its pure helpers. Covers the runner→TUI contract: parse the
+ * ai-pick.test.tsx — the SearchPicker (realtime-filter project/tab picker for
+ * `mesh ai`) + its pure helpers. Covers the runner→TUI contract: parse the
  * merged candidate set (`label<TAB>path<TAB>wsid<TAB>status<TAB>tabid`), filter
  * by substring (including tab names), render open vs closed rows, Enter hands
- * back the chosen raw line, Esc cancels.
+ * back the chosen raw line, Tab opens an action menu, Ctrl-P opens local
+ * preferences, Esc cancels.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render } from 'ink-testing-library';
@@ -14,8 +15,9 @@ import {
   filterItems,
   abbrevHome,
   rowMeta,
+  preferenceSummary,
 } from '../src/screens/SearchPicker.js';
-import { parseIaPickArgs } from '../src/ia-pick-main.js';
+import { parseAiPickArgs } from '../src/ai-pick-main.js';
 import { registerDomainGlyphs } from '../src/glyphs.js';
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -103,14 +105,20 @@ describe('rowMeta', () => {
   });
 });
 
-describe('parseIaPickArgs (runner → picker contract)', () => {
+describe('preferenceSummary', () => {
+  it('shows the current agent, open action and existing-workspace behavior', () => {
+    expect(preferenceSummary('codex', 'shell', 'new')).toBe('agent=codex · open=shell · open existing=new');
+  });
+});
+
+describe('parseAiPickArgs (runner → picker contract)', () => {
   it('parses --in + --out', () => {
-    expect(parseIaPickArgs(['--in', '/tmp/c', '--out', '/tmp/o'])).toEqual({ in: '/tmp/c', out: '/tmp/o' });
+    expect(parseAiPickArgs(['--in', '/tmp/c', '--out', '/tmp/o'])).toEqual({ in: '/tmp/c', out: '/tmp/o' });
   });
   it('null when either is missing', () => {
-    expect(parseIaPickArgs(['--in', '/tmp/c'])).toBeNull();
-    expect(parseIaPickArgs(['--out', '/tmp/o'])).toBeNull();
-    expect(parseIaPickArgs([])).toBeNull();
+    expect(parseAiPickArgs(['--in', '/tmp/c'])).toBeNull();
+    expect(parseAiPickArgs(['--out', '/tmp/o'])).toBeNull();
+    expect(parseAiPickArgs([])).toBeNull();
   });
 });
 
@@ -162,8 +170,8 @@ describe('SearchPicker (render + keys)', () => {
     expect(calls).toEqual([null]);
   });
 
-  // The action arg distinguishes Enter (focus/open the primary) from Ctrl-N
-  // (open a NEW agent in the focused repo, even when its workspace is open).
+  // The action arg distinguishes Enter (saved default) from explicit menu
+  // choices such as shell, named agents, and local preference updates.
   function mountWithAction() {
     const calls: Array<{ raw: string | null; action?: string }> = [];
     const r = render(
@@ -186,13 +194,92 @@ describe('SearchPicker (render + keys)', () => {
     ]);
   });
 
-  it('Ctrl-N hands back the focused row with the "new" action', async () => {
+  it('Tab opens an actions menu and Enter chooses the focused action', async () => {
     const { stdin, calls } = mountWithAction();
     await delay(20);
     stdin.write('atomic'); // → the open atomic-skills workspace row (wsid w456)
     await delay(20);
-    stdin.write('\x0e'); // Ctrl-N
+    stdin.write('\t'); // actions
     await delay(20);
-    expect(calls).toEqual([{ raw: 'atomic-skills\t/srv/atomic-skills\tw456\tdone\t', action: 'new' }]);
+    stdin.write('\x1B[B'); // down: Open with Claude
+    await delay(20);
+    stdin.write('\x1B[B'); // down: Open with Codex
+    await delay(20);
+    stdin.write('\r');
+    await delay(20);
+    expect(calls).toEqual([{ raw: 'atomic-skills\t/srv/atomic-skills\tw456\tdone\t', action: 'agent:codex' }]);
+  });
+
+  it('action menu can choose shell', async () => {
+    const { stdin, calls } = mountWithAction();
+    await delay(20);
+    stdin.write('arch');
+    await delay(20);
+    stdin.write('\t');
+    await delay(20);
+    stdin.write('\x1B[B'); // Claude
+    await delay(20);
+    stdin.write('\x1B[B'); // Codex
+    await delay(20);
+    stdin.write('\x1B[B'); // Shell
+    await delay(20);
+    stdin.write('\r');
+    await delay(20);
+    expect(calls).toEqual([{ raw: 'arch\t/srv/ext/arch\t\t\t', action: 'shell' }]);
+  });
+
+  it('Ctrl-P opens preferences and returns a pref action', async () => {
+    const { stdin, calls } = mountWithAction();
+    await delay(20);
+    stdin.write('\x10'); // Ctrl-P
+    await delay(20);
+    stdin.write('\x1B[B'); // Default agent: Codex
+    await delay(20);
+    stdin.write('\r');
+    await delay(20);
+    expect(calls).toEqual([{ raw: 'mesh-identity\t/srv/mesh-identity\tw123\tblocked\t', action: 'pref:agent:codex' }]);
+  });
+
+  it('Ctrl-P preferences display the current saved defaults', async () => {
+    const oldAgent = process.env.MESH_AI_DEFAULT_AGENT;
+    const oldAction = process.env.MESH_AI_DEFAULT_ACTION;
+    const oldExisting = process.env.MESH_AI_OPEN_EXISTING;
+    process.env.MESH_AI_DEFAULT_AGENT = 'codex';
+    process.env.MESH_AI_DEFAULT_ACTION = 'shell';
+    process.env.MESH_AI_OPEN_EXISTING = 'new';
+    try {
+      const { stdin, lastFrame } = mountWithAction();
+      await delay(20);
+      stdin.write('\x10'); // Ctrl-P
+      await delay(20);
+      const f = lastFrame() ?? '';
+      expect(f).toContain('agent=codex');
+      expect(f).toContain('open=shell');
+      expect(f).toContain('open existing=new');
+      expect(f).toContain('Default agent: Codex (current)');
+      expect(f).toContain('Enter opens shell (current)');
+      expect(f).toContain('Open existing: new tab (current)');
+    } finally {
+      if (oldAgent === undefined) delete process.env.MESH_AI_DEFAULT_AGENT;
+      else process.env.MESH_AI_DEFAULT_AGENT = oldAgent;
+      if (oldAction === undefined) delete process.env.MESH_AI_DEFAULT_ACTION;
+      else process.env.MESH_AI_DEFAULT_ACTION = oldAction;
+      if (oldExisting === undefined) delete process.env.MESH_AI_OPEN_EXISTING;
+      else process.env.MESH_AI_OPEN_EXISTING = oldExisting;
+    }
+  });
+
+  it('Esc backs out of a submenu before cancelling search', async () => {
+    const { stdin, lastFrame, calls } = mountWithAction();
+    await delay(20);
+    stdin.write('\t');
+    await delay(20);
+    expect(lastFrame() ?? '').toContain('Open with Codex');
+    stdin.write('\x1B');
+    await delay(20);
+    const f = lastFrame() ?? '';
+    expect(f).toContain('mesh-identity');
+    expect(f).not.toContain('Open with Codex');
+    expect(calls).toEqual([]);
   });
 });

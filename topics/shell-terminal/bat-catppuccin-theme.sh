@@ -13,4 +13,6 @@ install()  {
     bat cache --build >/dev/null 2>&1 || true
 }
 verify()   { check; }
+repair() { install; }
+
 rollback() { [[ -f "$BAT_THEME_FILE" ]] && rm -f "$BAT_THEME_FILE"; }

@@ -72,6 +72,8 @@ install() {
 
 verify() { check; }
 
+repair() { install; }
+
 rollback() {
     :   # don't auto-uninstall Node — user data + tools may depend on it
 }

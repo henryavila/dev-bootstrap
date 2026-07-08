@@ -53,6 +53,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     if _use_wrapper; then
         launchctl bootout "gui/$(id -u)/com.${USER}.redis" 2>/dev/null || true

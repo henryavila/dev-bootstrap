@@ -65,3 +65,5 @@ deploy_verify() {
     # is its own verification. Nothing cheap to re-probe here.
     return 0
 }
+
+deploy_repair() { deploy_install "$1"; }

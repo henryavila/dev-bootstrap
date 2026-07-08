@@ -36,6 +36,7 @@ check() {
     "$php_bin" -m | grep -qi sqlsrv
     php8.5 -m | grep -qi mbstring
     cargo --list | head -1
+    echo "$big" | grep -qE 'sudo'
 }
 SH
 
@@ -48,15 +49,18 @@ check() {
     dpkg-query -W -f='x' pkg | grep -q installed
     printf '%s' "$x" | grep -qF foo
     fnm list | sed -n 's/v//p' | tail -1
+    echo 'literal' | grep -q foo
+    echo "no-dollar-literal" | grep -q foo
+    grep -qE 'sudo' <<<"$diff"
 }
 SH
 
 out="$(bash "$t/scripts/lib/lints/L21-no-broken-pipe-grep-q.sh" 2>&1)"; rc=$?
 assert "flags the bad file (rc=1)" "1" "$rc"
 
-# Every bad line is reported (5 producers).
+# Every bad line is reported (6 producers: 5 fatal binaries + echo-of-variable).
 bad_hits="$(printf '%s\n' "$out" | grep -c 'bad.sh')"
-assert "reports all 5 planted violations" "5" "$bad_hits"
+assert "reports all 6 planted violations" "6" "$bad_hits"
 
 # No safe line is reported.
 good_hits="$(printf '%s\n' "$out" | grep -c 'good.sh' || true)"

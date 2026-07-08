@@ -80,6 +80,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Hardening is purely defensive — leave it in place.
     :

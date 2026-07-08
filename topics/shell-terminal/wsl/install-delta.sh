@@ -16,6 +16,8 @@ install() {
 }
 
 verify()  { check; }
+repair() { install; }
+
 rollback() {
     dpkg -s git-delta >/dev/null 2>&1 && sudo apt-get remove -y -q git-delta 2>/dev/null || true
 }

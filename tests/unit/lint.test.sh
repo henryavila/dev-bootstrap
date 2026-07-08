@@ -27,6 +27,7 @@ SCRATCH_DIRS=(
 )
 SCRATCH_FILES=(
     "$REPO_ROOT/scripts/lib/__lint-injection__.sh"
+    "$REPO_ROOT/scripts/lib/installers/__lint-bad-driver.sh"
 )
 _cleanup() {
     local d f
@@ -245,19 +246,38 @@ _inject "$REPO_ROOT/topics/__lint-injection__/violation.sh" \
 _run_lint_expect_fail "L12-no-identity-paths.sh" "L12:"
 rm -f "$REPO_ROOT/topics/__lint-injection__/violation.sh"
 
-# L09 — custom-script missing required function
+# L09 — non-idempotent custom-script missing repair()
 echo
-echo "L09 injection: custom-script missing verify() and rollback()"
+echo "L09 injection: non-idempotent custom-script missing repair()"
 mkdir -p "$REPO_ROOT/topics/__lint-injection__"
-# L18 forbids `check:` on type:custom, so the L09 fixture below intentionally
-# omits manifest check: (irrelevant to L09's verify/rollback check anyway).
-_inject "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
-    $'- name: bad-custom\n  type: custom\n  script: "./bad-custom.sh"\n  desc: "missing verify+rollback"\n  platforms: [mac]'
+_inject "$REPO_ROOT/topics/__lint-injection__/manifest.yaml" \
+    $'topic:\n  label: Lint Injection\n  order: 999\nbundles:\n  - name: contract\n    label: Contract\n    desc: Contract lint fixture\n    items:\n      - name: bad-custom\n        type: custom\n        script: "./bad-custom.sh"\n        platforms: [mac]'
 _inject "$REPO_ROOT/topics/__lint-injection__/bad-custom.sh" \
-    $'#!/usr/bin/env bash\ncheck() { :; }\ninstall() { :; }'
+    $'#!/usr/bin/env bash\ncheck() { :; }\ninstall() { :; }\nverify() { :; }'
 _run_lint_expect_fail "L09-custom-script-contract.sh" "L09:"
-rm -f "$REPO_ROOT/topics/__lint-injection__/items.yaml" \
+rm -f "$REPO_ROOT/topics/__lint-injection__/manifest.yaml" \
       "$REPO_ROOT/topics/__lint-injection__/bad-custom.sh"
+
+# L09 — idempotent custom-script without repair() is accepted
+echo
+echo "L09 allowlist contract: idempotent custom-script may omit repair()"
+_inject "$REPO_ROOT/topics/__lint-injection__/manifest.yaml" \
+    $'topic:\n  label: Lint Injection\n  order: 999\nbundles:\n  - name: contract\n    label: Contract\n    desc: Contract lint fixture\n    items:\n      - name: ok-custom\n        type: custom\n        script: "./ok-custom.sh"\n        idempotent: true\n        platforms: [mac]'
+_inject "$REPO_ROOT/topics/__lint-injection__/ok-custom.sh" \
+    $'#!/usr/bin/env bash\ncheck() { :; }\ninstall() { :; }\nverify() { :; }'
+out=$(bash "$LINTS_DIR/L09-custom-script-contract.sh" 2>&1); rc=$?
+assert_eq "$rc" "0" "L09 accepts idempotent custom without repair()"
+assert_eq "$out" "" "L09 emits no output for idempotent custom without repair()"
+rm -f "$REPO_ROOT/topics/__lint-injection__/manifest.yaml" \
+      "$REPO_ROOT/topics/__lint-injection__/ok-custom.sh"
+
+# L19 — installer driver missing lifecycle functions
+echo
+echo "L19 injection: driver missing lifecycle functions"
+_inject "$REPO_ROOT/scripts/lib/installers/__lint-bad-driver.sh" \
+    $'#!/usr/bin/env bash\n__lint_bad_driver_check() { :; }'
+_run_lint_expect_fail "L19-no-unvalidated-drivers.sh" "L19:"
+rm -f "$REPO_ROOT/scripts/lib/installers/__lint-bad-driver.sh"
 
 # L18 — type:custom item with manifest check: field (engine override shadow)
 echo

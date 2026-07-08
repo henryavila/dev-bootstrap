@@ -248,6 +248,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Stop/teardown the run layer only — never uninstall the formula, remove
     # /usr/local/mysql, or touch the datadir (data-loss risk).

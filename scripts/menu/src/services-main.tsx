@@ -2,7 +2,7 @@
  * services-main — the `node index.js services …` entry: render the two-screen
  * `mesh services` flow (filter list → context-aware action) and hand
  * `<service-id><TAB><verb>` back to bash. Same file-based contract as
- * ia-pick-main (Ink draws on /dev/tty, so the value goes to --out, never
+ * ai-pick-main (Ink draws on /dev/tty, so the value goes to --out, never
  * stdout). Exit codes:
  *   0   = `<id>\t<verb>` written to --out
  *   130 = user cancelled (Esc on the list)

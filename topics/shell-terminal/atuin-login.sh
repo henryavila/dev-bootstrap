@@ -43,6 +43,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     :
 }

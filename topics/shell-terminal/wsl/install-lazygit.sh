@@ -16,4 +16,6 @@ install() {
 }
 
 verify()  { check; }
+repair() { install; }
+
 rollback() { [[ -x /usr/local/bin/lazygit ]] && sudo rm -f /usr/local/bin/lazygit; }

@@ -45,6 +45,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Identity setup is irreversible by design (we don't auto-revoke
     # GitHub OAuth tokens or delete SSH keys on rollback). No-op.

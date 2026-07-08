@@ -59,6 +59,7 @@ assert_failure_contains() {
     fi
 }
 
+# shellcheck source=../../scripts/lib/mesh-command.sh
 source "$LIB"
 
 cmd_status_main() { :; }
@@ -242,6 +243,7 @@ mesh_register_command \
 EOS
 
 mesh_command_reset_registry
+# shellcheck disable=SC1090
 MESH_TEST_SIDE_EFFECT="$side_effect" source "$fixture"
 assert_eq "source-pure: fixture registered" "fixture" "$(mesh_command_names)"
 assert_file_absent "source-pure: handler was not executed while sourcing" "$side_effect"

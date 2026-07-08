@@ -133,7 +133,12 @@ _uninstall_npm_global() {
 
 _uninstall_cargo() {
     local pkg="$1"
-    if cargo install --list 2>/dev/null | grep -q "^${pkg} "; then
+    # here-string (not `cargo install --list | grep -q`): the uninstall engine
+    # runs under `set -o pipefail` and cargo is a Rust binary that panics (exit
+    # 101) on EPIPE once grep -q closes the pipe on the match — a false "not
+    # installed" that skips the uninstall. The substitution captures cargo's
+    # full output first, so cargo is never piped to grep. (L21; same class as F-D.)
+    if grep -q "^${pkg} " <<<"$(cargo install --list 2>/dev/null)"; then
         info "uninstall cargo:$pkg"
         cargo uninstall "$pkg" 2>&1 \
             | sed 's/^/    /' \

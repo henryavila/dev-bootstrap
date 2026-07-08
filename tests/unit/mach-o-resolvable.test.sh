@@ -44,6 +44,31 @@ if bash "$R" "$TMP/does-not-exist" >/dev/null 2>&1; then bad "absent binary shou
 printf '#!/bin/sh\necho hi\n' > "$TMP/script.sh"; chmod +x "$TMP/script.sh"
 if bash "$R" "$TMP/script.sh" >/dev/null 2>&1; then ok "non-Mach-O script → rc 0"; else bad "non-Mach-O script should pass"; fi
 
+# Regression: `otool -L` load paths may contain spaces (e.g.
+# /Volumes/External 1/...). The resolver must test the full path, not only the
+# first whitespace-delimited field.
+fake_otool_dir="$TMP/fake-otool"; mkdir -p "$fake_otool_dir" "$TMP/present"
+fake_bin="$TMP/fake-bin"; : > "$fake_bin"; chmod +x "$fake_bin"
+space_dep="$TMP/present missing/libdep.dylib"
+cat > "$fake_otool_dir/otool" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  -l) exit 0 ;;
+  -L)
+    printf '%s:\n' "\$2"
+    printf '\t%s (compatibility version 1.0.0, current version 1.0.0)\n' "$space_dep"
+    exit 0
+    ;;
+esac
+exit 1
+EOF
+chmod +x "$fake_otool_dir/otool"
+if PATH="$fake_otool_dir:$PATH" bash "$R" "$fake_bin" >/dev/null 2>&1; then
+    bad "missing absolute dylib with a space in its path should FAIL"
+else
+    ok "missing absolute dylib with a space in its path → rc 1"
+fi
+
 # healthy copy of a Mach-O binary → pass; broken copy (dep rewritten to a bogus
 # absolute path via install_name_tool) → fail.
 if command -v install_name_tool >/dev/null 2>&1; then

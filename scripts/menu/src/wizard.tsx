@@ -317,7 +317,7 @@ export function App({ dryRun, onExit }: AppProps) {
     );
   }
   if (screen === 'help') {
-    return <HelpDialog onClose={() => setScreen('picker')} />;
+    return <HelpScreen onClose={() => setScreen('picker')} />;
   }
   if (screen === 'confirmRemove' && confirm) {
     return (
@@ -365,7 +365,7 @@ const HELP_LINES = [
   'Finish    c  apply       ·    q  cancel',
 ];
 
-function HelpDialog({ onClose }: { onClose: () => void }) {
+export function HelpScreen({ onClose }: { onClose: () => void }) {
   useInput(() => onClose());
   // Legend built from the active icon set (not hardcoded unicode) so the glyphs
   // shown here match exactly what the TopicPicker rows + quick legend render.

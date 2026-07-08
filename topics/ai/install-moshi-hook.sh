@@ -55,6 +55,8 @@ update() {
     return 10
 }
 
+repair() { install; }
+
 rollback() {
     rm -f "$HOME/.local/bin/moshi-hook" "$HOME/.local/bin/moshi"
 }

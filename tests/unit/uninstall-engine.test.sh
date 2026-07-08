@@ -178,6 +178,26 @@ out="$(ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
     --selections "$TMP/sel.t3" 2>&1)"
 assert "failed uninstall(): marker kept" "yes" "$(test -f "$ST/t3__x1.env" && echo yes || echo no)"
 
+# ── Test 7: repeated uninstall without markers reports zero changed items ──
+printf 'T2_FLAG=1\n' > "$PARAMS"
+seed
+printf 't2/dependent\n' > "$TMP/sel.dep"
+ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.dep" >/dev/null 2>&1
+out="$(ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.dep" 2>&1)"
+assert "repeat uninstall: reports zero changed items" "yes" "$(echo "$out" | grep -q 't2/dependent: uninstalled (0 item(s) on mac)' && echo yes || echo no)"
+assert "repeat uninstall: no false one-item removal" "no" "$(echo "$out" | grep -q 't2/dependent: uninstalled (1 item(s) on mac)' && echo yes || echo no)"
+assert "repeat uninstall: reports zero changed bundles" "yes" "$(echo "$out" | grep -q 'uninstall-engine: removed 0 bundle(s) on mac' && echo yes || echo no)"
+out="$(ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.dep" --dry-run 2>&1)"
+assert "dry-run without marker: reports zero changed items" "yes" "$(echo "$out" | grep -q 't2/dependent: uninstalled (0 item(s) on mac)' && echo yes || echo no)"
+assert "dry-run without marker: no false one-item removal" "no" "$(echo "$out" | grep -q 't2/dependent: uninstalled (1 item(s) on mac)' && echo yes || echo no)"
+assert "dry-run without marker: reports zero changed bundles" "yes" "$(echo "$out" | grep -q 'uninstall-engine: removed 0 bundle(s) on mac' && echo yes || echo no)"
+
 echo ""
 echo "uninstall-engine.test: $passed passed, $failed failed"
 [[ "$failed" -eq 0 ]]

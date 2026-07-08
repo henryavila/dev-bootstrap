@@ -68,6 +68,8 @@ verify() {
     _is_running
 }
 
+repair() { install; }
+
 rollback() {
     user_service_teardown moshi-hook
 }

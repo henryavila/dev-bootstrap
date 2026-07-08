@@ -144,7 +144,7 @@ run_ssh_smoke_test() {
     out="$(ssh -T -o BatchMode=yes \
                    -o StrictHostKeyChecking=accept-new \
                    git@github.com 2>&1 || true)"
-    echo "$out" | grep -q "successfully authenticated"
+    grep -q "successfully authenticated" <<<"$out"
 }
 
 info "verifying SSH authentication to github.com"

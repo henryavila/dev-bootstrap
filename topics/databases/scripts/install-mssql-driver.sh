@@ -71,6 +71,20 @@ if [[ "${#missing[@]}" -gt 0 ]]; then
     sudo ACCEPT_EULA=Y apt-get install -y -qq --no-install-recommends "${missing[@]}"
 fi
 
+# ODBC-registration reconciliation (repair-path). check()/verify() reject a
+# state where msodbcsql18 is dpkg-installed but its "ODBC Driver 18 for SQL
+# Server" stanza is missing from /etc/odbcinst.ini (corrupt/hand-edited config).
+# The dpkg-presence loop above SKIPS an already-installed package, so without
+# this a repair could never re-run the postinst that writes the stanza →
+# engine loops to "still broken after repair". Force a --reinstall so the
+# postinst re-registers the driver.
+if command -v odbcinst >/dev/null 2>&1 \
+    && dpkg -s msodbcsql18 >/dev/null 2>&1 \
+    && ! odbcinst -q -d 2>/dev/null | grep -q 'ODBC Driver 18 for SQL Server'; then
+    warn "msodbcsql18 installed but ODBC Driver 18 stanza missing — reinstalling to re-register"
+    sudo ACCEPT_EULA=Y apt-get install -y -qq --reinstall --no-install-recommends msodbcsql18
+fi
+
 # Add sqlcmd + bcp to PATH via a login-shell profile snippet (once)
 PROFILE_SNIPPET="/etc/profile.d/mssql-tools.sh"
 if [[ ! -f "$PROFILE_SNIPPET" ]]; then

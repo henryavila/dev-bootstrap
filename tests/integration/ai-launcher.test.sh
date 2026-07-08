@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# tests/integration/ia-launcher.test.sh
+# tests/integration/ai-launcher.test.sh
 #
-# Contract suite for `mesh ia` P0 — the disk project launcher with herdr handoff
-# (initiative mesh-ia-launcher).
+# Contract suite for `mesh ai` P0 — the disk project launcher with herdr handoff
+# (initiative mesh-ai-launcher).
 #
 # Covers the two source-only libs against fakes (no real herdr, no real repos):
-#   • scripts/lib/ia-discover.sh — multi-root disk discovery + substring match,
+#   • scripts/lib/ai-discover.sh — multi-root disk discovery + substring match,
 #     driven against a fake roots tree;
-#   • scripts/lib/ia-herdr.sh    — focus-or-create routing, driven against a
+#   • scripts/lib/ai-herdr.sh    — focus-or-create routing, driven against a
 #     stub `herdr` on PATH that records its args and emits canned JSON (real jq).
 set -uo pipefail
 
@@ -15,21 +15,21 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 # shellcheck source=../../scripts/lib/log.sh
 source "$REPO_ROOT/scripts/lib/log.sh"
-# shellcheck source=../../scripts/lib/ia-discover.sh
-source "$REPO_ROOT/scripts/lib/ia-discover.sh"
-# shellcheck source=../../scripts/lib/ia-herdr.sh
-source "$REPO_ROOT/scripts/lib/ia-herdr.sh"
-# shellcheck source=../../scripts/lib/ia-agent.sh
-source "$REPO_ROOT/scripts/lib/ia-agent.sh"
+# shellcheck source=../../scripts/lib/ai-discover.sh
+source "$REPO_ROOT/scripts/lib/ai-discover.sh"
+# shellcheck source=../../scripts/lib/ai-herdr.sh
+source "$REPO_ROOT/scripts/lib/ai-herdr.sh"
+# shellcheck source=../../scripts/lib/ai-agent.sh
+source "$REPO_ROOT/scripts/lib/ai-agent.sh"
 # assert.sh LAST, on purpose: log.sh defines a non-counting fail()/ok() that
 # would otherwise SHADOW assert.sh's counting pass()/fail() — masking failures
 # (they print ✗ but never increment FAIL, so the suite stays green). Sourcing
 # assert.sh after the libs makes its fail() win so failures actually fail.
 # shellcheck source=../lib/assert.sh
 source "$SELF_DIR/../lib/assert.sh"
-RUNNER="$REPO_ROOT/scripts/runners/ia.sh"
+RUNNER="$REPO_ROOT/scripts/runners/ai.sh"
 
-SANDBOX="$(mktemp -d -t mesh-ia.XXXXXX)"
+SANDBOX="$(mktemp -d -t mesh-ai.XXXXXX)"
 trap '[[ -d "$SANDBOX" ]] && rm -rf "$SANDBOX"' EXIT
 
 # ── Discovery fixture ────────────────────────────────────────────────────────
@@ -42,8 +42,8 @@ mkdir -p "$R1/repoA/.git" "$R1/repoB/.git" "$R1/plaindir/src" \
          "$R2/repoC/.git" "$R2/MyApp/.git" "$R2/linked"
 echo "gitdir: /elsewhere" > "$R2/linked/.git"   # gitfile, not a dir
 
-echo "── ia-discover ──"
-CAT="$(IA_ROOTS="$R1:$R2" ia_discover)"
+echo "── ai-discover ──"
+CAT="$(AI_ROOTS="$R1:$R2" ai_discover)"
 assert_contains "$CAT" $'repoA\t'"$R1/repoA" "discovers repoA in root1"
 assert_contains "$CAT" $'repoB\t'"$R1/repoB" "discovers repoB in root1"
 assert_contains "$CAT" $'repoC\t'"$R2/repoC" "discovers repoC in root2"
@@ -52,40 +52,40 @@ assert_contains "$CAT" $'linked\t'"$R2/linked" "counts a gitfile (.git as file)"
 assert_not_contains "$CAT" "plaindir" "ignores a non-git dir"
 
 # Missing root contributes nothing, no error.
-assert_exit_code 0 'IA_ROOTS="$SANDBOX/nope:$R1" ia_discover' "missing root is not an error"
-MISS="$(IA_ROOTS="$SANDBOX/nope:$R1" ia_discover)"
+assert_exit_code 0 'AI_ROOTS="$SANDBOX/nope:$R1" ai_discover' "missing root is not an error"
+MISS="$(AI_ROOTS="$SANDBOX/nope:$R1" ai_discover)"
 assert_contains "$MISS" "repoA" "still discovers from the existing root"
 assert_not_contains "$MISS" "$SANDBOX/nope" "missing root yields no rows"
 
-echo "── ia-roots / defaults ──"
+echo "── ai-roots / defaults ──"
 # `~` expansion + `:`/newline split. The literal ~ is intentional — it
-# exercises ia_roots' own tilde expansion, so it must NOT pre-expand here.
+# exercises ai_roots' own tilde expansion, so it must NOT pre-expand here.
 # shellcheck disable=SC2088
-ROOTS_OUT="$(IA_ROOTS="~/foo:~/bar" ia_roots)"
-assert_contains "$ROOTS_OUT" "$HOME/foo" "expands ~ in IA_ROOTS"
-assert_contains "$ROOTS_OUT" "$HOME/bar" "splits IA_ROOTS on :"
+ROOTS_OUT="$(AI_ROOTS="~/foo:~/bar" ai_roots)"
+assert_contains "$ROOTS_OUT" "$HOME/foo" "expands ~ in AI_ROOTS"
+assert_contains "$ROOTS_OUT" "$HOME/bar" "splits AI_ROOTS on :"
 # Default roots always include \$HOME as a root.
-DEF="$(unset IA_ROOTS; ia_roots)"
+DEF="$(unset AI_ROOTS; ai_roots)"
 assert_contains "$DEF" "$HOME" "default roots include \$HOME"
 
-echo "── ia-match (substring, case-insensitive) ──"
-M_APP="$(IA_ROOTS="$R1:$R2" ia_match app)"
+echo "── ai-match (substring, case-insensitive) ──"
+M_APP="$(AI_ROOTS="$R1:$R2" ai_match app)"
 assert_contains "$M_APP" "MyApp" "matches 'app' against 'MyApp' (case-insensitive, mid-string)"
 assert_not_contains "$M_APP" "repoA" "does not match unrelated repos"
-M_REPO="$(IA_ROOTS="$R1:$R2" ia_match repo)"
+M_REPO="$(AI_ROOTS="$R1:$R2" ai_match repo)"
 assert_contains "$M_REPO" "repoA" "'repo' matches repoA"
 assert_contains "$M_REPO" "repoC" "'repo' matches repoC"
 assert_not_contains "$M_REPO" "MyApp" "'repo' does not match MyApp"
 # Empty term → everything.
-assert_eq "$(IA_ROOTS="$R1:$R2" ia_match | wc -l | tr -d ' ')" \
-          "$(IA_ROOTS="$R1:$R2" ia_discover | wc -l | tr -d ' ')" \
+assert_eq "$(AI_ROOTS="$R1:$R2" ai_match | wc -l | tr -d ' ')" \
+          "$(AI_ROOTS="$R1:$R2" ai_discover | wc -l | tr -d ' ')" \
           "empty term returns the full catalogue"
 
 # ── herdr handoff (stub on PATH, real jq) ────────────────────────────────────
 if ! command -v jq >/dev/null 2>&1; then
-    echo "── ia-herdr: SKIPPED (jq absent) ──"
+    echo "── ai-herdr: SKIPPED (jq absent) ──"
 else
-    echo "── ia-herdr: focus-or-create ──"
+    echo "── ai-herdr: focus-or-create ──"
     BIN="$SANDBOX/bin"; mkdir -p "$BIN"
     export HERDR_LOG="$SANDBOX/herdr.log"; : > "$HERDR_LOG"
     cat > "$BIN/herdr" <<'STUB'
@@ -108,28 +108,28 @@ STUB
     chmod +x "$BIN/herdr"
     OLD_PATH="$PATH"; export PATH="$BIN:$PATH"
 
-    assert_true 'ia_herdr_ready' "ia_herdr_ready true when herdr+jq present"
-    assert_eq "$(ia_herdr_workspace_id mesh-identity)" "w123" "resolves workspace_id by label"
-    assert_eq "$(ia_herdr_workspace_id ghost)" "" "empty for an unopened label"
-    assert_eq "$(ia_herdr_workspace_cwd w123)" "/home/henry/arch/.worktrees/feature" "workspace cwd = first pane cwd"
-    assert_eq "$(ia_herdr_tabs w123 | wc -l | tr -d ' ')" "2" "lists a workspace's tabs"
-    assert_contains "$(ia_herdr_tabs w123)" "$(printf 'w123:2\tDashboard\tworking')" "tab row = tab_id+label+status"
+    assert_true 'ai_herdr_ready' "ai_herdr_ready true when herdr+jq present"
+    assert_eq "$(ai_herdr_workspace_id mesh-identity)" "w123" "resolves workspace_id by label"
+    assert_eq "$(ai_herdr_workspace_id ghost)" "" "empty for an unopened label"
+    assert_eq "$(ai_herdr_workspace_cwd w123)" "/home/henry/arch/.worktrees/feature" "workspace cwd = first pane cwd"
+    assert_eq "$(ai_herdr_tabs w123 | wc -l | tr -d ' ')" "2" "lists a workspace's tabs"
+    assert_contains "$(ai_herdr_tabs w123)" "$(printf 'w123:2\tDashboard\tworking')" "tab row = tab_id+label+status"
     : > "$HERDR_LOG"
-    ia_herdr_focus_tab w123 w123:2 >/dev/null 2>&1
+    ai_herdr_focus_tab w123 w123:2 >/dev/null 2>&1
     FT="$(cat "$HERDR_LOG")"
     assert_contains "$FT" "workspace focus w123" "focus_tab brings the workspace to front"
     assert_contains "$FT" "tab focus w123:2" "focus_tab focuses the exact tab"
 
     # Case 1: label already open → FOCUS, never create.
     : > "$HERDR_LOG"
-    ia_herdr_open "mesh-identity" "/whatever" "claude" >/dev/null 2>&1
+    ai_herdr_open "mesh-identity" "/whatever" "claude" >/dev/null 2>&1
     LOG1="$(cat "$HERDR_LOG")"
     assert_contains "$LOG1" "workspace focus w123" "open project → workspace focus <id>"
     assert_not_contains "$LOG1" "workspace create" "open project → no create"
 
     # Case 2: not open → CREATE at path + run agent in the new root pane.
     : > "$HERDR_LOG"
-    ia_herdr_open "newproj" "/abs/path" "claude --dangerously-skip-permissions" >/dev/null 2>&1
+    ai_herdr_open "newproj" "/abs/path" "claude --dangerously-skip-permissions" >/dev/null 2>&1
     LOG2="$(cat "$HERDR_LOG")"
     assert_contains "$LOG2" "workspace create --cwd /abs/path --label newproj --focus" "new project → create with cwd+label"
     assert_contains "$LOG2" "pane run wNEW-1 claude --dangerously-skip-permissions" "new project → run agent in new root pane"
@@ -137,7 +137,7 @@ STUB
     # Case 3: "open new" in an ALREADY-open workspace → new TAB in it + run agent
     # in the tab's fresh pane (NOT a focus, NOT a second workspace).
     : > "$HERDR_LOG"
-    ia_herdr_new_tab w123 "/proj/dir" "myproj" "claude --dangerously-skip-permissions" >/dev/null 2>&1
+    ai_herdr_new_tab w123 "/proj/dir" "myproj" "claude --dangerously-skip-permissions" >/dev/null 2>&1
     LOG3="$(cat "$HERDR_LOG")"
     assert_contains "$LOG3" "tab create --workspace w123 --cwd /proj/dir --label myproj --focus" "new tab → tab create in the open workspace"
     assert_contains "$LOG3" "pane run wTAB-1 claude --dangerously-skip-permissions" "new tab → run agent in the new tab's pane"
@@ -148,29 +148,30 @@ STUB
 fi
 
 # ── herdr readiness guard (herdr absent) ─────────────────────────────────────
-echo "── ia-herdr: readiness guard ──"
-assert_false 'PATH="/nonexistent" ia_herdr_ready' "ia_herdr_ready false when herdr missing"
+echo "── ai-herdr: readiness guard ──"
+assert_false 'PATH="/nonexistent" ai_herdr_ready' "ai_herdr_ready false when herdr missing"
 
-# ── ia-agent: resolution + per-project memory ────────────────────────────────
-echo "── ia-agent ──"
+# ── ai-agent: resolution + per-project memory ────────────────────────────────
+echo "── ai-agent ──"
 export XDG_STATE_HOME="$SANDBOX/state"
-assert_eq "$(ia_agent_cmd claude)" "claude" "bare agent cmd when no flags env"
-assert_eq "$(MESH_IA_FLAGS_CLAUDE='--dangerously-skip-permissions' ia_agent_cmd claude)" \
+assert_eq "$(ai_agent_cmd claude)" "claude" "bare agent cmd when no flags env"
+assert_eq "$(MESH_AI_FLAGS_CLAUDE='--dangerously-skip-permissions' ai_agent_cmd claude)" \
           "claude --dangerously-skip-permissions" "flags env appended to agent cmd"
-assert_eq "$(ia_agent_resolve repoA 'codex')" "codex" "override wins in resolve"
-assert_eq "$(MESH_IA_AGENT=gemini ia_agent_resolve repoA '')" "gemini" "MESH_IA_AGENT default when no override/memory"
-assert_eq "$(ia_agent_resolve repoA '')" "claude" "falls back to 'claude' with nothing set"
-ia_agent_set repoA codex
-assert_eq "$(ia_agent_get repoA)" "codex" "remembers agent per project"
-assert_eq "$(ia_agent_resolve repoA '')" "codex" "remembered agent wins over MESH_IA_AGENT default"
-ia_agent_set repoA claude   # idempotent upsert (not append)
-assert_eq "$(ia_agent_get repoA)" "claude" "upsert replaces, not appends"
-assert_eq "$(grep -c '^repoA=' "$(ia_agent_state_file)")" "1" "only one line per project"
+assert_eq "$(ai_agent_resolve repoA 'codex')" "codex" "override wins in resolve"
+assert_eq "$(MESH_AI_AGENT=gemini ai_agent_resolve repoA '')" "gemini" "MESH_AI_AGENT default when no override/memory"
+assert_eq "$(MESH_AI_DEFAULT_AGENT=codex MESH_AI_AGENT=claude ai_agent_resolve repoA '')" "codex" "local preference wins over identity default"
+assert_eq "$(ai_agent_resolve repoA '')" "claude" "falls back to 'claude' with nothing set"
+ai_agent_set repoA codex
+assert_eq "$(ai_agent_get repoA)" "codex" "remembers agent per project"
+assert_eq "$(ai_agent_resolve repoA '')" "codex" "remembered agent wins over MESH_AI_AGENT default"
+ai_agent_set repoA claude   # idempotent upsert (not append)
+assert_eq "$(ai_agent_get repoA)" "claude" "upsert replaces, not appends"
+assert_eq "$(grep -c '^repoA=' "$(ai_agent_state_file)")" "1" "only one line per project"
 unset XDG_STATE_HOME
 
 # ── runner end-to-end (stub herdr, isolated $HOME) ───────────────────────────
 if command -v jq >/dev/null 2>&1; then
-    echo "── runner: mesh ia ──"
+    echo "── runner: mesh ai ──"
     RBIN="$SANDBOX/rbin"; mkdir -p "$RBIN"
     RHOME="$SANDBOX/rhome"; mkdir -p "$RHOME"   # no ~/.config/mesh/config.env here
     export HERDR_LOG="$SANDBOX/runner-herdr.log"
@@ -195,9 +196,9 @@ STUB
     chmod +x "$RBIN/herdr"
 
     run_ia() {  # run the real runner in an isolated env
-        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" IA_ROOTS="$R1:$R2" \
-        MESH_IA_PICKER=bash PATH="$RBIN:$PATH" \
-        MESH_IA_AGENT=claude MESH_IA_FLAGS_CLAUDE='--dangerously-skip-permissions' \
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+        MESH_AI_PICKER=bash PATH="$RBIN:$PATH" \
+        MESH_AI_AGENT=claude MESH_AI_FLAGS_CLAUDE='--dangerously-skip-permissions' \
             bash "$RUNNER" "$@"
     }
 
@@ -256,7 +257,39 @@ STUB
     # --agent override is remembered for the project.
     : > "$HERDR_LOG"
     run_ia repoA --agent codex >/dev/null 2>&1
-    assert_eq "$(grep '^repoA=' "$SANDBOX/rstate/mesh/ia-agents.env" 2>/dev/null)" "repoA=codex" "--agent override is remembered"
+    assert_eq "$(grep '^repoA=' "$SANDBOX/rstate/mesh/ai-agents.env" 2>/dev/null)" "repoA=codex" "--agent override is remembered"
+
+    # --agent/--codex are explicit launch intents: on an already-open workspace,
+    # they open a fresh tab with that agent instead of merely focusing.
+    : > "$HERDR_LOG"
+    run_ia atomic-skills --codex >/dev/null 2>&1
+    CODLOG="$(cat "$HERDR_LOG")"
+    assert_contains "$CODLOG" "tab create --workspace w456 --cwd $R1/atomic-skills --label atomic-skills --focus" "--codex on open repo → new tab"
+    assert_contains "$CODLOG" "pane run wTAB-1 codex" "--codex on open repo → launches codex"
+    assert_not_contains "$CODLOG" "workspace focus w456" "--codex does not just focus the existing workspace"
+
+    # --shell opens the directory in herdr without running an agent command.
+    : > "$HERDR_LOG"
+    run_ia repoC --shell >/dev/null 2>&1
+    SHELL_CLOSED="$(cat "$HERDR_LOG")"
+    assert_contains "$SHELL_CLOSED" "workspace create --cwd $R2/repoC --label repoC --focus" "--shell on closed repo → create workspace"
+    assert_not_contains "$SHELL_CLOSED" "pane run" "--shell on closed repo → no agent run"
+    : > "$HERDR_LOG"
+    run_ia atomic-skills --shell >/dev/null 2>&1
+    SHELL_OPEN="$(cat "$HERDR_LOG")"
+    assert_contains "$SHELL_OPEN" "tab create --workspace w456 --cwd $R1/atomic-skills --label atomic-skills --focus" "--shell on open repo → new shell tab"
+    assert_not_contains "$SHELL_OPEN" "pane run" "--shell on open repo → no agent run"
+
+    # Local preferences are sourced from ~/.config/mesh/ai.env. A shell default
+    # makes Enter/fast-path open the directory without an agent.
+    mkdir -p "$RHOME/.config/mesh"
+    printf 'MESH_AI_DEFAULT_ACTION=shell\n' > "$RHOME/.config/mesh/ai.env"
+    : > "$HERDR_LOG"
+    run_ia repoC >/dev/null 2>&1
+    PREF_SHELL="$(cat "$HERDR_LOG")"
+    assert_contains "$PREF_SHELL" "workspace create --cwd $R2/repoC --label repoC --focus" "local shell default → create workspace"
+    assert_not_contains "$PREF_SHELL" "pane run" "local shell default → no agent run"
+    rm -f "$RHOME/.config/mesh/ai.env"
 
     # Unknown term → exit 1; a read-only list is fine, but NEVER a mutation.
     : > "$HERDR_LOG"
@@ -272,13 +305,13 @@ STUB
         NBIN="$SANDBOX/nbin"; mkdir -p "$NBIN"
         cat > "$NBIN/node" <<'STUB'
 #!/usr/bin/env bash
-# Stub: emulate ia-pick-main's Esc-cancel path (exit 130, write nothing).
+# Stub: emulate ai-pick-main's Esc-cancel path (exit 130, write nothing).
 exit 130
 STUB
         chmod +x "$NBIN/node"
         : > "$HERDR_LOG"
-        ESC_OUT="$(HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" IA_ROOTS="$R1:$R2" \
-            PATH="$NBIN:$RBIN:$PATH" MESH_IA_AGENT=claude \
+        ESC_OUT="$(HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NBIN:$RBIN:$PATH" MESH_AI_AGENT=claude \
             bash "$RUNNER" 2>&1; echo "rc=$?")"
         assert_contains "$ESC_OUT" "rc=0" "Esc in blink picker exits 0 (cancel)"
         assert_not_contains "$ESC_OUT" "pick a number" "Esc never falls back to the bash numbered picker"
@@ -291,8 +324,9 @@ STUB
 
     # Picker "new" action: choosing a row with the "new" verb opens a FRESH agent
     # — a new TAB when the project's workspace is already open (atomic-skills/w456),
-    # instead of just focusing it. Driven by a node stub that emulates ia-pick-main
+    # instead of just focusing it. Driven by a node stub that emulates ai-pick-main
     # writing `new<TAB><row>` to --out.
+    rm -f "$SANDBOX/rstate/mesh/ai-agents.env"
     if ( exec </dev/tty >/dev/tty ) 2>/dev/null; then
         NNEW="$SANDBOX/nnew"; mkdir -p "$NNEW"
         cat > "$NNEW/node" <<'STUB'
@@ -308,8 +342,8 @@ exit 0
 STUB
         chmod +x "$NNEW/node"
         : > "$HERDR_LOG"
-        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" IA_ROOTS="$R1:$R2" \
-            PATH="$NNEW:$RBIN:$PATH" MESH_IA_AGENT=claude MESH_IA_FLAGS_CLAUDE='--dangerously-skip-permissions' \
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NNEW:$RBIN:$PATH" MESH_AI_AGENT=claude MESH_AI_FLAGS_CLAUDE='--dangerously-skip-permissions' \
             bash "$RUNNER" >/dev/null 2>&1
         NEWLOG="$(cat "$HERDR_LOG")"
         assert_contains "$NEWLOG" "tab create --workspace w456 --cwd $R1/atomic-skills --label atomic-skills --focus" "picker 'new' on an open repo → new tab in its workspace"
@@ -317,6 +351,100 @@ STUB
         assert_not_contains "$NEWLOG" "workspace focus w456" "picker 'new' does NOT just focus the existing workspace"
     else
         echo "── picker-new: SKIPPED (no /dev/tty) ──"
+    fi
+
+    # Picker one-off actions can force shell/agent, and prefs actions persist to
+    # the local config file without touching mesh-identity.
+    if ( exec </dev/tty >/dev/tty ) 2>/dev/null; then
+        NACTION="$SANDBOX/naction"; mkdir -p "$NACTION"
+        cat > "$NACTION/node" <<'STUB'
+#!/usr/bin/env bash
+in=""; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in --in) shift; in="$1" ;; --out) shift; out="$1" ;; esac
+  shift
+done
+row="$(awk -F'\t' '$1=="atomic-skills"{print; exit}' "$in")"
+case "${MESH_TEST_PICK_ACTION:-shell}" in
+  agent-codex) printf 'agent:codex\t%s' "$row" > "$out" ;;
+  pref-codex)  printf 'pref:agent:codex\t%s' "$row" > "$out" ;;
+  pref-codex-once)
+    count_file="${MESH_TEST_PICK_COUNT:?}"
+    count=0
+    [ -r "$count_file" ] && count="$(cat "$count_file")"
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$count_file"
+    if [ "$count" -eq 1 ]; then
+      printf 'pref:agent:codex\t%s' "$row" > "$out"
+    else
+      exit 130
+    fi
+    ;;
+  *)           printf 'shell\t%s' "$row" > "$out" ;;
+esac
+exit 0
+STUB
+        chmod +x "$NACTION/node"
+
+        : > "$HERDR_LOG"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NACTION:$RBIN:$PATH" MESH_AI_AGENT=claude \
+            bash "$RUNNER" >/dev/null 2>&1
+        PICK_SHELL="$(cat "$HERDR_LOG")"
+        assert_contains "$PICK_SHELL" "tab create --workspace w456 --cwd $R1/atomic-skills --label atomic-skills --focus" "picker 'shell' → new tab in open workspace"
+        assert_not_contains "$PICK_SHELL" "pane run" "picker 'shell' → no agent run"
+
+        : > "$HERDR_LOG"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NACTION:$RBIN:$PATH" MESH_TEST_PICK_ACTION=agent-codex MESH_AI_AGENT=claude \
+            bash "$RUNNER" >/dev/null 2>&1
+        PICK_CODEX="$(cat "$HERDR_LOG")"
+        assert_contains "$PICK_CODEX" "pane run wTAB-1 codex" "picker 'agent:codex' → launches codex"
+
+        rm -f "$RHOME/.config/mesh/ai.env"
+        PREF_COUNT="$SANDBOX/pref-count"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NACTION:$RBIN:$PATH" MESH_TEST_PICK_ACTION=pref-codex-once MESH_TEST_PICK_COUNT="$PREF_COUNT" MESH_AI_AGENT=claude \
+            bash "$RUNNER" >/dev/null 2>&1
+        assert_contains "$(cat "$RHOME/.config/mesh/ai.env")" "MESH_AI_DEFAULT_AGENT=codex" "picker preference action saves local default agent"
+
+        NREOPEN="$SANDBOX/nreopen"; mkdir -p "$NREOPEN"
+        cat > "$NREOPEN/node" <<'STUB'
+#!/usr/bin/env bash
+in=""; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in --in) shift; in="$1" ;; --out) shift; out="$1" ;; esac
+  shift
+done
+count_file="${MESH_TEST_PICK_COUNT:?}"
+count=0
+[ -r "$count_file" ] && count="$(cat "$count_file")"
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+row="$(awk -F'\t' '$1=="atomic-skills"{print; exit}' "$in")"
+case "$count" in
+  1) printf 'pref:agent:codex\t%s' "$row" > "$out" ;;
+  *)
+    printf '%s\n' "${MESH_AI_DEFAULT_AGENT:-}" > "${MESH_TEST_PICK_ENV:?}"
+    printf 'open\t%s' "$row" > "$out"
+    ;;
+esac
+exit 0
+STUB
+        chmod +x "$NREOPEN/node"
+        rm -f "$RHOME/.config/mesh/ai.env"
+        PICK_COUNT="$SANDBOX/pick-count"
+        PICK_ENV="$SANDBOX/pick-env"
+        : > "$HERDR_LOG"
+        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+            PATH="$NREOPEN:$RBIN:$PATH" MESH_TEST_PICK_COUNT="$PICK_COUNT" MESH_TEST_PICK_ENV="$PICK_ENV" MESH_AI_AGENT=claude \
+            bash "$RUNNER" >/dev/null 2>&1
+        assert_eq "$(cat "$PICK_COUNT")" "2" "picker preference action returns to mesh ai picker"
+        assert_eq "$(cat "$PICK_ENV")" "codex" "reopened picker sees the saved default agent"
+        assert_contains "$(cat "$RHOME/.config/mesh/ai.env")" "MESH_AI_DEFAULT_AGENT=codex" "reopened picker keeps saved default agent"
+        assert_contains "$(cat "$HERDR_LOG")" "workspace focus w456" "second picker choice routes after saving preference"
+    else
+        echo "── picker-actions: SKIPPED (no /dev/tty) ──"
     fi
 else
     echo "── runner: SKIPPED (jq absent) ──"

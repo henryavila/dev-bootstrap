@@ -52,6 +52,8 @@ _atuin_restore_rc() {
 }
 
 verify()  { check; }
+repair() { install; }
+
 rollback() {
     local dir="$HOME/.atuin"
     [[ -d "$dir" ]] && rm -rf "$dir"

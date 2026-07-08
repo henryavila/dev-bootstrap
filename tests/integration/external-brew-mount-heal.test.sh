@@ -171,6 +171,8 @@ assert_pattern_present "$ROOT/scripts/runners/doctor.sh" 'count_ext_brew_mount >
 # the stale path.
 assert_pattern_present "$DOCTOR_MODULE" 'heal-external-brew-mount\.sh' \
     "doctor module — doctor --fix invokes the heal runner"
+assert_pattern_absent "$DOCTOR_MODULE" 'bash "\$healer" \|\| true' \
+    "doctor module — doctor --fix does not mask heal runner failure"
 assert_pattern_present "$DOCTOR_MODULE" '! -d "\$repo/topics"' \
     "doctor module — detects the post-remount stale repo path and asks for a re-run"
 

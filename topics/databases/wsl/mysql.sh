@@ -153,6 +153,8 @@ install() {
 
 verify() { check; }
 
+repair() { install; }
+
 rollback() {
     # Stop only — never purge the package or delete /var/lib/mysql (data loss).
     if _has_systemd; then

@@ -80,6 +80,8 @@ install() {
 
 verify() { check; }
 
+repair() { install; }
+
 rollback() {
     rm -f "$HOME/.bashrc.d/$NPM_GLOBAL_FRAGMENT_NAME" \
           "$HOME/.zshrc.d/$NPM_GLOBAL_FRAGMENT_NAME"

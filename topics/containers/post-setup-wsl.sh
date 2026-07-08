@@ -59,6 +59,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     if id -nG "$USER" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
         echo "[docker-post-setup] rolling back: removing $USER from docker group"

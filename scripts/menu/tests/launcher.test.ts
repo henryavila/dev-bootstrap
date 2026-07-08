@@ -37,4 +37,29 @@ describe('launcher tsx bootstrap', () => {
     });
     expect(out).toContain('JSX_SMOKE_OK');
   });
+
+  it('has a dedicated Blink help entrypoint (not the setup wizard fallback)', () => {
+    const register = join(menuDir, 'tsx-register.mjs');
+    const app = join(menuDir, 'src', 'app.tsx');
+    const code =
+      `process.argv = ['node', 'index.js', 'help'];` +
+      `await import(${JSON.stringify(register)});` +
+      `await import(${JSON.stringify(app)});`;
+    let status = 0;
+    let stderr = '';
+    try {
+      execFileSync('node', ['--input-type=module', '--eval', code], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      const e = error as { status?: number; stderr?: Buffer | string };
+      status = e.status ?? -1;
+      stderr = String(e.stderr ?? '');
+    }
+    expect(status).toBe(1);
+    expect(stderr).toContain('mesh help: needs an interactive terminal');
+    expect(stderr).not.toContain('mesh menu: needs an interactive terminal');
+  });
 });

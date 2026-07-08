@@ -1,8 +1,29 @@
 #!/usr/bin/env bash
-# shellcheck source=/dev/null
-. "${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}/scripts/lib/github-api.sh"
 # Custom: code-server (mac) — bundles the original 697-LOC install.mac.sh
 # verbatim under the engine contract.
+
+_code_server_workstation_root() {
+    local here root
+    if [[ -n "${MESH_WORKSTATION_DIR:-}" ]]; then
+        [[ -d "$MESH_WORKSTATION_DIR/scripts/lib" ]] || return 1
+        (cd "$MESH_WORKSTATION_DIR" && pwd -P)
+        return
+    fi
+
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+    root="$(cd "$here/../../.." && pwd -P)" || return 1
+    [[ -d "$root/scripts/lib" ]] || return 1
+    printf '%s\n' "$root"
+}
+
+_code_server_load_github_api() {
+    declare -f gh_api_curl >/dev/null 2>&1 && return 0
+
+    local root
+    root="$(_code_server_workstation_root)" || return 1
+    # shellcheck source=/dev/null
+    . "$root/scripts/lib/github-api.sh"
+}
 
 check() {
     # Idempotency requires all 3 pieces present, not just the binary.
@@ -13,6 +34,9 @@ check() {
     local label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
     local plist="${HOME}/Library/LaunchAgents/${label}.plist"
     local config="${HOME}/.config/code-server/config.yaml"
+    local user_data="${HOME}/.local/share/code-server"
+    local user_dir="${user_data}/User"
+    local global_storage="${user_dir}/globalStorage"
 
     # F9.6 §D filesystem hardening (2026-06-03): `[[ -x ]]` on the
     # ~/.local/bin/code-server symlink follows the link, but a present exec
@@ -34,6 +58,264 @@ check() {
 
     [[ -f "$plist" ]] || return 1
     [[ -f "$config" ]] || return 1
+    [[ -d "$user_data" && -d "$user_dir" && -d "$global_storage" ]] || return 1
+    [[ -w "$user_data" && -w "$user_dir" && -w "$global_storage" ]] || return 1
+    return 0
+}
+
+_code_server_uninstall_clear_tailscale_serve() {
+    local port="$1" status state reset_rc=0
+
+    [[ "${CODE_SERVER_TAILSCALE_SERVE:-1}" == "1" ]] || return 0
+    command -v tailscale >/dev/null 2>&1 || return 0
+
+    status="$(tailscale serve status --json 2>/dev/null)" || return 0
+    [[ -n "$status" ]] || return 0
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        printf 'code-server uninstall: python3 unavailable; leaving Tailscale Serve config untouched\n' >&2
+        return 0
+    fi
+
+    state="$(CODE_SERVER_PORT="$port" TS_STATUS_JSON="$status" python3 - <<'PY'
+import json
+import os
+import sys
+
+want = f"http://127.0.0.1:{os.environ['CODE_SERVER_PORT']}"
+try:
+    data = json.loads(os.environ["TS_STATUS_JSON"])
+except Exception:
+    print("unknown")
+    sys.exit(0)
+
+web = data.get("Web") if isinstance(data, dict) else {}
+tcp = data.get("TCP") if isinstance(data, dict) else {}
+proxies = []
+
+if isinstance(web, dict):
+    for host, cfg in web.items():
+        if not isinstance(cfg, dict):
+            continue
+        handlers = cfg.get("Handlers")
+        if not isinstance(handlers, dict):
+            continue
+        for path, handler in handlers.items():
+            if isinstance(handler, dict) and handler.get("Proxy"):
+                proxies.append((host, path, handler.get("Proxy")))
+
+if not proxies:
+    print("empty")
+    sys.exit(0)
+
+tcp_ok = not tcp
+if isinstance(tcp, dict) and set(tcp.keys()) == {"443"}:
+    v = tcp.get("443")
+    tcp_ok = isinstance(v, dict) and v.get("HTTPS") is True and len(v) == 1
+
+if len(proxies) == 1 and proxies[0][1] == "/" and proxies[0][2] == want and tcp_ok:
+    print("dedicated")
+elif any(proxy == want for _, _, proxy in proxies):
+    print("mixed")
+else:
+    print("other")
+PY
+)" || state="unknown"
+
+    case "$state" in
+        dedicated)
+            tailscale serve reset >/dev/null 2>&1 || reset_rc=$?
+            if [[ "$reset_rc" -ne 0 ]]; then
+                printf 'code-server uninstall: tailscale serve reset failed (rc=%s)\n' "$reset_rc" >&2
+                return "$reset_rc"
+            fi
+            ;;
+        mixed)
+            printf 'code-server uninstall: Tailscale Serve has other handlers; leaving Serve config untouched\n' >&2
+            ;;
+    esac
+    return 0
+}
+
+_code_server_uninstall_user_data_size() {
+    local dir="$1" size
+    size="$(du -sh "$dir" 2>/dev/null | awk '{print $1}' || true)"
+    printf '%s' "${size:-unknown size}"
+}
+
+_code_server_uninstall_load_log_lib() {
+    declare -f confirm >/dev/null 2>&1 && return 0
+    local root
+    root="$(_code_server_workstation_root)" || return 1
+    # shellcheck disable=SC1091
+    . "$root/scripts/lib/log.sh"
+}
+
+_code_server_uninstall_prompt_purge_user_data() {
+    local dir="$1" size answer="${CODE_SERVER_PURGE_USER_DATA:-ask}"
+    [[ -d "$dir" ]] || return 1
+
+    case "$answer" in
+        1|yes|true|on) return 0 ;;
+        0|no|false|off) return 1 ;;
+    esac
+
+    size="$(_code_server_uninstall_user_data_size "$dir")"
+    if [[ "${NON_INTERACTIVE:-0}" == "1" || ! -e "${MESH_PROMPT_IN:-/dev/tty}" ]]; then
+        printf 'code-server uninstall: preserving user data at %s (%s). Remove that directory manually if you do not want to keep personal code-server data.\n' "$dir" "$size" >&2
+        return 1
+    fi
+
+    _code_server_uninstall_load_log_lib
+    confirm "Remove code-server user data at $dir ($size)?" n
+}
+
+uninstall() {
+    # Remove only the runtime footprint installed by this bundle. Preserve
+    # VS Code user data (extensions, globalStorage, sessions) unless the user
+    # confirms the destructive purge.
+    [[ "$(uname -s)" == "Darwin" ]] || return 0
+
+    local label="${CODE_SERVER_LABEL:-com.${USER}.code-server}"
+    local port="${CODE_SERVER_PORT:-8080}"
+    local prefix="${CODE_SERVER_INSTALL_PREFIX:-$HOME/.local}"
+    local plist="$HOME/Library/LaunchAgents/${label}.plist"
+    local wrapper="${prefix}/bin/code-server-service"
+    local bin="${prefix}/bin/code-server"
+    local config_dir="$HOME/.config/code-server"
+    local state_dir="$HOME/.local/state/code-server"
+    local user_data_dir="$HOME/.local/share/code-server"
+    local uid dir rc=0
+
+    if [[ "$prefix" != "$HOME/.local" ]]; then
+        printf 'code-server uninstall: refusing unsupported CODE_SERVER_INSTALL_PREFIX=%s\n' "$prefix" >&2
+        return 1
+    fi
+
+    uid="$(id -u)"
+    if command -v launchctl >/dev/null 2>&1; then
+        if launchctl print "gui/${uid}/${label}" >/dev/null 2>&1; then
+            local i
+            launchctl bootout "gui/${uid}/${label}" >/dev/null 2>&1 || return 1
+            for i in 1 2 3 4 5; do
+                launchctl print "gui/${uid}/${label}" >/dev/null 2>&1 || break
+                sleep 1
+            done
+            if launchctl print "gui/${uid}/${label}" >/dev/null 2>&1; then
+                printf 'code-server uninstall: LaunchAgent still loaded after bootout: %s\n' "$label" >&2
+                return 1
+            fi
+        fi
+    fi
+
+    _code_server_uninstall_clear_tailscale_serve "$port" || rc=$?
+
+    rm -f "$plist" "$wrapper" "$bin" 2>/dev/null || rc=1
+    for dir in "$prefix/lib/code-server" "$prefix"/lib/code-server-* "$config_dir" "$state_dir"; do
+        if [[ -e "$dir" ]]; then
+            rm -rf "$dir" 2>/dev/null || rc=1
+        fi
+    done
+
+    if _code_server_uninstall_prompt_purge_user_data "$user_data_dir"; then
+        dir="$user_data_dir"
+        if [[ -e "$dir" ]]; then
+            rm -rf "$dir" 2>/dev/null || rc=1
+        fi
+    fi
+
+    [[ "$rc" -eq 0 ]] || return "$rc"
+    ! check
+}
+
+remove_legacy_codex_compat_shim() {
+    # Until 2026-07 a generated ~/.local/bin/code-server-codex-compat script
+    # patched installed extension bundles (openai.chatgpt / anthropic.claude-code)
+    # to work around the Node navigator global (PendingMigrationError) and
+    # webview preload issues under code-server. That approach broke on every
+    # extension auto-update. Replaced by the official VS Code setting
+    # "extensions.supportNodeGlobalNavigator": true written by
+    # write_code_server_machine_settings(). This migration restores patched
+    # bundles from their backups and removes the shim so already-provisioned
+    # machines heal on the next run.
+    local shim="${CODE_SERVER_INSTALL_PREFIX}/bin/code-server-codex-compat"
+    local extensions_root="${CODE_SERVER_USER_DATA_DIR}/extensions"
+    local bak orig cleaned=0
+
+    if [[ -d "$extensions_root" ]]; then
+        # Restore .bak-mesh-navigator LAST: it is the pristine copy taken
+        # before any other patch layered on top (.bak-mesh-webview-cache holds
+        # an already navigator-patched bundle of the same file).
+        while IFS= read -r -d '' bak; do
+            orig="${bak%.bak-mesh-*}"
+            cp -p "$bak" "$orig" && rm -f "$bak" && cleaned=1
+        done < <(find "$extensions_root" -name '*.bak-mesh-*' ! -name '*.bak-mesh-navigator' -type f -print0 2>/dev/null)
+        while IFS= read -r -d '' bak; do
+            orig="${bak%.bak-mesh-navigator}"
+            cp -p "$bak" "$orig" && rm -f "$bak" && cleaned=1
+        done < <(find "$extensions_root" -name '*.bak-mesh-navigator' -type f -print0 2>/dev/null)
+        while IFS= read -r -d '' bak; do
+            rm -f "$bak" && cleaned=1
+        done < <(find "$extensions_root" \( -name '*.mesh-preload-css.js' -o -name '*.mesh-cache.js' -o -name '*.mesh-cache.css' \) -type f -print0 2>/dev/null)
+    fi
+
+    if [[ -e "$shim" ]]; then
+        rm -f "$shim"
+        cleaned=1
+    fi
+
+    if [[ "$cleaned" -eq 1 ]]; then
+        ok "removed legacy code-server-codex-compat shim and restored patched extension bundles"
+    fi
+}
+
+write_code_server_machine_settings() {
+    # Agent extensions (Claude Code, OpenAI Codex) touch the Node navigator
+    # global; without --supportGlobalNavigator the extension host throws
+    # PendingMigrationError on activation and their webviews hang. The SERVER
+    # side configuration service reads REMOTE MACHINE settings
+    # (<user-data>/Machine/settings.json) when forking the extension host —
+    # NOT <user-data>/User/settings.json (verified against server-main.js:
+    # `new ...(a.machineSettingsResource, ...)` feeds the getValue that pushes
+    # the flag). So the setting must live here to take effect.
+    local machine_dir="${CODE_SERVER_USER_DATA_DIR}/Machine"
+    local machine_settings="${machine_dir}/settings.json"
+
+    if [[ -f "$machine_settings" ]] \
+        && grep -Fq '"extensions.supportNodeGlobalNavigator": true' "$machine_settings"; then
+        ok "code-server machine settings already enable supportNodeGlobalNavigator"
+        return 0
+    fi
+
+    mkdir -p "$machine_dir"
+
+    if [[ ! -f "$machine_settings" ]] || ! grep -q '[^[:space:]]' "$machine_settings"; then
+        printf '{\n  "extensions.supportNodeGlobalNavigator": true\n}\n' > "$machine_settings"
+        ok "wrote code-server machine settings with supportNodeGlobalNavigator"
+        return 0
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        if python3 - "$machine_settings" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+data["extensions.supportNodeGlobalNavigator"] = True
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+import os
+os.replace(tmp, path)
+PY
+        then
+            ok "merged supportNodeGlobalNavigator into existing code-server machine settings"
+            return 0
+        fi
+    fi
+
+    followup manual "could not merge extensions.supportNodeGlobalNavigator into $machine_settings — add \"extensions.supportNodeGlobalNavigator\": true manually and restart code-server, or agent extensions (Claude/Codex) will fail with PendingMigrationError."
     return 0
 }
 
@@ -161,6 +443,7 @@ fetch_latest_code_server_version() {
     fi
 
     command -v curl >/dev/null 2>&1 || return 1
+    _code_server_load_github_api || return 1
     body="$(gh_api_curl "https://api.github.com/repos/coder/code-server/releases/latest" 2>/dev/null)" || return 1
     tag="$(printf '%s\n' "$body" | awk -F'"' '/"tag_name"[[:space:]]*:/ { print $4; exit }')"
     normalize_code_server_version "$tag"
@@ -357,8 +640,12 @@ write_code_server_config() {
 }
 
 ensure_code_server_config() {
-    mkdir -p "$CODE_SERVER_CONFIG_DIR" "$CODE_SERVER_USER_DATA_DIR/User"
-    chmod 0700 "$CODE_SERVER_CONFIG_DIR" "$CODE_SERVER_USER_DATA_DIR" "$CODE_SERVER_USER_DATA_DIR/User"
+    mkdir -p "$CODE_SERVER_CONFIG_DIR" "$CODE_SERVER_USER_DATA_DIR/User/globalStorage"
+    chmod 0700 \
+        "$CODE_SERVER_CONFIG_DIR" \
+        "$CODE_SERVER_USER_DATA_DIR" \
+        "$CODE_SERVER_USER_DATA_DIR/User" \
+        "$CODE_SERVER_USER_DATA_DIR/User/globalStorage"
 
     if [[ -f "$CODE_SERVER_CONFIG_FILE" && "${CODE_SERVER_REWRITE_CONFIG:-0}" == "1" ]]; then
         local backup
@@ -444,10 +731,10 @@ write_code_server_service_wrapper() {
 
     if PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" command -v gh >/dev/null 2>&1; then
         if ! PATH="${CODE_SERVER_INSTALL_PREFIX}/bin:${CODE_SERVER_EXTRA_PATH}" GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 gh auth token >/dev/null 2>&1; then
-            followup manual "gh is installed but no token is available. Run 'gh auth login' so code-server can inject GitHub auth at service start."
+            followup manual "gh is installed but no token is available. Run 'gh auth login' if CLI/subprocess GitHub access inside code-server should inherit GITHUB_TOKEN. VS Code GitHub OAuth remains a separate browser login stored in code-server user data."
         fi
     else
-        followup manual "gh was not found in the code-server service PATH. GitHub extensions may ask for OAuth until gh is installed/authenticated."
+        followup manual "gh was not found in the code-server service PATH, so CLI/subprocess GitHub access inside code-server will not inherit GITHUB_TOKEN. VS Code GitHub OAuth remains a separate browser login stored in code-server user data."
     fi
 }
 
@@ -756,6 +1043,8 @@ require_macos
 detect_code_server_env
 install_code_server_standalone
 ensure_code_server_config
+remove_legacy_codex_compat_shim
+write_code_server_machine_settings
 write_code_server_service_wrapper
 migrate_legacy_launchagents
 write_launchagent_plist
@@ -793,6 +1082,8 @@ verify() {
     # `mesh code-server status` / `mesh code-server verify`.
     check
 }
+repair() { install; }
+
 rollback() {
     :   # code-server carries user state (workspace settings); no auto-uninstall
 }

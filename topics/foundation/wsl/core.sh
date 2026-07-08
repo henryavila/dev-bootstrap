@@ -113,6 +113,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Core packages are shared by every topic — never auto-remove them.
     :

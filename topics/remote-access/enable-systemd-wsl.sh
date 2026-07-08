@@ -32,6 +32,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Editing /etc/wsl.conf to remove our addition is fragile; leave it.
     :

@@ -32,6 +32,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Don't auto-uninstall — Tailscale carries state (auth, ACL, MagicDNS).
     :

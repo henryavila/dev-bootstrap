@@ -46,6 +46,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     local here src dst rel
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

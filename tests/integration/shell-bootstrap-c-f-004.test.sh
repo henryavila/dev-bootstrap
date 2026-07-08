@@ -5,7 +5,8 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS="$(cd "$HERE/../.." && pwd)"
-SCRIPT="$WS/topics/30-shell/shell-bootstrap.sh"
+SHELL_TOPIC="$WS/topics/shell-terminal"
+SCRIPT="$SHELL_TOPIC/shell-bootstrap.sh"
 [[ -f "$SCRIPT" ]] || { echo "missing $SCRIPT" >&2; exit 2; }
 
 passed=0; failed=0
@@ -27,16 +28,16 @@ require() {
 warn() { echo "warn: $*" >&2; }
 
 scenario() {
-    local label="$1"
-    echo
-    echo "=== $label ==="
-    TMP=$(mktemp -d)
-    HOME="$TMP" git config --global --unset-all core.excludesfile 2>/dev/null || true
+    local label="$1" tmp scratch_gitconfig
+    echo >&2
+    echo "=== $label ===" >&2
+    tmp=$(mktemp -d)
+    HOME="$tmp" git config --global --unset-all core.excludesfile 2>/dev/null || true
     # Override GIT_CONFIG_GLOBAL to point at a scratch file so we never touch
     # the real ~/.gitconfig.
-    SCRATCH_GITCONFIG="$TMP/.gitconfig"
-    : > "$SCRATCH_GITCONFIG"
-    echo "$TMP|$SCRATCH_GITCONFIG"
+    scratch_gitconfig="$tmp/.gitconfig"
+    : > "$scratch_gitconfig"
+    echo "$tmp|$scratch_gitconfig"
 }
 
 # Source the script's functions in a subshell with controlled env.
@@ -49,11 +50,13 @@ run_install() {
         if [[ -n "$pre_excludesfile" ]]; then
             git config --global core.excludesfile "$pre_excludesfile"
         fi
-        # Stub out the zsh hook sources so install() doesn't fail there
-        # (we're testing gitignore_global behavior).
-        mkdir -p "$WS/topics/30-shell/shell-files"
-        touch "$WS/topics/30-shell/shell-files/auto-update.zsh"
-        touch "$WS/topics/30-shell/shell-files/mesh-guard.zsh"
+        # Ensure required fixtures exist without mutating source files.
+        for shellfile in auto-update.zsh mesh-guard.zsh gitignore_global; do
+            [[ -f "$SHELL_TOPIC/shell-files/$shellfile" ]] || {
+                echo "missing fixture: $SHELL_TOPIC/shell-files/$shellfile" >&2
+                return 2
+            }
+        done
         # shellcheck disable=SC1090
         . "$SCRIPT"
         install

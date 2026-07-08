@@ -2,8 +2,8 @@
 
 cmd_ai_run() {
     local runner
-    runner="$(_resolve_companion "runners/ia.sh")"
-    [[ -n "$runner" ]] || _die "runners/ia.sh not found (set \$MESH_HOME or check installation)"
+    runner="$(_resolve_companion "runners/ai.sh")"
+    [[ -n "$runner" ]] || _die "runners/ai.sh not found (set \$MESH_HOME or check installation)"
     exec bash "$runner" "$@"
 }
 

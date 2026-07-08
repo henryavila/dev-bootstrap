@@ -66,6 +66,9 @@ npx_check() { return 1; }
 # shellcheck disable=SC2086  # intentional word-split: spec carries subcommand + args
 npx_install() { _npx_ensure_on_path || true; npx -y $1 </dev/null; }
 
+# shellcheck disable=SC2086
+npx_repair() { _npx_ensure_on_path || true; echo "npx: re-running $1 (repair)" >&2; npx -y $1 </dev/null; }
+
 npx_verify() {
     local pkg
     pkg="$(_npx_extract_package "$1")"

@@ -37,6 +37,8 @@ install() {
 
 verify() { check; }
 
+repair() { install; }
+
 rollback() {
     # Don't auto-uninstall — data-loss risk + user expectation.
     :

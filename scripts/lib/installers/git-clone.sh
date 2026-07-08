@@ -26,6 +26,20 @@ git_clone_verify() {
     [[ -d "$dest/.git" ]] || [[ -f "$dest/.git" ]]
 }
 
+git_clone_repair() {
+    local dest
+    dest="$(_git_clone_dest "$1")"
+    if git_clone_verify "$1"; then
+        git -C "$dest" fetch --depth 1 --prune >/dev/null 2>&1 || return 1
+        return 0
+    fi
+    if [[ -e "$dest" ]]; then
+        echo "git-clone: refusing to repair non-git destination: $dest" >&2
+        return 75
+    fi
+    git_clone_install "$1"
+}
+
 git_clone_rollback() {
     # Only remove if the destination is a real git repo — refuse to delete
     # a directory we didn't create (defense against GIT_CLONE_DEST aimed at

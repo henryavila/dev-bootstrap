@@ -171,6 +171,60 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 
 Full output of every run is written to `/tmp/mesh-workstation-<os>-<timestamp>.log`. The path is printed near the top of the output.
 
+## mesh ai — open a project in your AI agent
+
+`mesh ai` is the project launcher that sits between your dev roots and your AI
+agent multiplexer (`herdr`). It discovers the git repos on your disk — one level
+under `AI_ROOTS` — lets you pick one, and hands it off: focusing `herdr`'s
+workspace if that project is already open, else creating one at its directory
+and launching the agent.
+
+- `mesh ai`                    → searchable picker of every open workspace + on-disk repo.
+                                 `Enter` uses your saved default · `Tab` opens
+                                 an action menu · `Ctrl-P` edits local defaults.
+- `mesh ai <term>`             → open the project matching `<term>`; a single match opens
+                                 directly, several open the picker, none errors out.
+- `mesh ai --list`             → print the full catalogue (discovered + pinned) and exit.
+- `mesh ai <term> --agent X`   → use agent `X` for this launch (claude | codex | gemini);
+                                 the choice is remembered per project.
+- `mesh ai <term> --codex`     → shortcut for `--agent codex`.
+- `mesh ai <term> --shell`     → open the project directory in herdr without
+                                 starting an agent.
+
+Picker preferences are local to the current user+machine and live in
+`~/.config/mesh/ai.env`. They are not committed to mesh-identity. The current
+preferences cover the default agent, whether Enter opens an agent or a shell,
+and whether an already-open workspace is focused or receives a new tab.
+
+### Pinned projects
+
+Discovery only sees git repos **one level** under a root, so a deep subdir, a
+non-git folder, or a project you want under a custom label won't appear. Pin it
+— pinned entries merge with discovery, and a pin wins on a name clash.
+
+- `mesh ai add <path> [name]`  → pin a directory (non-git is fine). Idempotent:
+                                 re-adding the same name updates its path.
+- `mesh ai remove <name>`      → unpin by name.
+- `mesh ai list`               → show the pins resolvable on this machine.
+
+Pins live in a versioned manifest (`shell/ai-pinned.list` in mesh-identity,
+synced across machines). Each line is `name|path`, and a path may list
+**alternates** separated by `:` — the engine uses the first one that exists, so
+one file serves machines with different layouts:
+
+```
+mesh-workstation|/Volumes/External/code/mesh-workstation:~/mesh-workstation
+finance-app|/Volumes/External/Code/finance-app:/home/henry/code/finance-app
+scratch-kb|~/notes/knowledge-base          # non-git, custom label
+```
+
+A pin whose paths don't exist on a given machine is skipped silently (never an
+error) — so a mac-only project simply doesn't appear on WSL.
+
+> The engine, the verbs, and the reader live in mesh-workstation; the manifest
+> file and the path to it (`MESH_AI_PINNED`) live in mesh-identity — the same
+> engine/data split as `AI_ROOTS`.
+
 ## Project structure
 
 ```

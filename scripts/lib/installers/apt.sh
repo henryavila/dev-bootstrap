@@ -7,6 +7,8 @@
 # starting with `-` is treated as a package name, not a flag.
 apt_check()   { dpkg-query -W -f='${Status}\n' -- "$1" 2>/dev/null | grep -q '^install ok installed$'; }
 
+apt_verify() { apt_check "$1"; }
+
 # Refresh the package index at most once per ~hour. apt_install runs per item
 # (each in its own engine subshell), so an in-memory guard wouldn't persist;
 # instead we gate on the freshness of /var/lib/apt/lists — installing N apt

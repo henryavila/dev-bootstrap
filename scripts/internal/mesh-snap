@@ -501,7 +501,7 @@ collect_drift() {
     # reshape silently dropped them; doctor's non-zero exit then
     # disagreed with mesh status's "zero drift" view of the host.
     # Now we surface them as additional `items` (kinds: launchd_phantom,
-    # composer_phar) AND keep the counters in the schema for explicit
+    # composer_phar, local_only) AND keep the counters in the schema for explicit
     # totalling. Schema bump: snapshot_v1.1 with backward-compatible
     # additive fields.
     echo "$raw" | jq --argjson exit "$rc_int" '
@@ -515,12 +515,14 @@ collect_drift() {
             marker_absent_count:     (.marker_miss     // 0),
             launchd_phantom_count:   (.launchd_phantom // 0),
             composer_phar_count:     (.composer_phar   // 0),
+            local_only_count:        (.local_only      // 0),
             items: (
                 ((.drift_items           // []) | list_to_items("drift")) +
                 ((.missing_items         // []) | list_to_items("missing")) +
                 ((.marker_miss_items     // []) | list_to_items("marker_absent")) +
                 ((.launchd_phantom_items // []) | list_to_items("launchd_phantom")) +
-                ((.composer_phar_items   // []) | list_to_items("composer_phar"))
+                ((.composer_phar_items   // []) | list_to_items("composer_phar")) +
+                ((.local_only_items      // []) | list_to_items("local_only"))
             )
         }'
 }

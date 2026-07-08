@@ -71,6 +71,8 @@ verify() {
     check
 }
 
+repair() { install; }
+
 rollback() {
     # Cleanup is intentionally one-way (plugin caches are regenerable
     # by re-running the plugin manager). No restore.
