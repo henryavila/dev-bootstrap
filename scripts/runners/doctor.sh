@@ -82,9 +82,11 @@ fi
 # ─── Accumulators ──────────────────────────────────────────────────
 count_ok=0 count_drift=0 count_missing=0 count_marker_miss=0
 count_launchd_phantom=0 count_composer_phar=0 count_ext_brew_mount=0
+count_engine_health=0 count_engine_fixed=0
 count_local_only=0 count_fixed=0
 drift_items=() missing_items=() marker_miss_items=()
 launchd_phantom_items=() composer_phar_items=() fixed_items=()
+engine_health_items=() engine_fixed_items=()
 local_only_items=()
 ext_brew_mount_desc=""
 
@@ -318,6 +320,165 @@ check_external_brew_mount() {
     fi
 }
 
+# ─── Engine health check (selected installed items) ─────────────────────────
+# Read-only doctor reports marker-present selected items whose strongest probe
+# fails. `--fix` delegates repair to install-engine --repair, then this function
+# re-runs read-only verification so unresolved items stay visible.
+_engine_topics_dir() {
+    printf '%s' "${MESH_DOCTOR_TOPICS_DIR:-$REPO/topics}"
+}
+
+_engine_selections_file() {
+    printf '%s' "${MESH_DOCTOR_SELECTIONS_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mesh/selections.list}"
+}
+
+_engine_platform() {
+    if [[ -n "${MESH_OS:-}" ]]; then
+        printf '%s' "$MESH_OS"
+    elif [[ -r "$REPO/scripts/lib/detect-os.sh" ]]; then
+        bash "$REPO/scripts/lib/detect-os.sh" 2>/dev/null || printf 'unknown'
+    else
+        printf 'unknown'
+    fi
+}
+
+_engine_scope_ready() {
+    [[ -d "$(_engine_topics_dir)" && -r "$(_engine_selections_file)" && -r "$REPO/scripts/lib/install-engine.sh" ]]
+}
+
+_engine_bundle_index() {
+    local vars_file="$1" want="$2"
+    (
+        # shellcheck disable=SC1090
+        . "$vars_file"
+        local n="${BUNDLE_COUNT:-0}" i nv
+        for ((i=0; i<n; i++)); do
+            nv="BUNDLE_${i}_NAME"
+            [[ "${!nv:-}" == "$want" ]] && { printf '%s' "$i"; exit 0; }
+        done
+        exit 1
+    )
+}
+
+_engine_item_applies_platform() {
+    local prefix="$1" platform="$2"
+    local pc_var="${prefix}_PLATFORMS_COUNT" pc j pe_var
+    pc="${!pc_var:-0}"
+    [[ "$pc" -gt 0 ]] || return 0
+    for ((j=0; j<pc; j++)); do
+        pe_var="${prefix}_PLATFORMS_${j}"
+        [[ "${!pe_var:-}" == "$platform" ]] && return 0
+    done
+    return 1
+}
+
+_engine_collect_broken() {
+    _engine_scope_ready || return 0
+    local topics_dir selections engine platform work closure entry topic bundle vars idx
+    topics_dir="$(_engine_topics_dir)"
+    selections="$(_engine_selections_file)"
+    engine="$REPO/scripts/lib/install-engine.sh"
+    platform="$(_engine_platform)"
+    work="$(mktemp -d "${TMPDIR:-/tmp}/mesh-doctor-engine.XXXXXX")" || return 0
+    trap 'rm -rf "$work"; trap - RETURN' RETURN
+    closure="$work/closure"
+    if ! bash "$engine" --topics-dir "$topics_dir" --selections "$selections" --platform "$platform" --print-closure > "$closure" 2>/dev/null; then
+        return 0
+    fi
+
+    while IFS= read -r entry || [[ -n "$entry" ]]; do
+        [[ -n "$entry" ]] || continue
+        topic="${entry%%/*}"
+        bundle="${entry#*/}"
+        [[ -r "$topics_dir/$topic/manifest.yaml" ]] || continue
+        vars="$work/${topic}.vars"
+        if [[ ! -f "$vars" ]]; then
+            bash "$REPO/scripts/lib/yaml-parse.sh" < "$topics_dir/$topic/manifest.yaml" > "$vars" 2>/dev/null || continue
+            grep -q '^__YAML_PARSE_OK=1$' "$vars" 2>/dev/null || continue
+        fi
+        idx="$(_engine_bundle_index "$vars" "$bundle")" || continue
+        (
+            cd "$topics_dir/$topic" || exit 0
+            # shellcheck disable=SC1090
+            . "$vars"
+            local B icount_var icount i p
+            B="$idx"
+            icount_var="BUNDLE_${B}_ITEM_COUNT"
+            icount="${!icount_var:-0}"
+            for ((i=0; i<icount; i++)); do
+                p="BUNDLE_${B}_ITEM_${i}"
+                local name_var="${p}_NAME" type_var="${p}_TYPE" spec_var="${p}_SPEC" script_var="${p}_SCRIPT" mcheck_var="${p}_CHECK" idem_var="${p}_IDEMPOTENT"
+                local name="${!name_var:-}" type="${!type_var:-}" spec="${!spec_var:-}" script="${!script_var:-}" mcheck="${!mcheck_var:-}" idem="${!idem_var:-0}"
+                [[ -n "$name" && -n "$type" ]] || continue
+                [[ "$idem" == "1" ]] && continue
+                _engine_item_applies_platform "$p" "$platform" || continue
+                [[ -f "${MESH_INSTALL_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mesh/installed}/${topic}__${name}.env" ]] || continue
+                local driver="$REPO/scripts/lib/installers/${type}.sh"
+                [[ -r "$driver" ]] || continue
+                # shellcheck disable=SC1090
+                . "$driver"
+                local arg prefix probe_rc=0
+                if [[ "$type" == "custom" ]]; then arg="$script"; else arg="$spec"; fi
+                prefix="${type//-/_}"
+                if declare -f "${prefix}_verify" >/dev/null 2>&1; then
+                    "${prefix}_verify" "$arg" >/dev/null 2>&1 || probe_rc=$?
+                elif [[ -n "$mcheck" ]]; then
+                    bash -c "$mcheck" >/dev/null 2>&1 || probe_rc=$?
+                elif declare -f "${prefix}_check" >/dev/null 2>&1; then
+                    "${prefix}_check" "$arg" >/dev/null 2>&1 || probe_rc=$?
+                else
+                    continue
+                fi
+                [[ "$probe_rc" -eq 0 ]] || printf '%s/%s\n' "$topic" "$name"
+            done
+        )
+    done < "$closure"
+}
+
+_list_contains_line() {
+    local haystack="$1" needle="$2"
+    grep -Fxq -- "$needle" <<< "$haystack"
+}
+
+check_engine_health() {
+    local broken item
+    broken="$(_engine_collect_broken)"
+    [[ -n "$broken" ]] || return 0
+    while IFS= read -r item || [[ -n "$item" ]]; do
+        [[ -n "$item" ]] || continue
+        count_engine_health=$((count_engine_health + 1))
+        engine_health_items+=("$item")
+    done <<< "$broken"
+}
+
+fix_engine_health() {
+    _engine_scope_ready || return 0
+    local before after item engine topics_dir selections platform repair_out repair_rc=0
+    before="$(_engine_collect_broken)"
+    [[ -n "$before" ]] || return 0
+    engine="$REPO/scripts/lib/install-engine.sh"
+    topics_dir="$(_engine_topics_dir)"
+    selections="$(_engine_selections_file)"
+    platform="$(_engine_platform)"
+    repair_out="$(bash "$engine" \
+        --topics-dir "$topics_dir" \
+        --selections "$selections" \
+        --platform "$platform" \
+        --repair 2>&1)" || repair_rc=$?
+    after="$(_engine_collect_broken)"
+    while IFS= read -r item || [[ -n "$item" ]]; do
+        [[ -n "$item" ]] || continue
+        if ! _list_contains_line "$after" "$item"; then
+            count_engine_fixed=$((count_engine_fixed + 1))
+            engine_fixed_items+=("$item")
+        fi
+    done <<< "$before"
+    if [[ "$repair_rc" -ne 0 && -n "$repair_out" && -z "$after" ]]; then
+        engine_health_items+=("install-engine --repair rc=$repair_rc: ${repair_out//$'\n'/ }")
+        count_engine_health=$((count_engine_health + 1))
+    fi
+}
+
 # ─── Fragments listing ─────────────────────────────────────────────
 list_fragments() {
     local pair dir label entries name backup_count
@@ -356,12 +517,16 @@ check_identity_local_only
 check_launchd_volume_paths
 check_composer_phar
 check_external_brew_mount
+if [[ "$FIX" == "1" ]]; then
+    fix_engine_health
+fi
+check_engine_health
 
 # ─── Output ────────────────────────────────────────────────────────
 if [[ "$JSON" == 1 ]]; then
     # Minimal JSON without jq (so the script has no runtime deps)
-    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,"ext_brew_mount":%d,"local_only":%d,"fixed":%d,' \
-        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar" "$count_ext_brew_mount" "$count_local_only" "$count_fixed"
+    printf '{"ok":%d,"drift":%d,"missing":%d,"marker_miss":%d,"launchd_phantom":%d,"composer_phar":%d,"ext_brew_mount":%d,"engine_health":%d,"engine_fixed":%d,"local_only":%d,"fixed":%d,' \
+        "$count_ok" "$count_drift" "$count_missing" "$count_marker_miss" "$count_launchd_phantom" "$count_composer_phar" "$count_ext_brew_mount" "$count_engine_health" "$count_engine_fixed" "$count_local_only" "$count_fixed"
     printf '"drift_items":['
     sep=""
     # bash 3.2 + set -u: empty `"${arr[@]}"` is unbound; guard with size.
@@ -403,6 +568,22 @@ if [[ "$JSON" == 1 ]]; then
             sep=","
         done
     fi
+    printf '],"engine_health_items":['
+    sep=""
+    if (( ${#engine_health_items[@]} > 0 )); then
+        for d in "${engine_health_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
+    printf '],"engine_fixed_items":['
+    sep=""
+    if (( ${#engine_fixed_items[@]} > 0 )); then
+        for d in "${engine_fixed_items[@]}"; do
+            printf '%s"%s"' "$sep" "${d//\"/\\\"}"
+            sep=","
+        done
+    fi
     printf '],"local_only_items":['
     sep=""
     if (( ${#local_only_items[@]} > 0 )); then
@@ -430,6 +611,7 @@ else
         echo "  ${C_ERR}✗${C_RESET} launchd phantom: $count_launchd_phantom"
         echo "  ${C_ERR}✗${C_RESET} composer PHAR  : $count_composer_phar"
         echo "  ${C_ERR}✗${C_RESET} ext-brew mount : $count_ext_brew_mount"
+        echo "  ${C_ERR}✗${C_RESET} engine health  : $count_engine_health"
         echo "  ${C_ERR}✗${C_RESET} local-only cfg : $count_local_only"
     fi
 
@@ -469,6 +651,32 @@ else
         for p in "${composer_phar_items[@]}"; do echo "  ✗ $p"; done
         echo "  ${C_DIM}fix: brew reinstall --build-from-source composer${C_RESET}"
     fi
+    if (( count_engine_fixed > 0 )); then
+        echo
+        echo "${C_OK}Engine items repaired and reverified:${C_RESET}"
+        for p in "${engine_fixed_items[@]}"; do
+            echo "  ✓ $p  owner=${p%%/*}; action=install-engine --repair"
+        done
+    fi
+    if (( count_engine_health > 0 )); then
+        echo
+        if [[ "$FIX" == "1" ]]; then
+            echo "${C_ERR}Engine health unresolved after repair:${C_RESET}"
+        else
+            echo "${C_ERR}Engine health broken (selected installed items):${C_RESET}"
+        fi
+        for p in "${engine_health_items[@]}"; do
+            if [[ "$p" =~ ^[^[:space:]/]+/[^[:space:]/]+$ ]]; then
+                if [[ "$FIX" == "1" ]]; then
+                    echo "  ✗ $p  owner=${p%%/*}; attempted=install-engine --repair; next=inspect topics/${p%%/*}/manifest.yaml and rerun mesh doctor --fix"
+                else
+                    echo "  ✗ $p  owner=${p%%/*}; attempted=read-only verify; next=run mesh doctor --fix"
+                fi
+            else
+                echo "  ✗ $p"
+            fi
+        done
+    fi
     if (( count_ext_brew_mount > 0 )); then
         echo
         echo "${C_ERR}External-brew volume mounted at a disambiguated path (phantom collision):${C_RESET}"
@@ -487,8 +695,8 @@ else
     fi
 fi
 
-# Exit code: 0 iff no drift/missing/phantom
-if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 || count_ext_brew_mount > 0 || count_local_only > 0 )); then
+# Exit code: 0 iff no drift/missing/phantom/unresolved health finding
+if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 || count_ext_brew_mount > 0 || count_engine_health > 0 || count_local_only > 0 )); then
     exit 1
 fi
 exit 0
