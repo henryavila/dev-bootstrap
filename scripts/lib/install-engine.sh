@@ -907,16 +907,64 @@ apply_bundle() {
                 exit 0
             fi
 
-            # pre-install check: manifest `check:` overrides driver _check.
-            if [[ -n "$mcheck" ]]; then
-                if bash -c "$mcheck" >/dev/null 2>&1; then
+            # pre-install presence check: manifest `check:` overrides driver
+            # _check. A passing presence probe is NOT convergence by itself:
+            # verify before skip, repair once through the owner lifecycle when
+            # verify fails, then re-verify before downstream items continue.
+            _presence_check() {
+                if [[ -n "$mcheck" ]]; then
+                    bash -c "$mcheck" >/dev/null 2>&1
+                else
+                    "${prefix}_check" "$arg" 2>/dev/null
+                fi
+            }
+            _strong_probe() {   # driver verify > manifest check > driver check
+                if declare -f "${prefix}_verify" >/dev/null 2>&1; then
+                    "${prefix}_verify" "$arg"
+                elif [[ -n "$mcheck" ]]; then
+                    bash -c "$mcheck" >/dev/null 2>&1
+                else
+                    "${prefix}_check" "$arg" 2>/dev/null
+                fi
+            }
+            _repair_once() {
+                if declare -f "${prefix}_repair" >/dev/null 2>&1; then
+                    "${prefix}_repair" "$arg"
+                else
+                    "${prefix}_install" "$arg"
+                fi
+            }
+            if _presence_check; then
+                local _probe_rc=0
+                _strong_probe || _probe_rc=$?
+                if [[ "$_probe_rc" -eq 0 ]]; then
                     install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
-                    log_info "$bundle/$name: already present (manifest check), skipping"
+                    if [[ -n "$mcheck" ]]; then
+                        log_info "$bundle/$name: already present (manifest check), verified, skipping"
+                    else
+                        log_info "$bundle/$name: already present, verified, skipping"
+                    fi
                     exit 0
                 fi
-            elif "${prefix}_check" "$arg" 2>/dev/null; then
+
+                log_warn "$bundle/$name: BROKEN (verify failed before skip) -> attempting repair"
+                local _rrc=0
+                _repair_once || _rrc=$?
+                if [[ "$_rrc" -eq 75 ]]; then
+                    log_error "$bundle/$name: no safe auto-repair available — manual fix needed"
+                    exit 67
+                elif [[ "$_rrc" -ne 0 ]]; then
+                    log_error "$bundle/$name: repair action failed (rc=$_rrc)"
+                    exit 67
+                fi
+                local _reverc=0
+                _strong_probe || _reverc=$?
+                if [[ "$_reverc" -ne 0 ]]; then
+                    log_error "$bundle/$name: still broken after repair — manual intervention required"
+                    exit 67
+                fi
                 install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
-                log_info "$bundle/$name: already present, skipping"
+                log_info "$bundle/$name: repaired and verified"
                 exit 0
             fi
 
