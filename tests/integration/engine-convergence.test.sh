@@ -58,6 +58,12 @@ bundles:
       - name: blocked
         type: custom
         script: ./blocked.sh
+  - name: post-repair
+    items:
+      - name: posty
+        type: custom
+        script: ./posty.sh
+        post: "touch ./post-ran"
 YAML
 
 cat > "$TOPICS/demo/repairable.sh" <<SH
@@ -73,6 +79,14 @@ SENT_DIR="$SENT"
 check()  { : > "\$SENT_DIR/blocked-check"; return 0; }
 verify() { : > "\$SENT_DIR/blocked-verify"; return 1; }
 install(){ : > "\$SENT_DIR/blocked-install"; }
+SH
+
+cat > "$TOPICS/demo/posty.sh" <<SH
+SENT_DIR="$SENT"
+check()  { : > "\$SENT_DIR/posty-check"; return 0; }
+verify() { : > "\$SENT_DIR/posty-verify"; [[ -f "\$SENT_DIR/posty-repaired" ]]; }
+install(){ : > "\$SENT_DIR/posty-install"; }
+repair() { : > "\$SENT_DIR/posty-repaired"; }
 SH
 
 cat > "$TOPICS/languages/manifest.yaml" <<'YAML'
@@ -158,6 +172,17 @@ assert_eq "$rc" "67" "normal apply exits 67 when a selected broken item has no s
 assert_file_exists "$SENT/blocked-verify" "normal apply verifies before deciding no-safe-repair"
 assert_contains "$(cat "$LOG" 2>/dev/null)" "no safe auto-repair" \
     "normal apply output names the no-safe-repair contract"
+
+echo
+echo "normal apply runs post hooks after repairing a check-present item"
+clean_state
+seed_marker demo posty custom ./posty.sh
+run_engine --bundle demo/post-repair
+rc=$?
+assert_eq "$rc" "0" "normal apply exits 0 after repair and post hook"
+assert_file_exists "$SENT/posty-repaired" "repair() ran for the post-hook fixture"
+assert_file_exists "$TOPICS/demo/post-ran" "post hook runs after successful repair"
+assert_false "[ -f '$SENT/posty-install' ]"
 
 echo
 echo "dependency closure repairs languages/php before web/valet is verified"

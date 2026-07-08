@@ -322,8 +322,9 @@ check_external_brew_mount() {
 
 # ─── Engine health check (selected installed items) ─────────────────────────
 # Read-only doctor reports marker-present selected items whose strongest probe
-# fails. `--fix` delegates repair to install-engine --repair, then this function
-# re-runs read-only verification so unresolved items stay visible.
+# fails. Both read-only health and `--fix` delegate to install-engine so bundle
+# platforms, item when gates, params/secrets/options, and driver dispatch stay
+# identical to normal apply.
 _engine_topics_dir() {
     printf '%s' "${MESH_DOCTOR_TOPICS_DIR:-$REPO/topics}"
 }
@@ -346,93 +347,24 @@ _engine_scope_ready() {
     [[ -d "$(_engine_topics_dir)" && -r "$(_engine_selections_file)" && -r "$REPO/scripts/lib/install-engine.sh" ]]
 }
 
-_engine_bundle_index() {
-    local vars_file="$1" want="$2"
-    (
-        # shellcheck disable=SC1090
-        . "$vars_file"
-        local n="${BUNDLE_COUNT:-0}" i nv
-        for ((i=0; i<n; i++)); do
-            nv="BUNDLE_${i}_NAME"
-            [[ "${!nv:-}" == "$want" ]] && { printf '%s' "$i"; exit 0; }
-        done
-        exit 1
-    )
-}
-
-_engine_item_applies_platform() {
-    local prefix="$1" platform="$2"
-    local pc_var="${prefix}_PLATFORMS_COUNT" pc j pe_var
-    pc="${!pc_var:-0}"
-    [[ "$pc" -gt 0 ]] || return 0
-    for ((j=0; j<pc; j++)); do
-        pe_var="${prefix}_PLATFORMS_${j}"
-        [[ "${!pe_var:-}" == "$platform" ]] && return 0
-    done
-    return 1
-}
-
 _engine_collect_broken() {
     _engine_scope_ready || return 0
-    local topics_dir selections engine platform work closure entry topic bundle vars idx
+    local topics_dir selections engine platform out rc
     topics_dir="$(_engine_topics_dir)"
     selections="$(_engine_selections_file)"
     engine="$REPO/scripts/lib/install-engine.sh"
     platform="$(_engine_platform)"
-    work="$(mktemp -d "${TMPDIR:-/tmp}/mesh-doctor-engine.XXXXXX")" || return 0
-    trap 'rm -rf "$work"; trap - RETURN' RETURN
-    closure="$work/closure"
-    if ! bash "$engine" --topics-dir "$topics_dir" --selections "$selections" --platform "$platform" --print-closure > "$closure" 2>/dev/null; then
-        return 0
-    fi
-
-    while IFS= read -r entry || [[ -n "$entry" ]]; do
-        [[ -n "$entry" ]] || continue
-        topic="${entry%%/*}"
-        bundle="${entry#*/}"
-        [[ -r "$topics_dir/$topic/manifest.yaml" ]] || continue
-        vars="$work/${topic}.vars"
-        if [[ ! -f "$vars" ]]; then
-            bash "$REPO/scripts/lib/yaml-parse.sh" < "$topics_dir/$topic/manifest.yaml" > "$vars" 2>/dev/null || continue
-            grep -q '^__YAML_PARSE_OK=1$' "$vars" 2>/dev/null || continue
-        fi
-        idx="$(_engine_bundle_index "$vars" "$bundle")" || continue
-        (
-            cd "$topics_dir/$topic" || exit 0
-            # shellcheck disable=SC1090
-            . "$vars"
-            local B icount_var icount i p
-            B="$idx"
-            icount_var="BUNDLE_${B}_ITEM_COUNT"
-            icount="${!icount_var:-0}"
-            for ((i=0; i<icount; i++)); do
-                p="BUNDLE_${B}_ITEM_${i}"
-                local name_var="${p}_NAME" type_var="${p}_TYPE" spec_var="${p}_SPEC" script_var="${p}_SCRIPT" mcheck_var="${p}_CHECK" idem_var="${p}_IDEMPOTENT"
-                local name="${!name_var:-}" type="${!type_var:-}" spec="${!spec_var:-}" script="${!script_var:-}" mcheck="${!mcheck_var:-}" idem="${!idem_var:-0}"
-                [[ -n "$name" && -n "$type" ]] || continue
-                [[ "$idem" == "1" ]] && continue
-                _engine_item_applies_platform "$p" "$platform" || continue
-                [[ -f "${MESH_INSTALL_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mesh/installed}/${topic}__${name}.env" ]] || continue
-                local driver="$REPO/scripts/lib/installers/${type}.sh"
-                [[ -r "$driver" ]] || continue
-                # shellcheck disable=SC1090
-                . "$driver"
-                local arg prefix probe_rc=0
-                if [[ "$type" == "custom" ]]; then arg="$script"; else arg="$spec"; fi
-                prefix="${type//-/_}"
-                if declare -f "${prefix}_verify" >/dev/null 2>&1; then
-                    "${prefix}_verify" "$arg" >/dev/null 2>&1 || probe_rc=$?
-                elif [[ -n "$mcheck" ]]; then
-                    bash -c "$mcheck" >/dev/null 2>&1 || probe_rc=$?
-                elif declare -f "${prefix}_check" >/dev/null 2>&1; then
-                    "${prefix}_check" "$arg" >/dev/null 2>&1 || probe_rc=$?
-                else
-                    continue
-                fi
-                [[ "$probe_rc" -eq 0 ]] || printf '%s/%s\n' "$topic" "$name"
-            done
-        )
-    done < "$closure"
+    rc=0
+    out="$(bash "$engine" \
+        --topics-dir "$topics_dir" \
+        --selections "$selections" \
+        --platform "$platform" \
+        --non-interactive \
+        --health 2>/dev/null)" || rc=$?
+    case "$rc" in
+        0|67) printf '%s\n' "$out" ;;
+        *) return 0 ;;
+    esac
 }
 
 _list_contains_line() {
@@ -464,6 +396,7 @@ fix_engine_health() {
         --topics-dir "$topics_dir" \
         --selections "$selections" \
         --platform "$platform" \
+        --non-interactive \
         --repair 2>&1)" || repair_rc=$?
     after="$(_engine_collect_broken)"
     while IFS= read -r item || [[ -n "$item" ]]; do

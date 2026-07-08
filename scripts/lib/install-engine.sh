@@ -10,7 +10,7 @@
 #   bash install-engine.sh [--selections FILE] [--bundle topic/bundle ...]
 #                          [--topics-dir DIR] [--params FILE] [--secrets FILE]
 #                          [--platform OS] [--non-interactive] [--dry-run]
-#                          [--print-closure] [--update | --repair | --adopt]
+#                          [--print-closure] [--update | --repair | --adopt | --health]
 #
 # Selections come from --selections (one `topic/bundle` per line; blank lines
 # and `#` comments ignored) and/or repeated --bundle flags. The two combine.
@@ -44,6 +44,11 @@
 # 0 and is safe to re-run. Mutually exclusive with --update/--repair. `mesh adopt`
 # / `setup --adopt` invoke it. (`--dry-run` short-circuits before the probe, like
 # the other modes — use `mesh adopt` itself, it is already side-effect-free.)
+#
+# --health: a READ-ONLY health sweep over selected marker-present items. It uses
+# the same bundle platform gates, params/secrets/options, `when:` evaluation,
+# and item platform gates as normal apply, then prints each broken `topic/item`
+# to stdout. `mesh doctor` invokes it instead of duplicating engine semantics.
 #
 # Per bundle, in topological order:
 #   1. cd into the topic dir (custom `script:` paths are topic-relative).
@@ -114,6 +119,7 @@ NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 UPDATE_MODE=0
 REPAIR_MODE=0
 ADOPT_MODE=0
+HEALTH_MODE=0
 PRINT_CLOSURE=0
 CLI_BUNDLES=()
 
@@ -132,23 +138,25 @@ while [[ $# -gt 0 ]]; do
         --update)           UPDATE_MODE=1; shift ;;
         --repair)           REPAIR_MODE=1; shift ;;
         --adopt)            ADOPT_MODE=1; shift ;;
+        --health)           HEALTH_MODE=1; shift ;;
         --help|-h)          sed -n '2,40p' "$0"; exit 0 ;;
         *)                  log_error "unknown arg: $1"; exit 64 ;;
     esac
 done
 
-# --update / --repair / --adopt are pairwise exclusive: each replaces the normal
+# --update / --repair / --adopt / --health are pairwise exclusive: each replaces the normal
 # install lifecycle with a different single-purpose pass — --update upgrades
 # versions, --repair runs an operational verify+fix, --adopt does a read-only
-# marker backfill. Combining any two is a usage error (plan §3.C / Codex finding
-# #7 / scanner-marker-coherence handoff).
-_mode_count=$(( UPDATE_MODE + REPAIR_MODE + ADOPT_MODE ))
+# marker backfill, --health reports broken marker-present selected items.
+# Combining any two is a usage error (plan §3.C / Codex finding #7 /
+# scanner-marker-coherence handoff).
+_mode_count=$(( UPDATE_MODE + REPAIR_MODE + ADOPT_MODE + HEALTH_MODE ))
 if [[ "$_mode_count" -gt 1 ]]; then
-    log_error "--update, --repair and --adopt are mutually exclusive"
+    log_error "--update, --repair, --adopt and --health are mutually exclusive"
     exit 64
 fi
 if [[ "$PRINT_CLOSURE" -eq 1 && "$_mode_count" -gt 0 ]]; then
-    log_error "--print-closure cannot be combined with --update, --repair or --adopt"
+    log_error "--print-closure cannot be combined with --update, --repair, --adopt or --health"
     exit 64
 fi
 
@@ -270,6 +278,8 @@ REPAIR_FAIL_FILE="$WORK/repair-failures"
 # marker written, so the parent can report how many pre-existing installs were
 # adopted. Same subshell-can't-set-parent-vars rationale as the repair files.
 ADOPT_DONE_FILE="$WORK/adopt-done"
+HEALTH_OK_FILE="$WORK/health-ok"
+HEALTH_FAIL_FILE="$WORK/health-failures"
 
 # ─── selection collection ────────────────────────────────────────────────────
 
@@ -700,6 +710,72 @@ apply_bundle() {
             . "$driver"
             local prefix="${type//-/_}"
 
+            _run_post_hooks() {
+                local post_count_var="${p}_POST_COUNT" post_count pidx ran post_cmd pe_var
+                post_count="${!post_count_var:-0}"
+                ran=0
+                if (( post_count > 0 )); then
+                    for ((pidx=0; pidx<post_count; pidx++)); do
+                        pe_var="${p}_POST_${pidx}"
+                        post_cmd="${!pe_var:-}"
+                        [[ -n "$post_cmd" ]] || continue
+                        if ! bash -c "$post_cmd"; then
+                            log_warn "$bundle/$name: post[$pidx] failed; rollback if present"
+                            declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                            return 69
+                        fi
+                        ran=$((ran + 1))
+                    done
+                else
+                    pe_var="${p}_POST"
+                    post_cmd="${!pe_var:-}"
+                    if [[ -n "$post_cmd" ]]; then
+                        if ! bash -c "$post_cmd"; then
+                            log_warn "$bundle/$name: post[0] failed; rollback if present"
+                            declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                            return 69
+                        fi
+                        ran=1
+                    fi
+                fi
+                (( ran > 0 )) && log_info "$bundle/$name: post completed ($ran command(s))"
+                return 0
+            }
+
+            # health mode: read-only selected installed-item verification for
+            # doctor. This branch intentionally lives after option/env/when gates
+            # and driver sourcing, so it inherits the same execution context as
+            # normal apply.
+            if [[ "$HEALTH_MODE" -eq 1 ]]; then
+                if [[ "$idem" == "1" ]]; then
+                    log_info "$bundle/$name: health skip (idempotent)"; exit 0
+                fi
+                if [[ ! -f "$(install_state_path "$TOPIC" "$name")" ]]; then
+                    log_info "$bundle/$name: health skip (no install marker)"; exit 0
+                fi
+                _health_probe() {   # driver verify > manifest check > driver check
+                    if declare -f "${prefix}_verify" >/dev/null 2>&1; then
+                        "${prefix}_verify" "$arg"
+                    elif [[ -n "$mcheck" ]]; then
+                        bash -c "$mcheck" >/dev/null 2>&1
+                    elif declare -f "${prefix}_check" >/dev/null 2>&1; then
+                        "${prefix}_check" "$arg" 2>/dev/null
+                    else
+                        return 2
+                    fi
+                }
+                local _hrc=0
+                _health_probe >/dev/null 2>&1 || _hrc=$?
+                if [[ "$_hrc" -eq 0 ]]; then
+                    printf '%s/%s\n' "$TOPIC" "$name" >> "$HEALTH_OK_FILE" 2>/dev/null || true
+                    log_info "$bundle/$name: health ok"; exit 0
+                elif [[ "$_hrc" -eq 2 ]]; then
+                    log_info "$bundle/$name: health skip (no probe)"; exit 0
+                fi
+                printf '%s/%s\n' "$TOPIC" "$name" >> "$HEALTH_FAIL_FILE" 2>/dev/null || true
+                log_warn "$bundle/$name: health broken"; exit 0
+            fi
+
             # adopt mode (scanner-marker-coherence handoff, Option A): a read-only
             # marker backfill. For each marker-ABSENT item whose STRONGEST probe
             # passes (driver verify > manifest check > driver check) write the
@@ -963,6 +1039,7 @@ apply_bundle() {
                     log_error "$bundle/$name: still broken after repair — manual intervention required"
                     exit 67
                 fi
+                _run_post_hooks || exit $?
                 install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
                 log_info "$bundle/$name: repaired and verified"
                 exit 0
@@ -995,23 +1072,7 @@ apply_bundle() {
             install_state_record "$TOPIC" "$name" "$type" "$arg" \
                 || log_warn "$bundle/$name: failed to record install marker (continuing)"
 
-            # optional post: hooks (scalar or list, expanded by yaml-parse).
-            local post_count_var="${p}_POST_COUNT" post_count
-            post_count="${!post_count_var:-0}"
-            if (( post_count > 0 )); then
-                local pidx
-                for ((pidx=0; pidx<post_count; pidx++)); do
-                    local pe_var="${p}_POST_${pidx}"
-                    local post_cmd="${!pe_var:-}"
-                    [[ -n "$post_cmd" ]] || continue
-                    if ! bash -c "$post_cmd"; then
-                        log_warn "$bundle/$name: post[$pidx] failed; rollback if present"
-                        declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
-                        exit 69
-                    fi
-                done
-                log_info "$bundle/$name: post completed ($post_count command(s))"
-            fi
+            _run_post_hooks || exit $?
         ) || { local _rc=$?; log_error "$bundle/$name: failed (rc=$_rc)"; exit $_rc; }
         bundle_processed=$((bundle_processed+1))
     done
@@ -1047,6 +1108,21 @@ if [[ "$REPAIR_MODE" -eq 1 ]]; then
     if (( _r_fail > 0 )); then
         log_error "repair: $_r_fail item(s) could not be repaired:"
         while IFS= read -r _l; do [[ -n "$_l" ]] && log_error "  - $_l"; done < "$REPAIR_FAIL_FILE"
+        exit 67
+    fi
+    exit 0
+fi
+
+# ─── health-mode summary (doctor read-only engine-health probe) ───────────────
+# stdout is data for doctor: one broken "topic/item" per line. Logs stay on
+# stderr through log_*.
+if [[ "$HEALTH_MODE" -eq 1 ]]; then
+    _h_ok=0; _h_fail=0
+    [[ -s "$HEALTH_OK_FILE" ]]   && _h_ok="$(grep -c . "$HEALTH_OK_FILE")"
+    [[ -s "$HEALTH_FAIL_FILE" ]] && _h_fail="$(grep -c . "$HEALTH_FAIL_FILE")"
+    log_info "health sweep on $PLATFORM: $_h_ok healthy, $_h_fail broken"
+    if (( _h_fail > 0 )); then
+        cat "$HEALTH_FAIL_FILE"
         exit 67
     fi
     exit 0
