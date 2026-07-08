@@ -77,10 +77,16 @@ for manifest in "${manifests[@]}"; do
         local_failed=0
         b=0
         while [[ "$b" -lt "${BUNDLE_COUNT:-0}" ]]; do
+            bundle_name="bundle-$b"
+            item_count=0
             eval "bundle_name=\${BUNDLE_${b}_NAME:-bundle-$b}"
             eval "item_count=\${BUNDLE_${b}_ITEM_COUNT:-0}"
             i=0
             while [[ "$i" -lt "$item_count" ]]; do
+                item_name="item-$i"
+                item_type=""
+                item_script=""
+                item_idempotent=0
                 eval "item_name=\${BUNDLE_${b}_ITEM_${i}_NAME:-item-$i}"
                 eval "item_type=\${BUNDLE_${b}_ITEM_${i}_TYPE:-}"
                 eval "item_script=\${BUNDLE_${b}_ITEM_${i}_SCRIPT:-}"

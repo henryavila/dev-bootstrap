@@ -12,7 +12,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 DRIVER="$REPO_ROOT/topics/remote-access/mac/code-server.sh"
 
-MESH_WORKSTATION_DIR="$REPO_ROOT"
+export MESH_WORKSTATION_DIR="$REPO_ROOT"
 # shellcheck source=/dev/null
 . "$DRIVER"
 
@@ -50,7 +50,7 @@ run_check() {
     (
         HOME="$h"
         USER="tester"
-        CODE_SERVER_LABEL="com.tester.code-server"
+        export CODE_SERVER_LABEL="com.tester.code-server"
         check
     )
 }
