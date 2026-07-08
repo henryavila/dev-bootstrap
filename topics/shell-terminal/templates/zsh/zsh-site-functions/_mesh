@@ -110,18 +110,54 @@ _mesh_topic_specs_from_lines() {
     done
 }
 
+_mesh_load_command_specs() {
+    emulate -L zsh
+
+    local line name summary _group _origin _visibility _fanout
+    local -a fallback
+
+    if [[ "${_MESH_COMMAND_SPECS_CACHED:-0}" == "1" ]]; then
+        return 0
+    fi
+
+    typeset -ga _MESH_COMMAND_SPECS_CACHE
+    _MESH_COMMAND_SPECS_CACHE=()
+
+    if (( $+commands[mesh] )); then
+        while IFS=$'\t' read -r name summary _group _origin _visibility _fanout; do
+            [[ -n "$name" && -n "$summary" ]] || continue
+            _MESH_COMMAND_SPECS_CACHE+=("${name}:${summary}")
+        done < <(command mesh __commands 2>/dev/null)
+    fi
+
+    if (( ${#_MESH_COMMAND_SPECS_CACHE[@]} == 0 )); then
+        fallback=(
+            'status:show cross-mesh status and per-host detail'
+            'snap:generate this host snapshot'
+            'update:pull and apply dotfiles ecosystem updates'
+            'topic:list or run mesh-workstation topics by number'
+            'run:run a mesh subcommand on selected hosts'
+            'config:edit personal config from mesh-identity deploy.map'
+        )
+        _MESH_COMMAND_SPECS_CACHE=("${fallback[@]}")
+    fi
+
+    typeset -g _MESH_COMMAND_SPECS_CACHED=1
+}
+
+_mesh_command_specs() {
+    emulate -L zsh
+
+    _mesh_load_command_specs
+    print -rl -- "${_MESH_COMMAND_SPECS_CACHE[@]}"
+}
+
 _mesh() {
     local curcontext="$curcontext" state
     local -a subcommands
 
-    subcommands=(
-        'status:show cross-mesh status and per-host detail'
-        'snap:generate this host snapshot'
-        'update:pull and apply dotfiles ecosystem updates'
-        'topic:list or run mesh-workstation topics by number'
-        'run:run a mesh subcommand on selected hosts'
-        'config:edit personal config from mesh-identity deploy.map'
-    )
+    _mesh_load_command_specs
+    subcommands=("${_MESH_COMMAND_SPECS_CACHE[@]}")
 
     if (( CURRENT == 2 )); then
         _arguments \

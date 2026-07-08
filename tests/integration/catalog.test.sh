@@ -4,7 +4,7 @@
 # Verifies:
 #   1. Fresh generation produces all expected files.
 #   2. Re-generation is byte-identical (deterministic / drift-free).
-#   3. cli.txt contains the subcommands we just added in Phase 5 (lint, catalog).
+#   3. cli.txt exactly matches public command names from `mesh __commands`.
 #   4. drivers.txt matches scripts/lib/installers/*.sh contents.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,6 +49,12 @@ fi
 # ─── Test 3: cli.txt contents ──────────────────────────────────────
 echo
 echo "cli.txt content checks"
+expected_cli=$(MESH_IDENTITY_DIR="$OUT/.identity-empty" "$REPO_ROOT/bin/mesh" __commands \
+    | awk -F '\t' 'NF >= 1 { print $1 }' \
+    | LC_ALL=C sort -u)
+actual_cli=$(cat "$OUT/cli.txt")
+assert_eq "$actual_cli" "$expected_cli" "cli.txt matches public names from mesh __commands"
+
 if grep -q '^lint$' "$OUT/cli.txt"; then
     pass "cli.txt contains 'lint' subcommand"
 else
@@ -63,6 +69,12 @@ if grep -q '^status$' "$OUT/cli.txt"; then
     pass "cli.txt contains 'status' subcommand"
 else
     fail "cli.txt missing 'status'"
+fi
+
+if grep -q "grep -E '^    \\[a-z\\]\\[a-z-\\]" "$CATALOG"; then
+    fail "catalog.sh still parses bin/mesh case labels"
+else
+    pass "catalog.sh no longer parses bin/mesh case labels"
 fi
 
 # ─── Test 4: drivers.txt matches installers ────────────────────────

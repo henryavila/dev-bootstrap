@@ -49,11 +49,11 @@ LANG_MAC="$_bundle_dir/10-languages-mac.bundle.sh"
 LANG_WSL="$_bundle_dir/10-languages-wsl.bundle.sh"
 REMOTE_MAC="$_bundle_dir/70-remote-access-mac.bundle.sh"
 
-_make_bundle "$WSL"      "$ROOT/topics/60-web-stack/wsl"   "$ROOT/topics/60-web-stack/extras"
-_make_bundle "$MAC"      "$ROOT/topics/60-web-stack/mac"   "$ROOT/topics/60-web-stack/extras"
-_make_bundle "$LANG_MAC" "$ROOT/topics/10-languages/mac"   "$ROOT/topics/10-languages"
-_make_bundle "$LANG_WSL" "$ROOT/topics/10-languages/wsl"   "$ROOT/topics/10-languages"
-_make_bundle "$REMOTE_MAC" "$ROOT/topics/70-remote-access"
+_make_bundle "$WSL"      "$ROOT/topics/web/wsl"   "$ROOT/topics/web/extras" "$ROOT/topics/web/scripts"
+_make_bundle "$MAC"      "$ROOT/topics/web/mac"   "$ROOT/topics/web/extras" "$ROOT/topics/web/scripts"
+_make_bundle "$LANG_MAC" "$ROOT/topics/languages/mac"   "$ROOT/topics/languages"
+_make_bundle "$LANG_WSL" "$ROOT/topics/languages/wsl"   "$ROOT/topics/languages"
+_make_bundle "$REMOTE_MAC" "$ROOT/topics/remote-access"
 
 # Helper: count matches of an extended regex in a file (works on bash 3.2)
 _count_matches() {
@@ -182,7 +182,8 @@ assert_pattern_present "$REMOTE_MAC" '/etc/paths.d/60-extbrew' \
 assert_pattern_present "$REMOTE_MAC" 'symlinked mosh-server' \
     "70-remote-access/install.mac.sh — belt-and-suspenders symlink in /usr/local/bin"
 
-assert_pattern_present "$MAC" '/etc/paths.d/61-oracle-mysql' \
+MYSQL_MAC="$ROOT/topics/databases/mac/mysql.sh"
+assert_pattern_present "$MYSQL_MAC" '/etc/paths.d/61-oracle-mysql' \
     "60-web-stack/install.mac.sh — writes /etc/paths.d/61-oracle-mysql for Oracle DMG"
 
 echo
@@ -369,7 +370,7 @@ assert_pattern_present "$LANG_MAC" 'composer_has_broken_phar_signature' \
 assert_pattern_present "$LANG_MAC" 'SHA512 signature could not be verified: broken signature' \
     "10-languages/install.mac.sh — matches the Composer PHAR failure string"
 
-assert_pattern_present "$LANG_MAC" 'composer_is_usable \|\| fail' \
+assert_pattern_present "$LANG_MAC" 'composer_is_usable \|\| \{ fail' \
     "10-languages/install.mac.sh — validates composer --version after install/reinstall"
 
 echo
@@ -410,7 +411,7 @@ echo "═══ fzf shell integration: do NOT source completion.zsh (fzf-tab own
 # contextual". Defense in depth: only source key-bindings.zsh (Ctrl-R / Ctrl-T
 # / Alt-C); TAB is owned exclusively by fzf-tab, falling back to native zsh
 # \`expand-or-complete\` if fzf-tab is unavailable.
-TUX_ZSH="$ROOT/topics/20-terminal-ux/templates/zshrc.d-20-terminal-ux.sh.template"
+TUX_ZSH="$ROOT/topics/shell-terminal/templates/cli-tools/zshrc.d-20-terminal-ux.sh.template"
 
 assert_pattern_absent "$TUX_ZSH" 'shell/completion\.zsh' \
     "20-terminal-ux zsh template — does NOT source fzf's completion.zsh (stomps TAB / fzf-tab)"
@@ -501,31 +502,25 @@ else
 fi
 
 echo
-echo "═══ INCLUDE_LARAVEL → INCLUDE_WEBSTACK back-compat alias ═══"
+echo "═══ Legacy INCLUDE_* pre-seeds no longer drive setup selection ═══"
 
-assert_pattern_present "$BOOTSTRAP" 'INCLUDE_LARAVEL.*INCLUDE_WEBSTACK' \
-    "setup.sh — legacy INCLUDE_LARAVEL aliases to INCLUDE_WEBSTACK"
+assert_pattern_present "$BOOTSTRAP" 'selections.list' \
+    "setup.sh — selection source is selections.list, not legacy INCLUDE_* gates"
 
-# The alias check must happen BEFORE export INCLUDE_WEBSTACK, otherwise
-# the alias would set after the canonical default already initialized to 0.
-alias_line=$(grep -n 'INCLUDE_WEBSTACK="\$INCLUDE_LARAVEL"' "$BOOTSTRAP" | head -1 | cut -d: -f1)
-export_line=$(grep -n 'export INCLUDE_WEBSTACK="${INCLUDE_WEBSTACK:-0}"' "$BOOTSTRAP" | head -1 | cut -d: -f1)
-if [[ -n "$alias_line" && -n "$export_line" ]] && [[ "$alias_line" -lt "$export_line" ]]; then
-    pass "INCLUDE_LARAVEL alias resolved BEFORE INCLUDE_WEBSTACK default-export"
-else
-    fail "INCLUDE_LARAVEL alias must come before INCLUDE_WEBSTACK default (alias=$alias_line, export=$export_line)"
-fi
+assert_pattern_absent "$BOOTSTRAP" 'INCLUDE_LARAVEL' \
+    "setup.sh — no longer consumes legacy INCLUDE_LARAVEL directly"
 
-# (menu.sh webstack-keyword + state-persistence assertions removed with the dead
-# F9.5 menu in T-005; the Ink TUI owns selection state via selections.list.)
+assert_pattern_present "$ROOT/scripts/runners/auto-update.sh" \
+    'unset INCLUDE_DOCKER INCLUDE_WEBSTACK INCLUDE_LARAVEL INCLUDE_REMOTE' \
+    "auto-update.sh — clears legacy INCLUDE_* gates before non-interactive setup"
 
 echo
 echo "═══ 2026-04-23 : auto-chsh + secrets.env scaffold ═══"
 
 # Issue 1 — zsh auto-chsh. Bootstrap must try sudo chsh/usermod before
 # falling through to the advisory, default-on, CHSH_AUTO=0 opts out.
-TUX_WSL="$_bundle_dir/20-terminal-ux-wsl.bundle.sh"; _make_bundle "$TUX_WSL" "$ROOT/topics/20-terminal-ux/wsl" "$ROOT/topics/20-terminal-ux"
-TUX_MAC="$_bundle_dir/20-terminal-ux-mac.bundle.sh"; _make_bundle "$TUX_MAC" "$ROOT/topics/20-terminal-ux/mac" "$ROOT/topics/20-terminal-ux"
+TUX_WSL="$_bundle_dir/20-terminal-ux-wsl.bundle.sh"; _make_bundle "$TUX_WSL" "$ROOT/topics/shell-terminal/wsl" "$ROOT/topics/shell-terminal"
+TUX_MAC="$_bundle_dir/20-terminal-ux-mac.bundle.sh"; _make_bundle "$TUX_MAC" "$ROOT/topics/shell-terminal/mac" "$ROOT/topics/shell-terminal"
 
 assert_pattern_present "$TUX_WSL" 'CHSH_AUTO:-1' \
     "20-terminal-ux/install.wsl.sh — CHSH_AUTO defaults to 1 (auto-on)"
@@ -681,7 +676,7 @@ echo "═══ 2026-04-23 : WSL PECL per-version build via PHP_PEAR_PHP_BIN ═
 # install.wsl.sh + install-mssql-driver.sh share the same hardened
 # implementation. These asserts inspect the lib directly.
 PECL_LIB="$ROOT/scripts/lib/pecl-install.sh"
-MSSQL="$ROOT/topics/60-web-stack/scripts/install-mssql-driver.sh"
+MSSQL="$ROOT/topics/databases/scripts/install-mssql-driver.sh"
 
 assert_file_exists "$PECL_LIB" \
     "lib/pecl-install.sh — shared helper exists (single source of truth)"
@@ -725,7 +720,7 @@ assert_pattern_present "$PECL_LIB" 'tmpmeta="\$\(mktemp -d' \
 assert_pattern_present "$PECL_LIB" "trap 'sudo rm -rf \"\\\$tmpbin\" \"\\\$tmpmeta\"" \
     "10-languages/install.wsl.sh — trap cleans both tmpbin AND tmpmeta with sudo"
 
-assert_pattern_present "$PECL_LIB" "'sudo rm.*2>/dev/null \|\| true' RETURN" \
+assert_pattern_present "$PECL_LIB" 'sudo rm.*tmpbin.*tmpmeta.*2>/dev/null \|\| true; trap - RETURN' \
     "10-languages/install.wsl.sh — trap absorbs rm errors (else set -e aborts the loop)"
 
 assert_pattern_present "$PECL_LIB" 'ln -s "\$phpize_bin"' \
@@ -820,7 +815,7 @@ assert_pattern_present "$TUX_MAC" 'tmux show-environment -g SHELL' \
 # shell, but `tmux attach` to an old server (carrying stale env) keeps
 # opening the wrong shell. With this, a post-kill-server restart loads
 # tmux.conf and resolves default-shell from /etc/passwd — authoritative.
-TMUX_CONF="$ROOT/topics/40-tmux/templates/tmux.conf"
+TMUX_CONF="$ROOT/topics/shell-terminal/templates/tmux/tmux.conf"
 
 assert_file_exists "$TMUX_CONF" \
     "40-tmux/templates/tmux.conf — exists"
@@ -834,11 +829,11 @@ assert_pattern_present "$TMUX_CONF" 'getent passwd' \
 assert_pattern_present "$TMUX_CONF" 'dscl.*UserShell' \
     "40-tmux/templates/tmux.conf — resolves shell via dscl (macOS)"
 
-assert_pattern_present "$TMUX_CONF" '@dev_bootstrap_pane_cwd' \
-    "40-tmux/templates/tmux.conf — status directory prefers shell-reported pane cwd"
+assert_pattern_present "$TMUX_CONF" 'pane_current_path' \
+    "40-tmux/templates/tmux.conf — status directory uses live pane_current_path"
 
-assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?#\{@dev_bootstrap_pane_cwd\},#\{b:@dev_bootstrap_pane_cwd\},#\{b:pane_current_path\}\}' \
-    "40-tmux/templates/tmux.conf — status directory falls back to tmux pane_current_path"
+assert_code_absent "$TMUX_CONF" '@dev_bootstrap_pane_cwd' \
+    "40-tmux/templates/tmux.conf — no runtime dependency on stale @dev_bootstrap_pane_cwd"
 
 assert_pattern_absent "$TMUX_CONF" 'SSH_CONNECTION' \
     "40-tmux/templates/tmux.conf — does not infer inbound SSH as status"
@@ -852,8 +847,8 @@ assert_pattern_absent "$TMUX_CONF" '@dev_bootstrap_outbound_ssh_context' \
 assert_pattern_absent "$TMUX_CONF" '󰣀' \
     "40-tmux/templates/tmux.conf — no separate SSH card in nested-tmux model"
 
-assert_pattern_present "$TMUX_CONF" 'status-right-length 120' \
-    "40-tmux/templates/tmux.conf — status-right sized for cwd + user@host"
+assert_pattern_present "$TMUX_CONF" 'client_width' \
+    "40-tmux/templates/tmux.conf — line 2 is sized by client_width for cwd + user@host"
 
 # Advisory text must NOT claim `exec zsh` is a sufficient fix — that
 # only changes the running process, not \$SHELL, so tmux/mosh etc still
@@ -870,8 +865,8 @@ echo "═══ 40-tmux ships generic tmux helpers (tl / ta / tn / tm) ═══
 # to belong in the shared baseline. The dotfiles-private file
 # should NOT redeclare them — the aliases_private_keeps_only_project
 # assertion catches accidental drift.
-TMUX_BASHRC="$ROOT/topics/40-tmux/templates/bashrc.d-40-tmux.sh"
-TMUX_ZSHRC="$ROOT/topics/40-tmux/templates/zshrc.d-40-tmux.sh"
+TMUX_BASHRC="$ROOT/topics/shell-terminal/templates/tmux/bashrc.d-40-tmux.sh"
+TMUX_ZSHRC="$ROOT/topics/shell-terminal/templates/tmux/zshrc.d-40-tmux.sh"
 
 assert_file_exists "$TMUX_BASHRC" \
     "40-tmux — bashrc fragment exists"
@@ -943,8 +938,8 @@ echo
 echo "═══ Baseline shell aliases migrated from private dotfiles to public topics ═══"
 
 # 30-shell — navigation + shell shortcuts + alert + mkd/md/fs/tre
-SHELL_ZSH="$ROOT/topics/30-shell/templates/zshrc.d-30-shell.sh.template"
-SHELL_BASH="$ROOT/topics/30-shell/templates/bashrc.d-30-shell.sh.template"
+SHELL_ZSH="$ROOT/topics/shell-terminal/templates/zsh/zshrc.d-30-shell.sh.template"
+SHELL_BASH="$ROOT/topics/shell-terminal/templates/zsh/bashrc.d-30-shell.sh.template"
 
 for f in "$SHELL_ZSH" "$SHELL_BASH"; do
     base="$(basename "$f")"
@@ -961,8 +956,8 @@ for f in "$SHELL_ZSH" "$SHELL_BASH"; do
 done
 
 # 20-terminal-ux — Phase E CLI replacements (btop/duf/dust/gping/xh/procs)
-TUX_ZSH="$ROOT/topics/20-terminal-ux/templates/zshrc.d-20-terminal-ux.sh.template"
-TUX_BASH="$ROOT/topics/20-terminal-ux/templates/bashrc.d-20-terminal-ux.sh.template"
+TUX_ZSH="$ROOT/topics/shell-terminal/templates/cli-tools/zshrc.d-20-terminal-ux.sh.template"
+TUX_BASH="$ROOT/topics/shell-terminal/templates/cli-tools/bashrc.d-20-terminal-ux.sh.template"
 
 for f in "$TUX_ZSH" "$TUX_BASH"; do
     base="$(basename "$f")"
@@ -975,8 +970,8 @@ for f in "$TUX_ZSH" "$TUX_BASH"; do
 done
 
 # 60-web-stack — Laravel + service restart (new fragments)
-WEB_ZSH="$ROOT/topics/60-web-stack/templates/zshrc.d-60-web-stack.sh"
-WEB_BASH="$ROOT/topics/60-web-stack/templates/bashrc.d-60-web-stack.sh"
+WEB_ZSH="$ROOT/topics/web/templates/serve/zshrc.d-60-web-stack.sh"
+WEB_BASH="$ROOT/topics/web/templates/serve/bashrc.d-60-web-stack.sh"
 
 for f in "$WEB_ZSH" "$WEB_BASH"; do
     base="$(basename "$f")"
@@ -988,8 +983,8 @@ for f in "$WEB_ZSH" "$WEB_BASH"; do
 done
 
 # 70-remote-access — Tailscale aliases + tip-of function
-REM_ZSH="$ROOT/topics/70-remote-access/templates/zshrc.d-70-remote-access.sh"
-REM_BASH="$ROOT/topics/70-remote-access/templates/bashrc.d-70-remote-access.sh"
+REM_ZSH="$ROOT/topics/remote-access/templates/tailscale/zshrc.d-70-remote-access.sh"
+REM_BASH="$ROOT/topics/remote-access/templates/tailscale/bashrc.d-70-remote-access.sh"
 
 for f in "$REM_ZSH" "$REM_BASH"; do
     base="$(basename "$f")"
@@ -1012,8 +1007,8 @@ echo "═══ 80-claude-code fragment puts Bun in PATH (fixes crc bun-not-in-P
 # managed .bashrc/.zshrc templates overwrite those writes. Fix:
 # ship a .bashrc.d/.zshrc.d fragment that puts Bun in PATH, gated
 # on file existence (same pattern as 10-languages + fnm).
-CLAUDE_BASH="$ROOT/topics/80-claude-code/templates/bashrc.d-80-claude-code.sh"
-CLAUDE_ZSH="$ROOT/topics/80-claude-code/templates/zshrc.d-80-claude-code.sh"
+CLAUDE_BASH="$ROOT/topics/ai/templates/claude-code/bashrc.d-80-claude-code.sh"
+CLAUDE_ZSH="$ROOT/topics/ai/templates/claude-code/zshrc.d-80-claude-code.sh"
 
 assert_file_exists "$CLAUDE_BASH" \
     "80-claude-code — bashrc fragment exists"

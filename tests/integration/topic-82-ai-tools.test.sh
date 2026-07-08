@@ -7,7 +7,8 @@ WS="$(cd "$HERE/../.." && pwd)"
 ENGINE="$WS/scripts/lib/install-engine.sh"
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/installers"
+TOPIC="$TMP/topics/ai"
+mkdir -p "$TMP/installers" "$TOPIC"
 
 # Mock npm-global
 cat > "$TMP/installers/npm-global.sh" <<'SH'
@@ -29,35 +30,46 @@ custom_verify()  { local s="$1"; ( . "$s"; declare -f verify >/dev/null && verif
 SH
 
 # Mocked rtk script (replaces actual curl/install call with file touch)
-cat > "$TMP/install-rtk-mocked.sh" <<'SH'
+cat > "$TOPIC/install-rtk-mocked.sh" <<'SH'
 check()   { test -f "$STATE/rtk.installed"; }
 install() { touch "$STATE/rtk.installed"; }
 verify()  { check; }
 SH
-chmod +x "$TMP/install-rtk-mocked.sh"
+chmod +x "$TOPIC/install-rtk-mocked.sh"
 
-# items.yaml — points custom script at the absolute mock path
-cat > "$TMP/items.yaml" <<YAML
-- name: mdprobe
-  type: npm-global
-  spec: "@henryavila/mdprobe"
-
-- name: atomic-skills
-  type: npx
-  spec: "@henryavila/atomic-skills@1.7.0"
-
-- name: rtk
-  type: custom
-  script: "$TMP/install-rtk-mocked.sh"
+# manifest.yaml — v2 bundle engine fixture for the AI tools bundle.
+cat > "$TOPIC/manifest.yaml" <<'YAML'
+topic:
+  label: "AI"
+  order: 82
+bundles:
+  - name: tools
+    label: "AI Tools"
+    items:
+      - name: mdprobe
+        type: npm-global
+        spec: "@henryavila/mdprobe"
+      - name: atomic-skills
+        type: npx
+        spec: "@henryavila/atomic-skills@1.7.0"
+      - name: rtk
+        type: custom
+        script: ./install-rtk-mocked.sh
 YAML
 
 STATE=$TMP/state
 mkdir -p "$STATE"
 export STATE
+: > "$TMP/params.env"
 
-bash "$ENGINE" \
-    --manifest "$TMP/items.yaml" \
-    --installers-dir "$TMP/installers"
+MESH_INSTALL_STATE_DIR="$TMP/install-state" \
+    bash "$ENGINE" \
+        --topics-dir "$TMP/topics" \
+        --bundle ai/tools \
+        --installers-dir "$TMP/installers" \
+        --params "$TMP/params.env" \
+        --platform mac \
+        --non-interactive
 
 # Verify all 3 files written (proving all 3 dispatch paths fire correctly)
 passed=0; failed=0

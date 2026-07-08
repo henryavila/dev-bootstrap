@@ -38,8 +38,8 @@ else
                 | sudo tee /etc/apt/keyrings/ngrok.asc > /dev/null
             echo "deb [signed-by=/etc/apt/keyrings/ngrok.asc] https://ngrok-agent.s3.amazonaws.com buster main" \
                 | sudo tee /etc/apt/sources.list.d/ngrok.list > /dev/null
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq ngrok
+            sudo apt-get update
+            sudo apt-get install -y ngrok
             ;;
     esac
     ok "ngrok installed"

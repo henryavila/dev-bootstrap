@@ -32,7 +32,7 @@ uninstall() {
             command -v brew >/dev/null 2>&1 && "${BREW_BIN:-brew}" uninstall --cask ngrok 2>/dev/null || true
             ;;
         Linux)
-            command -v apt-get >/dev/null 2>&1 && sudo apt-get remove -y -qq ngrok 2>/dev/null || true
+            command -v apt-get >/dev/null 2>&1 && sudo apt-get remove -y ngrok 2>/dev/null || true
             sudo rm -f /etc/apt/sources.list.d/ngrok.list /etc/apt/keyrings/ngrok.asc 2>/dev/null || true
             ;;
     esac

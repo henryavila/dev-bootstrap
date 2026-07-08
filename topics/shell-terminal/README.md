@@ -28,8 +28,8 @@ Native-Linux users outside WSL: no terminal emulator config runs. Use whatever t
 ## Shell wiring
 
 - `bashrc.d-20-terminal-ux.sh` / `zshrc.d-20-terminal-ux.sh` — initialize starship (bash only — zsh uses p10k from your personal dotfiles), zoxide, fzf keybindings, and register `ls→eza`, `cat→bat`, `fd→fdfind` (WSL).
-- `zsh-site-functions/_mesh` — managed zsh completion for the dotfiles-layer
-  `mesh` command. Top-level `mesh <TAB>` shows supported subcommands, and
+- `zsh-site-functions/_mesh` — managed zsh completion for the `mesh` command.
+  Top-level `mesh <TAB>` shows supported subcommands, and
   `mesh topic <TAB>` reads the official topic list from `mesh topic list` when
   available, with a static fallback for fresh installs.
 - Fzf shortcuts: `Ctrl+R` (history), `Ctrl+T` (file finder), `Alt+C` (cd fuzzy).
