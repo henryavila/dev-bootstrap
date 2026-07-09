@@ -10,8 +10,23 @@ Installs language runtimes:
 PHP extensions come from three lists in `data/`:
 
 - `php-extensions-apt.txt` — baseline (bcmath, curl, gd, intl, mbstring, mysql, …) installed for every version
-- `php-extensions-pecl.txt` — PECL extras (igbinary, imagick, mongodb, redis) built per-version
+- `php-extensions-pecl.txt` — mandatory PECL baseline (igbinary, imagick, mongodb, pcov, redis) built per-version
 - `php-extensions-mssql.txt` — `sqlsrv` + `pdo_sqlsrv`, gated by `INCLUDE_MSSQL=1` (invoked from 60-web-stack)
+
+## PECL policy
+
+The baseline entries in `data/php-extensions-pecl.txt` are mandatory for every
+version declared by `data/php-versions.conf` or `PHP_VERSIONS`. `install()` and
+`repair()` must attempt each baseline extension for each declared PHP version.
+If a build fails, the expected `.so` is missing, or an active extension `.ini`
+points at a missing `.so`, the PHP stack is broken and must not be reported as
+green.
+
+`check()` remains a cheap presence probe for Composer, Python, and declared PHP
+packages/formulae. `verify()` is the health authority: it must prove each PHP
+version starts without `PHP Startup` warnings and that baseline PECL extensions
+load cleanly. A future optional extension policy must use an explicit quarantine
+decision; silently skipping a baseline PECL entry is not a valid success path.
 
 Fragments in `templates/` configure `fnm env --use-on-cd` and Composer's `PATH` for both bash and zsh.
 
