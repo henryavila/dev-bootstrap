@@ -32,18 +32,27 @@ USAGE
 function_body() {
     local name="$1" file="$2"
     awk -v name="$name" '
-        $0 ~ "^" name "\\(\\)[[:space:]]*\\{" { capture=1 }
-        capture { print }
-        capture && $0 == "}" { exit }
+        $0 ~ "^" name "\\(\\)[[:space:]]*\\{" { capture=1; depth=0 }
+        capture {
+            print
+            line=$0
+            opens=gsub(/\{/, "{", line)
+            line=$0
+            closes=gsub(/\}/, "}", line)
+            depth += opens - closes
+            if (depth <= 0) exit
+        }
     ' "$file"
 }
 
 helper_invocations_after_definition() {
     local file="$1"
-    grep -n 'pecl_install_for_mac' "$file" 2>/dev/null \
-        | grep -v 'pecl_install_for_mac()' \
-        | grep -v 'helper is defined but never called' \
-        || true
+    awk '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*pecl_install_for_mac[[:space:]]+/ {
+            printf "%d:%s\n", FNR, $0
+        }
+    ' "$file"
 }
 
 pecl_failure_branch() {
