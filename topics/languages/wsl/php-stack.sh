@@ -3,6 +3,76 @@
 # Bundles ~200 LOC of the original install.wsl.sh verbatim, wrapped in
 # the engine contract.
 
+_php_versions_for_stack() {
+    local PHP_VERSIONS_FILE versions
+    PHP_VERSIONS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/php-versions.conf"
+    versions="${PHP_VERSIONS:-}"
+    if [[ -z "$versions" && -f "$PHP_VERSIONS_FILE" ]]; then
+        versions="$(grep -vE '^\s*(#|$)' "$PHP_VERSIONS_FILE" | xargs)"
+    fi
+    [[ -n "$versions" ]] || return 1
+    printf '%s\n' "$versions"
+}
+
+_php_pecl_extensions_for_stack() {
+    local PECL_EXTENSIONS_FILE line ext
+    PECL_EXTENSIONS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/php-extensions-pecl.txt"
+    [[ -f "$PECL_EXTENSIONS_FILE" ]] || return 1
+    while IFS= read -r line; do
+        case "$line" in
+            ""|\#*) continue ;;
+        esac
+        IFS=':' read -r ext _ _ <<< "$line"
+        [[ -n "$ext" ]] && printf '%s\n' "$ext"
+    done < "$PECL_EXTENSIONS_FILE"
+}
+
+_php_bin_for_version() {
+    local ver="$1"
+    printf '%s/php%s\n' "${PHP_CLI_BIN_DIR:-/usr/bin}" "$ver"
+}
+
+_php_cli_starts_clean() {
+    local ver="$1"
+    local php_bin
+    php_bin="$(_php_bin_for_version "$ver")"
+    [[ -x "$php_bin" ]] || {
+        echo "php${ver}: php binary missing at $php_bin" >&2
+        return 1
+    }
+
+    local tmp rc
+    tmp="$(mktemp -d -t mesh-php-verify.XXXXXX)" || return 1
+    "$php_bin" -v >"$tmp/out" 2>"$tmp/err"; rc=$?
+    cat "$tmp/out" "$tmp/err" > "$tmp/all"
+    if [[ "$rc" -ne 0 ]]; then
+        cat "$tmp/all" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q 'PHP Startup: Unable to load dynamic library' "$tmp/all"; then
+        grep 'PHP Startup: Unable to load dynamic library' "$tmp/all" | head -4 >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+    return 0
+}
+
+_php_module_loaded_for_version() {
+    local ver="$1" ext="$2"
+    local php_bin
+    php_bin="$(_php_bin_for_version "$ver")"
+    [[ -x "$php_bin" ]] || {
+        echo "php${ver}: php binary missing at $php_bin" >&2
+        return 1
+    }
+
+    local mods
+    mods="$("$php_bin" -m 2>/dev/null)" || return 1
+    grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$" <<< "$mods"
+}
+
 check() {
     command -v composer >/dev/null 2>&1 || return 1
     command -v python3 >/dev/null 2>&1 || return 1
@@ -10,13 +80,8 @@ check() {
     # ANY php on PATH. That passed on the system php while skipping
     # multi-PHP install. Now require all declared PHP_VERSIONS installed
     # via dpkg. Empty PHP_VERSIONS = no version constraint (initial install).
-    local PHP_VERSIONS_FILE
-    PHP_VERSIONS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/php-versions.conf"
-    local versions="${PHP_VERSIONS:-}"
-    if [[ -z "$versions" ]] && [[ -f "$PHP_VERSIONS_FILE" ]]; then
-        versions="$(grep -vE '^\s*(#|$)' "$PHP_VERSIONS_FILE" | xargs)"
-    fi
-    [[ -n "$versions" ]] || return 1
+    local versions
+    versions="$(_php_versions_for_stack)" || return 1
     local ver
     for ver in $versions; do
         dpkg -s "php${ver}-fpm" >/dev/null 2>&1 || return 1
@@ -273,6 +338,18 @@ verify() {
     # what "installed" means — a partial install (missing version / PECL) no
     # longer reads as done. Also assert composer actually runs.
     check || return 1
+    local versions pecl_exts ver ext
+    versions="$(_php_versions_for_stack)" || return 1
+    pecl_exts="$(_php_pecl_extensions_for_stack)" || return 1
+    for ver in $versions; do
+        _php_cli_starts_clean "$ver" || return 1
+        for ext in $pecl_exts; do
+            if ! _php_module_loaded_for_version "$ver" "$ext"; then
+                echo "php${ver}: required PECL extension $ext is not loaded" >&2
+                return 1
+            fi
+        done
+    done
     composer --version >/dev/null 2>&1
 }
 

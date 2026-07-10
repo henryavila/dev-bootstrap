@@ -436,15 +436,113 @@ run_platform_wsl_pecl_status() {
     run_wsl_pecl_helper_case installed already-loaded 1 already-loaded
 }
 
-run_platform_wsl_verify() {
-    local verify_body
+install_fake_wsl_verify_env() {
+    local fakebin="$1" ver phpbin
+    mkdir -p "$fakebin"
 
-    verify_body="$(function_body verify "$WSL_STACK")"
-    if [[ "$verify_body" == *"PHP Startup"* || "$verify_body" == *"--ini"* || "$verify_body" == *"_php_cli_starts_clean"* ]]; then
-        pass "WSL verify checks clean PHP startup"
+    cat > "$fakebin/dpkg" <<'SH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-s" ]]; then
+    case "${2:-}" in
+        php8.4-fpm|php8.5-fpm) exit 0 ;;
+    esac
+fi
+exit 1
+SH
+    cat > "$fakebin/composer" <<'SH'
+#!/usr/bin/env bash
+printf 'Composer version fixture\n'
+SH
+    cat > "$fakebin/python3" <<'SH'
+#!/usr/bin/env bash
+printf 'Python fixture\n'
+SH
+    chmod +x "$fakebin/dpkg" "$fakebin/composer" "$fakebin/python3"
+
+    for ver in 8.4 8.5; do
+        phpbin="$fakebin/php${ver}"
+        cat > "$phpbin" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+    -v)
+        if [[ "\${PHP_FAKE_STARTUP_DIRTY:-}" == "$ver" ]]; then
+            printf 'PHP Startup: Unable to load dynamic library redis.so\n' >&2
+        fi
+        printf 'PHP ${ver}.0 fixture\n'
+        exit 0
+        ;;
+    -m)
+        printf 'Core\n'
+        for ext in igbinary imagick mongodb pcov redis; do
+            if [[ "\${PHP_FAKE_MISSING_VER:-}" == "$ver" && "\${PHP_FAKE_MISSING_EXT:-}" == "\$ext" ]]; then
+                continue
+            fi
+            printf '%s\n' "\$ext"
+        done
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+SH
+        chmod +x "$phpbin"
+    done
+}
+
+run_platform_wsl_verify() {
+    local root fakebin rc out
+
+    root="$(mktemp -d -t php-stack-wsl-verify.XXXXXX)"
+    fakebin="$root/bin"
+    install_fake_wsl_verify_env "$fakebin"
+
+    out="$(
+        env \
+            PATH="$fakebin:$PATH" \
+            PHP_CLI_BIN_DIR="$fakebin" \
+            PHP_VERSIONS="8.4 8.5" \
+            bash -c 'source "$1"; verify' _ "$WSL_STACK" 2>&1
+    )"
+    rc=$?
+    assert_eq "$rc" "0" \
+        "WSL verify passes when every declared PHP version loads every declared PECL module"
+
+    out="$(
+        env \
+            PATH="$fakebin:$PATH" \
+            PHP_CLI_BIN_DIR="$fakebin" \
+            PHP_VERSIONS="8.4 8.5" \
+            PHP_FAKE_STARTUP_DIRTY="8.5" \
+            bash -c 'source "$1"; verify' _ "$WSL_STACK" 2>&1
+    )"
+    rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        pass "WSL verify fails when php<ver> startup emits a warning"
     else
-        fail "WSL verify does not check PHP startup warnings or orphan INIs"
+        fail "WSL verify accepted a PHP startup warning"
     fi
+    assert_contains "$out" "PHP Startup: Unable to load dynamic library redis.so" \
+        "WSL verify surfaces PHP startup warnings"
+
+    out="$(
+        env \
+            PATH="$fakebin:$PATH" \
+            PHP_CLI_BIN_DIR="$fakebin" \
+            PHP_VERSIONS="8.4 8.5" \
+            PHP_FAKE_MISSING_VER="8.4" \
+            PHP_FAKE_MISSING_EXT="redis" \
+            bash -c 'source "$1"; verify' _ "$WSL_STACK" 2>&1
+    )"
+    rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        pass "WSL verify fails when a declared PECL module is absent"
+    else
+        fail "WSL verify accepted a missing declared PECL module"
+    fi
+    assert_contains "$out" "php8.4: required PECL extension redis is not loaded" \
+        "WSL verify identifies the missing PECL module"
+    rm -rf "$root"
 }
 
 run_platform_wsl() {
