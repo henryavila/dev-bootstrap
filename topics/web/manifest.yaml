@@ -18,6 +18,7 @@ bundles:
     platforms: [mac]
     icon_name: laravel
     requires_bundles:
+      - languages/php
       - databases/mysql
       - databases/redis
     items:

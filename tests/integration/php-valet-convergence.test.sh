@@ -112,4 +112,15 @@ assert_eq "$(printf '%s\n' "$order" | sed -n '1p')" "php-repair" "first lifecycl
 assert_eq "$(printf '%s\n' "$order" | sed -n '2p')" "valet-install" "second lifecycle action is Valet install"
 assert_contains "$log_out" "PHP Startup" "engine output keeps the startup-warning root cause visible"
 
+echo
+echo "real mac bundle closure orders languages/php before web/valet"
+real_mac_closure="$(bash "$ENGINE" --topics-dir "$WS/topics" --platform mac \
+    --bundle web/valet --print-closure 2>"$ROOT/real-mac-closure.err")"
+mac_php_pos="$(printf '%s\n' "$real_mac_closure" | awk '$0 == "languages/php" { print NR; exit }')"
+mac_valet_pos="$(printf '%s\n' "$real_mac_closure" | awk '$0 == "web/valet" { print NR; exit }')"
+assert_ne "$mac_php_pos" "" "real web/valet closure includes languages/php"
+assert_ne "$mac_valet_pos" "" "real mac closure includes web/valet"
+ASSERT_MSG="real mac closure places languages/php before web/valet" \
+    assert_true "[ '${mac_php_pos:-0}' -gt 0 ] && [ '${mac_php_pos:-0}' -lt '${mac_valet_pos:-0}' ]"
+
 summary
