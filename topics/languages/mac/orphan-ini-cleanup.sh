@@ -20,11 +20,84 @@ install() {
     local quarantine_root
     quarantine_root="$(mesh_state_dir)/orphan-ini-quarantine"
     local moved=0
+    local here pecl_exts_file
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    pecl_exts_file="${here}/../data/php-extensions-pecl.txt"
+
+    _mesh_owns_pecl_ext() {
+        local wanted="$1" line ext
+        [[ -f "$pecl_exts_file" ]] || return 1
+        while IFS= read -r line; do
+            case "$line" in
+                ""|\#*) continue ;;
+            esac
+            IFS=':' read -r ext _ _ <<< "$line"
+            [[ "$ext" == "$wanted" ]] && return 0
+        done < "$pecl_exts_file"
+        return 1
+    }
+
+    _candidate_ext_dirs_for_version() {
+        local ver="$1" php_config pecl_cellar_dir api cellar_root dir
+        php_config="${BREW_PREFIX}/opt/php@${ver}/bin/php-config"
+        if [[ -x "$php_config" ]]; then
+            pecl_cellar_dir="$("$php_config" --extension-dir 2>/dev/null || true)"
+            if [[ -n "$pecl_cellar_dir" ]]; then
+                printf '%s\n' "$pecl_cellar_dir"
+                if [[ "$pecl_cellar_dir" == */pecl/* ]]; then
+                    api="$(basename "$pecl_cellar_dir")"
+                    cellar_root="$(dirname "$(dirname "$pecl_cellar_dir")")"
+                    printf '%s\n' "${BREW_PREFIX}/lib/php/pecl/${api}"
+                    printf '%s\n' "${cellar_root}/lib/php/${api}"
+                fi
+            fi
+        fi
+        for dir in "${BREW_PREFIX}"/lib/php/pecl/* \
+            "${BREW_PREFIX}"/Cellar/php@"${ver}"/*/pecl/* \
+            "${BREW_PREFIX}"/Cellar/php@"${ver}"/*/lib/php/*; do
+            [[ -d "$dir" ]] && printf '%s\n' "$dir"
+        done
+    }
+
+    _pecl_so_exists_for_version() {
+        local ver="$1" ext="$2" dir
+        while IFS= read -r dir; do
+            [[ -n "$dir" && -f "${dir}/${ext}.so" ]] && return 0
+        done < <(_candidate_ext_dirs_for_version "$ver" | awk '!seen[$0]++')
+        return 1
+    }
+
+    _quarantine_ini() {
+        local ini="$1"
+        mkdir -p "$quarantine_root"
+        mv "$ini" "$quarantine_root/" \
+            && { moved=1; echo "[orphan-ini] moved $ini → $quarantine_root/" >&2; }
+    }
+
     local php_ver_dir php_etc_path
     for php_ver_dir in "${BREW_PREFIX}/etc/php"/*/; do
         [[ -d "$php_ver_dir" ]] || continue
         php_etc_path="${php_ver_dir%/}/conf.d"
         [[ -d "$php_etc_path" ]] || continue
+        local php_ver
+        php_ver="$(basename "${php_ver_dir%/}")"
+
+        # Quarantine mesh-owned ext-*.ini entries when they name a PECL module
+        # whose .so is absent from every valid extension directory for this PHP.
+        local ext_ini ext_value ext_name
+        for ext_ini in "$php_etc_path"/ext-*.ini; do
+            [[ -f "$ext_ini" ]] || continue
+            ext_value="$(awk -F= '/^[[:space:]]*extension[[:space:]]*=/{print $2; exit}' "$ext_ini" | tr -d ' "')"
+            [[ -n "$ext_value" ]] || continue
+            ext_name="$(basename "$ext_value" .so)"
+            [[ "$ext_value" == *.so ]] || continue
+            _mesh_owns_pecl_ext "$ext_name" || continue
+            if ! _pecl_so_exists_for_version "$php_ver" "$ext_name"; then
+                warn "php@${php_ver}: quarantining stale ini → $ext_ini (${ext_name}.so not found in candidate extension dirs)"
+                _quarantine_ini "$ext_ini"
+            fi
+        done
+
         # Quarantine any 99-*.ini lines pointing at a nonexistent .so.
         local ini path
         for ini in "$php_etc_path"/99-*.ini; do
@@ -40,9 +113,7 @@ install() {
             # paths as orphan candidates. Bare module names are PHP's
             # responsibility to resolve and we leave them alone.
             if [[ "$path" == /*.so ]] && [[ ! -e "$path" ]]; then
-                mkdir -p "$quarantine_root"
-                mv "$ini" "$quarantine_root/" \
-                    && { moved=1; echo "[orphan-ini] moved $ini → $quarantine_root/" >&2; }
+                _quarantine_ini "$ini"
             fi
         done
     done
