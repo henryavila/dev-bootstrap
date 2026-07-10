@@ -68,10 +68,14 @@ install() {
     }
 
     _quarantine_ini() {
-        local ini="$1"
+        local ini="$1" rel dest
+        rel="${ini#"${BREW_PREFIX}/"}"
+        [[ "$rel" == "$ini" ]] && rel="$(basename "$ini")"
+        rel="${rel//\//__}"
+        dest="${quarantine_root}/${rel}"
         mkdir -p "$quarantine_root"
-        mv "$ini" "$quarantine_root/" \
-            && { moved=1; echo "[orphan-ini] moved $ini → $quarantine_root/" >&2; }
+        mv "$ini" "$dest" \
+            && { moved=1; echo "[orphan-ini] moved $ini → $dest" >&2; }
     }
 
     local php_ver_dir php_etc_path

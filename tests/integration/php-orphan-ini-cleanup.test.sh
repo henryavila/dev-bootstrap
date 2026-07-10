@@ -47,7 +47,7 @@ SH
 }
 
 run_platform_mac() {
-    local root brew state ver conf cellar_ext fallback_ext canonical_ext
+    local root brew state ver conf cellar_ext fallback_ext canonical_ext other_ver other_conf other_cellar_ext
     root="$(mktemp -d -t php-orphan-ini-cleanup.XXXXXX)"
     ROOT_TO_CLEAN="$root"
 
@@ -60,6 +60,11 @@ run_platform_mac() {
     canonical_ext="$brew/Cellar/php@$ver/$ver.0/lib/php/20240924"
     mkdir -p "$conf" "$cellar_ext" "$fallback_ext" "$canonical_ext"
     install_fake_php_config "$brew" "$ver" "$cellar_ext"
+    other_ver="8.4"
+    other_conf="$brew/etc/php/$other_ver/conf.d"
+    other_cellar_ext="$brew/Cellar/php@$other_ver/$other_ver.0/pecl/20230831"
+    mkdir -p "$other_conf" "$other_cellar_ext"
+    install_fake_php_config "$brew" "$other_ver" "$other_cellar_ext"
 
     local ext
     for ext in igbinary imagick mongodb redis; do
@@ -70,6 +75,7 @@ run_platform_mac() {
     write_ini "$conf/ext-xdebug.ini" "xdebug.so"
     write_ini "$conf/99-bare-imagick.ini" "imagick.so"
     write_ini "$conf/99-absolute-missing.ini" "$root/missing/legacy.so"
+    write_ini "$other_conf/ext-redis.ini" "redis.so"
 
     mesh_state_dir() { printf '%s\n' "$state"; }
     warn() { printf 'warn: %s\n' "$*" >&2; }
@@ -81,7 +87,7 @@ run_platform_mac() {
 
     for ext in igbinary imagick mongodb redis; do
         assert_false "[ -f '$conf/ext-${ext}.ini' ]"
-        assert_file_exists "$state/orphan-ini-quarantine/ext-${ext}.ini" \
+        assert_file_exists "$state/orphan-ini-quarantine/etc__php__${ver}__conf.d__ext-${ext}.ini" \
             "mac cleanup quarantines stale ext-${ext}.ini"
     done
     assert_file_exists "$conf/ext-pcov.ini" \
@@ -91,8 +97,10 @@ run_platform_mac() {
     assert_file_exists "$conf/99-bare-imagick.ini" \
         "mac cleanup keeps bare module names in legacy 99 ini"
     assert_false "[ -f '$conf/99-absolute-missing.ini' ]"
-    assert_file_exists "$state/orphan-ini-quarantine/99-absolute-missing.ini" \
+    assert_file_exists "$state/orphan-ini-quarantine/etc__php__${ver}__conf.d__99-absolute-missing.ini" \
         "mac cleanup preserves legacy absolute-path orphan quarantine"
+    assert_file_exists "$state/orphan-ini-quarantine/etc__php__${other_ver}__conf.d__ext-redis.ini" \
+        "mac cleanup keeps version-specific quarantine entries distinct"
 }
 
 case "${1:-}" in
