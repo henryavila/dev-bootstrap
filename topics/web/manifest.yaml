@@ -63,6 +63,9 @@ bundles:
       - name: nginx-sites
         type: custom
         script: ./wsl/nginx-sites.sh
+      - name: service-convergence
+        type: custom
+        script: ./wsl/nginx-php-fpm.sh
 
   - name: mailpit
     label: "Mailpit"
