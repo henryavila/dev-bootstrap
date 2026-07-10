@@ -39,31 +39,53 @@ fi
 #   - Idempotent: returns 0 fast when `php${ver} -m` already lists $ext.
 #   - Skips cleanly (returns 0) if required per-version binaries are
 #     missing; the caller decides whether that's a critical failure.
-#   - Never exits nonzero on install failure — emits a warn() + log
-#     tail and returns 0, so a single failed extension doesn't abort
-#     the PECL loop under `set -e`.
+#   - Never exits nonzero on install failure by default — emits a warn() + log
+#     tail and reports the outcome through PECL_INSTALL_RESULT /
+#     PECL_INSTALL_CONVERGED, so legacy callers under `set -e` keep running
+#     while stricter callers can fail on the recorded status.
 #
 # Environment dependencies:
 #   - `info`, `warn`, `ok`  (from lib/log.sh)
 #   - sudo (bootstrap warms the ticket upfront; this function does not
 #     re-warm it — a single missed extension is acceptable, a stalled
 #     bootstrap is not)
+PECL_INSTALL_RESULT="not-run"
+PECL_INSTALL_CONVERGED=0
+PECL_INSTALL_DETAIL=""
+PECL_INSTALL_SO_PATH=""
+
+_pecl_install_set_status() {
+    # shellcheck disable=SC2034
+    PECL_INSTALL_RESULT="$1"
+    # shellcheck disable=SC2034
+    PECL_INSTALL_CONVERGED="$2"
+    # shellcheck disable=SC2034
+    PECL_INSTALL_DETAIL="${3:-}"
+    # shellcheck disable=SC2034
+    PECL_INSTALL_SO_PATH="${4:-}"
+}
+
 pecl_install_for_version_linux() {
     local ver="$1" ext="$2" fail_suffix="${3:-}"
+    _pecl_install_set_status "not-run" 0 "" ""
 
     # ondrej does NOT ship per-version pecl binaries — only /usr/bin/pecl
     # plus phpize${ver} and php-config${ver}. See the feedback memory
     # for the full analysis. Below we override the four relevant stages
     # (shell, PEAR Builder, installer, registry) to pin everything to
     # the target version.
-    local pecl_bin="/usr/bin/pecl"
-    local php_bin="/usr/bin/php${ver}"
-    local phpize_bin="/usr/bin/phpize${ver}"
-    local php_config_bin="/usr/bin/php-config${ver}"
+    local bin_dir="${PECL_INSTALL_BIN_DIR:-/usr/bin}"
+    local extension_root="${PECL_INSTALL_EXTENSION_ROOT:-/usr/lib/php}"
+    local php_etc_root="${PECL_INSTALL_ETC_ROOT:-/etc/php}"
+    local pecl_bin="${bin_dir}/pecl"
+    local php_bin="${bin_dir}/php${ver}"
+    local phpize_bin="${bin_dir}/phpize${ver}"
+    local php_config_bin="${bin_dir}/php-config${ver}"
 
     for _b in "$pecl_bin" "$php_bin" "$phpize_bin" "$php_config_bin"; do
         if [[ ! -x "$_b" ]]; then
             warn "PHP $ver: required binary $_b missing — skipping $ext"
+            _pecl_install_set_status "skipped-missing-binary" 0 "$_b" ""
             return 0
         fi
     done
@@ -72,17 +94,19 @@ pecl_install_for_version_linux() {
     api="$("$php_config_bin" --phpapi 2>/dev/null)"
     if [[ -z "$api" ]]; then
         warn "PHP $ver: could not resolve PHP API from $php_config_bin — skipping $ext"
+        _pecl_install_set_status "skipped-no-api" 0 "$php_config_bin" ""
         return 0
     fi
-    local target_ext_dir="/usr/lib/php/${api}"
+    local target_ext_dir="${extension_root}/${api}"
     local so_path="${target_ext_dir}/${ext}.so"
 
     # Already loaded? Fast path — `pdo_sqlsrv` loads as `pdo_sqlsrv` but
     # appears in `php -m` as `PDO_SQLSRV`, so match both cases via the
     # `pdo_`→`PDO_` substitution.
-    if php"${ver}" -m 2>/dev/null \
+    if "$php_bin" -m 2>/dev/null \
         | grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$"; then
         ok "PHP $ver: $ext already loaded"
+        _pecl_install_set_status "already-loaded" 1 "" "$so_path"
         return 0
     fi
 
@@ -123,12 +147,17 @@ pecl_install_for_version_linux() {
         [[ -n "$fail_suffix" ]] && msg="$msg — $fail_suffix"
         warn "$msg"
         if [[ -n "$pecl_out" ]]; then
-            printf '%s\n' "$pecl_out" | tail -6 | sed 's/^/      /' >&2
+                printf '%s\n' "$pecl_out" | tail -6 | sed 's/^/      /' >&2
+        fi
+        if [[ "$pecl_rc" -ne 0 ]]; then
+            _pecl_install_set_status "failed-build" 0 "exit=$pecl_rc" "$so_path"
+        else
+            _pecl_install_set_status "failed-missing-so" 0 "$so_path" "$so_path"
         fi
         return 0
     fi
 
-    local ini_dir="/etc/php/${ver}/mods-available"
+    local ini_dir="${php_etc_root}/${ver}/mods-available"
     local ini_file="${ini_dir}/${ext}.ini"
     if [[ ! -f "$ini_file" ]]; then
         sudo mkdir -p "$ini_dir"
@@ -136,4 +165,5 @@ pecl_install_for_version_linux() {
     fi
     sudo phpenmod -v "$ver" "$ext" >/dev/null 2>&1 || true
     ok "PHP $ver: $ext enabled"
+    _pecl_install_set_status "installed" 1 "" "$so_path"
 }

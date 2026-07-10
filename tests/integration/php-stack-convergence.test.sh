@@ -309,12 +309,135 @@ run_platform_mac() {
     esac
 }
 
-run_platform_wsl() {
-    local branch verify_body
+install_fake_wsl_pecl_env() {
+    local root="$1" fakebin="$2"
+    mkdir -p "$fakebin"
 
-    branch="$(pecl_failure_branch)"
-    assert_not_contains "$branch" "return 0" \
-        "WSL PECL build failure is not reported as success"
+    cat > "$fakebin/sudo" <<'SH'
+#!/usr/bin/env bash
+exec "$@"
+SH
+    cat > "$fakebin/php8.5" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+    -m)
+        printf 'Core\n'
+        if [[ "${PECL_FAKE_ALREADY_LOADED:-0}" == "1" ]]; then
+            printf 'redis\n'
+        fi
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+SH
+    cat > "$fakebin/phpize8.5" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+    cat > "$fakebin/php-config8.5" <<'SH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--phpapi" ]]; then
+    [[ "${PECL_FAKE_NO_API:-0}" == "1" ]] || printf '20250901\n'
+    exit 0
+fi
+exit 1
+SH
+    cat > "$fakebin/pecl" <<'SH'
+#!/usr/bin/env bash
+case "${PECL_FAKE_MODE:-installed}" in
+    build-fail)
+        printf 'fixture build failed\n' >&2
+        exit 42
+        ;;
+    missing-so)
+        exit 0
+        ;;
+    installed)
+        ext=""
+        for arg in "$@"; do ext="$arg"; done
+        mkdir -p "$PHP_PEAR_EXTENSION_DIR"
+        : > "${PHP_PEAR_EXTENSION_DIR}/${ext}.so"
+        exit 0
+        ;;
+    *)
+        printf 'unknown PECL_FAKE_MODE=%s\n' "${PECL_FAKE_MODE:-}" >&2
+        exit 64
+        ;;
+esac
+SH
+    cat > "$fakebin/phpenmod" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$root/phpenmod.log"
+SH
+    chmod +x "$fakebin/sudo" "$fakebin/php8.5" "$fakebin/phpize8.5" \
+        "$fakebin/php-config8.5" "$fakebin/pecl" "$fakebin/phpenmod"
+}
+
+run_wsl_pecl_helper_case() {
+    local mode="$1" expected_result="$2" expected_converged="$3" setup="${4:-}"
+    local root fakebin status rc
+
+    root="$(mktemp -d -t php-stack-wsl-pecl-status.XXXXXX)"
+    fakebin="$root/bin"
+    install_fake_wsl_pecl_env "$root" "$fakebin"
+
+    case "$setup" in
+        already-loaded)
+            PECL_FAKE_ALREADY_LOADED=1
+            export PECL_FAKE_ALREADY_LOADED
+            ;;
+        missing-binary)
+            rm -f "$fakebin/phpize8.5"
+            ;;
+        no-api)
+            PECL_FAKE_NO_API=1
+            export PECL_FAKE_NO_API
+            ;;
+    esac
+
+    PECL_FAKE_MODE="$mode" \
+    PATH="$fakebin:$PATH" \
+    PECL_INSTALL_BIN_DIR="$fakebin" \
+    PECL_INSTALL_EXTENSION_ROOT="$root/extensions" \
+    PECL_INSTALL_ETC_ROOT="$root/etc/php" \
+    bash -c '
+        set -e
+        WARN_LOG="$1"
+        info() { :; }
+        warn() { printf "%s\n" "$*" >> "$WARN_LOG"; }
+        ok() { :; }
+        source "$2"
+        pecl_install_for_version_linux "8.5" "redis"
+        printf "result=%s\nconverged=%s\nso=%s\n" \
+            "$PECL_INSTALL_RESULT" "$PECL_INSTALL_CONVERGED" "$PECL_INSTALL_SO_PATH"
+    ' _ "$root/warn.log" "$PECL_LIB" > "$root/status"
+    rc=$?
+    status="$(cat "$root/status")"
+
+    assert_eq "$rc" "0" \
+        "WSL PECL helper keeps legacy zero return for $expected_result"
+    assert_contains "$status" "result=$expected_result" \
+        "WSL PECL helper reports $expected_result"
+    assert_contains "$status" "converged=$expected_converged" \
+        "WSL PECL helper convergence flag for $expected_result"
+
+    unset PECL_FAKE_ALREADY_LOADED PECL_FAKE_NO_API
+    rm -rf "$root"
+}
+
+run_platform_wsl_pecl_status() {
+    run_wsl_pecl_helper_case installed installed 1
+    run_wsl_pecl_helper_case missing-so failed-missing-so 0
+    run_wsl_pecl_helper_case build-fail failed-build 0
+    run_wsl_pecl_helper_case installed skipped-missing-binary 0 missing-binary
+    run_wsl_pecl_helper_case installed skipped-no-api 0 no-api
+    run_wsl_pecl_helper_case installed already-loaded 1 already-loaded
+}
+
+run_platform_wsl_verify() {
+    local verify_body
 
     verify_body="$(function_body verify "$WSL_STACK")"
     if [[ "$verify_body" == *"PHP Startup"* || "$verify_body" == *"--ini"* || "$verify_body" == *"_php_cli_starts_clean"* ]]; then
@@ -324,6 +447,29 @@ run_platform_wsl() {
     fi
 }
 
+run_platform_wsl() {
+    local case_filter="${1:-all}"
+
+    case "$case_filter" in
+        all)
+            run_platform_wsl_pecl_status
+            run_platform_wsl_verify
+            ;;
+        pecl-status)
+            run_platform_wsl_pecl_status
+            return
+            ;;
+        verify)
+            run_platform_wsl_verify
+            return
+            ;;
+        *)
+            fail "unknown wsl --case value: $case_filter"
+            return
+            ;;
+    esac
+}
+
 case "${1:-}" in
     "")
         run_red_fixtures
@@ -331,7 +477,7 @@ case "${1:-}" in
     --platform)
         case "${2:-}" in
             mac) run_platform_mac "${4:-all}" ;;
-            wsl) run_platform_wsl ;;
+            wsl) run_platform_wsl "${4:-all}" ;;
             *)
                 usage >&2
                 fail "unknown --platform value: ${2:-}"
