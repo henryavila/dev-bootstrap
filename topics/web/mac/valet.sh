@@ -3,6 +3,15 @@
 
 : "${CODE_DIR:=$HOME/code}"
 
+_VALET_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -r "$_VALET_SCRIPT_DIR/launchdaemon-hardening.sh" ]]; then
+    # shellcheck disable=SC2034  # consumed by the sourced helper
+    MESH_LAUNCHDAEMON_HARDENING_LIB_ONLY=1
+    # shellcheck source=/dev/null
+    . "$_VALET_SCRIPT_DIR/launchdaemon-hardening.sh"
+    unset MESH_LAUNCHDAEMON_HARDENING_LIB_ONLY
+fi
+
 # Resolve the valet binary from composer's actual global bin-dir at runtime.
 # Composer's home is ~/.composer on older defaults but ~/.config/composer when
 # XDG is set or on newer composer — never hard-pin one. Each verb is sourced in
@@ -23,6 +32,55 @@ _resolve_valet_bin() {
     VALET_BIN="${bindir:+$bindir/valet}"
     VALET_BIN="${VALET_BIN:-$HOME/.composer/vendor/bin/valet}"
     return 0
+}
+
+# Valet and Composer execute the default PHP CLI. The languages/php owner
+# already verifies every declared version, but this boundary probe prevents a
+# later local drift from being mislabeled as a LaunchDaemon failure. Any stderr
+# is unhealthy — not only one known "PHP Startup" spelling (L-003).
+_valet_php_probe_clean() {
+    local php_stderr="" php_rc=0
+    if ! command -v php >/dev/null 2>&1; then
+        echo "[valet] PHP health check failed before Valet repair: php is not on PATH; repair languages/php first" >&2
+        return 1
+    fi
+    php_stderr="$(php -v 2>&1 >/dev/null)" || php_rc=$?
+    if [[ "$php_rc" -ne 0 || -n "$php_stderr" ]]; then
+        echo "[valet] PHP health check failed before Valet repair (rc=$php_rc); repair languages/php first" >&2
+        [[ -n "$php_stderr" ]] && printf '%s\n' "$php_stderr" | sed -n '1,4p' >&2
+        return 1
+    fi
+    return 0
+}
+
+_valet_report_install_failure() {
+    local output="$1" rc="$2"
+    [[ -n "$output" ]] && printf '%s\n' "$output" >&2
+    case "$output" in
+        *"PHP Startup"*|*"PHP Warning"*|*"Fatal error"*|*"Parse error"*|*Deprecated:*)
+            echo "[valet] PHP health failed during Valet activation (rc=$rc); repair languages/php before retrying" >&2
+            ;;
+        *dyld*|*"Library not loaded"*|*"Operation not permitted"*|*sandbox*|*EX_CONFIG*|*" 78"*)
+            echo "[valet] PHP health passed; Valet service activation failed (LaunchDaemon/dyld/sandbox, rc=$rc). Run \`mesh doctor --fix\` and inspect /var/log/homebrew/php.log" >&2
+            ;;
+        *)
+            echo "[valet] PHP health passed; valet install failed (rc=$rc). Run \`mesh doctor --fix\` and inspect the output above" >&2
+            ;;
+    esac
+}
+
+_valet_harden_launchdaemons() {
+    declare -f launchdaemon_harden_install >/dev/null 2>&1 || return 0
+    if ! launchdaemon_harden_install; then
+        echo "[valet] PHP health passed; LaunchDaemon hardening/activation failed. Run \`mesh doctor --fix\` after reviewing the diagnostic above" >&2
+        return 1
+    fi
+}
+
+_valet_launchdaemon_running() {
+    local svc="$1" launchctl_bin="${MESH_LAUNCHCTL_BIN:-launchctl}" state_out=""
+    state_out="$("$launchctl_bin" print "system/homebrew.mxcl.${svc}" 2>/dev/null)" || return 1
+    [[ "$state_out" == *"state = running"* ]]
 }
 
 # Is CODE_DIR on an external /Volumes/<vol> that is NOT currently mounted?
@@ -49,8 +107,30 @@ _valet_external_unmounted() {
 # probe the live stack directly instead of asking the CLI — TCP for nginx, a
 # direct dnsmasq query for DNS, and the php-fpm socket. Any miss ⇒ stack down.
 _valet_stack_ok() {
+    VALET_STACK_FAILURE=""
+    # A stale socket can survive a dyld crash, so prove the supervised php-fpm
+    # job itself is running before trusting the filesystem marker.
+    if ! _valet_launchdaemon_running php; then
+        VALET_STACK_FAILURE="php-fpm"
+        return 1
+    fi
+    if [[ ! -e "$HOME/.config/valet/valet.sock" ]]; then
+        VALET_STACK_FAILURE="php-fpm"
+        return 1
+    fi
+    if ! _valet_launchdaemon_running nginx; then
+        VALET_STACK_FAILURE="nginx"
+        return 1
+    fi
     # nginx listening on :80 (bash /dev/tcp; the subshell closes the fd on exit)
-    (exec 3<>/dev/tcp/127.0.0.1/80) 2>/dev/null || return 1
+    if ! (exec 3<>/dev/tcp/127.0.0.1/80) 2>/dev/null; then
+        VALET_STACK_FAILURE="nginx"
+        return 1
+    fi
+    if ! _valet_launchdaemon_running dnsmasq; then
+        VALET_STACK_FAILURE="dnsmasq"
+        return 1
+    fi
     # dnsmasq answers *.localhost on 127.0.0.1. Require a real answer, not just
     # rc 0 — dscacheutil returns 0 with NO records (plan §2.5). `dig` is bundled
     # on macOS and queries dnsmasq's loopback :53 directly, bypassing the system
@@ -58,22 +138,51 @@ _valet_stack_ok() {
     # dnsmasq zone, so a healthy stack returns the loopback address.
     local ans
     ans="$(dig @127.0.0.1 probe.localhost +time=1 +tries=1 +short 2>/dev/null)"
-    [[ "$ans" == "127.0.0.1" || "$ans" == "::1" ]] || return 1
-    # php-fpm up: the valet.sock symlink target exists.
-    [[ -e "$HOME/.config/valet/valet.sock" ]] || return 1
+    if [[ "$ans" != "127.0.0.1" && "$ans" != "::1" ]]; then
+        VALET_STACK_FAILURE="dnsmasq"
+        return 1
+    fi
     return 0
 }
 
+_valet_wait_for_stack() {
+    local attempts="${VALET_STACK_VERIFY_ATTEMPTS:-5}" n
+    [[ "$attempts" =~ ^[1-9][0-9]*$ ]] || attempts=5
+    for ((n=1; n<=attempts; n++)); do
+        _valet_stack_ok && return 0
+        (( n < attempts )) && sleep 1
+    done
+    return 1
+}
+
+_valet_report_stack_failure() {
+    local component="${VALET_STACK_FAILURE:-unknown}" php_log
+    php_log="${MESH_HOMEBREW_LOG_DIR:-/var/log/homebrew}/php.log"
+    echo "[valet] service post-condition failed after PHP health passed: $component is not serving. Run \`mesh doctor --fix\`; inspect $php_log and \`sudo launchctl print system/homebrew.mxcl.php\`" >&2
+    if [[ "$component" == "php-fpm" && -r "$php_log" ]]; then
+        local excerpt
+        excerpt="$(tail -n 4 "$php_log" 2>/dev/null || true)"
+        case "$excerpt" in
+            *dyld*|*"Library not loaded"*|*"Operation not permitted"*|*sandbox*|*EX_CONFIG*)
+                echo "[valet] LaunchDaemon/dyld/sandbox diagnostic from $php_log:" >&2
+                printf '%s\n' "$excerpt" >&2
+                ;;
+        esac
+    fi
+}
+
 check() {
+    VALET_STACK_FAILURE=""
     _resolve_valet_bin
-    [[ -x "$VALET_BIN" ]] || return 1
-    [[ -d "$HOME/.config/valet" ]] || return 1
+    [[ -x "$VALET_BIN" ]] || { VALET_STACK_FAILURE="valet-binary"; return 1; }
+    [[ -d "$HOME/.config/valet" ]] || { VALET_STACK_FAILURE="valet-config"; return 1; }
     # TLD must be localhost. Read from config.json instead of `valet tld`,
     # because the CLI invokes sudo internally — the menu scanner stubs
     # sudo, so any `valet <cmd>` produces no output and fakes "not installed".
     local cfg="$HOME/.config/valet/config.json"
-    [[ -f "$cfg" ]] || return 1
-    grep -q '"tld"[[:space:]]*:[[:space:]]*"localhost"' "$cfg" || return 1
+    [[ -f "$cfg" ]] || { VALET_STACK_FAILURE="valet-config"; return 1; }
+    grep -q '"tld"[[:space:]]*:[[:space:]]*"localhost"' "$cfg" \
+        || { VALET_STACK_FAILURE="valet-tld"; return 1; }
     # External parked volume unmounted → nothing to serve; DEFER (treat as OK so
     # the engine does not trigger a repair that would mkdir a phantom path).
     if _valet_external_unmounted; then
@@ -87,13 +196,6 @@ check() {
 }
 
 install() {
-    _resolve_valet_bin
-    if [[ ! -x "$VALET_BIN" ]]; then
-        composer global require laravel/valet --no-interaction --quiet
-        _resolve_valet_bin   # bin-dir now populated — re-resolve
-    fi
-    [[ -x "$VALET_BIN" ]] || { echo "[valet] composer install failed" >&2; return 1; }
-
     # External parked volume unmounted → DEFER: do not `mkdir -p` a phantom path
     # nor run valet install against a volume that isn't there (plan D-3). Repairs
     # and normal runs both skip cleanly until the volume is back.
@@ -101,6 +203,14 @@ install() {
         echo "[valet] CODE_DIR ($CODE_DIR) on an unmounted external volume — skipping install/park (deferred)" >&2
         return 0
     fi
+
+    _valet_php_probe_clean || return 1
+    _resolve_valet_bin
+    if [[ ! -x "$VALET_BIN" ]]; then
+        composer global require laravel/valet --no-interaction --quiet
+        _resolve_valet_bin   # bin-dir now populated — re-resolve
+    fi
+    [[ -x "$VALET_BIN" ]] || { echo "[valet] composer install failed" >&2; return 1; }
 
     mkdir -p "$CODE_DIR"
 
@@ -123,10 +233,17 @@ install() {
         echo "[valet] skipping valet install (already configured & serving — set FORCE_VALET_INSTALL=1 to re-run)"
     fi
     if [[ "$need_install" == "1" ]]; then
-        if ! "$VALET_BIN" install; then
-            echo "[valet] valet install failed" >&2
-            return 1
+        _valet_harden_launchdaemons || return 1
+        local valet_install_out="" valet_install_rc=0
+        valet_install_out="$("$VALET_BIN" install 2>&1)" || valet_install_rc=$?
+        if [[ "$valet_install_rc" -ne 0 ]]; then
+            _valet_report_install_failure "$valet_install_out" "$valet_install_rc"
+            return "$valet_install_rc"
         fi
+        [[ -n "$valet_install_out" ]] && printf '%s\n' "$valet_install_out"
+        # Valet can regenerate the plists it just installed. Re-harden after the
+        # command and propagate bootstrap failures before checking liveness.
+        _valet_harden_launchdaemons || return 1
     fi
 
     # Refresh sudo cache (`valet tld` and `valet park` will sudo).
@@ -146,10 +263,20 @@ install() {
 
     # Parking is best-effort — check() does not assert it.
     ( cd "$CODE_DIR" && "$VALET_BIN" park ) || true
+
+    if ! _valet_wait_for_stack; then
+        _valet_report_stack_failure
+        return 1
+    fi
 }
 
 verify() {
-    check
+    _valet_php_probe_clean || return 1
+    if ! check; then
+        _valet_report_stack_failure
+        return 1
+    fi
+    return 0
 }
 
 repair() {
