@@ -14,6 +14,19 @@ _php_versions_for_stack() {
     printf '%s\n' "$versions"
 }
 
+_php_pecl_extensions_for_stack() {
+    local PECL_EXTENSIONS_FILE line ext
+    PECL_EXTENSIONS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/php-extensions-pecl.txt"
+    [[ -f "$PECL_EXTENSIONS_FILE" ]] || return 1
+    while IFS= read -r line; do
+        case "$line" in
+            ""|\#*) continue ;;
+        esac
+        IFS=':' read -r ext _ _ <<< "$line"
+        [[ -n "$ext" ]] && printf '%s\n' "$ext"
+    done < "$PECL_EXTENSIONS_FILE"
+}
+
 _php_cli_starts_clean() {
     local ver="$1"
     local php_bin="${BREW_PREFIX:-}/opt/php@${ver}/bin/php"
@@ -38,6 +51,19 @@ _php_cli_starts_clean() {
     fi
     rm -rf "$tmp"
     return 0
+}
+
+_php_module_loaded_for_version() {
+    local ver="$1" ext="$2"
+    local php_bin="${BREW_PREFIX:-}/opt/php@${ver}/bin/php"
+    [[ -x "$php_bin" ]] || {
+        echo "php@${ver}: php binary missing at $php_bin" >&2
+        return 1
+    }
+
+    local mods
+    mods="$("$php_bin" -m 2>/dev/null)" || return 1
+    grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$" <<< "$mods"
 }
 
 check() {
@@ -623,10 +649,17 @@ verify() {
     # runs — `command -v` passing is not enough for the broken-bottle case
     # install_composer guards against.
     check || return 1
-    local versions ver
+    local versions pecl_exts ver ext
     versions="$(_php_versions_for_stack)" || return 1
+    pecl_exts="$(_php_pecl_extensions_for_stack)" || return 1
     for ver in $versions; do
         _php_cli_starts_clean "$ver" || return 1
+        for ext in $pecl_exts; do
+            if ! _php_module_loaded_for_version "$ver" "$ext"; then
+                echo "php@${ver}: required PECL extension $ext is not loaded" >&2
+                return 1
+            fi
+        done
     done
     composer --version >/dev/null 2>&1
 }

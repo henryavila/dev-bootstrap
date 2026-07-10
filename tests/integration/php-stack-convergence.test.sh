@@ -184,15 +184,122 @@ run_platform_mac_pecl_loop() {
         "mac PECL loop iterates configured PHP versions"
 }
 
+install_fake_mac_verify_env() {
+    local root="$1" brew="$2" fakebin="$3" ver phpbin
+    mkdir -p "$fakebin"
+    cat > "$fakebin/brew" <<'SH'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "list" && "${2:-}" == "--formula" ]]; then
+    exit 0
+fi
+exit 1
+SH
+    cat > "$fakebin/composer" <<'SH'
+#!/usr/bin/env bash
+printf 'Composer version fixture\n'
+SH
+    cat > "$fakebin/python3" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+    chmod +x "$fakebin/brew" "$fakebin/composer" "$fakebin/python3"
+
+    for ver in 8.4 8.5; do
+        phpbin="$brew/opt/php@${ver}/bin"
+        mkdir -p "$phpbin"
+        cat > "$phpbin/php" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+    --ini)
+        if [[ "\${PHP_FAKE_STARTUP_DIRTY:-}" == "$ver" ]]; then
+            printf 'PHP Startup: Unable to load dynamic library redis.so\n' >&2
+        fi
+        exit 0
+        ;;
+    -m)
+        printf 'Core\n'
+        for ext in igbinary imagick mongodb pcov redis; do
+            if [[ "\${PHP_FAKE_MISSING_VER:-}" == "$ver" && "\${PHP_FAKE_MISSING_EXT:-}" == "\$ext" ]]; then
+                continue
+            fi
+            printf '%s\n' "\$ext"
+        done
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+SH
+        chmod +x "$phpbin/php"
+    done
+    : > "$root/env-ready"
+}
+
+run_platform_mac_verify() {
+    local verify_body root brew fakebin rc out
+
+    verify_body="$(function_body verify "$MAC_STACK")"
+    assert_contains "$verify_body" "_php_cli_starts_clean" \
+        "mac verify requires clean PHP startup for every declared version"
+    assert_contains "$verify_body" "_php_pecl_extensions_for_stack" \
+        "mac verify reads the declared PECL baseline"
+    assert_contains "$verify_body" "_php_module_loaded_for_version" \
+        "mac verify checks PECL modules per PHP version"
+    assert_contains "$verify_body" "composer --version" \
+        "mac verify checks Composer execution"
+
+    root="$(mktemp -d -t php-stack-mac-verify.XXXXXX)"
+    brew="$root/brew"
+    fakebin="$root/bin"
+    install_fake_mac_verify_env "$root" "$brew" "$fakebin"
+    out="$(
+        env \
+            PATH="$fakebin:$PATH" \
+            BREW_PREFIX="$brew" \
+            BREW_BIN="$fakebin/brew" \
+            PHP_VERSIONS="8.4 8.5" \
+            bash -c 'source "$1"; verify' _ "$MAC_STACK" 2>&1
+    )"
+    rc=$?
+    assert_eq "$rc" "0" \
+        "mac verify passes when every PHP version loads every declared PECL module"
+
+    out="$(
+        env \
+            PATH="$fakebin:$PATH" \
+            BREW_PREFIX="$brew" \
+            BREW_BIN="$fakebin/brew" \
+            PHP_VERSIONS="8.4 8.5" \
+            PHP_FAKE_MISSING_VER="8.5" \
+            PHP_FAKE_MISSING_EXT="redis" \
+            bash -c 'source "$1"; verify' _ "$MAC_STACK" 2>&1
+    )"
+    rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        pass "mac verify fails when a declared PECL module is absent"
+    else
+        fail "mac verify accepted a missing declared PECL module"
+    fi
+    assert_contains "$out" "php@8.5: required PECL extension redis is not loaded" \
+        "mac verify identifies the missing PECL module"
+    rm -rf "$root"
+}
+
 run_platform_mac() {
-    local case_filter="${1:-all}" verify_body
+    local case_filter="${1:-all}"
 
     case "$case_filter" in
         all)
             run_platform_mac_pecl_loop
+            run_platform_mac_verify
             ;;
         pecl-loop)
             run_platform_mac_pecl_loop
+            return
+            ;;
+        verify)
+            run_platform_mac_verify
             return
             ;;
         *)
@@ -200,10 +307,6 @@ run_platform_mac() {
             return
             ;;
     esac
-
-    verify_body="$(function_body verify "$MAC_STACK")"
-    assert_contains "$verify_body" "_php_cli_starts_clean" \
-        "mac verify requires clean PHP startup for every declared version"
 }
 
 run_platform_wsl() {
