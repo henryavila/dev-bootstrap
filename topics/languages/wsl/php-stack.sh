@@ -73,6 +73,100 @@ _php_module_loaded_for_version() {
     grep -qiE "^${ext}\$|^${ext//pdo_/PDO_}\$" <<< "$mods"
 }
 
+_php_extension_dir_for_version() {
+    local ver="$1" bin_dir php_config ext_dir api
+    bin_dir="${PHP_CLI_BIN_DIR:-/usr/bin}"
+    php_config="${bin_dir}/php-config${ver}"
+    [[ -x "$php_config" ]] || return 1
+    ext_dir="$("$php_config" --extension-dir 2>/dev/null || true)"
+    if [[ -n "$ext_dir" ]]; then
+        printf '%s\n' "$ext_dir"
+        return 0
+    fi
+    api="$("$php_config" --phpapi 2>/dev/null || true)"
+    [[ -n "$api" ]] || return 1
+    printf '%s/%s\n' "${PHP_EXTENSION_ROOT:-/usr/lib/php}" "$api"
+}
+
+_mesh_php_state_dir() {
+    if declare -F mesh_state_dir >/dev/null 2>&1; then
+        mesh_state_dir
+    else
+        printf '%s' "${MESH_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mesh}"
+    fi
+}
+
+_mesh_owns_pecl_ext() {
+    local wanted="$1" ext
+    while IFS= read -r ext; do
+        [[ "$ext" == "$wanted" ]] && return 0
+    done < <(_php_pecl_extensions_for_stack)
+    return 1
+}
+
+_ini_declares_extension() {
+    local ini="$1" ext="$2" ext_value ext_name
+    [[ -f "$ini" ]] || return 1
+    ext_value="$(awk -F= '/^[[:space:]]*extension[[:space:]]*=/{print $2; exit}' "$ini" | tr -d ' "')"
+    [[ "$ext_value" == *.so ]] || return 1
+    ext_name="$(basename "$ext_value" .so)"
+    [[ "$ext_name" == "$ext" ]]
+}
+
+_quarantine_wsl_php_ini() {
+    local ini="$1" quarantine_root="$2" php_etc_root="$3"
+    local rel dest
+    rel="${ini#"${php_etc_root}/"}"
+    [[ "$rel" == "$ini" ]] && rel="${ini#/}"
+    rel="${rel//\//__}"
+    dest="${quarantine_root}/${rel}"
+    sudo mkdir -p "$quarantine_root"
+    if sudo mv "$ini" "$dest"; then
+        echo "[orphan-ini] moved $ini -> $dest" >&2
+        return 0
+    fi
+    return 1
+}
+
+_quarantine_stale_wsl_pecl_inis() {
+    local versions pecl_exts php_etc_root quarantine_root moved=0 failed=0
+    versions="$(_php_versions_for_stack)" || return 1
+    pecl_exts="$(_php_pecl_extensions_for_stack)" || return 1
+    php_etc_root="${PHP_ETC_ROOT:-/etc/php}"
+    quarantine_root="$(_mesh_php_state_dir)/orphan-ini-quarantine"
+
+    local ver ext ext_dir ini_dir ini
+    for ver in $versions; do
+        ext_dir="$(_php_extension_dir_for_version "$ver" 2>/dev/null || true)"
+        [[ -n "$ext_dir" ]] || continue
+        for ext in $pecl_exts; do
+            _mesh_owns_pecl_ext "$ext" || continue
+            [[ -f "${ext_dir}/${ext}.so" ]] && continue
+            for ini_dir in \
+                "${php_etc_root}/${ver}/cli/conf.d" \
+                "${php_etc_root}/${ver}/fpm/conf.d" \
+                "${php_etc_root}/${ver}/mods-available"; do
+                [[ -d "$ini_dir" ]] || continue
+                for ini in "$ini_dir"/*.ini; do
+                    [[ -e "$ini" ]] || continue
+                    _ini_declares_extension "$ini" "$ext" || continue
+                    warn "php${ver}: quarantining stale PECL ini -> $ini (${ext}.so not found at ${ext_dir})"
+                    if _quarantine_wsl_php_ini "$ini" "$quarantine_root" "$php_etc_root"; then
+                        moved=1
+                    else
+                        failed=1
+                    fi
+                done
+            done
+        done
+    done
+
+    if [[ "$moved" -eq 1 ]] && declare -F followup >/dev/null 2>&1; then
+        followup info "orphan PECL .ini files were quarantined to $quarantine_root — review and remove once satisfied."
+    fi
+    [[ "$failed" -eq 0 ]]
+}
+
 check() {
     command -v composer >/dev/null 2>&1 || return 1
     command -v python3 >/dev/null 2>&1 || return 1
@@ -239,6 +333,7 @@ for line in "${PECL_LINES[@]}"; do
         pecl_install_for_version_linux "$ver" "$ext"
     done
 done
+_quarantine_stale_wsl_pecl_inis || _phpstack_fail=1
 
 # ─── Composer (bound to PHP default) ─────────────────────────────────
 # Guard on the FUNCTIONAL probe verify() uses (`composer --version` runs),
