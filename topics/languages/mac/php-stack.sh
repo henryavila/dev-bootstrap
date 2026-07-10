@@ -502,6 +502,26 @@ pecl_install_for_mac() {
     return 0
 }
 
+info "installing PECL extensions for each PHP version"
+local ext mac_deps dep skip_ext
+for line in "${PECL_LINES[@]}"; do
+    IFS=':' read -r ext _ mac_deps <<< "$line"
+    skip_ext=0
+    if [[ -n "${mac_deps:-}" ]]; then
+        for dep in $mac_deps; do
+            if _is_brew_missing "$dep"; then
+                warn "php PECL: skipping $ext because brew build dependency $dep failed to install"
+                skip_ext=1
+                break
+            fi
+        done
+    fi
+    [[ "$skip_ext" -ne 0 ]] && continue
+    for ver in $PHP_VERSIONS; do
+        pecl_install_for_mac "$ver" "$ext"
+    done
+done
+
 # ─── Composer + Python ───────────────────────────────────────────────
 install_composer || _phpstack_fail=1
 brew_install_if_missing python@3.13 || _phpstack_fail=1

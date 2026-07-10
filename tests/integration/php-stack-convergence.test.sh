@@ -19,13 +19,16 @@ source "$WS/tests/lib/assert.sh"
 
 usage() {
     cat <<'USAGE'
-usage: php-stack-convergence.test.sh [--platform mac|wsl]
+usage: php-stack-convergence.test.sh [--platform mac|wsl] [--case name]
 
 No arguments:
   Run frozen red-regression fixtures for the F0 contract harness.
 
 --platform mac|wsl:
   Run the live source contract for the implementation phase.
+
+--case name:
+  Run one implementation contract case.
 USAGE
 }
 
@@ -53,6 +56,15 @@ helper_invocations_after_definition() {
             printf "%d:%s\n", FNR, $0
         }
     ' "$file"
+}
+
+helper_invocations_in_text() {
+    awk '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*pecl_install_for_mac[[:space:]]+/ {
+            printf "%d:%s\n", NR, $0
+        }
+    '
 }
 
 pecl_failure_branch() {
@@ -155,15 +167,39 @@ run_red_fixtures() {
     run_fixture_clean_php_contract
 }
 
-run_platform_mac() {
-    local refs verify_body
+run_platform_mac_pecl_loop() {
+    local install_body refs
 
-    refs="$(helper_invocations_after_definition "$MAC_STACK")"
+    install_body="$(function_body install "$MAC_STACK")"
+    refs="$(printf '%s\n' "$install_body" | helper_invocations_in_text)"
     if [[ -n "$refs" ]]; then
         pass "mac production source invokes pecl_install_for_mac"
     else
         fail "mac production source defines pecl_install_for_mac but never invokes it"
     fi
+
+    assert_contains "$install_body" 'for line in "${PECL_LINES[@]}"' \
+        "mac PECL loop iterates configured extension lines"
+    assert_contains "$install_body" 'for ver in $PHP_VERSIONS' \
+        "mac PECL loop iterates configured PHP versions"
+}
+
+run_platform_mac() {
+    local case_filter="${1:-all}" verify_body
+
+    case "$case_filter" in
+        all)
+            run_platform_mac_pecl_loop
+            ;;
+        pecl-loop)
+            run_platform_mac_pecl_loop
+            return
+            ;;
+        *)
+            fail "unknown mac --case value: $case_filter"
+            return
+            ;;
+    esac
 
     verify_body="$(function_body verify "$MAC_STACK")"
     assert_contains "$verify_body" "_php_cli_starts_clean" \
@@ -191,7 +227,7 @@ case "${1:-}" in
         ;;
     --platform)
         case "${2:-}" in
-            mac) run_platform_mac ;;
+            mac) run_platform_mac "${4:-all}" ;;
             wsl) run_platform_wsl ;;
             *)
                 usage >&2
@@ -200,7 +236,7 @@ case "${1:-}" in
         esac
         ;;
     --platform=mac)
-        run_platform_mac
+        run_platform_mac "${3:-all}"
         ;;
     --platform=wsl)
         run_platform_wsl
