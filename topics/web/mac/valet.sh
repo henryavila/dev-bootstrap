@@ -71,9 +71,11 @@ _valet_report_install_failure() {
 
 _valet_harden_launchdaemons() {
     declare -f launchdaemon_harden_install >/dev/null 2>&1 || return 0
-    if ! launchdaemon_harden_install; then
+    local rc=0
+    launchdaemon_harden_install || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
         echo "[valet] PHP health passed; LaunchDaemon hardening/activation failed. Run \`mesh doctor --fix\` after reviewing the diagnostic above" >&2
-        return 1
+        return "$rc"
     fi
 }
 
@@ -102,6 +104,37 @@ _valet_external_unmounted() {
     return 0                                        # configured external path, not mounted
 }
 
+# A socket inode alone is not an operational php-fpm boundary: regular files,
+# broken symlinks, stale sockets, and bound-but-not-listening AF_UNIX sockets
+# must all remain red. Connect with a short timeout and close immediately. This
+# is deliberately sudo-free so check()/menu scans never prompt for credentials.
+_valet_unix_socket_accepting() {
+    local socket_path="$1"
+    [[ -S "$socket_path" ]] || return 1
+    command -v python3 >/dev/null 2>&1 || return 1
+    python3 - "$socket_path" "${VALET_SOCKET_CONNECT_TIMEOUT:-0.25}" <<'PY'
+import socket
+import sys
+
+path = sys.argv[1]
+try:
+    timeout = float(sys.argv[2])
+except (TypeError, ValueError):
+    timeout = 0.25
+if timeout <= 0 or timeout > 2:
+    timeout = 0.25
+
+client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+client.settimeout(timeout)
+try:
+    client.connect(path)
+except (OSError, socket.timeout):
+    raise SystemExit(1)
+finally:
+    client.close()
+PY
+}
+
 # Sudo-free operational probe: are all three valet daemons actually serving?
 # The valet CLI shells out to sudo (and the menu scanner stubs sudo), so we
 # probe the live stack directly instead of asking the CLI — TCP for nginx, a
@@ -114,7 +147,7 @@ _valet_stack_ok() {
         VALET_STACK_FAILURE="php-fpm"
         return 1
     fi
-    if [[ ! -e "$HOME/.config/valet/valet.sock" ]]; then
+    if ! _valet_unix_socket_accepting "$HOME/.config/valet/valet.sock"; then
         VALET_STACK_FAILURE="php-fpm"
         return 1
     fi
@@ -233,7 +266,7 @@ install() {
         echo "[valet] skipping valet install (already configured & serving — set FORCE_VALET_INSTALL=1 to re-run)"
     fi
     if [[ "$need_install" == "1" ]]; then
-        _valet_harden_launchdaemons || return 1
+        _valet_harden_launchdaemons || return $?
         local valet_install_out="" valet_install_rc=0
         valet_install_out="$("$VALET_BIN" install 2>&1)" || valet_install_rc=$?
         if [[ "$valet_install_rc" -ne 0 ]]; then
@@ -243,7 +276,7 @@ install() {
         [[ -n "$valet_install_out" ]] && printf '%s\n' "$valet_install_out"
         # Valet can regenerate the plists it just installed. Re-harden after the
         # command and propagate bootstrap failures before checking liveness.
-        _valet_harden_launchdaemons || return 1
+        _valet_harden_launchdaemons || return $?
     fi
 
     # Refresh sudo cache (`valet tld` and `valet park` will sudo).

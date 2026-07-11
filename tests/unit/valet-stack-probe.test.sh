@@ -17,10 +17,95 @@ passed=0; failed=0
 ok()  { passed=$((passed+1)); echo "  ✓ $1"; }
 bad() { failed=$((failed+1)); echo "  ✗ $1" >&2; }
 
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"
+SOCKET_FIXTURE_PID=""
+cleanup() {
+    if [[ -n "$SOCKET_FIXTURE_PID" ]]; then
+        kill "$SOCKET_FIXTURE_PID" 2>/dev/null || true
+        wait "$SOCKET_FIXTURE_PID" 2>/dev/null || true
+    fi
+    rm -rf "$TMP"
+}
+trap cleanup EXIT
 
 # shellcheck disable=SC1090
 . "$VALET"
+
+# ── php-fpm AF_UNIX socket must be a live listener, not merely a path ──
+SOCKET_DIR="$TMP/sockets"
+mkdir -p "$SOCKET_DIR"
+REGULAR_SOCKET="$SOCKET_DIR/regular.sock"
+BROKEN_SOCKET="$SOCKET_DIR/broken.sock"
+BOUND_SOCKET="$SOCKET_DIR/bound.sock"
+LISTEN_SOCKET="$SOCKET_DIR/listen.sock"
+: > "$REGULAR_SOCKET"
+ln -s "$SOCKET_DIR/missing.sock" "$BROKEN_SOCKET"
+
+python3 - "$BOUND_SOCKET" "$LISTEN_SOCKET" "$SOCKET_DIR/ready" <<'PY' &
+import os
+import socket
+import sys
+import time
+
+bound_path, listen_path, ready_path = sys.argv[1:]
+for path in (bound_path, listen_path):
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+bound = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+bound.bind(bound_path)
+
+listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+listener.bind(listen_path)
+listener.listen(1)
+
+with open(ready_path, "w", encoding="utf-8") as handle:
+    handle.write("ready\n")
+
+connection, _ = listener.accept()
+connection.close()
+while True:
+    time.sleep(1)
+PY
+SOCKET_FIXTURE_PID=$!
+
+for ((n=1; n<=50; n++)); do
+    [[ -s "$SOCKET_DIR/ready" ]] && break
+    sleep 0.02
+done
+
+if ! declare -F _valet_unix_socket_accepting >/dev/null 2>&1; then
+    bad "valet defines an AF_UNIX accepting-socket probe"
+else
+    if _valet_unix_socket_accepting "$REGULAR_SOCKET"; then
+        bad "regular file must not satisfy the php-fpm socket probe"
+    else
+        ok "regular file does not satisfy the php-fpm socket probe"
+    fi
+    if _valet_unix_socket_accepting "$BROKEN_SOCKET"; then
+        bad "broken symlink must not satisfy the php-fpm socket probe"
+    else
+        ok "broken symlink does not satisfy the php-fpm socket probe"
+    fi
+    if _valet_unix_socket_accepting "$BOUND_SOCKET"; then
+        bad "bound-but-not-listening AF_UNIX socket must fail the probe"
+    else
+        ok "bound-but-not-listening AF_UNIX socket fails the probe"
+    fi
+    if _valet_unix_socket_accepting "$LISTEN_SOCKET"; then
+        ok "listening AF_UNIX socket accepts the probe"
+    else
+        bad "listening AF_UNIX socket should accept the probe"
+    fi
+fi
+
+if declare -f _valet_stack_ok 2>/dev/null | grep -q '_valet_unix_socket_accepting'; then
+    ok "_valet_stack_ok uses the accepting-socket probe"
+else
+    bad "_valet_stack_ok must use the accepting-socket probe"
+fi
 
 # Deterministic `mount`: only /Volumes/RealVol is mounted.
 mount() { printf '/dev/disk3s1 on /Volumes/RealVol (apfs, local, nodev)\n'; }

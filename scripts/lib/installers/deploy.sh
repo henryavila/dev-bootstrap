@@ -32,15 +32,26 @@ _deploy_lib() {
 }
 
 # Source ./deploy-env.sh (topic-dir relative) if present, exporting whatever it
-# sets so deploy.sh's envsubst can see it. Best-effort: a hook failure warns but
-# does not abort the deploy (the templates simply render with whatever env is
-# already exported).
+# sets so deploy.sh's envsubst can see it. A hook failure is load-bearing: if a
+# derived variable is unavailable, rendering an empty value would mutate the
+# destination before a later owner reports the causal error.
 _deploy_source_env_hook() {
     [[ -r ./deploy-env.sh ]] || return 0
+    local hook_rc=0 allexport_was_set=0
+    case $- in *a*) allexport_was_set=1 ;; esac
     set -a
     # shellcheck disable=SC1091
-    . ./deploy-env.sh || echo "[deploy] warning: ./deploy-env.sh hook failed" >&2
-    set +a
+    . ./deploy-env.sh || hook_rc=$?
+    if [[ "$allexport_was_set" -eq 1 ]]; then
+        set -a
+    else
+        set +a
+    fi
+    if [[ "$hook_rc" -ne 0 ]]; then
+        echo "[deploy] ./deploy-env.sh hook failed (rc=$hook_rc); aborting deploy before rendering" >&2
+        return "$hook_rc"
+    fi
+    return 0
 }
 
 deploy_check() {
@@ -56,7 +67,7 @@ deploy_install() {
     [[ -d "$spec" ]] || { echo "[deploy] not a directory: $spec" >&2; return 1; }
     lib="$(_deploy_lib)"
     [[ -r "$lib" ]] || { echo "[deploy] cannot find lib/deploy.sh at $lib" >&2; return 1; }
-    _deploy_source_env_hook
+    _deploy_source_env_hook || return $?
     bash "$lib" "$spec"
 }
 

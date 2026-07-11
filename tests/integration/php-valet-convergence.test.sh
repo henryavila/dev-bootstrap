@@ -220,6 +220,50 @@ assert_contains "$post_out" "service post-condition failed after PHP health pass
     "post-condition failure is explicit"
 assert_contains "$post_out" "php-fpm" "post-condition diagnostic names the failed component"
 
+run_valet_hardening_rc_case() {
+    local case_dir="$1" verb="$2" fail_on_call="$3"
+    HOME="$case_dir/home" \
+    CODE_DIR="$case_dir/code" \
+    PATH="$case_dir/bin:$PATH" \
+    FAKE_VALET_BIN_DIR="$case_dir/vendor/bin" \
+    VALET_STACK_VERIFY_ATTEMPTS=1 \
+    bash -c '
+        . "$1"
+        _valet_external_unmounted() { return 1; }
+        _valet_php_probe_clean() { return 0; }
+        _hardening_calls=0
+        _hardening_fail_on_call="$3"
+        launchdaemon_harden_install() {
+            _hardening_calls=$((_hardening_calls + 1))
+            if [[ "$_hardening_calls" -eq "$_hardening_fail_on_call" ]]; then
+                return 78
+            fi
+            return 0
+        }
+        FORCE_VALET_INSTALL=1 "$2"
+    ' _ "$PROD_VALET" "$verb" "$fail_on_call"
+}
+
+echo
+echo "Valet preserves LaunchDaemon rc 78 through install and repair"
+RC_CASE="$ROOT/valet-hardening-rc-case"
+make_valet_case "$RC_CASE"
+
+run_valet_hardening_rc_case "$RC_CASE" install 1 >/dev/null 2>&1
+valet_pre_hardening_rc=$?
+assert_eq "$valet_pre_hardening_rc" "78" \
+    "Valet install preserves rc 78 from pre-install LaunchDaemon hardening"
+
+run_valet_hardening_rc_case "$RC_CASE" install 2 >/dev/null 2>&1
+valet_post_hardening_rc=$?
+assert_eq "$valet_post_hardening_rc" "78" \
+    "Valet install preserves rc 78 from post-install LaunchDaemon hardening"
+
+run_valet_hardening_rc_case "$RC_CASE" repair 1 >/dev/null 2>&1
+valet_repair_hardening_rc=$?
+assert_eq "$valet_repair_hardening_rc" "78" \
+    "Valet repair preserves rc 78 from LaunchDaemon hardening"
+
 echo
 echo "LaunchDaemon hardening propagates bootstrap failure with actionable diagnostics"
 HARD_CASE="$ROOT/hardening-case"
@@ -231,9 +275,30 @@ exec "$@"
 SH
 cat > "$HARD_CASE/bin/plistbuddy" <<'SH'
 #!/usr/bin/env bash
+plist="$3"
 case "$2" in
-    Print*) printf '/Volumes/External/homebrew/var/log/php-fpm.log\n' ;;
-    Set*|Add*) exit 0 ;;
+    "Print :StandardErrorPath")
+        if [[ -r "${plist}.err" ]]; then
+            cat "${plist}.err"
+        else
+            printf '/Volumes/External/homebrew/var/log/php-fpm.log\n'
+        fi
+        ;;
+    "Print :StandardOutPath")
+        if [[ -r "${plist}.out" ]]; then
+            cat "${plist}.out"
+        else
+            printf '/Volumes/External/homebrew/var/log/php-fpm.log\n'
+        fi
+        ;;
+    "Set :StandardErrorPath "*|"Add :StandardErrorPath string "*)
+        value="${2#*StandardErrorPath }"; value="${value#string }"
+        printf '%s\n' "$value" > "${plist}.err"
+        ;;
+    "Set :StandardOutPath "*)
+        value="${2#Set :StandardOutPath }"
+        printf '%s\n' "$value" > "${plist}.out"
+        ;;
 esac
 SH
 cat > "$HARD_CASE/bin/launchctl" <<'SH'
@@ -262,6 +327,7 @@ hardening_out="$(PATH="$HARD_CASE/bin:$PATH" \
     MESH_HOMEBREW_LOG_DIR="$HARD_CASE/logs" \
     MESH_PLISTBUDDY_BIN="$HARD_CASE/bin/plistbuddy" \
     MESH_LAUNCHCTL_BIN="$HARD_CASE/bin/launchctl" \
+    MESH_LAUNCHDAEMON_STATE_DIR="$HARD_CASE/state" \
     MESH_LAUNCHDAEMON_VERIFY_ATTEMPTS=1 \
     FAKE_LAUNCHCTL_MODE=bootstrap-fail \
     bash -c '. "$1"; launchdaemon_harden_install' _ "$PROD_HARDENING" 2>&1)"
@@ -279,6 +345,7 @@ hardening_wait_out="$(PATH="$HARD_CASE/bin:$PATH" \
     MESH_HOMEBREW_LOG_DIR="$HARD_CASE/logs" \
     MESH_PLISTBUDDY_BIN="$HARD_CASE/bin/plistbuddy" \
     MESH_LAUNCHCTL_BIN="$HARD_CASE/bin/launchctl" \
+    MESH_LAUNCHDAEMON_STATE_DIR="$HARD_CASE/state" \
     MESH_LAUNCHDAEMON_VERIFY_ATTEMPTS=1 \
     FAKE_LAUNCHCTL_MODE=waiting \
     bash -c '. "$1"; launchdaemon_harden_install' _ "$PROD_HARDENING" 2>&1)"
@@ -294,11 +361,312 @@ MESH_LAUNCHDAEMON_DIR="$HARD_CASE/plists" \
 MESH_HOMEBREW_LOG_DIR="$HARD_CASE/logs" \
 MESH_PLISTBUDDY_BIN="$HARD_CASE/bin/plistbuddy" \
 MESH_LAUNCHCTL_BIN="$HARD_CASE/bin/launchctl" \
+MESH_LAUNCHDAEMON_STATE_DIR="$HARD_CASE/state" \
 MESH_LAUNCHDAEMON_VERIFY_ATTEMPTS=1 \
 FAKE_LAUNCHCTL_MODE=running \
 bash -c '. "$1"; launchdaemon_harden_install' _ "$PROD_HARDENING" >/dev/null 2>&1
 hardening_running_rc=$?
 assert_eq "$hardening_running_rc" "0" \
     "bootstrap plus running post-condition publishes hardening convergence"
+
+echo
+echo "LaunchDaemon check validates optional StandardOutPath"
+HARD_CHECK_CASE="$ROOT/hardening-check-case"
+mkdir -p "$HARD_CHECK_CASE/bin" "$HARD_CHECK_CASE/plists" \
+    "$HARD_CHECK_CASE/logs" "$HARD_CHECK_CASE/state"
+: > "$HARD_CHECK_CASE/plists/homebrew.mxcl.php.plist"
+cat > "$HARD_CHECK_CASE/bin/plistbuddy" <<'SH'
+#!/usr/bin/env bash
+case "$2" in
+    "Print :StandardErrorPath") printf '%s/php.log\n' "$FAKE_SAFE_LOG_DIR" ;;
+    "Print :StandardOutPath")
+        case "$FAKE_OUT_MODE" in
+            absent) exit 1 ;;
+            safe) printf '%s/php.log\n' "$FAKE_SAFE_LOG_DIR" ;;
+            external) printf '/Volumes/External/homebrew/var/log/php.log\n' ;;
+        esac
+        ;;
+esac
+SH
+cat > "$HARD_CHECK_CASE/bin/launchctl" <<'SH'
+#!/usr/bin/env bash
+[[ "${1:-}" == "print" ]] && {
+    printf 'state = %s\n' "${FAKE_JOB_STATE:-running}"
+    exit 0
+}
+exit 0
+SH
+chmod +x "$HARD_CHECK_CASE/bin/plistbuddy" "$HARD_CHECK_CASE/bin/launchctl"
+
+run_hardening_check_case() {
+    local mode="$1" state="${2:-running}"
+    PATH="$HARD_CHECK_CASE/bin:$PATH" \
+    BREW_PREFIX=/Volumes/External/homebrew \
+    MESH_LAUNCHDAEMON_DIR="$HARD_CHECK_CASE/plists" \
+    MESH_HOMEBREW_LOG_DIR="$HARD_CHECK_CASE/logs" \
+    MESH_PLISTBUDDY_BIN="$HARD_CHECK_CASE/bin/plistbuddy" \
+    MESH_LAUNCHCTL_BIN="$HARD_CHECK_CASE/bin/launchctl" \
+    MESH_LAUNCHDAEMON_STATE_DIR="$HARD_CHECK_CASE/state" \
+    FAKE_SAFE_LOG_DIR="$HARD_CHECK_CASE/logs" \
+    FAKE_OUT_MODE="$mode" \
+    FAKE_JOB_STATE="$state" \
+    bash -c '. "$1"; launchdaemon_harden_check' _ "$PROD_HARDENING"
+}
+
+run_hardening_check_case absent >/dev/null 2>&1
+hardening_out_absent_rc=$?
+assert_eq "$hardening_out_absent_rc" "0" \
+    "hardening check accepts an absent StandardOutPath"
+
+run_hardening_check_case safe >/dev/null 2>&1
+hardening_out_safe_rc=$?
+assert_eq "$hardening_out_safe_rc" "0" \
+    "hardening check accepts a safe StandardOutPath"
+
+run_hardening_check_case external >/dev/null 2>&1
+hardening_out_external_rc=$?
+assert_ne "$hardening_out_external_rc" "0" \
+    "hardening check rejects an external StandardOutPath"
+
+run_hardening_check_case safe waiting >/dev/null 2>&1
+hardening_safe_stopped_rc=$?
+assert_eq "$hardening_safe_stopped_rc" "0" \
+    "standalone hardening check owns safe plist state, not generic Valet service liveness"
+
+: > "$HARD_CHECK_CASE/state/php.pending"
+run_hardening_check_case safe waiting >/dev/null 2>&1
+hardening_pending_rc=$?
+assert_ne "$hardening_pending_rc" "0" \
+    "pending activation remains red even when the on-disk plist is already safe"
+rm -f "$HARD_CHECK_CASE/state/php.pending"
+
+echo
+echo "LaunchDaemon hardening is forward-only and retryable per service"
+TX_CASE="$ROOT/hardening-transaction-case"
+mkdir -p "$TX_CASE/bin" "$TX_CASE/plists" "$TX_CASE/logs" \
+    "$TX_CASE/runtime" "$TX_CASE/pending"
+cat > "$TX_CASE/bin/sudo" <<'SH'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-v" ]] && exit 0
+exec "$@"
+SH
+cat > "$TX_CASE/bin/plistbuddy" <<'SH'
+#!/usr/bin/env bash
+cmd="$2"
+plist="$3"
+
+read_value() {
+    local key="$1"
+    sed -n "s/^${key}=//p" "$plist" | sed -n '1p'
+}
+
+write_value() {
+    local key="$1" value="$2" tmp="${plist}.tmp.$$"
+    grep -v "^${key}=" "$plist" > "$tmp" 2>/dev/null || true
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+    mv "$tmp" "$plist"
+}
+
+case "$cmd" in
+    "Print :StandardErrorPath")
+        value="$(read_value ERR)"; [[ -n "$value" ]] || exit 1; printf '%s\n' "$value"
+        ;;
+    "Print :StandardOutPath")
+        value="$(read_value OUT)"; [[ -n "$value" ]] || exit 1; printf '%s\n' "$value"
+        ;;
+    "Set :StandardErrorPath "*|"Add :StandardErrorPath string "*)
+        value="${cmd#*StandardErrorPath }"; value="${value#string }"; write_value ERR "$value"
+        ;;
+    "Set :StandardOutPath "*)
+        value="${cmd#Set :StandardOutPath }"; write_value OUT "$value"
+        ;;
+esac
+SH
+cat > "$TX_CASE/bin/launchctl" <<'SH'
+#!/usr/bin/env bash
+command_name="${1:-}"
+printf '%s\n' "$*" >> "$FAKE_LAUNCHCTL_CALLS"
+
+service_from_label() {
+    local label="$1"
+    label="${label##*/homebrew.mxcl.}"
+    printf '%s\n' "$label"
+}
+
+service_from_plist() {
+    local name
+    name="$(basename "$1")"
+    name="${name#homebrew.mxcl.}"
+    printf '%s\n' "${name%.plist}"
+}
+
+case "$command_name" in
+    bootout)
+        svc="$(service_from_label "${2:-}")"
+        if [[ "$FAKE_LAUNCHCTL_MODE" == "bootout-fail" ]]; then
+            printf 'Boot-out failed: 78\n' >&2
+            exit 78
+        fi
+        printf 'unloaded\n' > "$FAKE_LAUNCHCTL_STATE_DIR/$svc"
+        ;;
+    bootstrap)
+        svc="$(service_from_plist "${3:-}")"
+        count=0
+        [[ -r "$FAKE_LAUNCHCTL_COUNT" ]] && count="$(cat "$FAKE_LAUNCHCTL_COUNT")"
+        count=$((count + 1))
+        printf '%s\n' "$count" > "$FAKE_LAUNCHCTL_COUNT"
+        case "$FAKE_LAUNCHCTL_MODE" in
+            retry-success)
+                if [[ "$count" -eq 1 ]]; then
+                    printf 'Bootstrap failed: 78: transient sandbox failure\n' >&2
+                    exit 78
+                fi
+                ;;
+            persistent)
+                printf 'Bootstrap failed: 78: persistent sandbox failure\n' >&2
+                exit 78
+                ;;
+            persistent-nginx)
+                if [[ "$svc" == "nginx" ]]; then
+                    printf 'Bootstrap failed: 78: nginx sandbox failure\n' >&2
+                    exit 78
+                fi
+                ;;
+            waiting)
+                printf 'waiting\n' > "$FAKE_LAUNCHCTL_STATE_DIR/$svc"
+                exit 0
+                ;;
+        esac
+        printf 'running\n' > "$FAKE_LAUNCHCTL_STATE_DIR/$svc"
+        ;;
+    print)
+        svc="$(service_from_label "${2:-}")"
+        state=""
+        [[ -r "$FAKE_LAUNCHCTL_STATE_DIR/$svc" ]] \
+            && state="$(cat "$FAKE_LAUNCHCTL_STATE_DIR/$svc")"
+        case "$state" in
+            running) printf 'state = running\n'; exit 0 ;;
+            waiting) printf 'state = waiting\n'; exit 0 ;;
+            scheduled) printf 'state = spawn scheduled\n'; exit 0 ;;
+            *) exit 1 ;;
+        esac
+        ;;
+esac
+SH
+chmod +x "$TX_CASE/bin/sudo" "$TX_CASE/bin/plistbuddy" "$TX_CASE/bin/launchctl"
+
+seed_tx_plist() {
+    local svc="$1"
+    printf 'ERR=/Volumes/External/homebrew/var/log/%s.log\nOUT=/Volumes/External/homebrew/var/log/%s.log\n' \
+        "$svc" "$svc" > "$TX_CASE/plists/homebrew.mxcl.${svc}.plist"
+    printf 'running\n' > "$TX_CASE/runtime/$svc"
+}
+
+reset_tx_case() {
+    rm -f "$TX_CASE/plists"/* "$TX_CASE/runtime"/* "$TX_CASE/pending"/* \
+        "$TX_CASE/calls" "$TX_CASE/count"
+    : > "$TX_CASE/calls"
+    printf '0\n' > "$TX_CASE/count"
+}
+
+run_tx_hardening() {
+    local mode="$1"
+    PATH="$TX_CASE/bin:$PATH" \
+    BREW_PREFIX=/Volumes/External/homebrew \
+    MESH_LAUNCHDAEMON_DIR="$TX_CASE/plists" \
+    MESH_HOMEBREW_LOG_DIR="$TX_CASE/logs" \
+    MESH_PLISTBUDDY_BIN="$TX_CASE/bin/plistbuddy" \
+    MESH_LAUNCHCTL_BIN="$TX_CASE/bin/launchctl" \
+    MESH_LAUNCHDAEMON_STATE_DIR="$TX_CASE/pending" \
+    MESH_LAUNCHDAEMON_VERIFY_ATTEMPTS=1 \
+    FAKE_LAUNCHCTL_MODE="$mode" \
+    FAKE_LAUNCHCTL_CALLS="$TX_CASE/calls" \
+    FAKE_LAUNCHCTL_COUNT="$TX_CASE/count" \
+    FAKE_LAUNCHCTL_STATE_DIR="$TX_CASE/runtime" \
+    bash -c '. "$1"; launchdaemon_harden_install' _ "$PROD_HARDENING"
+}
+
+reset_tx_case
+seed_tx_plist php
+retry_out="$(run_tx_hardening retry-success 2>&1)"
+retry_rc=$?
+assert_eq "$retry_rc" "0" \
+    "transient bootstrap rc 78 is recovered by one hardened-plist retry"
+assert_eq "$(cat "$TX_CASE/count")" "2" \
+    "bootstrap recovery performs exactly one retry"
+assert_contains "$retry_out" "recovery succeeded" \
+    "bootstrap retry reports successful recovery"
+
+reset_tx_case
+seed_tx_plist php
+persistent_out="$(run_tx_hardening persistent 2>&1)"
+persistent_rc=$?
+persistent_count="$(cat "$TX_CASE/count")"
+assert_eq "$persistent_rc" "78" \
+    "persistent bootstrap failure preserves the primary rc 78"
+assert_contains "$persistent_out" "recovery failed" \
+    "persistent bootstrap failure reports recovery failure"
+assert_contains "$persistent_out" "primary rc=78" \
+    "persistent bootstrap failure identifies the preserved primary rc"
+
+run_tx_hardening success > "$TX_CASE/reexec.out" 2>&1
+reexec_rc=$?
+reexec_count="$(cat "$TX_CASE/count")"
+assert_eq "$reexec_rc" "0" \
+    "re-execution converges a hardened plist left by activation failure"
+ASSERT_MSG="re-execution retries bootstrap even when plist paths are already hardened" \
+    assert_true "[ '$reexec_count' -gt '$persistent_count' ]"
+assert_eq "$(cat "$TX_CASE/runtime/php")" "running" \
+    "re-execution proves the recovered service is running"
+
+reset_tx_case
+seed_tx_plist php
+bootout_out="$(run_tx_hardening bootout-fail 2>&1)"
+bootout_rc=$?
+assert_eq "$bootout_rc" "78" \
+    "persistent bootout failure preserves the primary rc 78"
+assert_contains "$bootout_out" "recovery failed" \
+    "persistent bootout failure reports recovery failure"
+run_tx_hardening success > "$TX_CASE/bootout-reexec.out" 2>&1
+bootout_reexec_rc=$?
+assert_eq "$bootout_reexec_rc" "0" \
+    "re-execution retries a pending service after bootout failure"
+assert_eq "$(cat "$TX_CASE/runtime/php")" "running" \
+    "bootout-failure re-execution proves the service running"
+
+reset_tx_case
+seed_tx_plist php
+waiting_tx_out="$(run_tx_hardening waiting 2>&1)"
+waiting_tx_rc=$?
+assert_eq "$waiting_tx_rc" "1" \
+    "persistent non-running launchctl state preserves the primary wait rc"
+assert_contains "$waiting_tx_out" "recovery failed" \
+    "persistent wait failure reports recovery failure"
+run_tx_hardening success > "$TX_CASE/waiting-reexec.out" 2>&1
+waiting_reexec_rc=$?
+assert_eq "$waiting_reexec_rc" "0" \
+    "re-execution retries a pending service after wait failure"
+assert_eq "$(cat "$TX_CASE/runtime/php")" "running" \
+    "wait-failure re-execution proves the service running"
+
+reset_tx_case
+seed_tx_plist php
+seed_tx_plist nginx
+seed_tx_plist dnsmasq
+run_tx_hardening persistent-nginx > "$TX_CASE/multisvc.out" 2>&1
+multisvc_rc=$?
+assert_eq "$multisvc_rc" "78" \
+    "per-service hardening preserves nginx primary rc 78"
+assert_contains "$(cat "$TX_CASE/plists/homebrew.mxcl.php.plist")" \
+    "ERR=$TX_CASE/logs/php.log" \
+    "php commits its hardened plist before nginx begins"
+assert_contains "$(cat "$TX_CASE/plists/homebrew.mxcl.nginx.plist")" \
+    "ERR=$TX_CASE/logs/nginx.log" \
+    "nginx keeps its forward-only hardened plist after activation failure"
+assert_contains "$(cat "$TX_CASE/plists/homebrew.mxcl.dnsmasq.plist")" \
+    "ERR=/Volumes/External/homebrew/var/log/dnsmasq.log" \
+    "dnsmasq remains untouched after nginx fails"
+assert_not_contains "$(cat "$TX_CASE/calls")" "homebrew.mxcl.dnsmasq" \
+    "dnsmasq activation does not start before nginx proves running"
 
 summary

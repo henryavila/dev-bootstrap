@@ -101,9 +101,9 @@ assert_pattern_present "$WEB_MAC" 'launchctl bootstrap system' \
 assert_pattern_present "$WEB_MAC" 'for svc in php nginx dnsmasq' \
     "60-web-stack/install.mac.sh — iterates over php / nginx / dnsmasq services"
 
-# Idempotence guard: change-tracking flag + read-before-write check
-assert_pattern_present "$WEB_MAC" '(_hardening_changed=|changed=0)' \
-    "60-web-stack/install.mac.sh — tracks whether any plist was actually changed (idempotence)"
+# Idempotence guard: per-service change-tracking flag + read-before-write check.
+assert_pattern_present "$WEB_MAC" '(_hardening_changed=|changed=0|needs_edit=0)' \
+    "60-web-stack/install.mac.sh — tracks whether each plist needs an edit (idempotence)"
 
 # UX honesty: distinguish 'no plists found' from 'all plists already hardened'.
 # The variable was renamed in the engine migration; the invariant (a found-counter

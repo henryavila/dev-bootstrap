@@ -7,23 +7,24 @@
 # the engine records convergence. It intentionally never changes boot-enable
 # policy; services.default remains the sole owner of that bit.
 
+_WSL_WEB_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./php-runtime.sh
+. "$_WSL_WEB_SCRIPT_DIR/php-runtime.sh"
+
 _wsl_web_versions() {
-    local versions="${PHP_VERSIONS:-${PHP_DEFAULT:-}}" conf ver
-    if [[ -z "$versions" ]]; then
-        conf="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../languages" 2>/dev/null && pwd)/data/php-versions.conf"
-        [[ -f "$conf" ]] && versions="$(grep -vE '^\s*(#|$)' "$conf" | xargs)"
-    fi
-    if [[ -z "$versions" ]]; then
-        echo "[web/nginx-php-fpm] no declared PHP versions; set PHP_VERSIONS or PHP_DEFAULT" >&2
-        return 1
-    fi
+    _mesh_web_php_runtime_versions
+}
+
+_wsl_web_resolve_php_env() {
+    local versions default ver resolved=""
+    versions="$(_wsl_web_versions)" || return 1
+    default="$(_mesh_web_php_runtime_default "$versions")" || return 1
     for ver in $versions; do
-        if [[ ! "$ver" =~ ^[0-9]+\.[0-9]+$ ]]; then
-            echo "[web/nginx-php-fpm] invalid declared PHP version: $ver" >&2
-            return 1
-        fi
-        printf '%s\n' "$ver"
+        resolved="${resolved:+$resolved }$ver"
     done
+    PHP_VERSIONS="$resolved"
+    PHP_DEFAULT="$default"
+    export PHP_VERSIONS PHP_DEFAULT
 }
 
 _wsl_web_php_owner_script() {
@@ -154,6 +155,31 @@ _wsl_web_unit_active() {
     "$systemctl_bin" is-active --quiet "$unit" >/dev/null 2>&1
 }
 
+_wsl_web_ss_bin() {
+    local bin="${MESH_SS_BIN:-ss}"
+    command -v "$bin" 2>/dev/null || {
+        echo "[web/nginx-php-fpm] ss is required for the sudo-free FPM listener probe; repair the web packages so iproute2 is installed" >&2
+        return 1
+    }
+}
+
+_wsl_web_fpm_listening() {
+    local socket="$1" ss_bin sockets
+    ss_bin="$(_wsl_web_ss_bin)" || return 2
+    sockets="$("$ss_bin" -H -xl 2>/dev/null)" || {
+        echo "[web/nginx-php-fpm] ss failed while reading Unix listeners for $socket" >&2
+        return 1
+    }
+    awk -v wanted="$socket" '
+        $1 == "u_str" && $2 == "LISTEN" {
+            for (i = 3; i <= NF; i++) {
+                if ($i == wanted) found = 1
+            }
+        }
+        END { exit(found ? 0 : 1) }
+    ' <<< "$sockets"
+}
+
 _wsl_web_nginx_serving() {
     local host="${MESH_NGINX_HEALTH_HOST:-127.0.0.1}"
     local port="${MESH_NGINX_HEALTH_PORT:-80}"
@@ -162,7 +188,7 @@ _wsl_web_nginx_serving() {
 }
 
 _wsl_web_stack_ok() {
-    local versions ver socket
+    local versions ver socket listener_rc
     WSL_WEB_STACK_FAILURE=""
     versions="$(_wsl_web_versions)" || {
         WSL_WEB_STACK_FAILURE="PHP version resolution"
@@ -176,6 +202,16 @@ _wsl_web_stack_ok() {
         socket="${PHP_FPM_RUN_DIR:-/run/php}/php${ver}-fpm.sock"
         if [[ ! -S "$socket" ]]; then
             WSL_WEB_STACK_FAILURE="php${ver}-fpm socket ($socket)"
+            return 1
+        fi
+        listener_rc=0
+        _wsl_web_fpm_listening "$socket" || listener_rc=$?
+        if [[ "$listener_rc" -ne 0 ]]; then
+            if [[ "$listener_rc" -eq 2 ]]; then
+                WSL_WEB_STACK_FAILURE="php${ver}-fpm listener tooling (ss unavailable)"
+            else
+                WSL_WEB_STACK_FAILURE="php${ver}-fpm listener ($socket)"
+            fi
             return 1
         fi
     done
@@ -207,6 +243,7 @@ _wsl_web_report_stack_failure() {
 
 check() {
     WSL_WEB_STACK_FAILURE=""
+    _wsl_web_resolve_php_env || return 1
     _wsl_web_default_version_valid || return 1
     _wsl_web_php_owner_clean || return 1
     _wsl_web_fpm_probes_clean || return 1
@@ -216,9 +253,11 @@ check() {
 install() {
     local versions ver
     WSL_WEB_STACK_FAILURE=""
+    _wsl_web_resolve_php_env || return 1
     _wsl_web_default_version_valid || return 1
     _wsl_web_php_owner_clean || return 1
     _wsl_web_fpm_probes_clean || return 1
+    _wsl_web_ss_bin >/dev/null || return 1
     sudo -v 2>/dev/null || true
     _wsl_web_nginx_config_clean || return $?
 

@@ -3,33 +3,24 @@
 #
 # v2 split (web/nginx-php-fpm bundle): mysql-server-8.0 and redis-server moved
 # to the databases topic (databases/mysql, databases/redis) as native apt
-# items. This script now installs only nginx + the php-fpm packages; the
-# databases/* bundles are pulled in via web/nginx-php-fpm's requires_bundles.
+# items. This script now installs nginx, iproute2 (the sudo-free `ss` listener
+# probe), and the php-fpm packages; the databases/* bundles are pulled in via
+# web/nginx-php-fpm's requires_bundles.
+
+_WEB_WSL_PACKAGES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./php-runtime.sh
+. "$_WEB_WSL_PACKAGES_DIR/php-runtime.sh"
 
 _required_packages() {
     # Codex review 2026-05-19 (C-F005): when both PHP_VERSIONS and
     # PHP_DEFAULT are empty the previous body produced "(nginx)" only — no
     # `phpX.Y-fpm` packages were ever added. check() then reported success
     # once nginx was installed, and Laravel/PHP sites silently couldn't run
-    # because no FPM was wired up. Now we resolve versions from
-    # PHP_VERSIONS → PHP_DEFAULT → topic languages's data/php-versions.conf,
-    # and fail loudly if all 3 are empty.
-    local pkgs=(nginx)
-    local versions="${PHP_VERSIONS:-${PHP_DEFAULT:-}}"
-    if [[ -z "$versions" ]]; then
-        local conf
-        # languages topic still resolves under topics/ (../../languages once
-        # the languages topic is migrated; ../../10-languages until then).
-        conf="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../languages" 2>/dev/null && pwd)/data/php-versions.conf"
-        [[ -f "$conf" ]] || conf="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../10-languages" 2>/dev/null && pwd)/data/php-versions.conf"
-        if [[ -f "$conf" ]]; then
-            versions="$(grep -vE '^\s*(#|$)' "$conf" | xargs)"
-        fi
-    fi
-    if [[ -z "$versions" ]]; then
-        echo "[web/nginx-php-fpm] PHP_VERSIONS and PHP_DEFAULT both empty and languages/data/php-versions.conf unreadable — refusing to install the web stack without any php-fpm. Set PHP_VERSIONS=8.3 8.4 (etc.) and re-run." >&2
-        return 1
-    fi
+    # because no FPM was wired up. Resolve the declaration when present, or
+    # the runtime that languages/php already converged across a bundle boundary.
+    local pkgs=(nginx iproute2)
+    local versions
+    versions="$(_mesh_web_php_runtime_versions)" || return 1
     local ver
     for ver in $versions; do
         [[ -z "$ver" ]] && continue
@@ -39,38 +30,28 @@ _required_packages() {
 }
 
 # Resolve the configured PHP versions only (no nginx, no php prefix) — used by
-# verify()'s functional probe. Mirrors _required_packages's resolution order
-# (PHP_VERSIONS → PHP_DEFAULT → languages/data/php-versions.conf) so check()
-# and verify() agree on which versions are in scope. Prints one bare version
-# per line; prints nothing (and the caller treats it as a hard fail) when none
-# resolve — install() refuses to run without any version, so verify() must too.
+# verify()'s functional probe. Uses the same shared boundary as install() so
+# check() and verify() agree on which versions are in scope.
 _php_fpm_versions() {
-    local versions="${PHP_VERSIONS:-${PHP_DEFAULT:-}}"
-    if [[ -z "$versions" ]]; then
-        local conf
-        conf="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../languages" 2>/dev/null && pwd)/data/php-versions.conf"
-        [[ -f "$conf" ]] || conf="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../10-languages" 2>/dev/null && pwd)/data/php-versions.conf"
-        if [[ -f "$conf" ]]; then
-            versions="$(grep -vE '^\s*(#|$)' "$conf" | xargs)"
-        fi
-    fi
-    local ver
-    for ver in $versions; do
-        [[ -z "$ver" ]] && continue
-        printf '%s\n' "$ver"
-    done
+    _mesh_web_php_runtime_versions
 }
 
 check() {
-    local p
+    local required p
+    required="$(_required_packages)" || return 1
     while IFS= read -r p; do
         [[ -z "$p" ]] && continue
         dpkg -s "$p" >/dev/null 2>&1 || return 1
-    done < <(_required_packages)
+    done <<< "$required"
     return 0
 }
 
 install() {
+    # Resolve the languages/php boundary before sudo or apt/dpkg mutation. A
+    # process substitution would discard the producer's non-zero status and
+    # make an empty package set look converged.
+    local required
+    required="$(_required_packages)" || return 1
     sudo -v 2>/dev/null || true
     export DEBIAN_FRONTEND=noninteractive
     local APT=(-y -q
@@ -93,7 +74,7 @@ install() {
         [[ -z "$p" ]] && continue
         _status="$(dpkg -s "$p" 2>/dev/null | sed -n 's/^Status: //p')"
         [[ "$_status" == "install ok installed" ]] || missing+=("$p")
-    done < <(_required_packages)
+    done <<< "$required"
 
     if (( ${#missing[@]} > 0 )); then
         sudo apt-get update -q
@@ -119,7 +100,8 @@ verify() {
     # is fully configured and the binary loads, not just unpacked. Debian/Ubuntu
     # (ondrej/php PPA) ships it as /usr/sbin/php-fpm<ver>. We accept either the
     # PATH name or the canonical sbin path; --version is a no-side-effect probe.
-    local ver fpm
+    local versions ver fpm
+    versions="$(_php_fpm_versions)" || return 1
     while IFS= read -r ver; do
         [[ -z "$ver" ]] && continue
         fpm=""
@@ -131,7 +113,7 @@ verify() {
             return 1
         fi
         "$fpm" --version >/dev/null 2>&1 || return 1
-    done < <(_php_fpm_versions)
+    done <<< "$versions"
     return 0
 }
 

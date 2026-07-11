@@ -61,6 +61,25 @@ NGINX_CONF_DIR="${NGINX_ENABLED_DIR:-}"
 
 CODE_DIR="${CODE_DIR:-$HOME/code}"
 DEV_DEFAULT_PORT="${DEV_DEFAULT_PORT:-3000}"
-# PHP_DEFAULT comes from the languages/php option (params.env, exported by the
-# engine). Leave whatever is already set; do not clobber.
+# A saved/explicit PHP declaration wins. On a fresh non-interactive closure the
+# engine isolates bundle defaults in subshells, so derive from the runtime that
+# the required languages/php bundle already converged before rendering nginx.
 PHP_DEFAULT="${PHP_DEFAULT:-}"
+if [ "$_web_os" = wsl ] || [ "$_web_os" = linux ]; then
+    _web_php_runtime_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wsl/php-runtime.sh"
+    if [ ! -r "$_web_php_runtime_lib" ]; then
+        echo "[web/deploy-env] PHP runtime resolver is unreadable: $_web_php_runtime_lib" >&2
+        return 1
+    fi
+    # shellcheck source=./wsl/php-runtime.sh
+    . "$_web_php_runtime_lib"
+    _web_php_versions="$(_mesh_web_php_runtime_versions)" || return 1
+    [ -n "$_web_php_versions" ] || {
+        echo "[web/deploy-env] PHP runtime resolution returned no versions" >&2
+        return 1
+    }
+    PHP_DEFAULT="$(_mesh_web_php_runtime_default "$_web_php_versions")" || return 1
+    if [ -z "${PHP_VERSIONS:-}" ]; then
+        PHP_VERSIONS="$(printf '%s\n' "$_web_php_versions" | awk 'NF { printf "%s%s", sep, $0; sep=" " } END { print "" }')"
+    fi
+fi
