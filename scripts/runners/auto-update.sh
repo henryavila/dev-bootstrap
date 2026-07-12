@@ -21,7 +21,8 @@
 #
 # Exit codes:
 #   0  no work, or successful apply across all repos
-#   1  fatal error (config missing, etc.)
+#   1  fatal orchestration error (config missing, git pre-flight, etc.)
+#   other non-zero  primary setup/install failure, preserved for the caller
 #
 # Side effects (state dir = ~/.local/state/mesh; legacy mesh-workstation migrated):
 #   $STATE_DIR/last-applied-<repo>  SHA aplicada por repo
@@ -459,13 +460,15 @@ process_repo() {
                 bash "$repo/setup.sh" --non-interactive 2>&1 | sed 's/^/    /' || setup_rc=$?
             fi
             if (( setup_rc != 0 )); then
-                warn "$name: setup.sh --full falhou — last-applied NÃO bumped"
-                return 1
+                warn "$name: setup.sh --full falhou (rc=$setup_rc) — last-applied NÃO bumped"
+                return "$setup_rc"
             fi
         elif _is_identity_repo "$repo"; then
-            if ! bash "$repo/install.sh" 2>&1 | sed 's/^/    /'; then
-                warn "$name: install.sh --full falhou — last-applied NÃO bumped"
-                return 1
+            local install_rc=0
+            bash "$repo/install.sh" 2>&1 | sed 's/^/    /' || install_rc=$?
+            if (( install_rc != 0 )); then
+                warn "$name: install.sh --full falhou (rc=$install_rc) — last-applied NÃO bumped"
+                return "$install_rc"
             fi
             # Capture doctor output so the warn is actionable — silent
             # `>/dev/null 2>&1` previously made the user re-run by hand.
@@ -845,8 +848,8 @@ run_update_phase() {
 #
 # EXIT_RC is the script's overall outcome:
 #   0  no work, or all per-repo work succeeded
-#   1  any process_repo returned non-zero (e.g. --full setup.sh failed),
-#      or -o/--only NAME did not match anything, or no repos configured.
+#   N  first non-zero process rc (including a causal --full setup/install rc),
+#      or 1 for an orchestration error such as an unmatched --only target.
 # Honest exit codes matter for piped composition — without this
 # the user's `&&` composition would silently mask first-stage failures.
 EXIT_RC=0
@@ -860,7 +863,12 @@ for repo in "${AUTO_UPDATE_REPOS[@]}"; do
     if [[ -n "$ONLY" ]] && ! _only_matches "$repo" "$ONLY"; then
         continue
     fi
-    process_repo "$repo" || { warn "process_repo failed for $repo (continuing)"; EXIT_RC=1; }
+    process_rc=0
+    process_repo "$repo" || process_rc=$?
+    if (( process_rc != 0 )); then
+        warn "process_repo failed for $repo (rc=$process_rc; continuing)"
+        (( EXIT_RC == 0 )) && EXIT_RC=$process_rc
+    fi
 done
 
 if [[ -n "$ONLY" ]]; then
@@ -875,7 +883,12 @@ if [[ -n "$ONLY" ]]; then
 fi
 
 # ─── Version-aware package update (opt-in; no-op unless a category enabled) ──
-run_update_phase || { warn "update phase failed (continuing)"; EXIT_RC=1; }
+update_phase_rc=0
+run_update_phase || update_phase_rc=$?
+if (( update_phase_rc != 0 )); then
+    warn "update phase failed (rc=$update_phase_rc; continuing)"
+    (( EXIT_RC == 0 )) && EXIT_RC=$update_phase_rc
+fi
 
 # ─── Followup summary ───────────────────────────────────────────────
 if (( ${#FOLLOWUPS[@]} > 0 )); then

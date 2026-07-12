@@ -25,10 +25,12 @@
 #
 # --repair (verify/operational plan §C): a precise verify+repair sweep over the
 # selected/installed bundles. For each non-idempotent INSTALLED item (install
-# marker present) it runs the item's STRONGEST probe (driver verify > manifest
-# check > driver check) — NOT the weak keep/skip check — and, when that fails,
-# runs ONE repair through the installer (driver <type>_repair, else <type>_install;
-# brew is reinstall-aware; custom only if it defines repair()) then re-probes.
+# marker present), plus markerless items in a marker-owned atomic bundle, it runs
+# the item's STRONGEST probe (driver verify > manifest check > driver check) —
+# NOT the weak keep/skip check — and, when that fails, runs ONE repair through
+# the installer (driver <type>_repair, else <type>_install; brew is reinstall-
+# aware; custom only if it defines repair()) then re-probes. A healthy new item
+# in a marker-owned bundle is adopted by writing its canonical marker.
 # A failure is recorded and the sweep CONTINUES (reports every broken item in one
 # pass) — rc 67 if any item is left unresolved, rc 0 on a healthy tree. Mutually
 # exclusive with --update. `mesh doctor --fix` / `setup --repair` invoke it.
@@ -608,9 +610,31 @@ apply_bundle() {
         return 1
     }
 
-    # ── item loop ──
+    # A bundle is the atomic selection unit. One canonical marker for any item
+    # therefore proves that mesh owns the bundle, even when a later release has
+    # appended a new owner whose own marker cannot exist yet. Require canonical
+    # marker fields for this bundle-level inference; a stray/partial marker file
+    # still applies to its own item under the legacy item-level rule, but cannot
+    # expand ownership to siblings.
     local icount_var="BUNDLE_${B}_ITEM_COUNT" icount i
     icount="${!icount_var:-0}"
+    local bundle_marker_owned=0 lineage_i lineage_name_var lineage_name
+    if [[ "$REPAIR_MODE" -eq 1 ]]; then
+        for ((lineage_i=0; lineage_i<icount; lineage_i++)); do
+            lineage_name_var="BUNDLE_${B}_ITEM_${lineage_i}_NAME"
+            lineage_name="${!lineage_name_var:-}"
+            [[ -n "$lineage_name" ]] || continue
+            [[ -f "$(install_state_path "$TOPIC" "$lineage_name")" ]] || continue
+            if [[ "$(install_state_get "$TOPIC" "$lineage_name" MESH_ITEM_TOPIC 2>/dev/null || true)" == "$TOPIC" \
+                && "$(install_state_get "$TOPIC" "$lineage_name" MESH_ITEM_NAME 2>/dev/null || true)" == "$lineage_name" \
+                && -n "$(install_state_get "$TOPIC" "$lineage_name" MESH_ITEM_INSTALLED_AT 2>/dev/null || true)" ]]; then
+                bundle_marker_owned=1
+                break
+            fi
+        done
+    fi
+
+    # ── item loop ──
     local bundle_processed=0
     for ((i=0; i<icount; i++)); do
         local p="BUNDLE_${B}_ITEM_${i}"
@@ -823,9 +847,11 @@ apply_bundle() {
 
             # repair mode (verify/operational plan §C): verify each installed
             # item with its STRONGEST probe; on failure attempt ONE repair through
-            # the installer, then re-probe. Failures are RECORDED (not aborting)
-            # so one pass reports every broken item. Idempotent / no-probe items
-            # are re-applied by `mesh update`, not here — skipped.
+            # the installer, then re-probe. A canonical sibling marker proves
+            # ownership of this atomic bundle, so a newly-added markerless owner
+            # is adopted when healthy or repaired when broken. Failures are
+            # RECORDED (not aborting) so one pass reports every broken item.
+            # Idempotent / no-probe items are re-applied by `mesh update`, not here.
             if [[ "$REPAIR_MODE" -eq 1 ]]; then
                 if [[ "$idem" == "1" ]]; then
                     log_info "$bundle/$name: repair skip (idempotent — re-applied by mesh update)"; exit 0
@@ -841,22 +867,39 @@ apply_bundle() {
                         return 2   # no probe available
                     fi
                 }
+                local _marker_path _has_item_marker=0
+                _marker_path="$(install_state_path "$TOPIC" "$name")"
+                [[ -f "$_marker_path" ]] && _has_item_marker=1
                 local _probe_rc=0
                 _repair_probe || _probe_rc=$?
                 if [[ "$_probe_rc" -eq 2 ]]; then
                     log_info "$bundle/$name: repair skip (no probe — re-applied by mesh update)"; exit 0
                 fi
                 if [[ "$_probe_rc" -eq 0 ]]; then
+                    if [[ "$_has_item_marker" -eq 0 && "$bundle_marker_owned" -eq 1 ]]; then
+                        if install_state_record "$TOPIC" "$name" "$type" "$arg"; then
+                            printf '%s\n' "$bundle/$name" >> "$REPAIR_OK_FILE" 2>/dev/null || true
+                            log_info "$bundle/$name: adopted ✓ (healthy new item in marker-owned bundle)"
+                        else
+                            printf '%s\t(failed to write adoption marker)\n' "$bundle/$name" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
+                            log_error "$bundle/$name: healthy new item but adoption marker write failed"
+                        fi
+                        exit 0
+                    fi
                     printf '%s\n' "$bundle/$name" >> "$REPAIR_OK_FILE" 2>/dev/null || true
                     log_info "$bundle/$name: ok"; exit 0
                 fi
-                # probe failed → only repair what mesh actually installed (marker
-                # present). A no-marker probe-fail is "not installed here" → skip;
-                # collision-safe because we iterate THIS bundle's items in context.
-                if [[ ! -f "$(install_state_path "$TOPIC" "$name")" ]]; then
+                # A markerless item in an unowned bundle remains foreign/absent.
+                # Within a marker-owned atomic bundle it is pending convergence:
+                # this is the upgrade path for owners appended by newer releases.
+                if [[ "$_has_item_marker" -eq 0 && "$bundle_marker_owned" -eq 0 ]]; then
                     log_info "$bundle/$name: repair skip (probe fails, no install marker — not installed here)"; exit 0
                 fi
-                log_warn "$bundle/$name: BROKEN (strong probe failed) → attempting repair"
+                if [[ "$_has_item_marker" -eq 0 ]]; then
+                    log_warn "$bundle/$name: BROKEN (new item in marker-owned bundle) → attempting repair"
+                else
+                    log_warn "$bundle/$name: BROKEN (strong probe failed) → attempting repair"
+                fi
                 local _rrc=0
                 if declare -f "${prefix}_repair" >/dev/null 2>&1; then
                     "${prefix}_repair" "$arg" || _rrc=$?
@@ -1031,7 +1074,7 @@ apply_bundle() {
                     exit 67
                 elif [[ "$_rrc" -ne 0 ]]; then
                     log_error "$bundle/$name: repair action failed (rc=$_rrc)"
-                    exit 67
+                    exit "$_rrc"
                 fi
                 local _reverc=0
                 _strong_probe || _reverc=$?

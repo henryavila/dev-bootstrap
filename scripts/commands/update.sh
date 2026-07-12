@@ -88,15 +88,17 @@ cmd_update_run() {
         exec bash "$motor" --only "$only" "${pass_args[@]+"${pass_args[@]}"}"
     fi
 
-    # No -o/--only - run both sequentially. Exit code = OR of both rc (any
-    # failure surfaces; user can see which via output). Bash 3.2 safe array
-    # expansion.
+    # No -o/--only - run both sequentially. Preserve the first non-zero rc as
+    # the primary failure while still visiting identity after workstation.
+    # Bitwise OR can invent a third code (for example 78 | 1 = 79), destroying
+    # the causal result that setup/install returned. Bash 3.2 safe expansion.
     local ws_rc=0 id_rc=0
     bash "$motor" --only mesh-workstation "${pass_args[@]+"${pass_args[@]}"}"
     ws_rc=$?
     bash "$motor" --only mesh-identity "${pass_args[@]+"${pass_args[@]}"}"
     id_rc=$?
-    exit $(( ws_rc | id_rc ))
+    (( ws_rc != 0 )) && exit "$ws_rc"
+    exit "$id_rc"
 }
 
 sub_update() {
