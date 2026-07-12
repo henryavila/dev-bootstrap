@@ -22,7 +22,8 @@
 # Exit codes:
 #   0  no work, or successful apply across all repos
 #   1  fatal orchestration error (config missing, git pre-flight, etc.)
-#   other non-zero  primary setup/install failure, preserved for the caller
+#   other non-zero  primary repo-apply or package-update failure, preserved
+#                   for the caller
 #
 # Side effects (state dir = ~/.local/state/mesh; legacy mesh-workstation migrated):
 #   $STATE_DIR/last-applied-<repo>  SHA aplicada por repo
@@ -832,12 +833,14 @@ run_update_phase() {
     local engine="$ws/scripts/lib/install-engine.sh"
     [[ -r "$engine" ]] || { warn "update phase: engine not found at $engine"; return 0; }
     notice "version-aware update phase"
+    local engine_rc=0
     bash "$engine" --update --non-interactive --selections "$sel" 2>&1 | sed 's/^/    /' \
-        || warn "update phase: install-engine --update returned non-zero"
+        || engine_rc=$?
     # Stamp the attempt so the throttle holds until the next interval (a transient
     # failure waits one interval; `mesh upgrade` forces an immediate retry).
     mkdir -p "$STATE_DIR" 2>/dev/null || true
     : > "$STATE_DIR/last-package-update" 2>/dev/null || true
+    return "$engine_rc"
 }
 
 # ─── Main loop ──────────────────────────────────────────────────────
@@ -847,9 +850,10 @@ run_update_phase() {
 # cover all repos.
 #
 # EXIT_RC is the script's overall outcome:
-#   0  no work, or all per-repo work succeeded
-#   N  first non-zero process rc (including a causal --full setup/install rc),
-#      or 1 for an orchestration error such as an unmatched --only target.
+#   0  no work, or all repo and package-update work succeeded
+#   N  first non-zero repo rc (including a causal --full setup/install rc) or,
+#      if repos succeeded, the package-update rc; 1 also covers orchestration
+#      errors such as an unmatched --only target.
 # Honest exit codes matter for piped composition — without this
 # the user's `&&` composition would silently mask first-stage failures.
 EXIT_RC=0

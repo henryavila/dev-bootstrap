@@ -80,6 +80,15 @@ cat > "$BIN/mesh" <<'SH'
 #!/usr/bin/env bash
 exit 0
 SH
+cat > "$BIN/mv" <<'SH'
+#!/usr/bin/env bash
+target="${!#:-}"
+if [[ -n "${MESH_FAIL_MARKER_WRITE_FOR:-}" && \
+      "$target" == */"$MESH_FAIL_MARKER_WRITE_FOR" ]]; then
+    exit 73
+fi
+exec /bin/mv "$@"
+SH
 cat > "$BIN/php8.4" <<'SH'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-r" ]]; then
@@ -88,7 +97,7 @@ else
     printf 'PHP 8.4 fixture\n'
 fi
 SH
-chmod +x "$BIN/node" "$BIN/sudo" "$BIN/mesh" "$BIN/php8.4"
+chmod +x "$BIN/node" "$BIN/sudo" "$BIN/mesh" "$BIN/mv" "$BIN/php8.4"
 ln -s php8.4 "$BIN/php"
 
 cat > "$FIX/topics/runtime/manifest.yaml" <<'YAML'
@@ -181,6 +190,7 @@ bundles:
       - name: stable
         type: custom
         script: ./stable.sh
+        autoupdate: true
       - name: flaky
         type: custom
         script: ./flaky.sh
@@ -194,6 +204,10 @@ install() {
 }
 verify() { check; }
 repair() { install; }
+update() {
+    printf 'update\n' >> "$SENT_DIR/stable-updates"
+    return "${FAIL_UPDATE_PHASE_RC:-0}"
+}
 SH
 
 cat > "$FIX/topics/demo/flaky.sh" <<'SH'
@@ -219,6 +233,9 @@ fixture_env() {
     SETUP_CALLS="$SETUP_CALLS" \
     RUNTIME_RESOLVER="$RUNTIME_RESOLVER" \
     PHP_CLI_BIN_DIR="$BIN" \
+    MESH_FAIL_MARKER_WRITE_FOR="${MESH_FAIL_MARKER_WRITE_FOR:-}" \
+    FAIL_UPDATE_PHASE_RC="${FAIL_UPDATE_PHASE_RC:-0}" \
+    MESH_UPDATE_FORCE="${MESH_UPDATE_FORCE:-0}" \
     PATH="$BIN:$PATH" \
         "$@"
 }
@@ -349,6 +366,50 @@ assert_contains "$broken_upgrade_out" "stack/service-convergence: repaired ✓" 
     "doctor reports the exact new-owner repair outcome"
 
 echo
+echo "doctor --fix keeps a healthy new owner unresolved when its marker cannot be written"
+reset_fixture
+select_bundle web/stack
+: > "$SENT/runtime-ready"
+: > "$SENT/legacy-ready"
+: > "$SENT/service-ready"
+seed_marker runtime runtime-owner custom ./runtime-owner.sh
+seed_marker web legacy-config custom ./legacy-config.sh
+healthy_marker_fail_out="$(
+    MESH_FAIL_MARKER_WRITE_FOR=web__service-convergence.env run_doctor_fix 2>&1
+)"
+healthy_marker_fail_rc=$?
+assert_eq "$healthy_marker_fail_rc" "67" \
+    "doctor --fix returns unresolved when healthy-owner adoption cannot persist its marker"
+assert_false "[ -f '$STATE/web__service-convergence.env' ]"
+assert_contains "$healthy_marker_fail_out" \
+    "healthy new item but adoption marker write failed" \
+    "doctor reports the healthy-owner marker persistence failure"
+
+echo
+echo "doctor --fix keeps a repaired new owner unresolved when its marker cannot be written"
+reset_fixture
+select_bundle web/stack
+: > "$SENT/runtime-ready"
+: > "$SENT/legacy-ready"
+seed_marker runtime runtime-owner custom ./runtime-owner.sh
+seed_marker web legacy-config custom ./legacy-config.sh
+repaired_marker_fail_out="$(
+    MESH_FAIL_MARKER_WRITE_FOR=web__service-convergence.env run_doctor_fix 2>&1
+)"
+repaired_marker_fail_rc=$?
+assert_eq "$repaired_marker_fail_rc" "67" \
+    "doctor --fix returns unresolved when repaired-owner adoption cannot persist its marker"
+assert_file_exists "$SENT/service-ready" \
+    "the new owner is repaired before marker persistence is attempted"
+assert_false "[ -f '$STATE/web__service-convergence.env' ]"
+assert_contains "$repaired_marker_fail_out" \
+    "repaired new item but adoption marker write failed" \
+    "doctor reports the repaired-owner marker persistence failure"
+assert_not_contains "$repaired_marker_fail_out" \
+    "stack/service-convergence: repaired ✓" \
+    "doctor does not report a false repaired success without an adoption marker"
+
+echo
 echo "update --full preserves the causal rc and a second run converges pending items"
 reset_fixture
 select_bundle demo/lifecycle
@@ -395,6 +456,61 @@ assert_file_exists "$STATE/demo__flaky.env" \
     "the pending resource receives its marker only after successful verification"
 assert_contains "$second_full_out" "already present, verified" \
     "the rerun recognizes the previously converged resource"
+
+echo
+echo "package update propagates its causal rc and still stamps the attempt"
+package_failure_out="$(
+    FAIL_UPDATE_PHASE_RC=79 MESH_UPDATE_FORCE=1 \
+        run_auto_update --only mesh-workstation 2>&1
+)"
+package_failure_rc=$?
+assert_eq "$package_failure_rc" "79" \
+    "auto-update returns the package engine failure rc"
+assert_contains "$package_failure_out" "update phase failed (rc=79; continuing)" \
+    "auto-update reports the causal package update rc"
+assert_file_exists "$UPDATE_STATE/last-package-update" \
+    "a failed package update still stamps the attempt for throttling"
+
+echo
+echo "package update success remains zero"
+package_success_out="$(
+    FAIL_UPDATE_PHASE_RC=0 MESH_UPDATE_FORCE=1 \
+        run_auto_update --only mesh-workstation 2>&1
+)"
+package_success_rc=$?
+assert_eq "$package_success_rc" "0" \
+    "auto-update returns zero when the package update succeeds"
+assert_contains "$package_success_out" "version-aware update phase" \
+    "the successful forced package pass actually runs"
+
+echo
+echo "an earlier repo failure remains primary when package update also fails"
+rm -f "$SENT/flaky-ready"
+: > "$SENT/flaky-fail-once"
+combined_failure_out="$(
+    FAIL_UPDATE_PHASE_RC=79 MESH_UPDATE_FORCE=1 \
+        run_auto_update --only mesh-workstation --full 2>&1
+)"
+combined_failure_rc=$?
+assert_eq "$combined_failure_rc" "78" \
+    "auto-update preserves the earlier repo failure as the primary rc"
+assert_contains "$combined_failure_out" "repair action failed (rc=78)" \
+    "the primary repo failure remains visible"
+assert_contains "$combined_failure_out" "update phase failed (rc=79; continuing)" \
+    "the later package failure remains visible without replacing the primary rc"
+
+echo
+echo "a failed package attempt is throttled until the next interval"
+updates_before_throttle="$(wc -l < "$SENT/stable-updates" 2>/dev/null | tr -d ' ')"
+throttled_out="$(FAIL_UPDATE_PHASE_RC=79 run_auto_update --only mesh-workstation 2>&1)"
+throttled_rc=$?
+updates_after_throttle="$(wc -l < "$SENT/stable-updates" 2>/dev/null | tr -d ' ')"
+assert_eq "$throttled_rc" "0" \
+    "the immediate non-forced run treats the stamped package phase as throttled"
+assert_eq "$updates_after_throttle" "$updates_before_throttle" \
+    "the throttle prevents a second package engine attempt"
+assert_not_contains "$throttled_out" "version-aware update phase" \
+    "the throttled run does not enter the package update phase"
 
 echo
 echo "update command preserves the first causal rc while still visiting both repos"

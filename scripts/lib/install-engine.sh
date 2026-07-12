@@ -916,7 +916,15 @@ apply_bundle() {
                 local _reverc=0
                 _repair_probe || _reverc=$?
                 if [[ "$_reverc" -eq 0 ]]; then
-                    install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null || true
+                    if ! install_state_record "$TOPIC" "$name" "$type" "$arg" 2>/dev/null; then
+                        if [[ "$_has_item_marker" -eq 0 ]]; then
+                            printf '%s\t(repaired but failed to write adoption marker)\n' \
+                                "$bundle/$name" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
+                            log_error "$bundle/$name: repaired new item but adoption marker write failed"
+                            exit 0
+                        fi
+                        log_warn "$bundle/$name: repaired, but failed to refresh existing marker"
+                    fi
                     printf '%s\n' "$bundle/$name" >> "$REPAIR_FIXED_FILE" 2>/dev/null || true
                     log_info "$bundle/$name: repaired ✓"; exit 0
                 fi
