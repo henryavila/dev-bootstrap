@@ -108,6 +108,21 @@ The bootstrap **prints at the end everything that still needs a human touch** â€
 
 If you see a `!` line in the bootstrap output, it's pointing at a next step. Read the advisory instead of re-running the topic.
 
+## Runtime repair and update recovery
+
+Use the command that matches the condition; the update flags are not aliases
+for runtime repair.
+
+| Condition | Supported command | What it does |
+|---|---|---|
+| Broken PHP, Valet, nginx, or php-fpm runtime | `mesh doctor --fix` | Verifies installed owners with their strongest probes, repairs broken owners, and returns nonzero if any remain unresolved. |
+| New owner on an upgraded marker-owned bundle | `mesh doctor --fix` | Adopts the owner if its probe is already healthy; otherwise repairs, re-verifies, and records it. This is the supported upgrade path on an existing host. |
+| Complete reapply of the saved selection after pulling changes | `mesh update --full` | Runs the full apply instead of only the last-applied diff. |
+| Update while intentionally tracking a non-`main` branch | `mesh update --force` | Bypasses only the branch gate; dirty trees and unpushed commits are still refused. |
+
+The `--force` flag is branch authorization only; it is not repair and does not
+imply `--full`. For a broken PHP/web runtime, use `mesh doctor --fix`.
+
 ## Topics
 
 | Topic | Installs / applies | Opt-in |

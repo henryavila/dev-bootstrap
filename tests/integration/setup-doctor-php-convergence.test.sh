@@ -264,6 +264,29 @@ run_doctor_fix() {
     '
 }
 
+run_doctor_help() {
+    env DOCTOR_MODULE="$DOCTOR_MODULE" bash -c '
+        mesh_register_command() { :; }
+        source "$DOCTOR_MODULE"
+        cmd_doctor_run --help
+    '
+}
+
+run_update_help() {
+    fixture_env env \
+        MOTOR="$FIX/scripts/runners/auto-update.sh" \
+        UPDATE_MODULE="$UPDATE_MODULE" \
+        bash -c '
+            mesh_register_command() { :; }
+            _mesh_fanout_validate_update() { :; }
+            _mesh_self_alias() { printf fixture; }
+            _resolve_companion() { printf "%s\n" "$MOTOR"; }
+            _die() { printf "%s\n" "$*" >&2; exit 64; }
+            source "$UPDATE_MODULE"
+            cmd_update_run --help
+        '
+}
+
 echo "setup normal apply resolves a fresh PHP/web closure without params"
 reset_fixture
 select_bundle web/stack
@@ -419,5 +442,37 @@ assert_contains "$force_out" "forçando update de mesh-workstation na branch fea
     "--force is consumed by the branch pre-flight"
 assert_eq "$(cat "$SETUP_CALLS")" "" \
     "--force alone does not invoke setup or repair"
+
+echo
+echo "operator help maps each recovery condition to one supported command"
+doctor_help="$(run_doctor_help 2>&1)"
+doctor_help_rc=$?
+assert_eq "$doctor_help_rc" "0" "doctor help exits 0"
+assert_contains "$doctor_help" "Broken PHP, Valet, nginx, or php-fpm runtime" \
+    "doctor help routes a broken PHP/web runtime to doctor --fix"
+assert_contains "$doctor_help" "New owner on an upgraded marker-owned bundle" \
+    "doctor help documents new-owner adoption on an upgraded host"
+assert_contains "$doctor_help" "--force is branch authorization only; it is not repair" \
+    "doctor help does not overload update --force as repair"
+
+update_help="$(run_update_help 2>&1)"
+update_help_rc=$?
+assert_eq "$update_help_rc" "0" "update help exits 0"
+assert_contains "$update_help" "mesh doctor --fix" \
+    "update help routes broken PHP/web runtime to doctor --fix"
+assert_contains "$update_help" "mesh update --full" \
+    "update help identifies the complete reapply command"
+assert_contains "$update_help" "--force is branch authorization only; it is not repair" \
+    "update help makes force semantics explicit"
+
+readme_content="$(cat "$WS/README.md")"
+assert_contains "$readme_content" "Runtime repair and update recovery" \
+    "README has a recovery-command guide"
+assert_contains "$readme_content" 'Broken PHP, Valet, nginx, or php-fpm runtime' \
+    "README routes broken PHP/web runtime to doctor --fix"
+assert_contains "$readme_content" 'New owner on an upgraded marker-owned bundle' \
+    "README documents the supported new-owner adoption path"
+assert_contains "$readme_content" 'branch authorization only; it is not repair' \
+    "README distinguishes branch authorization from repair"
 
 summary

@@ -8,6 +8,34 @@ _mesh_update_normalize_topic_spec() {
     printf '%s' "$*"
 }
 
+_mesh_update_print_help() {
+    local motor="$1" help_out help_rc
+    help_out="$(bash "$motor" --help 2>&1)"
+    help_rc=$?
+    printf '%s\n' "$help_out"
+    (( help_rc == 0 )) || return "$help_rc"
+
+    # The public command enriches the production motor's implementation-level
+    # usage with operator recovery semantics. Alternate motors retain their own
+    # help contract unchanged.
+    if [[ "$help_out" == *"auto-update.sh --force"* && \
+          "$help_out" == *"update the CURRENT branch"* ]]; then
+        cat <<'EOF'
+
+Recovery:
+  Broken PHP, Valet, nginx, or php-fpm runtime:
+    mesh doctor --fix
+  New owner on an upgraded marker-owned bundle:
+    mesh doctor --fix    Adopt it when healthy, or repair and then record it.
+  Reapply the complete saved selection after an update:
+    mesh update --full
+  Update the current non-main branch:
+    mesh update --force
+    --force is branch authorization only; it is not repair and does not imply --full.
+EOF
+    fi
+}
+
 cmd_update_run() {
     export DEV_BOOTSTRAP_TMUX_AUTO_MAIN=0
     # Resolve this host's alias so the engine's --update pass can read its
@@ -19,7 +47,8 @@ cmd_update_run() {
     [[ -n "$motor" ]] || _die "runners/auto-update.sh not found (set \$MESH_HOME or check installation)"
 
     if (( $# == 1 )) && [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-        exec bash "$motor" --help
+        _mesh_update_print_help "$motor"
+        return $?
     fi
 
     # Flags forwarded to the motor verbatim. `-o NAME` / `--only NAME` is

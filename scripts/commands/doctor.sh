@@ -15,6 +15,17 @@ Usage:
                          --repair). Reinstalls a brew formula whose dylib a
                          dependency bump removed, restarts a dead valet stack, etc.
                          rc 0 = healthy/repaired, 67 = unresolved.
+
+Recovery:
+  Broken PHP, Valet, nginx, or php-fpm runtime:
+    mesh doctor --fix
+  New owner on an upgraded marker-owned bundle:
+    mesh doctor --fix    Adopt it when healthy, or repair and then record it.
+  Reapply the complete saved selection after an update:
+    mesh update --full
+  Update the current non-main branch:
+    mesh update --force
+    --force is branch authorization only; it is not repair and does not imply --full.
 EOF
                 return 0 ;;
             *) passthrough+=("$1"); shift ;;
