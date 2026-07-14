@@ -25,9 +25,11 @@ source "$SELF_DIR/../lib/assert.sh"
 
 SANDBOX="$(mktemp -d -t mesh-services.XXXXXX)"
 trap '[[ -d "$SANDBOX" ]] && rm -rf "$SANDBOX"' EXIT
+REGISTRY_HOME="$SANDBOX/registry-home"
+mkdir -p "$REGISTRY_HOME"
 
 # Resolve the registry for a stubbed OS against the REAL shipped descriptors.
-resolve() { MESH_SERVICES_OS="$1" NO_COLOR=1 bash "$AGG"; }
+resolve() { HOME="$REGISTRY_HOME" USER=mesh-test MESH_SERVICES_OS="$1" NO_COLOR=1 bash "$AGG"; }
 # Same, but against a hermetic fixture descriptor dir.
 resolve_in() { MESH_SERVICES_OS="$1" MESH_SERVICES_REGISTRY_DIR="$2" NO_COLOR=1 bash "$AGG"; }
 
@@ -243,6 +245,28 @@ run_svc() {
     PATH="$SHIM:$PATH" MESH_SERVICES_OS=wsl NO_COLOR=1 bash "$RUNNER" "$@"
 }
 
+# Exact macOS regression fixture: the non-canonical Homebrew path installs
+# Oracle MySQL under /usr/local and owns its run layer through this user
+# LaunchAgent. Brew intentionally reports no running mysql service.
+MAC_MYSQL_HOME="$SANDBOX/mac-mysql-home"
+MAC_MYSQL_LABEL="com.mesh-test.mysql"
+mkdir -p "$MAC_MYSQL_HOME/Library/LaunchAgents"
+: > "$MAC_MYSQL_HOME/Library/LaunchAgents/${MAC_MYSQL_LABEL}.plist"
+run_svc_mac_mysql() {
+    rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+    HOME="$MAC_MYSQL_HOME" USER=mesh-test PATH="$SHIM:$PATH" \
+        STUB_BREW_MYSQL="${STUB_BREW_MYSQL:-none}" \
+        STUB_LAUNCHD_LOADED="${STUB_LAUNCHD_LOADED:-1}" \
+        STUB_LAUNCHD_PID="${STUB_LAUNCHD_PID:-1}" \
+        MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" "$@"
+}
+run_svc_mac_brew() {
+    rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+    HOME="$REGISTRY_HOME" USER=mesh-test PATH="$SHIM:$PATH" \
+        STUB_BREW_MYSQL="${STUB_BREW_MYSQL:-none}" \
+        MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" "$@"
+}
+
 # ─── Case 12: `list` (human) — badges + owner + header ───────────────────────
 out="$(run_svc list)"
 assert_contains "$out" "SERVICE"   "Case 12a: list prints a header row"
@@ -262,6 +286,54 @@ assert_contains "$out" "MySQL"          "Case 14a: status names the service"
 assert_contains "$out" "systemd/system" "Case 14b: status shows the backend + scope"
 assert_contains "$out" "running"        "Case 14c: status shows active"
 assert_contains "$out" "on-boot"        "Case 14d: status shows enabled"
+
+out="$(run_svc_mac_mysql list --porcelain)"
+assert_contains "$out" "mysql|MySQL|mysqld|databases|launchd||${MAC_MYSQL_LABEL}|on|on" \
+    "Case 14e: Oracle MySQL's mesh LaunchAgent is reported running/on-boot instead of the absent brew service"
+assert_contains "$(calls launchctl)" "list ${MAC_MYSQL_LABEL}" \
+    "Case 14f: Oracle MySQL status queries the LaunchAgent created by its installer"
+
+out="$(STUB_LAUNCHD_PID=0 run_svc_mac_mysql list --porcelain)"
+assert_contains "$out" "mysql|MySQL|mysqld|databases|launchd||${MAC_MYSQL_LABEL}|off|on" \
+    "Case 14g: a loaded Oracle MySQL LaunchAgent without a PID stays on-boot but is stopped"
+
+run_svc_mac_mysql restart mysql >/dev/null
+assert_contains "$(calls launchctl)" "kickstart -k gui/$(id -u)/${MAC_MYSQL_LABEL}" \
+    "Case 14h: Oracle MySQL restart targets its LaunchAgent"
+assert_not_contains "$(calls brew)" "services restart mysql" \
+    "Case 14i: Oracle MySQL restart never targets the unrelated brew formula"
+
+out="$(STUB_BREW_MYSQL=started run_svc_mac_brew list --porcelain)"
+assert_contains "$out" "mysql|MySQL|mysqld|databases|brew||mysql|on|on" \
+    "Case 14j: a canonical brew MySQL service keeps the brew backend and running/on-boot state"
+out="$(STUB_BREW_MYSQL=none run_svc_mac_brew list --porcelain)"
+assert_contains "$out" "mysql|MySQL|mysqld|databases|brew||mysql|off|off" \
+    "Case 14k: absent wrapper plus stopped brew MySQL remains stopped/no-boot"
+
+# $1 is expanded by the child bash.
+# shellcheck disable=SC2016
+out="$(env -u HOME USER=mesh-test bash -c 'source "$1"; svcdef_mysql_mac' _ \
+    "$REPO_ROOT/scripts/lib/services/registry/mysql.sh")"
+assert_eq "$out" "brew||mysql" \
+    "Case 14l: missing HOME falls back safely to the brew backend"
+
+FALLBACK_HOME="$SANDBOX/mac-mysql-fallback-home"
+FALLBACK_BIN="$SANDBOX/mac-mysql-fallback-bin"
+mkdir -p "$FALLBACK_HOME/Library/LaunchAgents" "$FALLBACK_BIN"
+: > "$FALLBACK_HOME/Library/LaunchAgents/com.mesh-fallback.mysql.plist"
+cat > "$FALLBACK_BIN/id" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == -un ]] && { echo mesh-fallback; exit 0; }
+exec /usr/bin/id "$@"
+EOF
+chmod +x "$FALLBACK_BIN/id"
+# $1 is expanded by the child bash.
+# shellcheck disable=SC2016
+out="$(env -u USER HOME="$FALLBACK_HOME" PATH="$FALLBACK_BIN:$PATH" \
+    bash -c 'source "$1"; svcdef_mysql_mac' _ \
+    "$REPO_ROOT/scripts/lib/services/registry/mysql.sh")"
+assert_eq "$out" "launchd||com.mesh-fallback.mysql" \
+    "Case 14m: missing USER derives the LaunchAgent label from id -un"
 
 # ─── Case 15: fuzzy/substring match on id ────────────────────────────────────
 out="$(run_svc status my)"
@@ -568,7 +640,8 @@ unset STUB_ENABLED
 # rather than start/stop a running unit. The collateral guard cmd_action honours,
 # applied to reconcile (regression test for the silent start/stop bug).
 rm -f "$SHIM_LOG"/*.calls 2>/dev/null
-out="$(PATH="$SHIM:$PATH" MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" reconcile mysql 2>&1)"; rc=$?
+out="$(HOME="$REGISTRY_HOME" USER=mesh-test PATH="$SHIM:$PATH" \
+    MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" reconcile mysql 2>&1)"; rc=$?
 brew_calls="$(calls brew)"
 assert_eq "$rc" 0 "Case 37c: reconcile of a brew (non-orthogonal) service exits 0 (skipped, not failed)"
 assert_contains "$out" "skipped" "Case 37d: reconcile reports the brew service skipped (couples boot+runtime)"
