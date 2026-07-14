@@ -168,7 +168,7 @@ cmd_status() {
 cmd_action() {
     local verb="$1"; shift
     [[ $# -gt 0 ]] || { log_error "services ${verb}: needs at least one service name"; return 2; }
-    local rc=0 name row id display aliases owner kind scope target collateral
+    local rc=0 name row id display aliases owner kind scope target collateral action_rc
     for name in "$@"; do
         if ! row="$(_resolve_one "$name")"; then
             if _svc_is_discovered "$name"; then
@@ -184,7 +184,12 @@ cmd_action() {
         if "svc_${verb}" "$kind" "$scope" "$target"; then
             ok "${display}: ${verb}"
         else
-            fail "${display}: ${verb} failed (rc $?)"
+            action_rc=$?
+            fail "${display}: ${verb} failed (rc ${action_rc})"
+            # 128+N is the shell convention for a signal-derived result. Stop
+            # the batch immediately and preserve it; continuing would mutate
+            # later services after the operator cancelled the command.
+            if (( action_rc >= 128 )); then return "$action_rc"; fi
             rc=1
         fi
     done

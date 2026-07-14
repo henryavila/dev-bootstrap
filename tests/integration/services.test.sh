@@ -108,7 +108,8 @@ mkdir -p "$SHIM" "$SHIM_LOG"
 cat >"$SHIM/systemctl" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >> "$SHIM_LOG/systemctl.calls"
-[[ -n "\${STUB_SYSTEMCTL_FAIL:-}" && "\$*" == *"\${STUB_SYSTEMCTL_FAIL}"* ]] && exit 1
+[[ -n "\${STUB_SYSTEMCTL_FAIL:-}" && "\$*" == *"\${STUB_SYSTEMCTL_FAIL}"* ]] \
+    && exit "\${STUB_SYSTEMCTL_FAIL_RC:-1}"
 case "\$*" in
     *list-unit-files*) printf '%s\n' "\${STUB_UNIT_FILES:-}"; exit 0 ;;
     *is-active*)  echo "\${STUB_ACTIVE:-active}";   [[ "\${STUB_ACTIVE:-active}" == active ]] ; exit \$? ;;
@@ -144,19 +145,206 @@ echo "\$*" >> "$SHIM_LOG/loginctl.calls"
 exit 0
 EOF
 
-# launchctl stub: log argv; `list <label>` returns a dict driven by env.
+# launchctl stub: log argv. The default mode is the original stateless fixture;
+# STUB_LAUNCHD_STATE_DIR enables a small state machine so launchd mutations and
+# their post-conditions can be tested without touching the host's real domain.
 cat >"$SHIM/launchctl" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >> "$SHIM_LOG/launchctl.calls"
-if [[ "\$1" == list && -n "\${2:-}" ]]; then
+label="\${STUB_LAUNCHD_LABEL:-com.example.daemon}"
+state="\${STUB_LAUNCHD_STATE_DIR:-}"
+
+if [[ -n "\$state" ]]; then
+    case "\${1:-}" in
+        print)
+            if [[ "\${2:-}" == */"\$label" ]]; then
+                print_count=0
+                [[ -f "\$state/print-service-count" ]] \
+                    && print_count="\$(awk 'NR == 1 { print; exit }' "\$state/print-service-count")"
+                print_count="\$((print_count + 1))"
+                printf '%s\n' "\$print_count" >"\$state/print-service-count"
+                [[ "\${STUB_LAUNCHD_FAIL_PRINT_SERVICE_AT:-}" == "\$print_count" ]] && exit 64
+                [[ "\${STUB_LAUNCHD_FAIL:-}" == print-service ]] && exit 64
+                [[ -f "\$state/loaded" ]] || exit 113
+                echo '{'
+                if [[ -f "\$state/pid" ]]; then
+                    pid_value="\$(awk 'NR == 1 { print; exit }' "\$state/pid")"
+                    printf '  pid = %s\n' "\${pid_value:-4242}"
+                fi
+                echo '}'
+            else
+                [[ "\${STUB_LAUNCHD_FAIL:-}" == print-domain ]] && exit 1
+                echo "\${2:-gui/domain} = { }"
+            fi
+            exit 0
+            ;;
+        list)
+            [[ -f "\$state/loaded" ]] || exit 1
+            echo '{'
+            [[ -f "\$state/pid" ]] && echo '  "PID" = 4242;'
+            echo '}'
+            exit 0
+            ;;
+        print-disabled)
+            [[ "\${STUB_LAUNCHD_FAIL:-}" == print-disabled ]] && exit 1
+            [[ "\${STUB_LAUNCHD_DISABLED_FORMAT:-}" == empty ]] && exit 0
+            echo 'disabled services = {'
+            case "\${STUB_LAUNCHD_DISABLED_FORMAT:-words}" in
+                malformed) printf '    "%s" =>\n' "\$label" ;;
+                absent)    printf '    "%s.decoy" => disabled\n' "\$label" ;;
+                unquoted)  printf '    %s => disabled\n' "\$label" ;;
+                boolean)
+                    if [[ -f "\$state/disabled" ]]; then
+                        printf '    "%s" => true\n' "\$label"
+                    else
+                        printf '    "%s" => false\n' "\$label"
+                    fi
+                    ;;
+                *)
+                    if [[ -f "\$state/disabled" ]]; then
+                        printf '    "%s" => disabled\n' "\$label"
+                    else
+                        printf '    "%s" => enabled\n' "\$label"
+                    fi
+                    ;;
+            esac
+            echo '}'
+            exit 0
+            ;;
+        enable)
+            [[ "\${STUB_LAUNCHD_FAIL:-}" == enable ]] && exit 1
+            if [[ "\${STUB_LAUNCHD_FAIL_ONCE:-}" == enable \
+                && ! -f "\$state/failed-enable-once" ]]; then
+                : >"\$state/failed-enable-once"
+                exit 1
+            fi
+            [[ "\${STUB_LAUNCHD_NO_EFFECT:-}" == enable ]] || rm -f "\$state/disabled"
+            exit 0
+            ;;
+        disable)
+            [[ "\${STUB_LAUNCHD_FAIL:-}" == disable ]] && exit 1
+            if [[ "\${STUB_LAUNCHD_FAIL_ONCE:-}" == disable \
+                && ! -f "\$state/failed-disable-once" ]]; then
+                : >"\$state/failed-disable-once"
+                exit 1
+            fi
+            [[ "\${STUB_LAUNCHD_NO_EFFECT:-}" == disable ]] || : >"\$state/disabled"
+            exit 0
+            ;;
+        bootout)
+            [[ "\${STUB_LAUNCHD_FAIL:-}" == bootout ]] && exit 1
+            if [[ "\${STUB_LAUNCHD_NO_EFFECT:-}" != bootout ]]; then
+                rm -f "\$state/loaded"
+                [[ "\${2:-}" == --wait ]] && rm -f "\$state/pid"
+            fi
+            exit 0
+            ;;
+        bootstrap)
+            [[ "\${STUB_LAUNCHD_FAIL:-}" == bootstrap ]] && exit 1
+            [[ -f "\$state/disabled" ]] && exit 3
+            if [[ "\${STUB_LAUNCHD_SIGNAL_ON:-}" == bootstrap ]]; then
+                kill -s "\${STUB_LAUNCHD_SIGNAL:-INT}" "\${STUB_LAUNCHD_SIGNAL_PID:?}"
+                sleep 0.05
+            fi
+            if [[ "\${STUB_LAUNCHD_SIGNAL_RESULT:-}" == fail ]]; then
+                : >"\$state/loaded"
+                printf '4242\n' >"\$state/pid"
+                exit 5
+            fi
+            if [[ "\${STUB_LAUNCHD_RACE:-}" == bootstrap ]]; then
+                : >"\$state/loaded"
+                printf '4242\n' >"\$state/pid"
+                exit 5
+            fi
+            if [[ "\${STUB_LAUNCHD_NO_EFFECT:-}" != bootstrap ]]; then
+                : >"\$state/loaded"
+            fi
+            exit 0
+            ;;
+        kickstart)
+            [[ "\${STUB_LAUNCHD_FAIL:-}" == kickstart ]] && exit 1
+            [[ -f "\$state/loaded" ]] || exit 3
+            if [[ "\${STUB_LAUNCHD_NO_EFFECT:-}" != kickstart ]]; then
+                if [[ -f "\$state/pid" ]]; then
+                    pid_value="\$(awk 'NR == 1 { print; exit }' "\$state/pid")"
+                    pid_value="\${pid_value:-4242}"
+                    printf '%s\n' "\$((pid_value + 1))" >"\$state/pid"
+                else
+                    printf '4242\n' >"\$state/pid"
+                fi
+            fi
+            exit 0
+            ;;
+        stop)
+            # A loaded KeepAlive job is immediately relaunched: legacy stop does
+            # not unload it and therefore leaves both state files present.
+            exit 0
+            ;;
+    esac
+fi
+
+if [[ "\${1:-}" == print ]]; then
+    if [[ "\${2:-}" == */"\$label" ]]; then
+        [[ "\${STUB_LAUNCHD_LOADED:-1}" == 1 ]] || exit 113
+        echo '{'
+        [[ "\${STUB_LAUNCHD_PID:-1}" == 1 ]] && echo '  pid = 4242'
+        echo '}'
+    else
+        echo "\${2:-gui/domain} = { }"
+    fi
+elif [[ "\${1:-}" == list && -n "\${2:-}" ]]; then
     [[ "\${STUB_LAUNCHD_LOADED:-1}" == 1 ]] || exit 1
     echo '{'
     [[ "\${STUB_LAUNCHD_PID:-1}" == 1 ]] && echo '  "PID" = 4242;'
     echo '}'
+elif [[ "\${1:-}" == print-disabled ]]; then
+    echo 'disabled services = {'
+    if [[ "\${STUB_LAUNCHD_DISABLED:-0}" == 1 ]]; then
+        printf '    "%s" => disabled\n' "\$label"
+    else
+        printf '    "%s" => enabled\n' "\$label"
+    fi
+    echo '}'
 fi
 exit 0
 EOF
-chmod +x "$SHIM"/systemctl "$SHIM"/sudo "$SHIM"/brew "$SHIM"/loginctl "$SHIM"/launchctl
+
+# shlock stub: model the macOS utility's live-owner refusal and atomic stale-PID
+# recovery so launchd locking remains testable on non-macOS CI hosts.
+cat >"$SHIM/shlock" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$SHIM_LOG/shlock.calls"
+pid=""
+lock=""
+while (( \$# )); do
+    case "\$1" in
+        -p) pid="\${2:-}"; shift 2 ;;
+        -f) lock="\${2:-}"; shift 2 ;;
+        *)  exit 64 ;;
+    esac
+done
+[[ "\$pid" =~ ^[0-9]+$ && -n "\$lock" ]] || exit 64
+if [[ -f "\$lock" ]]; then
+    owner="\$(awk 'NR == 1 { print; exit }' "\$lock")"
+    if [[ "\$owner" =~ ^[0-9]+$ ]] && kill -0 "\$owner" 2>/dev/null; then
+        exit 1
+    fi
+    if [[ -n "\${STUB_SHLOCK_STALE_DELAY_MARKER:-}" \
+        && ! -e "\$STUB_SHLOCK_STALE_DELAY_MARKER" ]]; then
+        : >"\$STUB_SHLOCK_STALE_DELAY_MARKER"
+        exit 1
+    fi
+fi
+rm -f "\$lock"
+claim="\${lock}.claim.\${pid}.\${RANDOM}"
+printf '%s\n' "\$pid" >"\$claim" || exit 1
+ln "\$claim" "\$lock" 2>/dev/null
+rc=\$?
+rm -f "\$claim"
+exit "\$rc"
+EOF
+chmod +x "$SHIM"/systemctl "$SHIM"/sudo "$SHIM"/brew "$SHIM"/loginctl \
+    "$SHIM"/launchctl "$SHIM"/shlock
 
 # run_drv "<call>" — source the driver with the shim FIRST on PATH and run one
 # call (logs reset each time so each case is hermetic). Returns the call's rc.
@@ -165,6 +353,38 @@ run_drv() {
     PATH="$SHIM:$PATH" NO_COLOR=1 bash -c "source '$DRIVER'; $1"
 }
 calls() { cat "$SHIM_LOG/$1.calls" 2>/dev/null; }
+
+LAUNCHD_HOME="$SANDBOX/launchd-home"
+LAUNCHD_STATE="$SANDBOX/launchd-state"
+LAUNCHD_LABEL="com.example.daemon"
+mkdir -p "$LAUNCHD_HOME/Library/LaunchAgents" "$LAUNCHD_STATE"
+: >"$LAUNCHD_HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
+
+# launchd_state_reset <dir> [loaded] [pid] [disabled]
+launchd_state_reset() {
+    local dir="$1" bit
+    shift
+    rm -f "$dir/loaded" "$dir/pid" "$dir/disabled" \
+        "$dir/failed-enable-once" "$dir/failed-disable-once" \
+        "$dir/print-service-count"
+    for bit in "$@"; do
+        if [[ "$bit" == pid ]]; then
+            printf '4242\n' >"$dir/$bit"
+        else
+            : >"$dir/$bit"
+        fi
+    done
+}
+
+run_drv_launchd() {
+    rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+    HOME="$LAUNCHD_HOME" PATH="$SHIM:$PATH" NO_COLOR=1 \
+        STUB_LAUNCHD_LABEL="$LAUNCHD_LABEL" \
+        STUB_LAUNCHD_STATE_DIR="$LAUNCHD_STATE" \
+        MESH_SERVICES_LAUNCHD_WAIT_ATTEMPTS=1 \
+        MESH_SERVICES_LAUNCHD_LOCK_ROOT="$SANDBOX/launchd-locks" \
+        bash -c "source '$DRIVER'; $1"
+}
 
 # ─── Case 6: systemd SYSTEM scope — reads need no root, mutations use sudo ────
 out="$(run_drv "svc_status systemd system mysql")"
@@ -226,8 +446,270 @@ assert_contains "$out" "unknown backend kind" "Case 10b: ...with a clear message
 out="$(run_drv "export STUB_LAUNCHD_PID=1; svc_status launchd '' com.example.daemon")"
 assert_contains "$out" "active=on"      "Case 11a: launchd status active when a PID is present"
 assert_contains "$out" "orthogonal=yes" "Case 11b: launchd is reported orthogonal"
-run_drv "svc_enable launchd '' com.example.daemon" >/dev/null
+launchd_state_reset "$LAUNCHD_STATE" loaded pid disabled
+run_drv_launchd "svc_enable launchd '' '$LAUNCHD_LABEL'" >/dev/null
 assert_contains "$(calls launchctl)" "enable gui/" "Case 11c: launchd enable runs launchctl enable in the gui domain"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid disabled
+out="$(run_drv_launchd "svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "active=on" \
+    "Case 11d: a disabled-but-loaded KeepAlive job remains active"
+assert_contains "$out" "enabled=off" \
+    "Case 11e: launchd status reads the persistent disabled override instead of equating loaded with enabled"
+assert_contains "$(calls launchctl)" "print-disabled gui/" \
+    "Case 11f: launchd status queries the canonical disabled map"
+assert_contains "$(calls launchctl)" "print gui/$(id -u)/${LAUNCHD_LABEL}" \
+    "Case 11fa: launchd probes the same explicit GUI service-target it mutates"
+assert_not_contains "$(calls launchctl)" "list ${LAUNCHD_LABEL}" \
+    "Case 11fb: launchd status never relies on the legacy implicit-domain list command"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid
+out="$(run_drv_launchd "export STUB_LAUNCHD_FAIL=print-disabled; svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "active=on" \
+    "Case 11fc: a disabled-map read failure does not erase a separately observed active PID"
+assert_contains "$out" "enabled=unknown" \
+    "Case 11fd: a disabled-map read failure is reported as unknown instead of guessed"
+
+out="$(run_drv_launchd "export STUB_LAUNCHD_DISABLED_FORMAT=empty; svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "enabled=unknown" \
+    "Case 11fe: an empty print-disabled response is rejected as malformed"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid disabled
+out="$(run_drv_launchd "export STUB_LAUNCHD_DISABLED_FORMAT=boolean; svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "enabled=off" \
+    "Case 11ff: boolean print-disabled output remains compatible"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid
+out="$(run_drv_launchd "export STUB_LAUNCHD_DISABLED_FORMAT=absent; svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "enabled=on" \
+    "Case 11fg: a valid disabled map without the exact target means enabled by default"
+
+out="$(run_drv_launchd "export STUB_LAUNCHD_DISABLED_FORMAT=unquoted; svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "enabled=unknown" \
+    "Case 11fh: an unrecognised disabled-map entry grammar is rejected instead of mistaken for absence"
+
+out="$(run_drv_launchd "export STUB_LAUNCHD_DISABLED_FORMAT=malformed; svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "enabled=unknown" \
+    "Case 11fi: a truncated exact-target entry is rejected"
+
+out="$(run_drv_launchd "export STUB_LAUNCHD_FAIL=print-service; svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "active=unknown" \
+    "Case 11fj: a non-not-found service-target error is unknown even when the GUI domain is readable"
+
+launchd_state_reset "$LAUNCHD_STATE"
+out="$(run_drv_launchd "svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "active=off" \
+    "Case 11g: an unloaded LaunchAgent is inactive"
+assert_contains "$out" "enabled=on" \
+    "Case 11h: an unloaded persistent plist without a disabled override remains enabled at login"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid disabled
+run_drv_launchd "svc_stop launchd '' '$LAUNCHD_LABEL'" >/dev/null; rc=$?
+assert_eq "$rc" 0 "Case 11i: stop converges a loaded KeepAlive job"
+assert_contains "$(calls launchctl)" "bootout --wait gui/$(id -u)/${LAUNCHD_LABEL}" \
+    "Case 11j: stop waits for bootout completion instead of using legacy launchctl stop"
+ASSERT_MSG="Case 11k: stop leaves the job unloaded so KeepAlive cannot relaunch it" \
+    assert_false "test -e '$LAUNCHD_STATE/loaded'"
+ASSERT_MSG="Case 11ka: stop waits until the launchd process has terminated" \
+    assert_false "test -e '$LAUNCHD_STATE/pid'"
+ASSERT_MSG="Case 11l: stop preserves the independent disabled bit" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+out="$(run_drv_launchd "svc_status launchd '' '$LAUNCHD_LABEL'")"
+assert_contains "$out" "active=off" "Case 11m: stopped launchd state is inactive"
+assert_contains "$out" "enabled=off" "Case 11n: stopped launchd state remains disabled"
+
+WATCHDOG_KILL_LOG="$SANDBOX/launchd-watchdog-kill.calls"
+rm -f "$WATCHDOG_KILL_LOG"
+PATH="$SHIM:$PATH" NO_COLOR=1 bash -c "
+    source '$DRIVER'
+    launchctl() { return 0; }
+    kill() { printf '%s\\n' \"\$*\" >>'$WATCHDOG_KILL_LOG'; return 0; }
+    wait() { return 0; }
+    sleep() { :; }
+    MESH_SERVICES_LAUNCHD_WAIT_ATTEMPTS=1 \
+        _svc_launchd_bootout_wait 'gui/501/$LAUNCHD_LABEL'
+" >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 124 \
+    "Case 11na: bootout watchdog reports a timeout when its client never exits"
+assert_contains "$(cat "$WATCHDOG_KILL_LOG" 2>/dev/null)" "-KILL" \
+    "Case 11nb: bootout watchdog escalates to KILL instead of waiting forever after TERM"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid disabled
+run_drv_launchd "export STUB_LAUNCHD_NO_EFFECT=bootout; svc_stop launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 \
+    "Case 11o: stop fails when launchctl returns success but the job remains loaded"
+
+launchd_state_reset "$LAUNCHD_STATE"
+run_drv_launchd "svc_stop launchd '' '$LAUNCHD_LABEL'" >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 0 \
+    "Case 11oa: stop is idempotent when the explicit GUI domain confirms the job is unloaded"
+
+run_drv_launchd "export STUB_LAUNCHD_FAIL=print-domain; svc_stop launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 \
+    "Case 11ob: stop never turns an unreadable GUI domain into a false already-stopped success"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid
+run_drv_launchd "export STUB_LAUNCHD_FAIL=print-service; svc_stop launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 \
+    "Case 11oc: stop never treats a readable-domain service probe error as already unloaded"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid
+run_drv_launchd "export STUB_LAUNCHD_NO_EFFECT=disable; svc_disable launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 \
+    "Case 11p: disable fails when launchctl returns success but print-disabled does not converge"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid disabled
+run_drv_launchd "export STUB_LAUNCHD_NO_EFFECT=enable; svc_enable launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 \
+    "Case 11q: enable fails when launchctl returns success but print-disabled remains disabled"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+run_drv_launchd "svc_start launchd '' '$LAUNCHD_LABEL'" >/dev/null; rc=$?
+assert_eq "$rc" 0 \
+    "Case 11r: start bootstraps an unloaded disabled LaunchAgent"
+launchd_calls="$(calls launchctl)"
+assert_contains "$launchd_calls" "enable gui/$(id -u)/${LAUNCHD_LABEL}" \
+    "Case 11s: start temporarily clears the disabled override so bootstrap is allowed"
+assert_contains "$launchd_calls" "bootstrap gui/$(id -u) $LAUNCHD_HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist" \
+    "Case 11t: start loads the persistent plist"
+assert_contains "$launchd_calls" "kickstart gui/$(id -u)/${LAUNCHD_LABEL}" \
+    "Case 11ta: start explicitly launches a bootstrapped plist without relying on RunAtLoad or KeepAlive"
+assert_contains "$launchd_calls" "disable gui/$(id -u)/${LAUNCHD_LABEL}" \
+    "Case 11u: start restores the original disabled bit"
+ASSERT_MSG="Case 11v: start reaches the active post-condition" \
+    assert_true "test -e '$LAUNCHD_STATE/pid'"
+ASSERT_MSG="Case 11w: start does not silently enable login autostart" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+run_drv_launchd "export STUB_LAUNCHD_FAIL=bootstrap; svc_start launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 "Case 11x: a failed bootstrap makes start fail"
+ASSERT_MSG="Case 11y: failed bootstrap restores the original disabled bit" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+ASSERT_MSG="Case 11z: failed bootstrap leaves the originally unloaded job unloaded" \
+    assert_false "test -e '$LAUNCHD_STATE/loaded'"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+run_drv_launchd "export STUB_LAUNCHD_FAIL_ONCE=disable; svc_start launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 \
+    "Case 11za: a failed first disabled-state restoration never produces success"
+ASSERT_MSG="Case 11zb: rollback retries and restores disabled after the transient failure" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+ASSERT_MSG="Case 11zc: rollback unloads the partially started job" \
+    assert_false "test -e '$LAUNCHD_STATE/loaded'"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+run_drv_launchd "export STUB_LAUNCHD_RACE=bootstrap; svc_start launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 0 \
+    "Case 11zd: a concurrent load that wins the bootstrap race still converges start"
+ASSERT_MSG="Case 11ze: concurrent job remains loaded instead of being rolled back by this invocation" \
+    assert_true "test -e '$LAUNCHD_STATE/loaded'"
+ASSERT_MSG="Case 11zf: concurrent convergence restores the original disabled bit" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+assert_not_contains "$(calls launchctl)" "bootout" \
+    "Case 11zg: failed bootstrap never bootouts a job it may not own"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+run_drv_launchd 'export STUB_LAUNCHD_SIGNAL_ON=bootstrap STUB_LAUNCHD_SIGNAL=INT STUB_LAUNCHD_SIGNAL_PID=$$; svc_start launchd "" com.example.daemon' \
+    >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 130 \
+    "Case 11zh: SIGINT inside the temporary-enable window is propagated after cleanup"
+ASSERT_MSG="Case 11zi: interrupted start restores the original disabled bit" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+ASSERT_MSG="Case 11zj: interrupted start rolls back the job loaded by this invocation" \
+    assert_false "test -e '$LAUNCHD_STATE/loaded'"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+run_drv_launchd 'export STUB_LAUNCHD_SIGNAL_ON=bootstrap STUB_LAUNCHD_SIGNAL=HUP STUB_LAUNCHD_SIGNAL_PID=$$; svc_start launchd "" com.example.daemon' \
+    >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 129 \
+    "Case 11zk: SIGHUP is propagated after cleanup with its conventional exit code"
+ASSERT_MSG="Case 11zl: SIGHUP cleanup restores the original disabled bit" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+ASSERT_MSG="Case 11zm: SIGHUP cleanup unloads the job created by start" \
+    assert_false "test -e '$LAUNCHD_STATE/loaded'"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+run_drv_launchd 'export STUB_LAUNCHD_SIGNAL_ON=bootstrap STUB_LAUNCHD_SIGNAL=INT STUB_LAUNCHD_SIGNAL_RESULT=fail STUB_LAUNCHD_SIGNAL_PID=$$; svc_start launchd "" com.example.daemon' \
+    >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 130 \
+    "Case 11zn: interrupted bootstrap failure propagates SIGINT"
+ASSERT_MSG="Case 11zo: interrupted partial bootstrap restores disabled" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+ASSERT_MSG="Case 11zp: interrupted partial bootstrap restores the original unloaded state" \
+    assert_false "test -e '$LAUNCHD_STATE/loaded'"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid
+old_pid="$(awk 'NR == 1 { print; exit }' "$LAUNCHD_STATE/pid")"
+run_drv_launchd "svc_restart launchd '' '$LAUNCHD_LABEL'" >/dev/null 2>&1; rc=$?
+new_pid="$(awk 'NR == 1 { print; exit }' "$LAUNCHD_STATE/pid")"
+assert_eq "$rc" 0 "Case 11zq: restart succeeds when launchd replaces the process"
+assert_ne "$new_pid" "$old_pid" "Case 11zr: restart observes a new PID"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid
+run_drv_launchd "export STUB_LAUNCHD_NO_EFFECT=kickstart; svc_restart launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 \
+    "Case 11zs: restart rejects rc0 when kickstart leaves the old PID running"
+
+launchd_state_reset "$LAUNCHD_STATE" loaded pid
+run_drv_launchd "export STUB_LAUNCHD_FAIL_PRINT_SERVICE_AT=2 STUB_LAUNCHD_NO_EFFECT=kickstart; svc_restart launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 \
+    "Case 11zsa: restart rejects an unreadable pre-kickstart PID instead of accepting the old process"
+assert_not_contains "$(calls launchctl)" "kickstart -k" \
+    "Case 11zsb: restart does not mutate when it cannot establish the old PID post-condition"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+LOCK_FIXTURE="$SANDBOX/launchd-locks/${LAUNCHD_LABEL}.lock"
+printf '%s\n' "$$" >"$LOCK_FIXTURE"
+run_drv_launchd "svc_start launchd '' '$LAUNCHD_LABEL'" >/dev/null 2>&1; rc=$?
+assert_ne "$rc" 0 "Case 11zt: a concurrent mesh launchd mutation is rejected"
+ASSERT_MSG="Case 11zu: lock contention leaves disabled unchanged" \
+    assert_true "test -e '$LAUNCHD_STATE/disabled'"
+ASSERT_MSG="Case 11zv: lock contention never loads the job" \
+    assert_false "test -e '$LAUNCHD_STATE/loaded'"
+rm -f "$LOCK_FIXTURE"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+rm -f "$LOCK_FIXTURE"
+bash -c ':' &
+STALE_LOCK_OWNER=$!
+wait "$STALE_LOCK_OWNER"
+printf '%s\n' "$STALE_LOCK_OWNER" >"$LOCK_FIXTURE"
+SHLOCK_DELAY_MARKER="$SANDBOX/shlock-stale-delay-used"
+rm -f "$SHLOCK_DELAY_MARKER"
+run_drv_launchd "export STUB_SHLOCK_STALE_DELAY_MARKER='$SHLOCK_DELAY_MARKER'; svc_start launchd '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 0 \
+    "Case 11zw: an abandoned PID lock is recovered by the atomic lock primitive"
+assert_contains "$(calls shlock)" "-f $LOCK_FIXTURE" \
+    "Case 11zx: launchd mutations delegate stale-safe acquisition to shlock"
+assert_eq "$(wc -l <"$SHIM_LOG/shlock.calls" | tr -d ' ')" 2 \
+    "Case 11zxa: a just-stale shlock is retried after its conservative first refusal"
+ASSERT_MSG="Case 11zy: successful mutation releases its PID lock" \
+    assert_false "test -e '$LOCK_FIXTURE'"
+
+launchd_state_reset "$LAUNCHD_STATE" disabled
+run_drv_launchd "interrupted_impl() { kill -TERM \$\$; }; _svc_launchd_with_lock interrupted_impl '' '$LAUNCHD_LABEL'" \
+    >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 143 \
+    "Case 11zz: a signal can terminate a launchd mutation process"
+ASSERT_MSG="Case 11zza: the interrupted process leaves a diagnosable PID lock" \
+    assert_true "test -f '$LOCK_FIXTURE'"
+run_drv_launchd "svc_start launchd '' '$LAUNCHD_LABEL'" >/dev/null 2>&1; rc=$?
+assert_eq "$rc" 0 \
+    "Case 11zzb: the next mutation safely recovers the interrupted process's stale lock"
+ASSERT_MSG="Case 11zzc: recovery removes the lock after the next successful mutation" \
+    assert_false "test -e '$LOCK_FIXTURE'"
 
 # ─── T-003 ───────────────────────────────────────────────────────────────────
 # The runner scripts/runners/services.sh: non-interactive verbs that resolve the
@@ -256,6 +738,7 @@ run_svc_mac_mysql() {
     rm -f "$SHIM_LOG"/*.calls 2>/dev/null
     HOME="$MAC_MYSQL_HOME" USER=mesh-test PATH="$SHIM:$PATH" \
         STUB_BREW_MYSQL="${STUB_BREW_MYSQL:-none}" \
+        STUB_LAUNCHD_LABEL="${STUB_LAUNCHD_LABEL:-$MAC_MYSQL_LABEL}" \
         STUB_LAUNCHD_LOADED="${STUB_LAUNCHD_LOADED:-1}" \
         STUB_LAUNCHD_PID="${STUB_LAUNCHD_PID:-1}" \
         MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" "$@"
@@ -264,6 +747,21 @@ run_svc_mac_brew() {
     rm -f "$SHIM_LOG"/*.calls 2>/dev/null
     HOME="$REGISTRY_HOME" USER=mesh-test PATH="$SHIM:$PATH" \
         STUB_BREW_MYSQL="${STUB_BREW_MYSQL:-none}" \
+        MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" "$@"
+}
+
+MAC_MYSQL_STATE="$SANDBOX/mac-mysql-state"
+mkdir -p "$MAC_MYSQL_STATE"
+run_svc_mac_mysql_state() {
+    rm -f "$SHIM_LOG"/*.calls 2>/dev/null
+    HOME="$MAC_MYSQL_HOME" USER=mesh-test PATH="$SHIM:$PATH" \
+        STUB_BREW_MYSQL=none \
+        STUB_LAUNCHD_LABEL="$MAC_MYSQL_LABEL" \
+        STUB_LAUNCHD_STATE_DIR="$MAC_MYSQL_STATE" \
+        STUB_LAUNCHD_NO_EFFECT="${STUB_LAUNCHD_NO_EFFECT:-}" \
+        STUB_LAUNCHD_FAIL="${STUB_LAUNCHD_FAIL:-}" \
+        MESH_SERVICES_LAUNCHD_WAIT_ATTEMPTS=1 \
+        MESH_SERVICES_LAUNCHD_LOCK_ROOT="$SANDBOX/launchd-locks" \
         MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" "$@"
 }
 
@@ -290,14 +788,15 @@ assert_contains "$out" "on-boot"        "Case 14d: status shows enabled"
 out="$(run_svc_mac_mysql list --porcelain)"
 assert_contains "$out" "mysql|MySQL|mysqld|databases|launchd||${MAC_MYSQL_LABEL}|on|on" \
     "Case 14e: Oracle MySQL's mesh LaunchAgent is reported running/on-boot instead of the absent brew service"
-assert_contains "$(calls launchctl)" "list ${MAC_MYSQL_LABEL}" \
-    "Case 14f: Oracle MySQL status queries the LaunchAgent created by its installer"
+assert_contains "$(calls launchctl)" "print gui/$(id -u)/${MAC_MYSQL_LABEL}" \
+    "Case 14f: Oracle MySQL status queries its explicit GUI LaunchAgent target"
 
 out="$(STUB_LAUNCHD_PID=0 run_svc_mac_mysql list --porcelain)"
 assert_contains "$out" "mysql|MySQL|mysqld|databases|launchd||${MAC_MYSQL_LABEL}|off|on" \
     "Case 14g: a loaded Oracle MySQL LaunchAgent without a PID stays on-boot but is stopped"
 
-run_svc_mac_mysql restart mysql >/dev/null
+launchd_state_reset "$MAC_MYSQL_STATE" loaded pid
+run_svc_mac_mysql_state restart mysql >/dev/null
 assert_contains "$(calls launchctl)" "kickstart -k gui/$(id -u)/${MAC_MYSQL_LABEL}" \
     "Case 14h: Oracle MySQL restart targets its LaunchAgent"
 assert_not_contains "$(calls brew)" "services restart mysql" \
@@ -335,6 +834,39 @@ out="$(env -u USER HOME="$FALLBACK_HOME" PATH="$FALLBACK_BIN:$PATH" \
 assert_eq "$out" "launchd||com.mesh-fallback.mysql" \
     "Case 14m: missing USER derives the LaunchAgent label from id -un"
 
+# Exact end-to-end reproduction of the operator's sequence. The stateful shim
+# models KeepAlive, so legacy `launchctl stop` returns 0 but immediately leaves
+# the job running; only a verified bootout can make this contract pass.
+launchd_state_reset "$MAC_MYSQL_STATE" loaded pid
+out="$(run_svc_mac_mysql_state disable mysql 2>&1)"; rc=$?
+assert_eq "$rc" 0 "Case 14n: disabling the running MySQL LaunchAgent succeeds"
+ASSERT_MSG="Case 14o: disable persists the no-boot override" \
+    assert_true "test -e '$MAC_MYSQL_STATE/disabled'"
+ASSERT_MSG="Case 14p: disable does not stop the running service" \
+    assert_true "test -e '$MAC_MYSQL_STATE/pid'"
+
+out="$(run_svc_mac_mysql_state stop mysql 2>&1)"; rc=$?
+assert_eq "$rc" 0 "Case 14q: stopping the disabled KeepAlive MySQL LaunchAgent succeeds"
+ASSERT_MSG="Case 14r: stop unloads MySQL instead of allowing KeepAlive to relaunch it" \
+    assert_false "test -e '$MAC_MYSQL_STATE/loaded'"
+ASSERT_MSG="Case 14s: stop preserves MySQL's disabled override" \
+    assert_true "test -e '$MAC_MYSQL_STATE/disabled'"
+
+out="$(run_svc_mac_mysql_state status mysql 2>&1)"
+assert_contains "$out" "active  : stopped" \
+    "Case 14t: status after disable+stop reports MySQL stopped"
+assert_contains "$out" "enabled : no-boot" \
+    "Case 14u: status after disable+stop reports MySQL disabled at login"
+
+launchd_state_reset "$MAC_MYSQL_STATE" loaded pid disabled
+out="$(STUB_LAUNCHD_NO_EFFECT=bootout run_svc_mac_mysql_state stop mysql 2>&1)"; rc=$?
+assert_ne "$rc" 0 \
+    "Case 14v: runner rejects a false launchctl success when MySQL remains loaded"
+assert_contains "$out" "stop failed" \
+    "Case 14w: runner surfaces the failed stop post-condition"
+assert_not_contains "$out" "✓ MySQL: stop" \
+    "Case 14x: runner never prints a success checkmark before stop converges"
+
 # ─── Case 15: fuzzy/substring match on id ────────────────────────────────────
 out="$(run_svc status my)"
 assert_contains "$out" "MySQL (mysql)" "Case 15: a substring of the id resolves the service"
@@ -368,6 +900,18 @@ out="$(run_svc stop mysql redis 2>&1)"; rc=$?
 unset STUB_SYSTEMCTL_FAIL
 assert_ne "$rc" 0 "Case 20a: a failing driver mutation makes the verb exit non-zero"
 assert_contains "$out" "MySQL: stop failed" "Case 20b: the failing service is reported as failed"
+
+export STUB_SYSTEMCTL_FAIL='stop mysql'
+export STUB_SYSTEMCTL_FAIL_RC=130
+out="$(run_svc stop mysql redis 2>&1)"; rc=$?
+unset STUB_SYSTEMCTL_FAIL STUB_SYSTEMCTL_FAIL_RC
+sudo_calls="$(calls sudo)"
+assert_eq "$rc" 130 \
+    "Case 20c: a signal-derived backend result is preserved by the runner"
+assert_contains "$sudo_calls" "systemctl stop mysql" \
+    "Case 20d: the interrupted service was attempted"
+assert_not_contains "$sudo_calls" "systemctl stop redis-server" \
+    "Case 20e: a signal aborts the batch before later services are mutated"
 
 # ─── Case 21: command-module wiring (structural; live dispatch is G-2) ───────
 MESH="$REPO_ROOT/bin/mesh"
