@@ -100,6 +100,10 @@ uninstall() {
         # `target` is L05-allowlisted after the exact Redis path guard above.
         local target="$data_dir"
         rm -rf "$target" || return 1
+        local redis_conf="${BREW_PREFIX}/etc/redis.conf"
+        local redis_sentinel_conf="${BREW_PREFIX}/etc/redis-sentinel.conf"
+        local service_backup="$HOME/Library/LaunchAgents/homebrew.mxcl.redis.plist.bak"
+        rm -f -- "$redis_conf" "$redis_sentinel_conf" "$service_backup" || return 1
     fi
 
     # 3) Honest marker drop (like ngrok): succeed only when the formula is
@@ -107,7 +111,7 @@ uninstall() {
     #    list check fails and we return non-zero — the engine keeps the marker.
     if command -v "$brew" >/dev/null 2>&1; then
         ! "$brew" list --formula redis >/dev/null 2>&1 \
-            && { [[ "${MESH_PURGE_DATA:-0}" != "1" ]] || [[ ! -e "${BREW_PREFIX}/var/db/redis" ]]; }
+            && { [[ "${MESH_PURGE_DATA:-0}" != "1" ]] || [[ ! -e "${BREW_PREFIX}/var/db/redis" && ! -e "${BREW_PREFIX}/etc/redis.conf" && ! -e "${BREW_PREFIX}/etc/redis-sentinel.conf" && ! -e "$HOME/Library/LaunchAgents/homebrew.mxcl.redis.plist.bak" ]]; }
     else
         return 1
     fi

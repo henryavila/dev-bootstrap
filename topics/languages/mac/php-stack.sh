@@ -672,6 +672,32 @@ rollback() {
     :
 }
 
+_php_purge_residuals() {
+    local php_config_dir="${BREW_PREFIX:?BREW_PREFIX required for PHP purge}/etc/php"
+    local daemon_dir="${MESH_PHP_LAUNCHDAEMON_DIR:-/Library/LaunchDaemons}"
+    local daemon_plist="$daemon_dir/homebrew.mxcl.php.plist"
+
+    case "$php_config_dir" in
+        "${BREW_PREFIX}"/etc/php) ;;
+        *) echo "php-stack: refusing unsafe PHP configuration purge path: $php_config_dir" >&2; return 1 ;;
+    esac
+    case "$daemon_plist" in
+        "$daemon_dir"/homebrew.mxcl.php.plist) ;;
+        *) echo "php-stack: refusing unsafe PHP LaunchDaemon purge path: $daemon_plist" >&2; return 1 ;;
+    esac
+
+    if [[ -e "$daemon_plist" ]]; then
+        sudo launchctl bootout system/homebrew.mxcl.php >/dev/null 2>&1 || true
+        sudo rm -f -- "$daemon_plist" || return 1
+    fi
+    if [[ -e "$php_config_dir" ]]; then
+        # `target` is L05-allowlisted after the exact PHP config path guard above.
+        local target="$php_config_dir"
+        rm -rf "$target" || return 1
+    fi
+    [[ ! -e "$daemon_plist" && ! -e "$php_config_dir" ]]
+}
+
 uninstall() {
     # Reverse the versioned formulas this owner installs. Composer, Python and
     # PECL build dependencies may be shared with other bundles, so they remain.
@@ -692,6 +718,9 @@ uninstall() {
         "${BREW_BIN:-brew}" unlink php >/dev/null 2>&1 || true
         "${BREW_BIN:-brew}" uninstall --ignore-dependencies --formula php \
             >/dev/null 2>&1 || rc=$?
+    fi
+    if [[ "${MESH_PURGE_DATA:-0}" == "1" ]]; then
+        _php_purge_residuals || rc=$?
     fi
     [[ "$rc" -eq 0 ]] || return "$rc"
     for ver in $versions; do

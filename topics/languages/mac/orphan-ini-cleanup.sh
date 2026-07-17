@@ -130,3 +130,6 @@ install() {
 
 verify() { return 0; }
 rollback() { :; }
+# This idempotent sweep creates no persistent runtime artifact. Its marker may
+# therefore be removed honestly during a full stack uninstall.
+uninstall() { :; }

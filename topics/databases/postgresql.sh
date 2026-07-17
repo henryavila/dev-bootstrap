@@ -102,6 +102,8 @@ uninstall() {
                 # `target` is L05-allowlisted after the version-scoped guard above.
                 local target="$data_dir"
                 rm -rf "$target" || return 1
+                local service_backup="$HOME/Library/LaunchAgents/homebrew.mxcl.postgresql@${ver}.plist.bak"
+                rm -f -- "$service_backup" || return 1
             fi
 
             # Honest marker drop: success only when the formula is actually gone
@@ -169,6 +171,9 @@ EOF
         *)
             # Unsupported OS: install() would have hard-stopped here, so there is
             # nothing this verb could have created. Report success (nothing left).
+            if [[ "${MESH_PURGE_DATA:-0}" == "1" ]]; then
+                [[ ! -e "$HOME/Library/LaunchAgents/homebrew.mxcl.postgresql@${ver}.plist.bak" ]] || return 1
+            fi
             return 0
             ;;
     esac
