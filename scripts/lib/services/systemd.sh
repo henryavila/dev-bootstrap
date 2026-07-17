@@ -46,6 +46,17 @@ _svc_sd_ensure_linger() {
 
 svc_systemd_orthogonal() { return 0; }
 
+svc_systemd_installed() {
+    local scope="$1" unit="$2" service_unit
+    service_unit="$unit"
+    [[ "$service_unit" == *.service ]] || service_unit="${service_unit}.service"
+    _svc_sd_read "$scope" list-unit-files --type=service --no-legend 2>/dev/null \
+        | awk -v unit="$unit" -v service_unit="$service_unit" '
+            $1 == unit || $1 == service_unit { found=1 }
+            END { exit(found ? 0 : 1) }
+        '
+}
+
 svc_systemd_status() {
     local scope="$1" unit="$2" a e active enabled
     a="$(_svc_sd_read "$scope" is-active "$unit" 2>/dev/null)"

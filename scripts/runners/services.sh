@@ -137,16 +137,34 @@ cmd_list() {
         info "No mesh-owned services for this platform (${SERVICES_OS})."
         return 0
     fi
-    if (( ! porcelain )); then
+    local header_printed=0 emitted=0
+    if (( all )) && (( ! porcelain )); then
         banner "mesh services (${SERVICES_OS})"
         printf '  %-14s %-9s %-9s %-9s %s\n' SERVICE ACTIVE ENABLED BACKEND OWNER
+        header_printed=1
     fi
     local id display aliases owner kind scope target
     while IFS='|' read -r id display aliases owner kind scope target; do
         [[ -n "$id" ]] || continue
+        if (( ! all )) && ! svc_installed "$kind" "$scope" "$target"; then
+            continue
+        fi
+        if (( ! porcelain )) && (( ! header_printed )); then
+            banner "mesh services (${SERVICES_OS})"
+            printf '  %-14s %-9s %-9s %-9s %s\n' SERVICE ACTIVE ENABLED BACKEND OWNER
+            header_printed=1
+        fi
         _emit_row "$porcelain" "$id" "$display" "$aliases" "$owner" "$kind" "$scope" "$target"
+        emitted=1
     done <<<"$rows"
-    (( all )) && _list_discovered "$rows" "$porcelain"
+    if (( all )); then
+        _list_discovered "$rows" "$porcelain"
+        return 0
+    fi
+    if (( emitted == 0 )) && (( ! porcelain )); then
+        info "No installed mesh-owned services for this platform (${SERVICES_OS}). Use 'mesh services list --all' to inspect curated/discovered units."
+    fi
+    return 0
 }
 
 cmd_status() {
@@ -306,7 +324,7 @@ cmd_interactive() {
     local rows choice id verb rc
     rows="$(cmd_list --porcelain)"
     if [[ -z "$rows" ]]; then
-        info "No mesh-owned services for this platform (${SERVICES_OS})."
+        info "No installed mesh-owned services for this platform (${SERVICES_OS})."
         return 0
     fi
     choice="$(_svc_pick_blink "$rows")"; rc=$?

@@ -111,7 +111,7 @@ echo "\$*" >> "$SHIM_LOG/systemctl.calls"
 [[ -n "\${STUB_SYSTEMCTL_FAIL:-}" && "\$*" == *"\${STUB_SYSTEMCTL_FAIL}"* ]] \
     && exit "\${STUB_SYSTEMCTL_FAIL_RC:-1}"
 case "\$*" in
-    *list-unit-files*) printf '%s\n' "\${STUB_UNIT_FILES:-}"; exit 0 ;;
+    *list-unit-files*) printf '%s\n' "\${STUB_UNIT_FILES-}"; exit 0 ;;
     *is-active*)  echo "\${STUB_ACTIVE:-active}";   [[ "\${STUB_ACTIVE:-active}" == active ]] ; exit \$? ;;
     *is-enabled*) echo "\${STUB_ENABLED:-enabled}"; [[ "\${STUB_ENABLED:-enabled}" == enabled ]] ; exit \$? ;;
 esac
@@ -129,6 +129,20 @@ EOF
 cat >"$SHIM/brew" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >> "$SHIM_LOG/brew.calls"
+if [[ "\$1" == list && "\${2:-}" == --formula ]]; then
+    formulas="\${STUB_BREW_INSTALLED_FORMULAS-mysql redis php@8.4 postgresql@17}"
+    if [[ "\${3:-}" == --versions ]]; then
+        target="\${4:-}"
+        for formula in \$formulas; do
+            [[ "\$formula" == "\$target" ]] && { printf '%s 1.0\n' "\$formula"; exit 0; }
+        done
+        exit 1
+    fi
+    for formula in \$formulas; do
+        printf '%s\n' "\$formula"
+    done
+    exit 0
+fi
 if [[ "\$1" == services && "\$2" == list ]]; then
     echo "Name Status User File"
     echo "mysql \${STUB_BREW_MYSQL:-none} me -"
@@ -350,7 +364,14 @@ chmod +x "$SHIM"/systemctl "$SHIM"/sudo "$SHIM"/brew "$SHIM"/loginctl \
 # call (logs reset each time so each case is hermetic). Returns the call's rc.
 run_drv() {
     rm -f "$SHIM_LOG"/*.calls 2>/dev/null
-    PATH="$SHIM:$PATH" NO_COLOR=1 bash -c "source '$DRIVER'; $1"
+    PATH="$SHIM:$PATH" NO_COLOR=1 \
+        STUB_UNIT_FILES="${STUB_UNIT_FILES-mysql.service enabled enabled
+redis-server.service enabled enabled
+php-fpm.service disabled disabled
+postgresql.service disabled disabled
+docker.service disabled disabled}" \
+        STUB_BREW_INSTALLED_FORMULAS="${STUB_BREW_INSTALLED_FORMULAS-mysql redis php@8.4 postgresql@17}" \
+        bash -c "source '$DRIVER'; $1"
 }
 calls() { cat "$SHIM_LOG/$1.calls" 2>/dev/null; }
 
@@ -427,6 +448,10 @@ assert_contains "$out" "orthogonal=no" "Case 8e: brew status labels the backend 
 assert_contains "$out" "active=on"     "Case 8f: brew 'started' → active=on"
 out="$(run_drv "export STUB_BREW_MYSQL=none; svc_status brew '' mysql")"
 assert_contains "$out" "active=off"    "Case 8g: brew 'none' → active=off"
+ASSERT_MSG="Case 8h: brew installed predicate accepts an installed formula" \
+    assert_true "run_drv 'svc_installed brew \"\" mysql'"
+ASSERT_MSG="Case 8i: brew installed predicate rejects an absent formula" \
+    assert_false "STUB_BREW_INSTALLED_FORMULAS= run_drv 'svc_installed brew \"\" mysql'"
 
 # ─── Case 9: the capability matrix as queryable data ─────────────────────────
 ASSERT_MSG="Case 9a: svc_orthogonal systemd → true"  assert_true  "run_drv 'svc_orthogonal systemd' >/dev/null"
@@ -491,6 +516,13 @@ assert_contains "$out" "enabled=unknown" \
 out="$(run_drv_launchd "export STUB_LAUNCHD_DISABLED_FORMAT=malformed; svc_status launchd '' '$LAUNCHD_LABEL'")"
 assert_contains "$out" "enabled=unknown" \
     "Case 11fi: a truncated exact-target entry is rejected"
+
+ASSERT_MSG="Case 11fia: launchd installed predicate accepts a persistent plist" \
+    assert_true "run_drv_launchd 'svc_installed launchd \"\" \"$LAUNCHD_LABEL\"'"
+rm -f "$LAUNCHD_HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
+ASSERT_MSG="Case 11fib: launchd installed predicate rejects a missing plist" \
+    assert_false "run_drv_launchd 'svc_installed launchd \"\" \"$LAUNCHD_LABEL\"'"
+: >"$LAUNCHD_HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
 
 out="$(run_drv_launchd "export STUB_LAUNCHD_FAIL=print-service; svc_status launchd '' '$LAUNCHD_LABEL'")"
 assert_contains "$out" "active=unknown" \
@@ -724,7 +756,13 @@ assert_file_exists "$RUNNER" "T-003: runner scripts/runners/services.sh exists"
 # run_svc <args...> — run the runner (wsl OS) with the shim on PATH; reset logs.
 run_svc() {
     rm -f "$SHIM_LOG"/*.calls 2>/dev/null
-    PATH="$SHIM:$PATH" MESH_SERVICES_OS=wsl NO_COLOR=1 bash "$RUNNER" "$@"
+    PATH="$SHIM:$PATH" MESH_SERVICES_OS=wsl NO_COLOR=1 \
+        STUB_UNIT_FILES="${STUB_UNIT_FILES-mysql.service enabled enabled
+redis-server.service enabled enabled
+php-fpm.service disabled disabled
+postgresql.service disabled disabled
+docker.service disabled disabled}" \
+        bash "$RUNNER" "$@"
 }
 
 # Exact macOS regression fixture: the non-canonical Homebrew path installs
@@ -738,6 +776,7 @@ run_svc_mac_mysql() {
     rm -f "$SHIM_LOG"/*.calls 2>/dev/null
     HOME="$MAC_MYSQL_HOME" USER=mesh-test PATH="$SHIM:$PATH" \
         STUB_BREW_MYSQL="${STUB_BREW_MYSQL:-none}" \
+        STUB_BREW_INSTALLED_FORMULAS="${STUB_BREW_INSTALLED_FORMULAS-mysql redis php@8.4 postgresql@17}" \
         STUB_LAUNCHD_LABEL="${STUB_LAUNCHD_LABEL:-$MAC_MYSQL_LABEL}" \
         STUB_LAUNCHD_LOADED="${STUB_LAUNCHD_LOADED:-1}" \
         STUB_LAUNCHD_PID="${STUB_LAUNCHD_PID:-1}" \
@@ -747,6 +786,7 @@ run_svc_mac_brew() {
     rm -f "$SHIM_LOG"/*.calls 2>/dev/null
     HOME="$REGISTRY_HOME" USER=mesh-test PATH="$SHIM:$PATH" \
         STUB_BREW_MYSQL="${STUB_BREW_MYSQL:-none}" \
+        STUB_BREW_INSTALLED_FORMULAS="${STUB_BREW_INSTALLED_FORMULAS-mysql redis php@8.4 postgresql@17}" \
         MESH_SERVICES_OS=mac NO_COLOR=1 bash "$RUNNER" "$@"
 }
 
@@ -766,7 +806,8 @@ run_svc_mac_mysql_state() {
 }
 
 # ─── Case 12: `list` (human) — badges + owner + header ───────────────────────
-out="$(run_svc list)"
+out="$(run_svc list 2>&1)"; rc=$?
+assert_eq "$rc" "0" "Case 12z: list exits 0 for a healthy default listing"
 assert_contains "$out" "SERVICE"   "Case 12a: list prints a header row"
 assert_contains "$out" "mysql"     "Case 12b: list includes the mysql service"
 assert_contains "$out" "running"   "Case 12c: list shows the active badge (is-active→running)"
@@ -805,9 +846,20 @@ assert_not_contains "$(calls brew)" "services restart mysql" \
 out="$(STUB_BREW_MYSQL=started run_svc_mac_brew list --porcelain)"
 assert_contains "$out" "mysql|MySQL|mysqld|databases|brew||mysql|on|on" \
     "Case 14j: a canonical brew MySQL service keeps the brew backend and running/on-boot state"
-out="$(STUB_BREW_MYSQL=none run_svc_mac_brew list --porcelain)"
+out="$(STUB_BREW_INSTALLED_FORMULAS= STUB_BREW_MYSQL=none run_svc_mac_brew list --porcelain 2>&1)"; rc=$?
+assert_eq "$rc" 0 "Case 14k: default porcelain list exits 0 when no curated mac services are installed"
+assert_eq "$out" "" \
+    "Case 14ka: default porcelain list omits uninstalled mac brew services instead of printing stopped/no-boot"
+out="$(STUB_BREW_INSTALLED_FORMULAS= STUB_BREW_MYSQL=none run_svc_mac_brew list 2>&1)"; rc=$?
+assert_eq "$rc" 0 "Case 14kb: human list exits 0 when every curated mac service is uninstalled"
+assert_contains "$out" "No installed mesh-owned services" \
+    "Case 14kc: human list explains that no curated services are installed"
+assert_not_contains "$out" "mysql" \
+    "Case 14kd: human default list does not print the uninstalled mysql row"
+out="$(STUB_BREW_INSTALLED_FORMULAS= STUB_BREW_MYSQL=none run_svc_mac_brew list --all --porcelain 2>&1)"; rc=$?
+assert_eq "$rc" 0 "Case 14ke: --all remains a successful explicit inventory view"
 assert_contains "$out" "mysql|MySQL|mysqld|databases|brew||mysql|off|off" \
-    "Case 14k: absent wrapper plus stopped brew MySQL remains stopped/no-boot"
+    "Case 14kf: --all can still show the curated absent/stopped brew descriptor"
 
 # $1 is expanded by the child bash.
 # shellcheck disable=SC2016

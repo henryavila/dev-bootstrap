@@ -5,6 +5,7 @@
 # runner (T-003) and TUI (T-004) call ONE interface regardless of platform:
 #
 #   svc_status  <kind> <scope> <target>   → prints active=/enabled=/orthogonal=
+#   svc_installed <kind> <scope> <target> → rc0 when the backend target exists
 #   svc_start   <kind> <scope> <target>
 #   svc_stop    <kind> <scope> <target>
 #   svc_restart <kind> <scope> <target>
@@ -47,12 +48,13 @@ _svc_drive() {
     "svc_${kind}_${verb}" "$scope" "$target"
 }
 
-svc_status()  { _svc_drive status  "$@"; }
-svc_start()   { _svc_drive start    "$@"; }
-svc_stop()    { _svc_drive stop     "$@"; }
-svc_restart() { _svc_drive restart  "$@"; }
-svc_enable()  { _svc_drive enable   "$@"; }
-svc_disable() { _svc_drive disable  "$@"; }
+svc_status()    { _svc_drive status    "$@"; }
+svc_installed() { _svc_drive installed "$@"; }
+svc_start()     { _svc_drive start     "$@"; }
+svc_stop()      { _svc_drive stop      "$@"; }
+svc_restart()   { _svc_drive restart   "$@"; }
+svc_enable()    { _svc_drive enable    "$@"; }
+svc_disable()   { _svc_drive disable   "$@"; }
 
 # svc_orthogonal <kind> — rc 0 if the backend sets active/enabled independently.
 svc_orthogonal() {

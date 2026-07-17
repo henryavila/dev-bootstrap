@@ -174,6 +174,23 @@ _mesh_has_ctty() {
     [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]]
 }
 
+_mesh_load_prompt_lib() {
+    declare -F ask_line >/dev/null 2>&1 && return 0
+    declare -F _resolve_companion >/dev/null 2>&1 || return 1
+
+    local lib
+    lib="$(_resolve_companion "lib/log.sh")"
+    [[ -n "$lib" && -r "$lib" ]] || return 1
+    # shellcheck source=/dev/null
+    . "$lib"
+    declare -F ask_line >/dev/null 2>&1
+}
+
+_mesh_text_selector_available() {
+    _mesh_has_ctty || return 1
+    _mesh_load_prompt_lib
+}
+
 _mesh_select_from_spec() {
     local spec="$1"
     local token idx
@@ -440,6 +457,7 @@ _mesh_print_selector() {
 
 _mesh_select_text() {
     local default_display="" alias answer lowered
+    _mesh_text_selector_available || _die "run: no interactive selector available; pass --hosts, --online, or --all"
     _mesh_print_selector
 
     for alias in "${RUN_HOST_ALIASES[@]+"${RUN_HOST_ALIASES[@]}"}"; do

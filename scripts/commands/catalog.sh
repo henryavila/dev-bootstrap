@@ -1,17 +1,7 @@
 # shellcheck shell=bash
 
-cmd_catalog_run() {
-    local action="${1:-}"
-    case "$action" in
-        generate)
-            shift
-            local lib
-            lib="$(_resolve_companion "lib/catalog.sh")"
-            [[ -n "$lib" ]] || _die "lib/catalog.sh not found (set \$MESH_HOME or check installation)"
-            exec bash "$lib" "$@"
-            ;;
-        ""|-h|--help)
-            cat <<'EOF'
+cmd_catalog_help() {
+    cat <<'EOF'
 Usage: mesh catalog generate
 
 Regenerates .catalog/ with 4 derived files + index:
@@ -23,6 +13,26 @@ Regenerates .catalog/ with 4 derived files + index:
 
 Output is byte-stable; CI can diff two runs to detect drift.
 EOF
+}
+
+cmd_catalog_run() {
+    local action="${1:-}"
+    case "$action" in
+        generate)
+            shift
+            case "${1:-}" in
+                -h|--help)
+                    cmd_catalog_help
+                    return 0
+                    ;;
+            esac
+            local lib
+            lib="$(_resolve_companion "lib/catalog.sh")"
+            [[ -n "$lib" ]] || _die "lib/catalog.sh not found (set \$MESH_HOME or check installation)"
+            exec bash "$lib" "$@"
+            ;;
+        ""|-h|--help)
+            cmd_catalog_help
             ;;
         *)
             _die "catalog: unknown action '$action' (try: mesh catalog generate)"

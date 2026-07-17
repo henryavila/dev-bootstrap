@@ -345,7 +345,10 @@ secret_list() {
         i=$((i + 1))
     done
     local ahead; ahead="$(_unpushed_count)"
-    [ "$ahead" != "0" ] && warn "$ahead local commit(s) NOT pushed — run 'mesh secret push' to replicate"
+    if [ "$ahead" != "0" ]; then
+        warn "$ahead local commit(s) NOT pushed — run 'mesh secret push' to replicate"
+    fi
+    return 0
 }
 
 secret_doctor() {

@@ -54,13 +54,31 @@ cat > "$TMP/bin/composer" <<EOF
 exit 0
 EOF
 chmod +x "$TMP/bin/composer"
+
+REMOTE="$TMP/identity-remote.git"
+git init -q "$ID"
+git -C "$ID" config user.email t@t
+git -C "$ID" config user.name t
+git -C "$ID" add secrets/manifest.yaml secrets/composer/auth.json secrets/secrets.env
+git -C "$ID" commit -q -m seed
+git init -q --bare "$REMOTE"
+git -C "$ID" remote add origin "$REMOTE"
+git -C "$ID" push -q -u origin HEAD
+
 run() { HOME="$FAKE_HOME" MESH_IDENTITY_DIR="$ID" PATH="$TMP/bin:/usr/bin:/bin:$GITDIR" bash "$SECRET" "$@"; }
 
 # --- list ---
-out="$(run list 2>&1)"
+out="$(run list 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok || no "list returns rc0 when table renders and there are no unpushed commits"
 printf '%s' "$out" | grep -q "composer-auth" && ok || no "list shows composer-auth"
 printf '%s' "$out" | grep -q "gh" && ok || no "list shows gh"
 printf '%s' "$out" | grep -q "ready" && ok || no "list shows file status 'ready'"
+printf 'pending\n' > "$ID/local-ahead-marker"
+git -C "$ID" add local-ahead-marker
+git -C "$ID" commit -q -m local-ahead
+out="$(run list 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok || no "list returns rc0 when it warns about unpushed commits"
+printf '%s' "$out" | grep -q "NOT pushed" && ok || no "list warns when local commits are not pushed"
 
 # --- deploy: composer auth.json lands in the resolved composer home ---
 run deploy >/dev/null 2>&1

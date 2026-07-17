@@ -118,6 +118,14 @@ rc=$?
 assert_ne "$rc" 0 "unknown host exits non-zero"
 assert_contains "$out" "run: unknown host 'missing'" "unknown host rejection names requested host"
 
+out="$(MESH_RUN_ONLINE_HOSTS=self,remote run_mesh run --dry-run status 2>&1)"
+rc=$?
+assert_ne "$rc" 0 "implicit selector without TTY exits non-zero"
+assert_contains "$out" "run: no interactive selector available; pass --hosts, --online, or --all" \
+    "implicit selector without TTY tells the user how to be explicit"
+assert_not_contains "$out" "ask_line: command not found" "implicit selector without TTY does not call missing prompt"
+assert_not_contains "$out" "DRY-RUN:" "implicit selector without TTY does not select online hosts"
+
 echo
 echo "local and remote execution"
 out="$(run_mesh run --hosts self status --write 2>&1)"

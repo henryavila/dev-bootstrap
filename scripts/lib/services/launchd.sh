@@ -222,6 +222,12 @@ _svc_launchd_failed() {
 
 svc_launchd_orthogonal() { return 0; }
 
+svc_launchd_installed() {
+    local label="$2" plist
+    plist="$(_svc_launchd_plist "$label")" || return 1
+    [[ -f "$plist" ]]
+}
+
 svc_launchd_status() {
     local label="$2" domain target out active enabled persistent plist probe_rc
     domain="$(_svc_launchd_domain)"

@@ -14,6 +14,8 @@
 
 svc_brew_orthogonal() { return 1; }
 
+svc_brew_installed() { brew list --formula --versions "$2" >/dev/null 2>&1; }
+
 svc_brew_start()   { brew services run     "$2"; }
 svc_brew_enable()  { brew services start   "$2"; }
 svc_brew_stop()    { brew services stop    "$2"; }
