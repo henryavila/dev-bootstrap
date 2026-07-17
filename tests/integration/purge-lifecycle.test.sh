@@ -139,4 +139,32 @@ ASSERT_MSG="confirmed MySQL purge removes the managed target only" assert_false 
 MESH_PURGE_DATA=1 run_mysql_uninstall
 ASSERT_MSG="confirmed MySQL purge is idempotent after its managed tree is gone" assert_true "MESH_PURGE_DATA=1 run_mysql_uninstall"
 
+run_valet_uninstall() {
+    HOME="$HOME_FIX" PATH="$BIN:$PATH" SUDO_LOG="$SUDO_LOG" \
+    MESH_WORKSTATION_DIR="$WS" \
+        bash -c '. "$1"; uninstall' _ "$WS/topics/web/mac/valet.sh"
+}
+
+echo "Valet removes Composer entry normally and user config only with purge authority"
+mkdir -p "$HOME_FIX/.composer/vendor/bin" "$HOME_FIX/.composer/vendor/laravel/valet" "$HOME_FIX/.config/valet"
+: > "$HOME_FIX/.composer/vendor/bin/valet"
+: > "$HOME_FIX/.composer/vendor/laravel/valet/valet"
+: > "$HOME_FIX/.config/valet/config.json"
+chmod +x "$HOME_FIX/.composer/vendor/bin/valet"
+run_valet_uninstall
+ASSERT_MSG="normal Valet uninstall removes the Composer bin shim" assert_false "[ -e '$HOME_FIX/.composer/vendor/bin/valet' ]"
+ASSERT_MSG="normal Valet uninstall removes the Composer package tree" assert_false "[ -e '$HOME_FIX/.composer/vendor/laravel/valet' ]"
+assert_file_exists "$HOME_FIX/.config/valet/config.json" "normal Valet uninstall preserves user Valet config"
+
+mkdir -p "$HOME_FIX/.composer/vendor/bin" "$HOME_FIX/.composer/vendor/laravel/valet" "$HOME_FIX/.config/valet"
+: > "$HOME_FIX/.composer/vendor/bin/valet"
+: > "$HOME_FIX/.composer/vendor/laravel/valet/valet"
+: > "$HOME_FIX/.config/valet/config.json"
+chmod +x "$HOME_FIX/.composer/vendor/bin/valet"
+MESH_PURGE_DATA=1 run_valet_uninstall
+ASSERT_MSG="confirmed Valet purge removes user Valet config" assert_false "[ -e '$HOME_FIX/.config/valet' ]"
+assert_file_contains "$SUDO_LOG" "launchctl bootout system/homebrew.mxcl.php" "Valet uninstall attempts to unload PHP LaunchDaemon"
+assert_file_contains "$SUDO_LOG" "launchctl bootout system/homebrew.mxcl.nginx" "Valet uninstall attempts to unload nginx LaunchDaemon"
+assert_file_contains "$SUDO_LOG" "launchctl bootout system/homebrew.mxcl.dnsmasq" "Valet uninstall attempts to unload dnsmasq LaunchDaemon"
+
 summary

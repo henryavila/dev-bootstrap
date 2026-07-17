@@ -320,6 +320,60 @@ repair() {
     FORCE_VALET_INSTALL=1 install
 }
 
+_valet_bootout_service() {
+    local svc="$1" launchctl_bin="${MESH_LAUNCHCTL_BIN:-launchctl}"
+    if [[ -n "${MESH_LAUNCHCTL_BIN:-}" ]]; then
+        sudo "$launchctl_bin" bootout "system/homebrew.mxcl.${svc}" >/dev/null 2>&1 || true
+    else
+        sudo launchctl bootout "system/homebrew.mxcl.${svc}" >/dev/null 2>&1 || true
+    fi
+}
+
+_valet_remove_known_path() {
+    local path="$1"
+    local target
+    case "$path" in
+        "$HOME/.composer/vendor/bin/valet"|\
+        "$HOME/.composer/vendor/laravel/valet"|\
+        "$HOME/.config/composer/vendor/bin/valet"|\
+        "$HOME/.config/composer/vendor/laravel/valet"|\
+        "$HOME/.config/valet")
+            ;;
+        *)
+            echo "[valet] refusing unsafe uninstall path: $path" >&2
+            return 1
+            ;;
+    esac
+    [[ -e "$path" || -L "$path" ]] || return 0
+    target="$path"
+    # `target` is L05-allowlisted after the exact Valet path guard above.
+    rm -rf "$target"
+}
+
+_valet_remove_composer_package() {
+    local rc=0
+    if command -v composer >/dev/null 2>&1 && command -v php >/dev/null 2>&1; then
+        composer global remove laravel/valet --no-interaction >/dev/null 2>&1 || true
+    fi
+    _valet_remove_known_path "$HOME/.composer/vendor/bin/valet" || rc=$?
+    _valet_remove_known_path "$HOME/.composer/vendor/laravel/valet" || rc=$?
+    _valet_remove_known_path "$HOME/.config/composer/vendor/bin/valet" || rc=$?
+    _valet_remove_known_path "$HOME/.config/composer/vendor/laravel/valet" || rc=$?
+    return "$rc"
+}
+
+uninstall() {
+    local rc=0
+    _valet_bootout_service php
+    _valet_bootout_service nginx
+    _valet_bootout_service dnsmasq
+    _valet_remove_composer_package || rc=$?
+    if [[ "${MESH_PURGE_DATA:-0}" == "1" ]]; then
+        _valet_remove_known_path "$HOME/.config/valet" || rc=$?
+    fi
+    return "$rc"
+}
+
 rollback() {
     # Don't auto-uninstall Valet — extensive system state.
     :
