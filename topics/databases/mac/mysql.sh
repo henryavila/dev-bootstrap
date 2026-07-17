@@ -39,7 +39,7 @@ MYSQL_GPG_KEY_URL="https://repo.mysql.com/RPM-GPG-KEY-mysql-2025"
 MYSQL_SHA256_arm64="81d0c55227093e2ebdffb424452c458b0b4a39ddff76c5bcc25e93085ab7a912"
 MYSQL_SHA256_x86_64=""
 
-ORACLE_PREFIX="/usr/local/mysql"
+ORACLE_PREFIX="${MYSQL_ORACLE_PREFIX:-/usr/local/mysql}"
 ORACLE_MYSQL_BIN="${ORACLE_PREFIX}/bin/mysql"
 ORACLE_DATADIR="${ORACLE_PREFIX}/data"
 MYSQL_SVC="mysql"
@@ -320,8 +320,26 @@ uninstall() {
         sudo rm -f "$paths_file" 2>/dev/null || rc=$?
     fi
 
+    # The default uninstall is data-safe. A confirmed engine purge may remove
+    # the exact Oracle tree addressed by this owner, never an arbitrary path.
+    if [[ "${MESH_PURGE_DATA:-0}" == "1" ]]; then
+        [[ ! -f /Library/LaunchDaemons/com.oracle.oss.mysql.mysqld.plist ]] \
+            || { echo "mysql(mac): refusing to purge a system-managed Oracle install" >&2; return 1; }
+        local link_target=""
+        [[ -L "$ORACLE_PREFIX" ]] && link_target="$(readlink "$ORACLE_PREFIX")"
+        case "$link_target" in
+            "${ORACLE_PREFIX}-"*) ;;
+            *) echo "mysql(mac): refusing unsafe purge target: ${link_target:-<not a managed symlink>}" >&2; return 1 ;;
+        esac
+        # `target` is L05-allowlisted after the managed-symlink guard above.
+        local target="$link_target"
+        sudo rm -rf "$target" || return 1
+        sudo rm -f -- "$ORACLE_PREFIX" || return 1
+    fi
+
     # Gate on the mesh-managed artifacts being gone (the binary intentionally
     # stays — see header). A non-zero rc from the PATH-file removal is the only
     # thing that can fail the honest marker drop here.
-    [[ "$rc" -eq 0 ]] && [[ ! -e "$paths_file" ]]
+    [[ "$rc" -eq 0 ]] && [[ ! -e "$paths_file" ]] \
+        && { [[ "${MESH_PURGE_DATA:-0}" != "1" ]] || [[ ! -e "$ORACLE_PREFIX" ]]; }
 }

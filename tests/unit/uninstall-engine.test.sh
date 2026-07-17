@@ -198,6 +198,57 @@ assert "dry-run without marker: reports zero changed items" "yes" "$(echo "$out"
 assert "dry-run without marker: no false one-item removal" "no" "$(echo "$out" | grep -q 't2/dependent: uninstalled (1 item(s) on mac)' && echo yes || echo no)"
 assert "dry-run without marker: reports zero changed bundles" "yes" "$(echo "$out" | grep -q 'uninstall-engine: removed 0 bundle(s) on mac' && echo yes || echo no)"
 
+# ── Test 8: destructive purge needs an explicit two-flag acknowledgement ──
+# The normal uninstaller is data-safe. A caller must not be able to turn on
+# purge with one accidental flag; both --purge-data and --confirm-purge-data
+# are required, and only that pair exposes MESH_PURGE_DATA to custom owners.
+mkdir -p "$TD/t4"
+cat > "$TD/t4/manifest.yaml" <<'YAML'
+topic:
+  label: "T4"
+  order: 40
+bundles:
+  - name: purgeable
+    label: "Purgeable"
+    desc: "custom owner with managed data"
+    items:
+      - name: owner
+        type: custom
+        script: ./owner.sh
+YAML
+cat > "$TD/t4/owner.sh" <<'SH'
+check() { [[ -f "${ENGTEST_OUT:?}/purge-data" ]]; }
+install() { : > "${ENGTEST_OUT:?}/purge-data"; }
+verify() { check; }
+uninstall() {
+    [[ "${MESH_PURGE_DATA:-0}" == "1" ]] || return 1
+    rm -f "${ENGTEST_OUT:?}/purge-data"
+}
+SH
+chmod +x "$TD/t4/owner.sh"
+printf 't4/purgeable\n' > "$TMP/sel.t4"
+
+rm -rf "$ST" "$OUT"; mkdir -p "$ST" "$OUT"
+ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$WS/scripts/lib/install-engine.sh" --topics-dir "$TD" --params "$PARAMS" \
+    --platform mac --bundle t4/purgeable >/dev/null 2>&1
+out="$(ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.t4" --purge-data 2>&1)"
+rc=$?
+assert "purge without confirmation: exits 64" "64" "$rc"
+assert "purge without confirmation: reports the missing acknowledgement" "yes" "$(echo "$out" | grep -q 'requires --confirm-purge-data' && echo yes || echo no)"
+assert "purge without confirmation: data survives" "yes" "$(test -f "$OUT/purge-data" && echo yes || echo no)"
+assert "purge without confirmation: marker survives" "yes" "$(test -f "$ST/t4__owner.env" && echo yes || echo no)"
+
+out="$(ENGTEST_OUT="$OUT" MESH_INSTALL_STATE_DIR="$ST" \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.t4" --purge-data --confirm-purge-data 2>&1)"
+rc=$?
+assert "confirmed purge: exits 0" "0" "$rc"
+assert "confirmed purge: custom owner receives purge authority" "no" "$(test -f "$OUT/purge-data" && echo yes || echo no)"
+assert "confirmed purge: marker is removed after real purge" "no" "$(test -f "$ST/t4__owner.env" && echo yes || echo no)"
+
 echo ""
 echo "uninstall-engine.test: $passed passed, $failed failed"
 [[ "$failed" -eq 0 ]]

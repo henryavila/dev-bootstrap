@@ -16,6 +16,7 @@
 #   bash uninstall-engine.sh [--selections FILE] [--bundle topic/bundle ...]
 #                            [--topics-dir DIR] [--params FILE] [--secrets FILE]
 #                            [--platform OS] [--dry-run]
+#                            [--purge-data --confirm-purge-data]
 #
 # Per item: dispatch by `type` to scripts/lib/uninstall-handlers.sh
 # (_uninstall_<verb>), or, for `type: custom`, source the script and run its
@@ -46,6 +47,8 @@ export MESH_LIB_DIR="$ENGINE_DIR"
 . "$ENGINE_DIR/conditions.sh"
 
 DRY_RUN=0
+PURGE_DATA=0
+PURGE_CONFIRM=0
 SELECTIONS_FILE=""
 TOPICS_DIR="$(cd "$ENGINE_DIR/../.." && pwd)/topics"
 PARAMS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mesh/params.env"
@@ -64,10 +67,24 @@ while [[ $# -gt 0 ]]; do
         --secrets)     SECRETS_OVERRIDE="$2"; shift 2 ;;
         --platform)    PLATFORM_OVERRIDE="$2"; shift 2 ;;
         --dry-run)     DRY_RUN=1; shift ;;
+        --purge-data)  PURGE_DATA=1; shift ;;
+        --confirm-purge-data) PURGE_CONFIRM=1; shift ;;
         --help|-h)     sed -n '2,30p' "$0"; exit 0 ;;
         *)             log_error "unknown arg: $1"; exit 64 ;;
     esac
 done
+
+# Database data is preserved by default. Purge is intentionally opt-in twice so
+# a copied uninstall command cannot erase datadirs by merely adding one flag.
+if [[ "$PURGE_DATA" -ne "$PURGE_CONFIRM" ]]; then
+    log_error "data purge requires --confirm-purge-data together with --purge-data"
+    exit 64
+fi
+if [[ "$PURGE_DATA" -eq 1 ]]; then
+    export MESH_PURGE_DATA=1
+else
+    unset MESH_PURGE_DATA
+fi
 
 [[ -d "$TOPICS_DIR" ]] || { log_error "missing topics dir: $TOPICS_DIR"; exit 64; }
 

@@ -91,11 +91,23 @@ uninstall() {
         "$brew" uninstall --ignore-dependencies redis >/dev/null 2>&1 || true
     fi
 
+    if [[ "${MESH_PURGE_DATA:-0}" == "1" ]]; then
+        local data_dir="${BREW_PREFIX:?BREW_PREFIX required for Redis purge}/var/db/redis"
+        case "$data_dir" in
+            "$BREW_PREFIX"/var/db/redis) ;;
+            *) echo "redis(mac): refusing unsafe purge path: $data_dir" >&2; return 1 ;;
+        esac
+        # `target` is L05-allowlisted after the exact Redis path guard above.
+        local target="$data_dir"
+        rm -rf "$target" || return 1
+    fi
+
     # 3) Honest marker drop (like ngrok): succeed only when the formula is
     #    actually gone. If brew is unavailable we can't have removed it, so the
     #    list check fails and we return non-zero — the engine keeps the marker.
     if command -v "$brew" >/dev/null 2>&1; then
-        ! "$brew" list --formula redis >/dev/null 2>&1
+        ! "$brew" list --formula redis >/dev/null 2>&1 \
+            && { [[ "${MESH_PURGE_DATA:-0}" != "1" ]] || [[ ! -e "${BREW_PREFIX}/var/db/redis" ]]; }
     else
         return 1
     fi

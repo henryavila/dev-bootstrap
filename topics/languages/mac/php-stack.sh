@@ -671,3 +671,22 @@ repair() {
 rollback() {
     :
 }
+
+uninstall() {
+    # Reverse the versioned formulas this owner installs. Composer, Python and
+    # PECL build dependencies may be shared with other bundles, so they remain.
+    # PHP itself has no datadir; database data purge is handled by DB owners.
+    local versions ver rc=0
+    versions="$(_php_versions_for_stack)" || return 1
+    for ver in $versions; do
+        if "${BREW_BIN:-brew}" list --formula "php@${ver}" >/dev/null 2>&1; then
+            "${BREW_BIN:-brew}" unlink "php@${ver}" >/dev/null 2>&1 || true
+            "${BREW_BIN:-brew}" uninstall --ignore-dependencies --formula "php@${ver}" \
+                >/dev/null 2>&1 || rc=$?
+        fi
+    done
+    [[ "$rc" -eq 0 ]] || return "$rc"
+    for ver in $versions; do
+        "${BREW_BIN:-brew}" list --formula "php@${ver}" >/dev/null 2>&1 && return 1
+    done
+}

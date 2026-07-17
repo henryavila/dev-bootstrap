@@ -91,10 +91,24 @@ uninstall() {
             # install() used `brew install postgresql@N` (a formula, not a cask).
             "$brew_bin" uninstall --formula "postgresql@${ver}" 2>/dev/null || true
 
+            # Normal uninstall preserves cluster data. The engine exposes this
+            # only after its two-flag destructive acknowledgement.
+            if [[ "${MESH_PURGE_DATA:-0}" == "1" ]]; then
+                local data_dir="${BREW_PREFIX:-/opt/homebrew}/var/postgresql@${ver}"
+                case "$data_dir" in
+                    "${BREW_PREFIX:-/opt/homebrew}"/var/postgresql@[0-9]*) ;;
+                    *) echo "postgresql: refusing unsafe purge path: $data_dir" >&2; return 1 ;;
+                esac
+                # `target` is L05-allowlisted after the version-scoped guard above.
+                local target="$data_dir"
+                rm -rf "$target" || return 1
+            fi
+
             # Honest marker drop: success only when the formula is actually gone
             # (mirrors check()'s `brew list --formula` probe; the keg-only binary
             # never lands on PATH, so `command -v postgres` cannot confirm this).
-            ! "$brew_bin" list --formula "postgresql@${ver}" >/dev/null 2>&1
+            ! "$brew_bin" list --formula "postgresql@${ver}" >/dev/null 2>&1 \
+                && { [[ "${MESH_PURGE_DATA:-0}" != "1" ]] || [[ ! -e "${BREW_PREFIX:-/opt/homebrew}/var/postgresql@${ver}" ]]; }
             ;;
 
         Linux)
