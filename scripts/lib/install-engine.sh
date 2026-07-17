@@ -775,7 +775,25 @@ apply_bundle() {
                     log_info "$bundle/$name: health skip (idempotent)"; exit 0
                 fi
                 if [[ ! -f "$(install_state_path "$TOPIC" "$name")" ]]; then
-                    log_info "$bundle/$name: health skip (no install marker)"; exit 0
+                    # A selected item without a v2 marker can be either absent
+                    # or a legacy installation. Only a passing weak presence
+                    # probe proves the latter; keep truly absent/foreign items
+                    # out of doctor while allowing a broken legacy runtime to
+                    # reach the strong health probe and repair lifecycle.
+                    _health_presence_probe() {
+                        if declare -f "${prefix}_check" >/dev/null 2>&1; then
+                            "${prefix}_check" "$arg" 2>/dev/null
+                        elif [[ -n "$mcheck" ]]; then
+                            bash -c "$mcheck" >/dev/null 2>&1
+                        else
+                            return 1
+                        fi
+                    }
+                    local _hpresence_rc=0
+                    _health_presence_probe || _hpresence_rc=$?
+                    if [[ "$_hpresence_rc" -ne 0 ]]; then
+                        log_info "$bundle/$name: health skip (no install marker, presence check fails)"; exit 0
+                    fi
                 fi
                 _health_probe() {   # driver verify > manifest check > driver check
                     if declare -f "${prefix}_verify" >/dev/null 2>&1; then
@@ -889,11 +907,28 @@ apply_bundle() {
                     printf '%s\n' "$bundle/$name" >> "$REPAIR_OK_FILE" 2>/dev/null || true
                     log_info "$bundle/$name: ok"; exit 0
                 fi
-                # A markerless item in an unowned bundle remains foreign/absent.
-                # Within a marker-owned atomic bundle it is pending convergence:
-                # this is the upgrade path for owners appended by newer releases.
+                # A markerless item in an unowned bundle is normally foreign or
+                # absent. A passing weak presence probe is the exception: it
+                # proves an older mesh installation left the runtime present but
+                # without a v2 marker, so a failing strong probe is repairable.
+                # Within a marker-owned atomic bundle the existing upgrade path
+                # still repairs any newly-added broken owner.
                 if [[ "$_has_item_marker" -eq 0 && "$bundle_marker_owned" -eq 0 ]]; then
-                    log_info "$bundle/$name: repair skip (probe fails, no install marker — not installed here)"; exit 0
+                    _repair_presence_probe() {
+                        if declare -f "${prefix}_check" >/dev/null 2>&1; then
+                            "${prefix}_check" "$arg" 2>/dev/null
+                        elif [[ -n "$mcheck" ]]; then
+                            bash -c "$mcheck" >/dev/null 2>&1
+                        else
+                            return 1
+                        fi
+                    }
+                    local _presence_rc=0
+                    _repair_presence_probe || _presence_rc=$?
+                    if [[ "$_presence_rc" -ne 0 ]]; then
+                        log_info "$bundle/$name: repair skip (probe fails, no install marker, presence check fails)"; exit 0
+                    fi
+                    log_warn "$bundle/$name: BROKEN (markerless installed owner) → attempting repair"
                 fi
                 if [[ "$_has_item_marker" -eq 0 ]]; then
                     log_warn "$bundle/$name: BROKEN (new item in marker-owned bundle) → attempting repair"

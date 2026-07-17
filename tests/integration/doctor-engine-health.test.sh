@@ -58,6 +58,14 @@ bundles:
       - name: repairable
         type: custom
         script: ./repairable.sh
+  - name: unowned
+    items:
+      - name: markerless-broken
+        type: custom
+        script: ./markerless-broken.sh
+      - name: markerless-absent
+        type: custom
+        script: ./markerless-absent.sh
   - name: wsl-only
     platforms: [wsl]
     items:
@@ -102,6 +110,27 @@ verify() {
 }
 install() { : > "\$SENT_DIR/install-ran"; }
 repair() { : > "\$SENT_DIR/repair-ran"; }
+SH
+
+cat > "$TOPICS/demo/markerless-broken.sh" <<SH
+SENT_DIR="$SENT"
+check() { return 0; }
+verify() {
+    if [[ -f "\$SENT_DIR/markerless-broken-repaired" ]]; then
+        : > "\$SENT_DIR/markerless-broken-verified"
+        return 0
+    fi
+    : > "\$SENT_DIR/markerless-broken-verified-before-repair"
+    return 1
+}
+repair() { : > "\$SENT_DIR/markerless-broken-repaired"; }
+SH
+
+cat > "$TOPICS/demo/markerless-absent.sh" <<SH
+SENT_DIR="$SENT"
+check() { : > "\$SENT_DIR/markerless-absent-checked"; return 1; }
+verify() { : > "\$SENT_DIR/markerless-absent-verified"; return 1; }
+repair() { : > "\$SENT_DIR/markerless-absent-repaired"; }
 SH
 
 cat > "$TOPICS/demo/platform-disabled.sh" <<SH
@@ -174,6 +203,21 @@ assert_file_exists "$SENT/repair-ran" "doctor --fix calls the custom repair() ho
 assert_file_exists "$SENT/verify-after-repair" "doctor --fix re-runs verify after repair"
 assert_false "[ -f '$SENT/install-ran' ]"
 assert_contains "$fix_out" "demo/repairable" "doctor --fix output names the repaired engine item"
+
+echo
+echo "doctor --fix repairs a selected markerless installed owner but leaves an absent owner alone"
+select_bundle demo/unowned
+rm -f "$SENT"/* 2>/dev/null || true
+set +e
+markerless_out="$(doctor_env --fix --quiet 2>&1)"
+markerless_rc=$?
+set -u
+assert_eq "$markerless_rc" "0" "doctor --fix repairs a selected markerless installed owner"
+assert_file_exists "$SENT/markerless-broken-repaired" "doctor --fix repairs a selected markerless item whose presence check passes but verify fails"
+assert_file_exists "$SENT/markerless-broken-verified" "doctor --fix re-verifies the repaired markerless item"
+assert_file_exists "$STATE/demo__markerless-broken.env" "doctor --fix records ownership only after the markerless repair verifies"
+assert_false "[ -f '$SENT/markerless-absent-repaired' ]"
+assert_false "[ -f '$STATE/demo__markerless-absent.env' ]"
 
 echo
 echo "doctor health follows bundle platforms before probing"
