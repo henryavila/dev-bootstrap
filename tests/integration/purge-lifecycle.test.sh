@@ -136,5 +136,7 @@ assert_file_exists "$ROOT/mysql-9.7.0-macos15-arm64/data/ibdata1" "normal MySQL 
 MESH_PURGE_DATA=1 run_mysql_uninstall
 ASSERT_MSG="confirmed MySQL purge removes the managed symlink" assert_false "[ -e '$ROOT/mysql' ]"
 ASSERT_MSG="confirmed MySQL purge removes the managed target only" assert_false "[ -e '$ROOT/mysql-9.7.0-macos15-arm64' ]"
+MESH_PURGE_DATA=1 run_mysql_uninstall
+ASSERT_MSG="confirmed MySQL purge is idempotent after its managed tree is gone" assert_true "MESH_PURGE_DATA=1 run_mysql_uninstall"
 
 summary

@@ -325,16 +325,21 @@ uninstall() {
     if [[ "${MESH_PURGE_DATA:-0}" == "1" ]]; then
         [[ ! -f /Library/LaunchDaemons/com.oracle.oss.mysql.mysqld.plist ]] \
             || { echo "mysql(mac): refusing to purge a system-managed Oracle install" >&2; return 1; }
-        local link_target=""
-        [[ -L "$ORACLE_PREFIX" ]] && link_target="$(readlink "$ORACLE_PREFIX")"
-        case "$link_target" in
-            "${ORACLE_PREFIX}-"*) ;;
-            *) echo "mysql(mac): refusing unsafe purge target: ${link_target:-<not a managed symlink>}" >&2; return 1 ;;
-        esac
-        # `target` is L05-allowlisted after the managed-symlink guard above.
-        local target="$link_target"
-        sudo rm -rf "$target" || return 1
-        sudo rm -f -- "$ORACLE_PREFIX" || return 1
+        # A completed purge has neither the symlink nor target. Treat that as
+        # success so a second Mesh run verifies the clean state instead of
+        # rejecting the absence as an unsafe unknown target.
+        if [[ -e "$ORACLE_PREFIX" || -L "$ORACLE_PREFIX" ]]; then
+            local link_target=""
+            [[ -L "$ORACLE_PREFIX" ]] && link_target="$(readlink "$ORACLE_PREFIX")"
+            case "$link_target" in
+                "${ORACLE_PREFIX}-"*) ;;
+                *) echo "mysql(mac): refusing unsafe purge target: ${link_target:-<not a managed symlink>}" >&2; return 1 ;;
+            esac
+            # `target` is L05-allowlisted after the managed-symlink guard above.
+            local target="$link_target"
+            sudo rm -rf "$target" || return 1
+            sudo rm -f -- "$ORACLE_PREFIX" || return 1
+        fi
     fi
 
     # Gate on the mesh-managed artifacts being gone (the binary intentionally
