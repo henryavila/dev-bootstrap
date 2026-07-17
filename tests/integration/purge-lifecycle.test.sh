@@ -53,9 +53,14 @@ run_php_uninstall() {
 }
 
 echo "PHP owner removes its declared version formula"
-mkdir -p "$FORM/php@8.4"
+mkdir -p "$FORM/php@8.4" "$FORM/php"
+: > "$FORM/php/.keep"
 run_php_uninstall
-assert_false "[ -d '$FORM/php@8.4' ]" "PHP uninstall removes php@8.4"
+ASSERT_MSG="PHP uninstall removes php@8.4" assert_false "[ -d '$FORM/php@8.4' ]"
+assert_file_exists "$FORM/php/.keep" "normal PHP uninstall preserves an unversioned formula it does not own"
+mkdir -p "$FORM/php@8.4"
+MESH_PURGE_DATA=1 run_php_uninstall
+ASSERT_MSG="confirmed PHP purge removes the unversioned PHP formula" assert_false "[ -d '$FORM/php' ]"
 
 run_postgres_uninstall() {
     FAKE_FORMULAS="$FORM" BREW_BIN="$BIN/brew" BREW_PREFIX="$BREW" \
@@ -71,7 +76,7 @@ run_postgres_uninstall
 assert_file_exists "$BREW/var/postgresql@17/PG_VERSION" "normal PostgreSQL uninstall preserves cluster data"
 mkdir -p "$FORM/postgresql@17"
 MESH_PURGE_DATA=1 run_postgres_uninstall
-assert_false "[ -e '$BREW/var/postgresql@17' ]" "confirmed PostgreSQL purge removes only its versioned data dir"
+ASSERT_MSG="confirmed PostgreSQL purge removes only its versioned data dir" assert_false "[ -e '$BREW/var/postgresql@17' ]"
 
 run_redis_uninstall() {
     FAKE_FORMULAS="$FORM" BREW_BIN="$BIN/brew" BREW_PREFIX="$BREW" \
@@ -86,7 +91,7 @@ run_redis_uninstall
 assert_file_exists "$BREW/var/db/redis/dump.rdb" "normal Redis uninstall preserves dump.rdb"
 mkdir -p "$FORM/redis"
 MESH_PURGE_DATA=1 run_redis_uninstall
-assert_false "[ -e '$BREW/var/db/redis' ]" "confirmed Redis purge removes its canonical data dir"
+ASSERT_MSG="confirmed Redis purge removes its canonical data dir" assert_false "[ -e '$BREW/var/db/redis' ]"
 
 run_mysql_uninstall() {
     FAKE_FORMULAS="$FORM" BREW_BIN="$BIN/brew" BREW_PREFIX="$BREW" \
@@ -103,7 +108,7 @@ ln -s "$ROOT/mysql-9.7.0-macos15-arm64" "$ROOT/mysql"
 run_mysql_uninstall
 assert_file_exists "$ROOT/mysql-9.7.0-macos15-arm64/data/ibdata1" "normal MySQL uninstall preserves Oracle data"
 MESH_PURGE_DATA=1 run_mysql_uninstall
-assert_false "[ -e '$ROOT/mysql' ]" "confirmed MySQL purge removes the managed symlink"
-assert_false "[ -e '$ROOT/mysql-9.7.0-macos15-arm64' ]" "confirmed MySQL purge removes the managed target only"
+ASSERT_MSG="confirmed MySQL purge removes the managed symlink" assert_false "[ -e '$ROOT/mysql' ]"
+ASSERT_MSG="confirmed MySQL purge removes the managed target only" assert_false "[ -e '$ROOT/mysql-9.7.0-macos15-arm64' ]"
 
 summary
