@@ -38,6 +38,10 @@ Native-Linux users outside WSL: no terminal emulator config runs. Use whatever t
   notes — in [`docs/TMUX.md`](../../docs/TMUX.md). Session aliases (`tl`/`ta`/`tn`/`tm`) in
   [`docs/ALIASES.md`](../../docs/ALIASES.md).
 - `BAT_THEME=Catppuccin-mocha` exported so `bat` renders in the same palette as the terminal.
+- **Herdr remote clipboard (macOS):** installs `~/.local/bin/pbcopy` (item
+  `pbcopy-osc52`) which forwards to `/usr/bin/pbcopy` and, when `HERDR_ENV=1`,
+  also emits OSC 52 so `herdr --remote` clients receive agent/shell copies.
+  Override with `MESH_PBCOPY_OSC52=0|1`. Source: `bin/pbcopy`.
 
 `30-shell` adds `~/.local/share/zsh/site-functions` to `fpath` before
 `compinit`; this topic owns the completion files deployed into that directory.

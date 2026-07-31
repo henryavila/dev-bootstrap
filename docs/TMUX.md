@@ -118,6 +118,10 @@ pane cwd + `user@host`.
   `Ctrl-a Ctrl-a |`). A single `Ctrl-a` drives the **outer** tmux. A distinct inner prefix
   is under consideration.
 - **`y` does not reach the system clipboard yet** — it only fills the internal tmux buffer.
-  Cross-device clipboard (OSC52 / `set-clipboard`) is not configured yet.
+  Cross-device clipboard (OSC52 / `set-clipboard`) is not configured yet for **tmux**.
+- **Herdr remote clipboard (macOS)** is handled separately: `shell-terminal` installs a
+  `~/.local/bin/pbcopy` shim (`pbcopy-osc52`) that dual-writes OSC 52 when
+  `HERDR_ENV=1`, so agents like Grok that only call native `pbcopy` still reach
+  `herdr --remote` clients. See `topics/shell-terminal/bin/pbcopy`.
 
-These are tracked in the terminal/tmux audit; fixes are pending.
+These are tracked in the terminal/tmux audit; tmux OSC52 remains pending.

@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# mesh-pbcopy-osc52 — dual-write macOS pbcopy + OSC 52 under Herdr.
+#
+# Grok (and other tools) on a local Mac only write the native clipboard
+# (pbcopy). When the pane is attached via `herdr --remote`, that lands on the
+# host Mac clipboard and never reaches the remote client. Herdr *does* bridge
+# OSC 52 sequences from the pane PTY to the attached client.
+#
+# This shim:
+#   1. Always forwards stdin to the real system pbcopy (/usr/bin/pbcopy).
+#   2. When HERDR_ENV=1 (or MESH_PBCOPY_OSC52=1), also emits OSC 52 to the
+#      controlling TTY so herdr --remote clients receive the copy.
+#
+# Override:
+#   MESH_PBCOPY_OSC52=1  force OSC 52 even outside herdr
+#   MESH_PBCOPY_OSC52=0  disable OSC 52 even inside herdr
+#   MESH_PBCOPY_REAL=/path/to/pbcopy  real binary (tests + recovery)
+#   MESH_PBCOPY_OSC52_SINK=/path     write OSC 52 bytes here (tests/debug;
+#                                    skips /dev/tty when set)
+#   MESH_PBCOPY_OSC52_MAX_BYTES=N    skip OSC 52 above this size (default 75000)
+#
+# Install target: ~/.local/bin/pbcopy (must precede /usr/bin on PATH).
+# mesh-pbcopy-osc52
+set -euo pipefail
+
+# Soft ceiling: many terminals/muxers drop huge OSC 52 payloads. Native
+# pbcopy still gets the full data; only the remote bridge is skipped.
+readonly _MESH_PBCOPY_OSC52_MAX_BYTES="${MESH_PBCOPY_OSC52_MAX_BYTES:-75000}"
+
+_mesh_pbcopy_real() {
+    if [[ -n "${MESH_PBCOPY_REAL:-}" && -x "${MESH_PBCOPY_REAL}" ]]; then
+        printf '%s' "$MESH_PBCOPY_REAL"
+        return 0
+    fi
+    if [[ -x /usr/bin/pbcopy ]]; then
+        printf '%s' /usr/bin/pbcopy
+        return 0
+    fi
+    # Last resort: first pbcopy on PATH that is not this script.
+    local self candidate
+    self="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/$(basename "${BASH_SOURCE[0]}")"
+    while IFS= read -r candidate; do
+        [[ -z "$candidate" ]] && continue
+        [[ "$candidate" == "$self" ]] && continue
+        [[ -x "$candidate" ]] || continue
+        printf '%s' "$candidate"
+        return 0
+    done < <(type -aP pbcopy 2>/dev/null || true)
+    return 1
+}
+
+_mesh_pbcopy_want_osc52() {
+    case "${MESH_PBCOPY_OSC52:-}" in
+        0|false|no|off) return 1 ;;
+        1|true|yes|on)  return 0 ;;
+    esac
+    [[ -n "${HERDR_ENV:-}" ]]
+}
+
+# Read all of stdin into the global _MESH_PBCOPY_BUF, preserving trailing
+# newlines and empty input. Must NOT use command-substitution assignment at
+# the caller — bash strips trailing newlines from $(...).
+_mesh_pbcopy_read_stdin() {
+    # Inner $(cat; printf x) keeps trailing newlines via the sentinel; we
+    # strip only that sentinel. Storing in a global avoids a second strip
+    # when the caller would do data="$(...)".
+    _MESH_PBCOPY_BUF=$(cat; printf x) || true
+    _MESH_PBCOPY_BUF=${_MESH_PBCOPY_BUF%x}
+}
+
+_mesh_pbcopy_emit_osc52() {
+    local data="$1" b64 out
+    # bash ${#var} is character length; for ASCII clipboard text this equals bytes.
+    if (( ${#data} > _MESH_PBCOPY_OSC52_MAX_BYTES )); then
+        return 0
+    fi
+    if ! command -v base64 >/dev/null 2>&1; then
+        return 0
+    fi
+    b64=$(printf '%s' "$data" | base64 | tr -d '\n\r')
+    # Test/debug sink takes precedence so unit tests can capture the sequence
+    # without a real TTY, and operators can tee OSC 52 for diagnosis.
+    if [[ -n "${MESH_PBCOPY_OSC52_SINK:-}" ]]; then
+        # OSC 52: ESC ] 52 ; c ; <base64> BEL
+        printf '\033]52;c;%s\a' "$b64" >"$MESH_PBCOPY_OSC52_SINK" 2>/dev/null || true
+        return 0
+    fi
+    out=""
+    if [[ -w /dev/tty ]]; then
+        out=/dev/tty
+    elif [[ -w /dev/stderr ]]; then
+        out=/dev/stderr
+    else
+        return 0
+    fi
+    # OSC 52: ESC ] 52 ; c ; <base64> BEL
+    printf '\033]52;c;%s\a' "$b64" >"$out" 2>/dev/null || true
+}
+
+main() {
+    local real data rc=0
+    real="$(_mesh_pbcopy_real)" || {
+        printf 'pbcopy: system pbcopy not found (expected /usr/bin/pbcopy)\n' >&2
+        return 127
+    }
+
+    if ! _mesh_pbcopy_want_osc52; then
+        exec "$real" "$@"
+    fi
+
+    _mesh_pbcopy_read_stdin
+    data="$_MESH_PBCOPY_BUF"
+    if printf '%s' "$data" | "$real" "$@"; then
+        :
+    else
+        rc=$?
+    fi
+    _mesh_pbcopy_emit_osc52 "$data"
+    return "$rc"
+}
+
+main "$@"

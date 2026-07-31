@@ -149,6 +149,13 @@ bundles:
         type: deploy
         spec: ./templates/cli-tools
         idempotent: true
+      # macOS: dual-write pbcopy + OSC 52 when HERDR_ENV=1 so herdr --remote
+      # clients receive agent/shell copies (Grok only uses native pbcopy on Mac).
+      - name: pbcopy-osc52
+        type: custom
+        script: ./install-pbcopy-osc52.sh
+        platforms: [mac]
+        idempotent: true
 
   - name: zsh
     label: "zsh setup"
