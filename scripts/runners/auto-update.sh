@@ -794,8 +794,24 @@ _has_autoupdate_items() {
         "$ws/topics" 2>/dev/null
 }
 
-# Epoch mtime of $1 (BSD stat then GNU stat); empty + rc1 if neither works.
-_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+# Epoch mtime of $1. GNU `stat -c` FIRST, then BSD `stat -f`.
+#
+# CRITICAL: never try BSD `stat -f %m` first on Linux. GNU coreutils treats
+# `-f` as `--file-system` (a real flag), still writes multi-line filesystem
+# status starting with `  File: "..."` to stdout for the real path, exits
+# non-zero for the bogus `%m` operand, then a trailing `|| stat -c %Y` appends
+# a real epoch. The capture becomes multi-line garbage + digits. Under
+# `set -u`, `(( now - mtime < interval ))` tokenizes `File` as a variable →
+# `File: unbound variable` and aborts the whole motor. That is the recurrent
+# `mesh update` / `mesh update -f` crash on Linux once last-package-update
+# exists. Pattern matches scripts/internal/mesh-snap `_mtime_epoch`.
+# Empty + rc1 if neither works.
+_mtime() {
+    local p="$1" out
+    out="$(stat -c %Y "$p" 2>/dev/null)" && { printf '%s\n' "$out"; return 0; }
+    out="$(stat -f %m "$p" 2>/dev/null)" && { printf '%s\n' "$out"; return 0; }
+    return 1
+}
 
 # rc 0 = throttled (the daily login package pass already ran within the window →
 # skip). MESH_UPDATE_FORCE=1 (set by `mesh upgrade`) bypasses; interval ≤0 or
@@ -808,7 +824,9 @@ _package_update_throttled() {
     local stamp="$STATE_DIR/last-package-update" now mtime
     [[ -f "$stamp" ]] || return 1
     now="$(date +%s)"; mtime="$(_mtime "$stamp")"
-    [[ -n "$mtime" ]] || return 1
+    # Digits only — never feed multi-line/stat-dump garbage into (( )).
+    # Defense-in-depth if _mtime ever regresses on a weird stat(1).
+    [[ "$mtime" =~ ^[0-9]+$ ]] || return 1
     (( now - mtime < interval ))
 }
 

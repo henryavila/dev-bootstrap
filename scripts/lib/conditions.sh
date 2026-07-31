@@ -56,9 +56,15 @@ _cond_brew_prefix() {
     printf '%s' "$BREW_PREFIX"
 }
 
-# Numeric owner uid of a path (Mac `stat -f`, Linux `stat -c`).
+# Numeric owner uid of a path. GNU `stat -c` FIRST, then BSD `stat -f`.
+# Never BSD-first: on Linux GNU `stat -f` is `--file-system` and still writes
+# multi-line `  File: "..."` status to stdout before failing, so
+# `stat -f || stat -c` captures garbage+uid (same class as auto-update _mtime).
 _cond_owner_uid() {
-    stat -f '%u' "$1" 2>/dev/null || stat -c '%u' "$1" 2>/dev/null
+    local out
+    out="$(stat -c '%u' "$1" 2>/dev/null)" && { printf '%s' "$out"; return 0; }
+    out="$(stat -f '%u' "$1" 2>/dev/null)" && { printf '%s' "$out"; return 0; }
+    return 1
 }
 
 # --- conditions --------------------------------------------------------------
