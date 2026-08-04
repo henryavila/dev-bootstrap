@@ -138,6 +138,7 @@ export function SearchPicker({ items, onDone }: SearchPickerProps) {
 
   const actionItems: MenuItem[] = [
     { id: 'open', label: 'Open with default', meta: selected?.label ?? '', action: 'open' },
+    { id: 'agent-grok', label: 'Open with Grok', meta: 'one time', action: 'agent:grok' },
     { id: 'agent-claude', label: 'Open with Claude', meta: 'one time', action: 'agent:claude' },
     { id: 'agent-codex', label: 'Open with Codex', meta: 'one time', action: 'agent:codex' },
     { id: 'shell', label: 'Open shell', meta: 'directory only', action: 'shell' },
@@ -149,6 +150,7 @@ export function SearchPicker({ items, onDone }: SearchPickerProps) {
   const openExisting = process.env.MESH_AI_OPEN_EXISTING || 'focus';
   const currentLabel = (label: string, current: boolean) => (current ? `${label} (current)` : label);
   const prefItems: MenuItem[] = [
+    { id: 'pref-agent-grok', label: currentLabel('Default agent: Grok', defaultAgent === 'grok'), meta: '', action: 'pref:agent:grok' },
     { id: 'pref-agent-claude', label: currentLabel('Default agent: Claude', defaultAgent === 'claude'), meta: '', action: 'pref:agent:claude' },
     { id: 'pref-agent-codex', label: currentLabel('Default agent: Codex', defaultAgent === 'codex'), meta: '', action: 'pref:agent:codex' },
     { id: 'pref-action-agent', label: currentLabel('Enter opens agent', defaultAction === 'agent'), meta: '', action: 'pref:action:agent' },

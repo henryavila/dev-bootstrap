@@ -200,8 +200,9 @@ and launching the agent.
 - `mesh ai <term>`             → open the project matching `<term>`; a single match opens
                                  directly, several open the picker, none errors out.
 - `mesh ai --list`             → print the full catalogue (discovered + pinned) and exit.
-- `mesh ai <term> --agent X`   → use agent `X` for this launch (claude | codex | gemini);
+- `mesh ai <term> --agent X`   → use agent `X` for this launch (grok | claude | codex | gemini);
                                  the choice is remembered per project.
+- `mesh ai <term> --grok`      → shortcut for `--agent grok`.
 - `mesh ai <term> --codex`     → shortcut for `--agent codex`.
 - `mesh ai <term> --shell`     → open the project directory in herdr without
                                  starting an agent.

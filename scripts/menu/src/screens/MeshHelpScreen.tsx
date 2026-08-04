@@ -123,7 +123,7 @@ export const MESH_HELP_COMMANDS: HelpCommand[] = [
     summary: 'Open an agent or shell in a repo',
     details: [
       'Discovers projects, focuses an existing herdr workspace, or creates a new one.',
-      'Use --claude, --codex, --shell, --list, and local picker preferences for routing.',
+      'Use --grok, --claude, --codex, --shell, --list, and local picker preferences for routing.',
     ],
   },
   {

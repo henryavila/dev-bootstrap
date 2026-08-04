@@ -201,6 +201,8 @@ describe('SearchPicker (render + keys)', () => {
     await delay(20);
     stdin.write('\t'); // actions
     await delay(20);
+    stdin.write('\x1B[B'); // down: Open with Grok
+    await delay(20);
     stdin.write('\x1B[B'); // down: Open with Claude
     await delay(20);
     stdin.write('\x1B[B'); // down: Open with Codex
@@ -217,6 +219,8 @@ describe('SearchPicker (render + keys)', () => {
     await delay(20);
     stdin.write('\t');
     await delay(20);
+    stdin.write('\x1B[B'); // Grok
+    await delay(20);
     stdin.write('\x1B[B'); // Claude
     await delay(20);
     stdin.write('\x1B[B'); // Codex
@@ -232,6 +236,8 @@ describe('SearchPicker (render + keys)', () => {
     const { stdin, calls } = mountWithAction();
     await delay(20);
     stdin.write('\x10'); // Ctrl-P
+    await delay(20);
+    stdin.write('\x1B[B'); // Default agent: Claude (Grok is first)
     await delay(20);
     stdin.write('\x1B[B'); // Default agent: Codex
     await delay(20);
@@ -274,7 +280,7 @@ describe('SearchPicker (render + keys)', () => {
     await delay(20);
     stdin.write('\t');
     await delay(20);
-    expect(lastFrame() ?? '').toContain('Open with Codex');
+    expect(lastFrame() ?? '').toContain('Open with Grok');
     stdin.write('\x1B');
     await delay(20);
     const f = lastFrame() ?? '';

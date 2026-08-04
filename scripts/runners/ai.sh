@@ -13,7 +13,8 @@
 #   mesh ai                   No term → searchable picker (open workspaces + repos).
 #                             Picker keys: Enter = saved default · Tab = actions
 #                             for the highlighted repo · Ctrl-P = local prefs.
-#   mesh ai <term> --agent X  Use agent X (claude|codex|gemini); remembered per project.
+#   mesh ai <term> --agent X  Use agent X (grok|claude|codex|gemini); remembered per project.
+#   mesh ai <term> --grok     Shortcut for --agent grok.
 #   mesh ai <term> --codex    Shortcut for --agent codex.
 #   mesh ai <term> --shell    Open the project directory without running an agent.
 #   mesh ai --list            Print the merged catalogue (discovered + pinned) and exit.
@@ -21,7 +22,7 @@
 #                            If the manifest is in git, offers to commit+push.
 #   mesh ai remove <name>     Unpin by name; also offers commit+push when in git.
 #   mesh ai list              Show pinned projects resolvable on this host.
-# Flags: --agent <name>, --claude, --codex, --shell/--dir, --list, -h/--help.
+# Flags: --agent <name>, --grok, --claude, --codex, --shell/--dir, --list, -h/--help.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -223,14 +224,15 @@ while (( $# > 0 )); do
     case "$1" in
         --agent)      shift; AGENT_OVERRIDE="${1:-}" ;;
         --agent=*)    AGENT_OVERRIDE="${1#*=}" ;;
+        --grok)       AGENT_OVERRIDE="grok" ;;
         --claude)     AGENT_OVERRIDE="claude" ;;
         --codex)      AGENT_OVERRIDE="codex" ;;
         --shell|--dir) FORCE_SHELL=1 ;;
         --list)       LIST=1 ;;
         --candidates) CANDIDATES=1 ;;   # debug: dump the merged candidate set
-        -h|--help)    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)    sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         --)         shift; [[ $# -gt 0 ]] && TERM_ARG="$1" ;;
-        -*)         log_error "ai: unknown flag '$1' (try --agent <name> --codex --shell --list --help)"; exit 2 ;;
+        -*)         log_error "ai: unknown flag '$1' (try --agent <name> --grok --codex --shell --list --help)"; exit 2 ;;
         *)          TERM_ARG="$1" ;;
     esac
     shift
