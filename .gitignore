@@ -22,3 +22,4 @@ Thumbs.db
 
 # In-repo git worktrees (kept inside the repo, never committed)
 /.worktrees/
+.worktrees/
