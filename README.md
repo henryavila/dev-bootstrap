@@ -20,15 +20,25 @@ One of two repos in a layered architecture:
 
 ### Windows (before WSL)
 
-PowerShell **as Administrator**:
+PowerShell **as Administrator**. On a virgin machine (no Git yet), download and run the host bootstrap directly:
+
+```powershell
+# ExecutionPolicy Bypass avoids Restricted-policy blocks on unsigned .ps1 files
+irm https://raw.githubusercontent.com/henryavila/mesh-workstation/main/windows/install-wsl.ps1 -OutFile $env:TEMP\install-wsl.ps1
+powershell -ExecutionPolicy Bypass -File $env:TEMP\install-wsl.ps1
+```
+
+Or, if Git is already available:
 
 ```powershell
 git clone https://github.com/henryavila/mesh-workstation "$env:USERPROFILE\mesh-workstation"
 cd "$env:USERPROFILE\mesh-workstation"
-.\windows\install-wsl.ps1
+powershell -ExecutionPolicy Bypass -File .\windows\install-wsl.ps1
 ```
 
-Restart, open the freshly-installed Ubuntu, and follow the WSL instructions below.
+The script enables WSL features, installs **Git** + **Windows Terminal** via winget, then registers **Ubuntu-24.04**. If features were just enabled it exits `2` and asks for a reboot — re-run the same command after reboot to finish. Nerd Font + Terminal theme are applied later inside Ubuntu by `shell-terminal/fonts` (CaskaydiaCove), not on the host script.
+
+Then open the freshly-installed Ubuntu and follow the WSL instructions below.
 
 ### WSL2/Ubuntu or macOS
 
@@ -47,11 +57,17 @@ cd ~/mesh-workstation
 bash setup.sh
 ```
 
-Running without control flags opens the interactive **Blink** (Ink) menu. Pick
-`topic/bundle` ids from the live catalog under `topics/*/` (for example
-`web/valet`, `remote-access/tailscale`, `ai/claude-code`, `personal/personal`),
-set git identity / paths when prompted, confirm, then the engine applies the
-selection to `~/.config/mesh/selections.list`. Cancelling aborts cleanly.
+Running without control flags opens the interactive **Blink** (Ink) menu **when
+Node is already on PATH**. Pick `topic/bundle` ids from the live catalog under
+`topics/*/` (for example `web/valet`, `remote-access/tailscale`,
+`ai/claude-code`, `personal/personal`), set git identity / paths when prompted,
+confirm, then the engine applies the selection to `~/.config/mesh/selections.list`.
+Cancelling aborts cleanly.
+
+On a virgin box (no Node yet) the first run uses a **lean bootstrap** selection
+(`foundation`, `git/config`, `shell-terminal`, `languages/node`, `personal`) so
+fnm/Node and shell PATH fragments land without silently installing the full
+default-on fleet. Re-run `bash setup.sh` in a new shell to get the full menu.
 
 > Historical note: early releases used a `whiptail` checklist over numbered
 > `00-*` / `60-web-stack` topics. That UX is gone; do not treat numbered topic
@@ -271,7 +287,7 @@ mesh-workstation/
 │   ├── templates/            # deployed when selected
 │   ├── verify.sh
 │   └── README.md
-├── windows/install-wsl.ps1   # Windows bootstrap → WSL2 + Nerd Font
+├── windows/install-wsl.ps1   # Windows bootstrap → WSL2 + Git + Windows Terminal
 ├── docs/SPEC.md              # technical specification
 └── .github/workflows/        # CI
 ```

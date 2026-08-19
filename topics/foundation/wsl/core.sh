@@ -16,6 +16,9 @@ CORE_PKGS=(
     jq
     unzip
     gettext-base
+    software-properties-common
+    locales
+    tzdata
 )
 
 # Functional probe: the runnable tools install() actually guarantees on PATH.
@@ -27,7 +30,9 @@ CORE_PKGS=(
 #   gnupg                   → gpg     (hard dep of the gnupg meta-pkg)
 #   gettext-base            → envsubst
 #   build-essential         → gcc + make (hard deps; the whole point of the pkg)
-# ca-certificates is data-only (no binary) and stays presence-only via dpkg.
+#   software-properties-common → add-apt-repository (PHP PPA / later topics)
+# ca-certificates / locales / tzdata are data-only (no binary) and stay
+# presence-only via dpkg.
 # All of these resolve on a healthy WSL box, so this never false-fails the
 # currently-passing state — it only catches a package that claims installed
 # but whose tool can't actually run. sudo-free; bash 3.2 safe.
@@ -41,6 +46,7 @@ CORE_BINS=(
     envsubst
     gcc
     make
+    add-apt-repository
 )
 
 check() {
@@ -69,8 +75,9 @@ _pkg_bins() {
         build-essential) printf '%s' "gcc make" ;;
         jq)              printf '%s' "jq" ;;
         unzip)           printf '%s' "unzip" ;;
-        gettext-base)    printf '%s' "envsubst" ;;
-        *)               printf '%s' "" ;;  # ca-certificates: data only
+        gettext-base)               printf '%s' "envsubst" ;;
+        software-properties-common) printf '%s' "add-apt-repository" ;;
+        *)                          printf '%s' "" ;;  # ca-certificates/locales/tzdata: data only
     esac
 }
 

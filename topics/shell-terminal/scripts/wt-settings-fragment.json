@@ -1,5 +1,5 @@
 {
-  "_comment": "dev-bootstrap fragment — merged into Windows Terminal settings.json by configure-windows-terminal.sh. Contains the Catppuccin Mocha color scheme, a global font default (CaskaydiaCove Nerd Font), and WSL profile overrides. Idempotent: the merge script unique_by(.name) on schemes and keeps user-level overrides outside of these three keys intact.",
+  "_comment": "mesh-workstation fragment — merged into Windows Terminal settings.json by configure-windows-terminal.sh. Contains the Catppuccin Mocha color scheme, a global font default (CaskaydiaCove Nerd Font), and WSL profile overrides. Idempotent: the merge script unique_by(.name) on schemes and keeps user-level overrides outside of these three keys intact.",
   "schemes": [
     {
       "name": "Catppuccin Mocha",

@@ -2,7 +2,7 @@
 # mesh install — curl-pipe bootstrap entry (C13.1).
 #
 # Usage:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/henryavila/dev-bootstrap/main/install)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/henryavila/mesh-workstation/main/install)
 #
 # Passthrough flags (forwarded verbatim to `mesh init`):
 #   --identity-repo URL      adopt existing identity by clone URL
@@ -32,7 +32,7 @@ done
 
 # 2. Resolve target + upstream
 WS_DIR="${MESH_WORKSTATION_DIR:-$HOME/mesh-workstation}"
-MESH_REPO_URL="${MESH_REPO_URL:-https://github.com/henryavila/dev-bootstrap.git}"
+MESH_REPO_URL="${MESH_REPO_URL:-https://github.com/henryavila/mesh-workstation.git}"
 
 # 3. Clone if missing (idempotent: existing .git ⇒ skip)
 if [[ ! -d "$WS_DIR/.git" ]]; then

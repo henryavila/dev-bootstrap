@@ -1,51 +1,72 @@
-# dev-bootstrap
+# mesh-workstation
 
-[![smoke-test](https://github.com/henryavila/dev-bootstrap/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/henryavila/dev-bootstrap/actions/workflows/smoke-test.yml)
-[![lint](https://github.com/henryavila/dev-bootstrap/actions/workflows/lint.yml/badge.svg)](https://github.com/henryavila/dev-bootstrap/actions/workflows/lint.yml)
+[![smoke-test](https://github.com/henryavila/mesh-workstation/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/henryavila/mesh-workstation/actions/workflows/smoke-test.yml)
+[![lint](https://github.com/henryavila/mesh-workstation/actions/workflows/lint.yml/badge.svg)](https://github.com/henryavila/mesh-workstation/actions/workflows/lint.yml)
 
 Configuração reproduzível de máquinas de desenvolvimento em WSL2/Ubuntu, macOS e Windows (via WSL).
 
 > **Idiomas:** [English](README.md) · Português (este arquivo)
 
-Um dos três repos de uma arquitetura em camadas:
+Um dos dois repos de uma arquitetura em camadas:
 
 | Repo | Papel | Visibilidade |
 |------|-------|--------------|
-| **dev-bootstrap** (este) | Instala ferramentas e aplica configs opinionadas globais | público |
-| [dotfiles-template](https://github.com/henryavila/dotfiles-template) | Skeleton para dotfiles pessoais (`.example` files + `install.sh`) | público (GitHub template) |
-| `<user>/dotfiles` | Dotfiles pessoais, derivado do template via *Use this template* | **privado** (por usuário) |
+| **mesh-workstation** (este) | Instala ferramentas e aplica configs opinionadas globais. Contém `template/` para scaffolding de identity. | público |
+| `<user>/mesh-identity` | Dotfiles pessoais (identidade + overrides) | **privado** (por usuário) |
 
-**Separação de responsabilidades:** o bootstrap instala CLI/daemons/stack e grava configs universais (bashrc, inputrc, gitconfig global, fragments em `~/.bashrc.d/`); os dotfiles pessoais aplicam identidade + overrides em cima.
+**Separação de responsabilidades:** o workstation instala CLI/daemons/stack e grava configs universais (bashrc, inputrc, gitconfig global, fragments em `~/.bashrc.d/`); o repo de identity aplica config pessoal + overrides em cima.
 
 ## Quickstart
 
 ### Windows (antes do WSL)
 
-PowerShell **como administrador**:
+PowerShell **como administrador**. Em máquina zerada (sem Git), baixe e rode o bootstrap do host:
 
 ```powershell
-git clone https://github.com/henryavila/dev-bootstrap "$env:USERPROFILE\dev-bootstrap"
-cd "$env:USERPROFILE\dev-bootstrap"
-.\windows\install-wsl.ps1
+irm https://raw.githubusercontent.com/henryavila/mesh-workstation/main/windows/install-wsl.ps1 -OutFile $env:TEMP\install-wsl.ps1
+powershell -ExecutionPolicy Bypass -File $env:TEMP\install-wsl.ps1
 ```
 
-Reinicie, abra o Ubuntu recém-instalado e siga as instruções WSL abaixo.
+Ou, se o Git já estiver disponível:
+
+```powershell
+git clone https://github.com/henryavila/mesh-workstation "$env:USERPROFILE\mesh-workstation"
+cd "$env:USERPROFILE\mesh-workstation"
+powershell -ExecutionPolicy Bypass -File .\windows\install-wsl.ps1
+```
+
+O script habilita WSL, instala **Git** + **Windows Terminal** via winget e registra **Ubuntu-24.04**. Se as features acabaram de ser ligadas, sai com código `2` e pede reboot — rode o mesmo comando de novo depois. Fonte Nerd + tema do Terminal vêm depois, dentro do Ubuntu, pelo bundle `shell-terminal/fonts` (CaskaydiaCove).
+
+Abra o Ubuntu recém-instalado e siga as instruções WSL abaixo.
 
 ### WSL2/Ubuntu ou macOS
+
+**Antes do bootstrap** (o que não é automatizado porque precisamos disso para *clonar* este repo):
+
+| Plataforma | Pré-req único |
+|---|---|
+| WSL2 / Linux nativo (fresh) | `sudo apt-get update && sudo apt-get install -y git curl ca-certificates` |
+| macOS (fresh) | Nada — Xcode CLT instala sob demanda na primeira vez que o `setup.sh` chama `git` |
 
 **Modo interativo (default):**
 
 ```bash
-git clone https://github.com/henryavila/dev-bootstrap ~/dev-bootstrap
-cd ~/dev-bootstrap
+git clone https://github.com/henryavila/mesh-workstation ~/mesh-workstation
+cd ~/mesh-workstation
 bash setup.sh
 ```
 
 Ao rodar sem flags de controle, o bootstrap abre o menu interativo **Blink**
-(Ink). Escolha ids `topic/bundle` do catálogo vivo em `topics/*/` (por exemplo
-`web/valet`, `remote-access/tailscale`, `ai/claude-code`, `personal/personal`),
-ajuste identidade git / paths quando pedido, confirme, e o engine aplica a
-seleção em `~/.config/mesh/selections.list`. Cancelar aborta limpo.
+(Ink) **quando o Node já está no PATH**. Escolha ids `topic/bundle` do catálogo
+vivo em `topics/*/` (por exemplo `web/valet`, `remote-access/tailscale`,
+`ai/claude-code`, `personal/personal`), ajuste identidade git / paths quando
+pedido, confirme, e o engine aplica a seleção em `~/.config/mesh/selections.list`.
+Cancelar aborta limpo.
+
+Em máquina virgin (sem Node) a primeira run usa uma seleção **lean bootstrap**
+(`foundation`, `git/config`, `shell-terminal`, `languages/node`, `personal`) para
+instalar fnm/Node e fragments de PATH sem aplicar silenciosamente a frota
+default-on inteira. Rode `bash setup.sh` de novo num shell novo para o menu completo.
 
 > Nota histórica: releases antigas usavam checklist `whiptail` sobre topics
 > numerados `00-*` / `60-web-stack`. Essa UX sumiu; não trate ids numerados nem
@@ -154,20 +175,19 @@ Primariamente para automação / CI — o menu interativo preenche essas vars pr
 
 ## Logs
 
-Saída completa de cada execução vai pra `/tmp/dev-bootstrap-<os>-<timestamp>.log`. O bootstrap imprime o path no início.
+Saída completa de cada execução vai pra `/tmp/mesh-workstation-<os>-<timestamp>.log`. O bootstrap imprime o path no início.
 
 ## Estrutura do projeto
 
 ```
-dev-bootstrap/
-├── setup.sh              # runner — detecção de OS, menu interativo, sudo warmup, orquestra topics
-├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh, menu.sh
-├── topics/NN-<nome>/         # unidades idempotentes de instalação
-│   ├── install.$OS.sh        # WSL ou Mac
-│   ├── templates/            # arquivos deployados via lib/deploy.sh
-│   ├── verify.sh             # checagem não-destrutiva
-│   └── README.md             # doc por topic
-├── windows/install-wsl.ps1   # bootstrap Windows → WSL2 + Nerd Font
+mesh-workstation/
+├── setup.sh                  # runner — OS detect, menu Blink, sudo warmup, engine
+├── scripts/lib/              # detect-os, deploy, log, install-engine, …
+├── topics/<nome>/            # unidades idempotentes (manifest.yaml + scripts)
+│   ├── manifest.yaml
+│   ├── templates/            # arquivos deployados via deploy driver
+│   └── README.md
+├── windows/install-wsl.ps1   # bootstrap Windows → WSL2 + Git + Windows Terminal
 ├── docs/SPEC.md              # especificação técnica
 └── .github/workflows/        # CI
 ```

@@ -40,23 +40,23 @@ Public `mesh-workstation` repo (historically `dev-bootstrap`) that:
 
 | Repo | Visibility | Purpose | Owner |
 |------|------------|---------|-------|
-| `henryavila/dev-bootstrap` | public | Reproducible machine setup (software + opinionated configs) | Henry |
-| `henryavila/dotfiles-template` | public, marked as template | Skeleton for any dev's personal dotfiles | Henry |
-| `henryavila/dotfiles` | **private** | Henry's personal dotfiles (created from the template) | Henry |
-| `dev-X/dotfiles` | each dev's private repo | Outsourced dev's personal dotfiles | Outsourced dev |
+| `henryavila/mesh-workstation` | public | Reproducible machine setup (software + opinionated configs); includes `template/` for identity scaffolding | Henry |
+| `<user>/mesh-identity` | **private** | Personal identity + overrides (created from workstation `template/` or an existing fork) | Each user |
 
 ### Usage flow
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ 0. git clone https://github.com/henryavila/dev-bootstrap
-│    (Windows: in %USERPROFILE%; WSL/Mac: in ~)
-│ 1. Dev on Windows → windows\install-wsl.ps1
-│ 2. Dev on WSL/Mac → bash setup.sh
-│ 3. (optional) Dev creates their own dotfiles from
-│    the public `dotfiles-template`
-│ 4. MESH_IDENTITY_REPO=... bash setup.sh applies the
-│    personal configs at the end
+│ 0. Windows virgin → irm …/windows/install-wsl.ps1
+│    (enables WSL, installs Git + Windows Terminal,
+│     registers Ubuntu-24.04; reboot+re-run if needed)
+│ 1. In Ubuntu: apt install git curl ca-certificates
+│ 2. git clone …/mesh-workstation && bash setup.sh
+│    (lean bootstrap if Node missing; full Blink menu
+│     once languages/node + shell fragments are on PATH)
+│ 3. Personal identity via menu or MESH_IDENTITY_REPO=
+│ 4. Fonts: shell-terminal/fonts installs CaskaydiaCove
+│    Nerd Font + merges Windows Terminal theme (WSL-side)
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -351,7 +351,7 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 **Purpose:** modern terminal, ready out-of-the-box.
 
 **Contents:**
-- WSL: `fzf bat eza zoxide ripgrep fd-find` via apt; `starship lazygit git-delta` via installer (not in the default apt); Nerd Font via `install-wsl.ps1` (Windows side)
+- WSL: `fzf bat eza zoxide ripgrep fd-find` via apt; `starship lazygit git-delta` via installer (not in the default apt); Nerd Font (CaskaydiaCove) via `shell-terminal/fonts` → `install-nerd-font.ps1` (Windows user-level, from WSL)
 - Mac: all via brew + `brew tap homebrew/cask-fonts` + `brew install --cask font-caskaydia-cove-nerd-font`
 
 **Templates:**
