@@ -23,7 +23,7 @@
 #                         in the menu (dev-root screen); persisted to config.env.
 #   NO_COLOR=1            disable colored output (auto if not a TTY)
 #
-# Usage: bash setup.sh [--help] [--non-interactive] [--dry-run] [--list-bundles]
+# Usage: bash setup.sh [--help] [--non-interactive] [--dry-run] [--list-bundles] [--no-mesh]
 set -euo pipefail
 
 # Minimal shells (docker run, `su -`, env -i) leave $USER unset even with a real
@@ -46,6 +46,10 @@ for arg in "$@"; do
         --non-interactive) NON_INTERACTIVE=1 ;;
         --dry-run)        DRY_RUN=1 ;;
         --list-bundles)   LIST_BUNDLES=1 ;;
+        --no-mesh)
+            MESH_NO_MESH=1
+            export MESH_NO_MESH
+            ;;
         --repair)         REPAIR_MODE=1 ;;
         --adopt)          ADOPT_MODE=1 ;;
         *) echo "setup.sh: unknown arg: $arg (try --help)" >&2; exit 64 ;;
@@ -69,6 +73,8 @@ export NON_INTERACTIVE DRY_RUN
 
 # shellcheck disable=SC1091
 source "$HERE/scripts/lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/scripts/lib/no-mesh.sh"
 
 usage() {
     cat <<'EOF'
@@ -83,6 +89,8 @@ Automation / CI mode:
   DRY_RUN=1 bash setup.sh           print what the engine would do, don't execute
   bash setup.sh --dry-run           same, flag form
   bash setup.sh --list-bundles      list every topic/bundle + default selection
+  bash setup.sh --no-mesh           omit membership: mesh bundles from the catalog
+                                    (exports MESH_NO_MESH=1 before the menu)
   bash setup.sh --repair            verify+repair installed-but-broken items only
                                     (no menu; engine --repair; = mesh doctor --fix)
   bash setup.sh --adopt             read-only: backfill install markers for tools
@@ -157,8 +165,11 @@ if [[ "$LIST_BUNDLES" == "1" ]]; then
             n="${BUNDLE_COUNT:-0}"
             for ((i=0; i<n; i++)); do
                 name_v="BUNDLE_${i}_NAME"; ds_v="BUNDLE_${i}_DEFAULT_SELECTED"; req_v="BUNDLE_${i}_REQUIRED"
+                mem_v="BUNDLE_${i}_MEMBERSHIP"
                 name="${!name_v:-}"; ds="${!ds_v:-1}"; req="${!req_v:-0}"
+                mem="${!mem_v:-}"
                 [[ -n "$name" ]] || continue
+                no_mesh_omit_bundle "$mem" && continue
                 if [[ "$req" == "1" ]]; then mark="required"
                 elif [[ "$ds" == "0" ]]; then mark="opt-in (default off)"
                 else mark="default on"; fi
