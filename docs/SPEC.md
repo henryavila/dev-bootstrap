@@ -1,8 +1,18 @@
-# dev-bootstrap — Specification
+# mesh-workstation — Specification
 
-**Version:** 1.0
-**Date:** 2026-04-19
-**Status:** approved for implementation
+**Version:** 1.0 (contract evolved in place; see §4 for live selection / `--no-mesh`)
+**Date:** 2026-04-19 (base); membership / Blink contract current as of 2026-08
+**Status:** living — §4 Interface + `membership: mesh` / `MESH_NO_MESH` is authoritative
+
+> **Historical v1 runner:** numbered `00-*` topic inventory (§3 layout, §6 “The 12
+> topics”), flow steps that gate `INCLUDE_*` and run per-topic `install.$OS.sh`
+> with “no abort on partial error” (§4 Flow steps 5–7, §11), and `dev-bootstrap`
+> naming elsewhere in this file describe the **pre-engine** bootstrap. The live
+> product contract is §4: Blink menu / `selections.list` / `--bundle`, plus the
+> `membership: mesh` + `MESH_NO_MESH` matrix. Membership apply is **fail-closed**
+> (abort nonzero if a membership bundle reappears under `--no-mesh`); that
+> supersedes the old “single-topic failure does not abort” wording for the
+> membership guard only.
 
 ## 1. Context and purpose
 
@@ -12,7 +22,7 @@ There's no reproducible process for setting up development machines (personal or
 
 ### Goal
 
-Public `dev-bootstrap` repo that:
+Public `mesh-workstation` repo (historically `dev-bootstrap`) that:
 
 1. **Configures new machines** across 3 environments: Windows (WSL bootstrap), native WSL2/Ubuntu, macOS.
 2. **Installs a reproducible stack**: git, Node, PHP 8.4, current Python, Claude Code, modern terminal UX, tmux, optional Laravel stack, optional remote access.
@@ -103,19 +113,40 @@ Every `verify.sh` MUST:
 ### Interface
 
 ```bash
-bash setup.sh                          # all topics in order
-SKIP_TOPICS="60-web-stack" bash setup.sh
-ONLY_TOPICS="00-core 10-languages" bash setup.sh
-DRY_RUN=1 bash setup.sh                # print what would run without executing
-bash setup.sh --help                   # list topics + env vars
+bash setup.sh                          # interactive Blink menu → engine apply
+bash setup.sh --list-bundles           # list topic/bundle + default mark
+bash setup.sh --no-mesh                # omit membership: mesh from the catalog
+bash setup.sh --no-mesh --bundle languages/php
+SKIP_TOPICS="identity personal" bash setup.sh   # CI hatch only
+DRY_RUN=1 bash setup.sh                # print what the engine would do
+bash setup.sh --help                   # usage
 ```
+
+> **Legacy:** `ONLY_TOPICS=…` is **not** a working v2 selection API in `setup.sh`.
+> Selection is `~/.config/mesh/selections.list`, the Blink menu, and/or repeated
+> `--bundle topic/bundle` flags. `scripts/commands/topic.sh` may still export
+> `ONLY_TOPICS` for older wrappers — do not document it as the product path.
+
+### `membership: mesh` and `MESH_NO_MESH`
+
+Manifest bundles may declare `membership: mesh` (schema enum). The five
+membership bundles are: `personal/personal`, `identity/identity`,
+`syncthing/syncthing`, `remote-access/tailscale`, `remote-access/code-server`.
+
+| Mode | Behavior |
+|------|----------|
+| Unflagged | Membership bundles stay in the catalog; `personal` and `identity` remain required locks alongside `foundation/base`, `git/config`, `shell-terminal/cli-tools`, `shell-terminal/zsh`. |
+| `--no-mesh` / `MESH_NO_MESH=1` | Catalog omits membership bundles (remove, do not grey). Unlock list (`git/config`, `shell-terminal/cli-tools`, `shell-terminal/zsh`) loses required locks and starts unchecked. Headless default without `--bundle` is **only** `foundation/base`. Engine apply **aborts nonzero** if any membership bundle appears in the resolved selection/closure. `atuin-login` is a no-op. |
+
+`mesh menu --no-mesh` exports the same `MESH_NO_MESH=1` before launching the TUI.
 
 ### Recognized env vars
 
 | Var | Effect |
 |-----|--------|
-| `SKIP_TOPICS` | list of topics to skip (space-separated) |
-| `ONLY_TOPICS` | run only these (ignore the rest) |
+| `SKIP_TOPICS` | CI hatch: space-separated topic ids dropped from the resolved selection |
+| `ONLY_TOPICS` | **Legacy / dead in v2 `setup.sh`** — not a working selection API |
+| `MESH_NO_MESH=1` | Same as `--no-mesh` (exported by the flag before menu/apply) |
 | `DRY_RUN=1` | don't execute, just list |
 | `MESH_IDENTITY_REPO` | URL of the personal dotfiles repo (used by topic `95-dotfiles-personal`) |
 | `MESH_IDENTITY_DIR` | clone destination (default: `~/mesh-identity`) |
@@ -131,13 +162,21 @@ bash setup.sh --help                   # list topics + env vars
 
 ### Flow
 
+**Current (v2 engine):** resolve selection from Blink / `selections.list` /
+`--bundle`; under `MESH_NO_MESH=1` omit membership + demote unlock list; engine
+apply is fail-closed on membership leakage; item failures are summarized per
+engine policy.
+
+**Historical v1 topic-runner** (kept for archaeology — do not implement new
+work against this):
+
 ```
 1. OS=$(bash lib/detect-os.sh); export OS
 2. if OS=mac: eval "$(bash lib/detect-brew.sh)"; export BREW_BIN BREW_PREFIX
    (if brew isn't installed yet on the first run, that's fine — topic 00-core
     doesn't depend on brew; detection re-runs after 00-core if needed)
 3. list topics/*/ in alphabetical order
-4. apply SKIP_TOPICS / ONLY_TOPICS filters
+4. resolve selection from Blink menu, `selections.list`, and/or repeated `--bundle` flags; apply `SKIP_TOPICS` CI hatch if set; under `MESH_NO_MESH=1` omit `membership: mesh` and demote the unlock list
 5. for opt-in topics, check the corresponding env var:
      60-web-stack    requires INCLUDE_WEBSTACK=1    (skip with message otherwise)
      70-remote-access    requires INCLUDE_REMOTE=1
@@ -149,9 +188,12 @@ bash setup.sh --help                   # list topics + env vars
    c. bash $installer 2>&1 | tee -a $LOG   (inherits $OS, $BREW_PREFIX, $CODE_DIR, $GIT_NAME, etc.)
    d. if $topic/templates/ exists: bash lib/deploy.sh $topic/templates
    e. capture exit code; mark failure but keep going (no abort on partial error)
+      NOTE: under MESH_NO_MESH, membership leakage still aborts (fail-closed) —
+      that guard overrides this “no abort” sentence.
 7. print summary (passed/failed/skipped)
 8. exit 0 if everything passed, 1 otherwise
 ```
+
 
 **Variables exported by the runner** (inherited by all installers and deploy.sh):
 `OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `MESH_IDENTITY_REPO`, `MESH_IDENTITY_DIR`, `MESH_NPM_GLOBAL`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_WEBSTACK`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `INCLUDE_POSTGRES`, `POSTGRES_VERSION`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
@@ -271,7 +313,14 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 ## 6. The 12 topics
 
+> **Historical inventory.** Numbered `00-core` … `95-dotfiles-personal` names
+> below are the v1 topic-runner layout. Live catalog dirs are unnumbered
+> (`topics/foundation`, `topics/shell-terminal`, `topics/web`, …) with bundles
+> in each `manifest.yaml`. Prefer `bash setup.sh --list-bundles` and §4 for
+> selection / membership rules.
+
 ### `00-core`
+
 
 **Purpose:** minimum tools every dev needs, plus the runner's own dependencies (envsubst).
 
@@ -541,12 +590,20 @@ jobs:
       - uses: actions/checkout@v4
       - name: bootstrap (safe topics)
         run: |
-          ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash setup.sh
+          bash setup.sh --non-interactive \
+            --bundle foundation/base \
+            --bundle languages/php \
+            --bundle shell-terminal/cli-tools \
+            --bundle shell-terminal/zsh \
+            --bundle git/config
       - name: idempotency check (2nd run)
         run: |
-          ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash setup.sh
+          bash setup.sh --non-interactive \
+            --bundle foundation/base \
+            --bundle languages/php \
+            --bundle shell-terminal/cli-tools \
+            --bundle shell-terminal/zsh \
+            --bundle git/config
       - name: verify
         run: for t in topics/{00-core,10-languages,20-terminal-ux,30-shell,40-tmux,50-git,80-claude-code}; do
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
@@ -557,12 +614,20 @@ jobs:
       - uses: actions/checkout@v4
       - name: bootstrap
         run: |
-          ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash setup.sh
+          bash setup.sh --non-interactive \
+            --bundle foundation/base \
+            --bundle languages/php \
+            --bundle shell-terminal/cli-tools \
+            --bundle shell-terminal/zsh \
+            --bundle git/config
       - name: idempotency check
         run: |
-          ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash setup.sh
+          bash setup.sh --non-interactive \
+            --bundle foundation/base \
+            --bundle languages/php \
+            --bundle shell-terminal/cli-tools \
+            --bundle shell-terminal/zsh \
+            --bundle git/config
       - name: verify
         run: for t in topics/{00-core,10-languages,20-terminal-ux,30-shell,40-tmux,50-git,80-claude-code}; do
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
@@ -618,9 +683,13 @@ fi
 
 ## 11. Error handling
 
-- A single-topic failure **does not abort** `setup.sh` — it continues with the rest
-- The final summary lists failures
-- Final exit code: 0 if everything OK, 1 if any failed
+- **Membership guard (current):** under `--no-mesh` / `MESH_NO_MESH=1`, if any
+  `membership: mesh` bundle appears in the resolved selection/closure, apply
+  **aborts nonzero** (fail-closed). This overrides the historical “keep going”
+  rule for that guard only — see §4.
+- **Historical v1 topic-runner:** a single-topic install failure did not abort
+  `setup.sh` — it continued with the rest; the final summary listed failures;
+  final exit code was 0 if everything OK, 1 if any failed.
 - `run_cmd()` helper for sudo with retry: if `sudo` fails due to timeout, retry once after refreshing the cache (`sudo -v`)
 
 ## 12. Acceptance criteria

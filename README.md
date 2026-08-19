@@ -47,15 +47,44 @@ cd ~/mesh-workstation
 bash setup.sh
 ```
 
-Running without any control env var opens a `whiptail` menu that asks:
+Running without control flags opens the interactive **Blink** (Ink) menu. Pick
+`topic/bundle` ids from the live catalog under `topics/*/` (for example
+`web/valet`, `remote-access/tailscale`, `ai/claude-code`, `personal/personal`),
+set git identity / paths when prompted, confirm, then the engine applies the
+selection to `~/.config/mesh/selections.list`. Cancelling aborts cleanly.
 
-1. Which opt-in topics to enable (`60-web-stack` / `70-remote-access` / `82-ai-tools` / `90-editor` / `95-dotfiles-personal` / `npm-global`).
-2. `GIT_NAME` / `GIT_EMAIL` (skipped silently when `git config --global` already has them).
-3. `MESH_IDENTITY_REPO` + `MESH_IDENTITY_DIR` (only when `82-ai-tools`, `95-dotfiles-personal`, or `npm-global` is checked).
-4. `CODE_DIR` — your dev root, where repos live (default `~/code`); exported into the shell (auto-cd + tmux shortcuts) and used as the web stack's site root when installed.
-5. Final confirmation with a summary — cancelling at any screen aborts cleanly (no partial state).
+> Historical note: early releases used a `whiptail` checklist over numbered
+> `00-*` / `60-web-stack` topics. That UX is gone; do not treat numbered topic
+> ids or `INCLUDE_*=1` as the current product path.
 
-If `whiptail` isn't installed, the bootstrap installs it first (`apt install whiptail` on Linux/WSL; `brew install newt` on Mac — whiptail ships inside the `newt` formula).
+**Guest / server mode (`--no-mesh`)** — install tools without joining the mesh:
+
+```bash
+# interactive picker without membership bundles
+bash setup.sh --no-mesh
+mesh menu --no-mesh
+
+# headless: only foundation/base (then add bundles explicitly)
+NON_INTERACTIVE=1 bash setup.sh --no-mesh
+bash setup.sh --no-mesh --non-interactive --bundle languages/php
+
+# inspect the filtered catalog
+bash setup.sh --no-mesh --list-bundles
+```
+
+Under `--no-mesh` / `MESH_NO_MESH=1`:
+
+- Five `membership: mesh` bundles are **omitted from the catalog** (removed, not
+  greyed): `personal/personal`, `identity/identity`, `syncthing/syncthing`,
+  `remote-access/tailscale`, `remote-access/code-server`.
+- Unlock list (`git/config`, `shell-terminal/cli-tools`, `shell-terminal/zsh`)
+  loses required locks and starts **unchecked**.
+- Headless default without `--bundle` is **only** `foundation/base`.
+- Engine apply **aborts nonzero** (fail-closed) if any membership bundle
+  reappears in the resolved selection/closure.
+- `atuin-login` is a **no-op**.
+- The **unflagged** path still keeps `personal` / `identity` as required locks
+  alongside `foundation/base` and the unlock list.
 
 **Automation / CI mode** (no menu — env vars and flags):
 
@@ -67,31 +96,14 @@ bash setup.sh --dry-run
 NON_INTERACTIVE=1 bash setup.sh
 bash setup.sh --non-interactive
 
-# run specific topics only
-ONLY_TOPICS="00-core 10-languages" bash setup.sh
-ONLY_TOPICS="20 30" bash setup.sh
+# list every topic/bundle + default mark
+bash setup.sh --list-bundles
 
-# list official topic numbers
-bash setup.sh --list-topics
-
-# enable opt-in topics
-INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash setup.sh
-
-# pull personal dotfiles at the end
-MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git bash setup.sh
-
-# also configure npm globals under ~/.npm-global and persist PATH via dotfiles
-MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git MESH_NPM_GLOBAL=1 bash setup.sh
-
-# install AI tools from the dotfiles manifest without applying personal dotfiles
-INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git bash setup.sh
+# headless selection without the menu (repeatable)
+bash setup.sh --non-interactive --bundle languages/php --bundle databases/mysql
 ```
 
-The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `MESH_IDENTITY_REPO`, `MESH_NPM_GLOBAL`, `MESH_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
-
-`--list-topics` is read-only and intentionally lightweight. It is the official
-source for topic numbers used by `ONLY_TOPICS` and by the `mesh topic` wrapper
-from the dotfiles layer.
+The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) stdin/stdout isn't a TTY (pipe, cron, CI); (c) one or more `--bundle` flags were passed.
 
 Right after the menu (or immediately, when skipped), the bootstrap runs `sudo -v` to warm up the sudo cache — one password prompt, then subsequent `sudo` calls within the cache window (~5–15min) are silent.
 
@@ -100,7 +112,7 @@ Right after the menu (or immediately, when skipped), the bootstrap runs `sudo -v
 The bootstrap **prints at the end everything that still needs a human touch** — you don't need to remember a list. The post-run advisories cover:
 
 - `chsh` — the bootstrap **tries `sudo chsh` automatically** using the warm sudo ticket (`sudo usermod -s` as a Linux fallback). Falls back to an advisory only on LDAP/SSSD-managed corporate accounts, restricted PAM, or missing sudo cache. Opt out with `CHSH_AUTO=0`.
-- `atuin login` — the bootstrap **runs it inline** when you're on a TTY and not already logged in. Opens the system browser to atuin.sh for OAuth, polls for the code, writes the credential into atuin's daemon. Opt out with `ATUIN_LOGIN_AUTO=0` (or `NON_INTERACTIVE=1`); in that case you'll see the advisory and can run `atuin login` manually later. Detection uses `atuin status` exit code (atuin v18 stopped creating the legacy `session` file).
+- `atuin login` — the bootstrap **runs it inline** when you're on a TTY and not already logged in. Opens the system browser to atuin.sh for OAuth, polls for the code, writes the credential into atuin's daemon. Opt out with `ATUIN_LOGIN_AUTO=0` (or `NON_INTERACTIVE=1`); in that case you'll see the advisory and can run `atuin login` manually later. **Skipped entirely** when `MESH_NO_MESH=1` / `--no-mesh` (`atuin-login` is a no-op). Detection uses `atuin status` exit code (atuin v18 stopped creating the legacy `session` file).
 - `newgrp docker` / log out+in, when 45-docker just added you to the `docker` group.
 - `ngrok config add-authtoken <token>`, when `INCLUDE_NGROK=1` ran without a token available. The bootstrap **prompts for the token in the interactive menu** and stores it to `~/.local/state/mesh/secrets.env` (mode 0600), so it's only asked once per machine. Automation mode: export `NGROK_AUTHTOKEN=<token>` before running.
 - Manual `mailpit &` / `docker` service start, when systemd isn't available (rare).
@@ -125,24 +137,29 @@ imply `--full`. For a broken PHP/web runtime, use `mesh doctor --fix`.
 
 ## Topics
 
-| Topic | Installs / applies | Opt-in |
-|-------|--------------------|--------|
-| `00-core` | git, curl, build-essential, jq, unzip, envsubst (gettext) | — |
-| `10-languages` | Node via fnm + LTS, PHP (multi-version via ondrej ppa / brew; picked in the menu), Python 3, per-version `composer<ver>` wrappers | — |
-| `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove; ships shell fragment with listing + Phase E aliases (top→btop, df→duf, du→dust, ping→gping, http→xh, ps→procs); deploys generated/static zsh completions such as `_mesh` | — |
-| `30-shell` | `~/.bashrc` / `~/.zshrc` loaders + `~/.inputrc` (word-kill, completion niceties); shell fragment with navigation (`..`, `home`), shortcuts (`h`/`c`/`cla`), `alert` (Linux), utility funcs (`mkd`/`md`/`fs`/`tre`) | — |
-| `40-tmux` | tmux + `~/.tmux.conf` (prefix `Ctrl+a`; `default-shell` resolved from `/etc/passwd`) + shell fragment with `tl`/`ta`/`tn`/`tm` helpers | — |
-| `50-git` | opinionated global gitconfig (delta, zdiff3, aliases) + `~/.bashrc.d/50-git.sh` with aliases `g` / `gs` / `gco` / `whoops` / `gmm` + `__git_complete` | — |
-| `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, `*.localhost` catchall; **PostgreSQL** (opt-in, version configurable via `POSTGRES_VERSION`); shell fragment with Laravel (`art`, `artisan`, `cinst`, `migrate`…) + service restart (`srn`, `srp`, `srr`…) | `INCLUDE_WEBSTACK=1` |
-| `70-remote-access` | sshd (hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + systemd drop-in setting MTU 1200 on `tailscale0` (prevents SSH KEX PQ hang); shell fragment with Tailscale aliases (`ts`, `tip`, `tup`, `tping`, `tssh`…) + `tip-of()` helper | `INCLUDE_REMOTE=1` |
-| `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — foundation for cross-machine Claude Sync via the dotfiles layer | — |
-| `82-ai-tools` | installs package-selectable AI workflow tools from the dotfiles manifest: mdProbe for markdown review/MCP feedback, Atomic Skills for reusable agent prompts, and RTK for token-saving shell output; uses `$MESH_IDENTITY_REPO` only as manifest/installer source and does not apply personal dotfiles | `INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=<url>` |
-| `90-editor` | `~/.local/bin/typora-wait` — opens `.md` files in the Typora GUI from the terminal; WSL delegates to `Typora.exe` via interop (`wslpath -w`), macOS uses `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
-| `95-dotfiles-personal` | clones `$MESH_IDENTITY_REPO` into `$MESH_IDENTITY_DIR` (default `~/mesh-identity`) + runs its `install.sh`; optional `MESH_NPM_GLOBAL=1` configures npm globals under `~/.npm-global` | `INCLUDE_IDENTITY=1 MESH_IDENTITY_REPO=<url>` |
+Live catalog dirs under `topics/<id>/` (unnumbered). Select bundles in Blink,
+`selections.list`, or `--bundle topic/bundle`. Full list: `bash setup.sh --list-bundles`.
+
+| Topic | Example bundles | Notes |
+|-------|-----------------|-------|
+| `foundation` | `foundation/base` | Core packages (git, curl, jq, envsubst, …) |
+| `languages` | `languages/node`, `languages/php` | Node via fnm, multi-PHP, Python |
+| `shell-terminal` | `shell-terminal/cli-tools`, `shell-terminal/zsh`, `shell-terminal/tmux` | fzf/bat/eza/starship/atuin, zsh+completions, tmux |
+| `git` | `git/config`, `git/lazygit`, `git/gpg-signing` | Global gitconfig + shell aliases |
+| `web` | `web/valet`, `web/nginx-php-fpm`, `web/mailpit`, `web/ngrok` | Local HTTPS / nginx+PHP-FPM stack |
+| `databases` | `databases/mysql`, `databases/redis`, `databases/postgresql` | DB servers + drivers |
+| `containers` | `containers/docker` | Docker / Colima |
+| `remote-access` | `remote-access/ssh`, `remote-access/mosh`, `remote-access/tailscale`, `remote-access/code-server` | `tailscale` + `code-server` are `membership: mesh` |
+| `syncthing` | `syncthing/syncthing` | P2P sync — `membership: mesh` |
+| `identity` | `identity/identity` | gh + SSH machine identity — `membership: mesh` |
+| `personal` | `personal/personal` | Clone/apply mesh-identity — `membership: mesh` |
+| `ai` | `ai/claude-code`, `ai/mdprobe`, `ai/atomic-skills`, `ai/rtk` | Agent CLI + workflow tools |
 
 Full alias inventory: [`docs/ALIASES.md`](docs/ALIASES.md).
 
-Every topic has its own `README.md`. Internal flow: `install.$OS.sh` (if present) or `install.sh` (OS-agnostic fallback), then `lib/deploy.sh` processes `templates/` when applicable. Templates named `bashrc.d-<topic>.sh` / `zshrc.d-<topic>.sh` map automatically to `~/.bashrc.d/<topic>.sh` / `~/.zshrc.d/<topic>.sh`.
+Every topic has its own `README.md` (except thin membership-only dirs that point
+at the manifest). Bundles declare items in `topics/*/manifest.yaml`; the engine
+applies selected items and deploys templates under `topics/<id>/templates/`.
 
 ## Env vars and CLI flags
 
@@ -152,11 +169,12 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 |------------|--------|
 | `--non-interactive` / `NON_INTERACTIVE=1` | Skip the menu even on a TTY |
 | `--dry-run` / `DRY_RUN=1` | Print what would run without executing (also skips `sudo -v`) |
-| `--list-topics` | List official topic numbers and names without running installers |
+| `--list-bundles` | List every `topic/bundle` and its default mark (required / default on / opt-in) |
+| `--no-mesh` / `MESH_NO_MESH=1` | Omit the five `membership: mesh` bundles (remove, do not grey); unlock `git/config` + `shell-terminal/cli-tools` + `shell-terminal/zsh` (unchecked); headless default `foundation/base` only; fail-closed apply; `atuin-login` no-op |
+| `--bundle topic/bundle` | Add a bundle to the headless selection (repeatable; implies non-interactive) |
 | `--help` / `-h` | Usage message |
-| `SKIP_TOPICS` | space-separated list of topics to skip |
-| `ONLY_TOPICS` | run only these topics; accepts full names (`20-terminal-ux`) or numeric shorthand (`20`) |
-| `DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS=1` | strict topic mode used by `mesh topic`: if an explicitly requested opt-in topic is disabled, fail instead of silently skipping it |
+| `SKIP_TOPICS` | CI hatch: space-separated **topic ids** dropped from the resolved selection (not a product catalog mode) |
+| `ONLY_TOPICS` | **Legacy / dead in v2 `setup.sh`** — not a working selection API; use `--bundle`, the Blink menu, or a saved `selections.list` |
 | `MESH_IDENTITY_REPO` | URL/path of the dotfiles repo used by `82-ai-tools` and `95-dotfiles-personal` (accepts `file://` for local testing) |
 | `MESH_IDENTITY_DIR` | clone destination (default `~/mesh-identity`) |
 | `MESH_NPM_GLOBAL=1` | pass opt-in to the dotfiles installer to set npm global prefix to `~/.npm-global` and persist `~/.npm-global/bin` on shell PATH |
@@ -245,13 +263,14 @@ error) — so a mac-only project simply doesn't appear on WSL.
 
 ```
 mesh-workstation/
-├── setup.sh              # runner — OS detection, interactive menu, sudo warmup, topic orchestration
-├── lib/                      # detect-os.sh, detect-brew.sh, deploy.sh, log.sh, state-dir.sh
-├── topics/NN-<name>/         # idempotent installation units
-│   ├── install.$OS.sh        # WSL or Mac
-│   ├── templates/            # files deployed via lib/deploy.sh
-│   ├── verify.sh             # non-destructive check
-│   └── README.md             # per-topic docs
+├── setup.sh                  # runner — Blink menu / --bundle / engine apply
+├── scripts/lib/              # detect-os, deploy, catalog, init, …
+├── schema/manifest.schema.json
+├── topics/<id>/              # unnumbered topics (foundation, git, web, …)
+│   ├── manifest.yaml         # bundles + items
+│   ├── templates/            # deployed when selected
+│   ├── verify.sh
+│   └── README.md
 ├── windows/install-wsl.ps1   # Windows bootstrap → WSL2 + Nerd Font
 ├── docs/SPEC.md              # technical specification
 └── .github/workflows/        # CI
@@ -271,7 +290,7 @@ mesh-workstation/
 | `v2026-05-03` | **Camada 4 — brew custom prefix first-class** (Mac, two PRs, closes the §4.7.5 / D43 follow-up to v2026-05-02). PR #5 (`5f1dd64`): `lib/launch-wrapper.sh` (294 LOC) — generates user-scope LaunchAgents that wrap brew binaries living in non-canonical (e.g. `/Volumes/External/homebrew`) prefixes via a rootfs shim script that `exec`s the external binary. Workaround for the macOS TCC sandbox bug that rejects user-scope LaunchAgents whose `ProgramArguments[0]` is in a `noowners` volume (exit 78 EX_CONFIG); empirical mechanism: TCC entitlement granted at spawn is preserved across `execve`, so a wrapper-in-rootfs that exec's the external binary works (validated side-by-side: `homebrew.mxcl.redis` direct → exit 78 vs `com.henry.test-extbrew-wrapper` rootfs-→-exec → state=running, +PONG on :16399). Wired up Syncthing in `topics/80-claude-code/install.mac.sh` (replaces the old `warn` text instructing manual plist creation, which never worked anyway). PR #6 (`0061564`): `lib/state.sh` (`~/.config/dev-bootstrap/state.env`, mode 0600, shell-sourceable `KEY="VALUE"`) + decision-ladder in `topics/00-core/install.mac.sh` (5 rungs: `detected_existing` → `state_replay` → `env_var` → `prompt` → `default`) + untar-anywhere via `git clone Homebrew/brew` for custom prefixes (the official `curl|bash` installer ignores `--prefix`) + structural bottle-less warning enumerating D31 + D32 + D34 + D42 + launch-wrapper trade-offs (TTY blocks on y/N, non-TTY logs and proceeds — CI-safe) + `BREW_CUSTOM_PREFIX` env var override + redis + mailpit also wrapped via `lib/launch-wrapper.sh`. **Bug fix tangentially caught in the same PR**: bash 3.2's `"${arr[@]+"${arr[@]}"}"` expands to one empty arg when the array is empty (vs zero args in bash 4+), which leaked into the plist as `<key></key><string></string>` inside `EnvironmentVariables` — malformed XML, EX_CONFIG=78, the very thing this lib exists to prevent. Fixed with explicit `${#arr[@]}` guard; regression-tested. **Hygiene**: `lib/uninstall.sh:159` shellcheck SC2221/SC2222 cleared (redundant `/*` pattern subsumed by `*/*`). M2 production validation: `com.henry.{syncthing,redis,mailpit}` all running with PIDs, liveness probes alive on :8384/:6379/:8025. 59/59 launch-wrapper + 29/29 brew-prefix-firstclass + 19/19 state tests green; no regressions. |
 | `v2026-05-04` | **Bootstrap "create from template" UX** (D45) — `lib/menu.sh` adds a 4-screen whiptail flow (yes/no "create from template?" + template repo + new owner + new name + private/public) before the legacy URL prompt. Sets `CREATE_IDENTITY_FROM_TEMPLATE=1` + `*_NEW_REPO_*` exports. ESC=255 captured at every step (yesno prompts must NOT silently flip to "No" on ESC). `topics/95-dotfiles-personal/install.sh` adds a `gh repo create --template … --clone --directory $MESH_IDENTITY_DIR` block gated on the env flag, with 3-stage gh validation (`command -v gh` + `gh auth status` + `gh api user -q .login` for scope verification — `gh auth status` exits 0 even with missing scopes). Failures emit `followup critical` + `exit 1`. Preserves D40 drift cleanup (`source lib/uninstall.sh` + `uninstall_apply data/uninstall.list`). bash 3.2 hygiene: split `local var=$(cmd) \|\| handler` into separate declare + assign lines (D44 family bug — `local`'s rc masks cmd's rc on bash 3.2). Visibility flag uses an array (no SC2086 disable). 84/84 lint + 26/26 uninstall-mechanism + 12/12 deploy-manifest + 196/196 regression tests green. |
 | `v2026-05-05` | **PostgreSQL opt-in** in `60-web-stack`. New `INCLUDE_POSTGRES=1` flag (sub-opt-in alongside `INCLUDE_MAILPIT`/`MSSQL`/`NGROK`), default-ON checkbox in the menu, dedicated screen for `POSTGRES_VERSION` (default 17, env-pre-seedable). New `topics/60-web-stack/scripts/install-postgres.sh` (Mac + Linux) — Mac path uses brew + `launch_wrapper_install_extbrew` for custom prefixes (TCC-safe per D43), Linux path uses the PGDG APT repo (`apt.postgresql.org`) with modern `signed-by` keyring under `/etc/apt/keyrings/`. Pre-flight `:5432` port-conflict check (mirrors web-stack-port-conflict pattern for nginx :80) — foreign owner triggers warn + skip service start, role/db pristine-only (queries `pg_roles` / `pg_database` before `createuser`/`createdb` so existing setups aren't disturbed). Cross-major guard: detecting an existing different `postgresql@<v>` install warns + skips reinstall (no auto-migration). Linux uses `--no-install-recommends` (defends against the PHP-recommends infection family from D43). Topic UI label updated `60-web-stack: multi-PHP + nginx + MySQL + mkcert + reverse proxy` → `Web + DB stack (PHP + nginx + MySQL + Postgres + mkcert)`. New `tests/integration/postgres-install.test.sh` — 30 contract assertions covering version validation, port detection, pristine-only role creation, launch-wrapper integration, PGDG repo setup, install/menu wiring. 30/30 + 570/570 full suite green. |
-| (untagged, 2026-05-11) | **code-server opt-in** in `85-code-server` for macOS. Installs upstream standalone under `~/.local`, writes a user LaunchAgent `com.${USER}.code-server`, binds only to `127.0.0.1:${CODE_SERVER_PORT}`, keeps password auth and `config.yaml` mode `0600`, and exposes through Tailscale Serve by default (`CODE_SERVER_TAILSCALE_SERVE=1`; disable with `0`). Interactive installs prompt for a hidden password; non-interactive installs generate one and show it only in the final bootstrap summary. If missed, the password remains in `~/.config/code-server/config.yaml`; hashed-password configs cannot be recovered and should be reset with `CODE_SERVER_REWRITE_CONFIG=1`. Re-running the topic does not upgrade an existing binary by surprise: it checks the latest upstream release and prints an explicit `CODE_SERVER_UPGRADE=1 CODE_SERVER_VERSION=<latest> ONLY_TOPICS=85 ...` command when newer code-server is available. |
+| (untagged, 2026-05-11) | **code-server opt-in** in `85-code-server` for macOS. Installs upstream standalone under `~/.local`, writes a user LaunchAgent `com.${USER}.code-server`, binds only to `127.0.0.1:${CODE_SERVER_PORT}`, keeps password auth and `config.yaml` mode `0600`, and exposes through Tailscale Serve by default (`CODE_SERVER_TAILSCALE_SERVE=1`; disable with `0`). Interactive installs prompt for a hidden password; non-interactive installs generate one and show it only in the final bootstrap summary. If missed, the password remains in `~/.config/code-server/config.yaml`; hashed-password configs cannot be recovered and should be reset with `CODE_SERVER_REWRITE_CONFIG=1`. Re-running the topic does not upgrade an existing binary by surprise: it checks the latest upstream release and prints an explicit `CODE_SERVER_UPGRADE=1 CODE_SERVER_VERSION=<latest> bash setup.sh --non-interactive --bundle remote-access/code-server` command when newer code-server is available. |
 
 ### Release discipline
 
@@ -295,9 +314,9 @@ This repo **never** versions personal configs (SSH, git identity, project-specif
 
 ## Contributing
 
-1. Adding a new topic: copy the structure of `topics/00-core/`.
+1. Adding a new topic: copy the structure of an existing dir under `topics/` (e.g. `topics/foundation/`) and register bundles in `manifest.yaml`.
 2. Idempotency required: a second run must be a no-op (`already installed`, `up to date`). CI enforces this.
-3. Before opening a PR: `shellcheck topics/<topic>/*.sh` must pass.
+3. Before opening a PR: `shellcheck` on topic scripts must pass.
 
 ## See also
 

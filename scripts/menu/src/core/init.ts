@@ -5,11 +5,87 @@
  *   - absent → fresh install: every bundle except `default_selected: false`
  *     (required bundles always in).
  * Either way the requires_bundles closure is applied so deps are present.
+ *
+ * Under MESH_NO_MESH=1 the catalog is filtered (membership: mesh removed) and
+ * the unlock list loses required locks / starts unchecked before these helpers
+ * run — see applyNoMeshCatalog / NO_MESH_UNLOCK_KEYS.
  */
 import { closeRequires } from './delta.js';
+import { flattenBundles } from './manifest-reader.js';
 import { readSelections } from './selections-io.js';
 import { selectionsFile } from './paths.js';
-import type { BundleRef } from '../types.js';
+import type { Bundle, BundleRef, Topic } from '../types.js';
+
+/** Plan Decision 10 — mirrored in scripts/lib/no-mesh.sh NO_MESH_UNLOCK_KEYS. */
+export const NO_MESH_UNLOCK_KEYS = [
+  'git/config',
+  'shell-terminal/cli-tools',
+  'shell-terminal/zsh',
+] as const;
+
+const UNLOCK_SET: ReadonlySet<string> = new Set(NO_MESH_UNLOCK_KEYS);
+
+/** True when setup.sh / mesh menu exported MESH_NO_MESH=1. */
+export function noMeshActive(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.MESH_NO_MESH === '1';
+}
+
+/**
+ * Drop bundles tagged membership: mesh and topics left empty. Remove, do not
+ * grey — the picker never sees those rows under no-mesh.
+ */
+export function filterMembershipTopics(topics: Topic[]): Topic[] {
+  const out: Topic[] = [];
+  for (const t of topics) {
+    const bundles = t.bundles.filter((b) => b.membership !== 'mesh');
+    if (bundles.length > 0) out.push({ ...t, bundles });
+  }
+  return out;
+}
+
+/**
+ * Under no-mesh only: demote unlock-list bundles to optional + unchecked.
+ * foundation/base keeps required. Returns new refs (does not mutate inputs).
+ */
+export function applyNoMeshUnlocks(refs: BundleRef[]): BundleRef[] {
+  return refs.map((r) => {
+    if (!UNLOCK_SET.has(r.key)) return r;
+    const bundle: Bundle = {
+      ...r.bundle,
+      required: false,
+      default_selected: false,
+    };
+    return { ...r, bundle };
+  });
+}
+
+/**
+ * Apply the no-mesh catalog transform: strip membership, then unlock the
+ * documented list. No-op when MESH_NO_MESH is unset/0.
+ */
+export function applyNoMeshCatalog(
+  topics: Topic[],
+  env: NodeJS.ProcessEnv = process.env,
+): { topics: Topic[]; refs: BundleRef[] } {
+  const filtered = noMeshActive(env) ? filterMembershipTopics(topics) : topics;
+  const flat = flattenBundles(filtered);
+  const refs = noMeshActive(env) ? applyNoMeshUnlocks(flat) : flat;
+  // Rebuild topics from (possibly unlocked) refs so required/default_selected
+  // demotions are visible to TopicPicker via topic.bundles.
+  if (!noMeshActive(env)) return { topics: filtered, refs };
+  const byId = new Map<string, Topic>();
+  for (const r of refs) {
+    const existing = byId.get(r.topic.id);
+    if (!existing) {
+      byId.set(r.topic.id, { ...r.topic, bundles: [r.bundle] });
+    } else {
+      existing.bundles.push(r.bundle);
+    }
+  }
+  // Preserve filtered topic order.
+  const rebuilt = filtered.map((t) => byId.get(t.id)!).filter(Boolean);
+  return { topics: rebuilt, refs };
+}
 
 /** Fresh-install default: required, or anything not explicitly default_selected:false. */
 export function defaultSelected(refs: BundleRef[]): Set<string> {

@@ -43,13 +43,14 @@ Native-Linux users outside WSL: no terminal emulator config runs. Use whatever t
   also emits OSC 52 so `herdr --remote` clients receive agent/shell copies.
   Override with `MESH_PBCOPY_OSC52=0|1`. Source: `bin/pbcopy`.
 
-`30-shell` adds `~/.local/share/zsh/site-functions` to `fpath` before
-`compinit`; this topic owns the completion files deployed into that directory.
-If `mesh <TAB>` falls back to files, re-run `ONLY_TOPICS=20 bash setup.sh`
-or `mesh topic 20` from an installed dotfiles layer, then open a new shell.
+The `shell-terminal/zsh` bundle adds `~/.local/share/zsh/site-functions` to
+`fpath` before `compinit` and owns the completion files deployed into that
+directory. If `mesh <TAB>` falls back to files, re-apply with
+`bash setup.sh --non-interactive --bundle shell-terminal/zsh` (or select the
+bundle in the Blink menu / `selections.list`), then open a new shell.
 
 ## Customization
 
-- **Theme change:** edit `templates/starship.toml` (bash prompt) or your personal `~/.p10k.zsh` (zsh prompt) and re-run `ONLY_TOPICS=20-terminal-ux bash setup.sh`.
+- **Theme change:** edit `templates/cli-tools/starship.toml` (bash prompt) or your personal `~/.p10k.zsh` (zsh prompt) and re-apply with `bash setup.sh --non-interactive --bundle shell-terminal/cli-tools` (and `--bundle shell-terminal/zsh` if you also changed zsh/p10k wiring).
 - **Different font:** override `NF_PS_NAME` in `configure-iterm2-font.sh` / adjust the `font.face` in `scripts/wt-settings-fragment.json`.
 - **Skip terminal auto-config:** the two scripts are each gated by `-x` checks in `install.*.sh`; remove the corresponding block if you prefer to manage the emulator by hand.

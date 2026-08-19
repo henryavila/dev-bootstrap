@@ -15,6 +15,7 @@ bundles:
     label: "GitHub identity"
     desc: "gh CLI + SSH key + GitHub auth"
     required: true
+    membership: mesh
     icon_name: github
     items:
       - name: gh-mac

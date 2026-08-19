@@ -1,14 +1,19 @@
-# personal (required)
+# personal (required on mesh nodes)
 
 Clones your private **mesh-identity** repo and applies it — the layer that makes
 the machine *yours* (SSH config, git identity, shell overrides, personal aliases,
 secrets deploy, etc.). Runs last, on top of the stack the earlier topics install.
 
-Activated by `MESH_IDENTITY_REPO` (the menu collects it, or pre-seed it for
-automation):
+`personal/personal` is tagged `membership: mesh` — under `--no-mesh` /
+`MESH_NO_MESH=1` it is **omitted from the catalog** (not available for guests).
+
+On a mesh node, select it in Blink / `selections.list` or pass
+`--bundle personal/personal`. `MESH_IDENTITY_REPO` is collected by the menu (or
+pre-seed for automation):
 
 ```bash
-INCLUDE_IDENTITY=1 MESH_IDENTITY_REPO=git@github.com:youruser/mesh-identity.git bash setup.sh
+MESH_IDENTITY_REPO=git@github.com:youruser/mesh-identity.git \
+  bash setup.sh --non-interactive --bundle personal/personal
 ```
 
 Optional: `MESH_NPM_GLOBAL=1` to also configure npm globals. AI tooling is a

@@ -83,9 +83,11 @@ export interface Bundle {
   label: string;
   desc: string;
   platforms?: Platform[];
-  required?: boolean;
-  default_selected?: boolean;
-  requires_bundles?: string[];
+    required?: boolean;
+    default_selected?: boolean;
+    requires_bundles?: string[];
+    /** Present when this bundle is mesh-node membership (stripped by --no-mesh). */
+    membership?: 'mesh';
   icon_name?: string;
   items: Item[];
   options?: Option[];

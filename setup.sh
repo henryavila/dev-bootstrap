@@ -24,6 +24,7 @@
 #   NO_COLOR=1            disable colored output (auto if not a TTY)
 #
 # Usage: bash setup.sh [--help] [--non-interactive] [--dry-run] [--list-bundles]
+#                      [--no-mesh] [--bundle topic/bundle]...
 set -euo pipefail
 
 # Minimal shells (docker run, `su -`, env -i) leave $USER unset even with a real
@@ -40,17 +41,33 @@ DRY_RUN="${DRY_RUN:-0}"
 LIST_BUNDLES=0
 REPAIR_MODE=0
 ADOPT_MODE=0
-for arg in "$@"; do
-    case "$arg" in
-        --help|-h)        SHOW_HELP=1 ;;
-        --non-interactive) NON_INTERACTIVE=1 ;;
-        --dry-run)        DRY_RUN=1 ;;
-        --list-bundles)   LIST_BUNDLES=1 ;;
-        --repair)         REPAIR_MODE=1 ;;
-        --adopt)          ADOPT_MODE=1 ;;
-        *) echo "setup.sh: unknown arg: $arg (try --help)" >&2; exit 64 ;;
+CLI_BUNDLES=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)         SHOW_HELP=1; shift ;;
+        --non-interactive) NON_INTERACTIVE=1; shift ;;
+        --dry-run)         DRY_RUN=1; shift ;;
+        --list-bundles)    LIST_BUNDLES=1; shift ;;
+        --no-mesh)
+            MESH_NO_MESH=1
+            export MESH_NO_MESH
+            shift
+            ;;
+        --bundle)
+            if [[ $# -lt 2 || "$2" == -* ]]; then
+                echo "setup.sh: --bundle needs a topic/bundle argument" >&2
+                exit 64
+            fi
+            CLI_BUNDLES+=("$2")
+            shift 2
+            ;;
+        --repair)          REPAIR_MODE=1; shift ;;
+        --adopt)           ADOPT_MODE=1; shift ;;
+        *) echo "setup.sh: unknown arg: $1 (try --help)" >&2; exit 64 ;;
     esac
 done
+# Explicit --bundle list is a headless selection; never open the menu over it.
+[[ "${#CLI_BUNDLES[@]}" -gt 0 ]] && NON_INTERACTIVE=1
 # --repair (verify/operational plan §C, via `mesh doctor --fix`): a verify+repair
 # sweep, never the menu. Force non-interactive so the menu is skipped and any
 # unset option falls back to its silent default; the engine repairs only items
@@ -69,6 +86,8 @@ export NON_INTERACTIVE DRY_RUN
 
 # shellcheck disable=SC1091
 source "$HERE/scripts/lib/log.sh"
+# shellcheck disable=SC1091
+source "$HERE/scripts/lib/no-mesh.sh"
 
 usage() {
     cat <<'EOF'
@@ -83,6 +102,11 @@ Automation / CI mode:
   DRY_RUN=1 bash setup.sh           print what the engine would do, don't execute
   bash setup.sh --dry-run           same, flag form
   bash setup.sh --list-bundles      list every topic/bundle + default selection
+  bash setup.sh --no-mesh           omit membership: mesh bundles from the catalog
+                                    (exports MESH_NO_MESH=1 before the menu);
+                                    headless default is foundation/base only
+  bash setup.sh --bundle T/B        add topic/bundle to the headless selection
+                                    (repeatable; implies --non-interactive)
   bash setup.sh --repair            verify+repair installed-but-broken items only
                                     (no menu; engine --repair; = mesh doctor --fix)
   bash setup.sh --adopt             read-only: backfill install markers for tools
@@ -101,7 +125,12 @@ if [[ "${SHOW_HELP:-0}" == "1" ]]; then usage; exit 0; fi
 # Default selection = every bundle whose default_selected is not false (required
 # bundles are always in; parser omits the field when absent, so we apply the
 # spec defaults required=0 / default_selected=1 via ${VAR:-default}).
+# Under MESH_NO_MESH=1 with no explicit --bundle list, emit only foundation/base
+# (membership omitted; unlock list unchecked — see scripts/lib/no-mesh.sh).
 emit_default_selections() {
+    if no_mesh_emit_default_or_bundles; then
+        return 0
+    fi
     local mf topic vf
     for mf in "$HERE"/topics/*/manifest.yaml; do
         [[ -f "$mf" ]] || continue
@@ -157,8 +186,17 @@ if [[ "$LIST_BUNDLES" == "1" ]]; then
             n="${BUNDLE_COUNT:-0}"
             for ((i=0; i<n; i++)); do
                 name_v="BUNDLE_${i}_NAME"; ds_v="BUNDLE_${i}_DEFAULT_SELECTED"; req_v="BUNDLE_${i}_REQUIRED"
+                mem_v="BUNDLE_${i}_MEMBERSHIP"
                 name="${!name_v:-}"; ds="${!ds_v:-1}"; req="${!req_v:-0}"
+                mem="${!mem_v:-}"
                 [[ -n "$name" ]] || continue
+                no_mesh_omit_bundle "$mem" && continue
+                # Under --no-mesh the unlock list loses required locks and starts
+                # unchecked (mirrors applyNoMeshUnlocks in the Blink menu).
+                if no_mesh_is_unlock_key "$topic/$name"; then
+                    req=0
+                    ds=0
+                fi
                 if [[ "$req" == "1" ]]; then mark="required"
                 elif [[ "$ds" == "0" ]]; then mark="opt-in (default off)"
                 else mark="default on"; fi
@@ -355,19 +393,43 @@ if [[ "$ADOPT_MODE" == "1" ]]; then
         echo "# mesh adopt — all bundles (read-only marker-backfill scope)"
         emit_all_selections
     } > "$SELECTIONS_FILE"
-elif [[ ! -f "$SELECTIONS_FILE" ]]; then
-    info "no selections.list — computing the default selection"
+elif [[ ! -f "$SELECTIONS_FILE" || "${#CLI_BUNDLES[@]}" -gt 0 ]]; then
+    # No saved list, or explicit --bundle overrides: compute the selection.
+    # --bundle always rebuilds the list (headless contract). Under --no-mesh the
+    # default is foundation/base only; with --bundle, foundation/base + bundles.
+    if [[ "${#CLI_BUNDLES[@]}" -gt 0 ]]; then
+        info "computing selection from --bundle (${#CLI_BUNDLES[@]} explicit)"
+    else
+        info "no selections.list — computing the default selection"
+    fi
     mkdir -p "$SELECTIONS_DIR"
-    if [[ "$DRY_RUN" == "1" || "$REPAIR_MODE" == "1" ]]; then
-        # Don't persist a selections.list as a side effect of --dry-run or a
-        # --repair sweep; feed the engine via a temp file (repair only touches
-        # marker-present items anyway, so the default set merely scopes it).
+    if [[ "$REPAIR_MODE" == "1" ]]; then
+        # Don't persist a selections.list as a side effect of a --repair sweep;
+        # feed the engine via a temp file (repair only touches marker-present
+        # items anyway, so the default set merely scopes it).
+        SELECTIONS_FILE="$(mktemp -t mesh-selections.XXXXXX)"
+        trap 'rm -f "${MESH_FOLLOWUP_FILE:-}" "'"$SELECTIONS_FILE"'"' EXIT
+    elif [[ "$DRY_RUN" == "1" ]] && ! no_mesh_active && [[ "${#CLI_BUNDLES[@]}" -eq 0 ]]; then
+        # Unflagged dry-run: avoid persisting a full default-on fleet list.
         SELECTIONS_FILE="$(mktemp -t mesh-selections.XXXXXX)"
         trap 'rm -f "${MESH_FOLLOWUP_FILE:-}" "'"$SELECTIONS_FILE"'"' EXIT
     fi
     {
-        echo "# mesh selections — auto-generated default (every bundle except default_selected:false)"
-        emit_default_selections
+        if [[ "${#CLI_BUNDLES[@]}" -gt 0 ]]; then
+            echo "# mesh selections — from --bundle"
+            if no_mesh_emit_default_or_bundles "${CLI_BUNDLES[@]}"; then
+                :
+            else
+                printf '%s\n' "${CLI_BUNDLES[@]}"
+            fi
+        else
+            if no_mesh_active; then
+                echo "# mesh selections — no-mesh headless default (foundation/base only)"
+            else
+                echo "# mesh selections — auto-generated default (every bundle except default_selected:false)"
+            fi
+            emit_default_selections
+        fi
     } > "$SELECTIONS_FILE"
 fi
 

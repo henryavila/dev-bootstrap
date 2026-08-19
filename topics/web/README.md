@@ -201,9 +201,7 @@ Oracle MySQL DMG: if `/usr/local/mysql/bin/mysql` exists, the installer **skips*
 By default, the topic detects an existing healthy Valet (config dir at `~/.config/valet` plus successful `valet --version`) and skips `valet install` to save 10-30s of redundant nginx/dnsmasq/mkcert work. To bypass that detection — useful after a macOS upgrade that rotated dnsmasq config, or when recovering from a corrupted Valet state:
 
 ```bash
-FORCE_VALET_INSTALL=1 bash setup.sh --non-interactive
-# or scoped to just this topic:
-FORCE_VALET_INSTALL=1 ONLY_TOPICS="60-web-stack" bash setup.sh --non-interactive
+FORCE_VALET_INSTALL=1 bash setup.sh --non-interactive --bundle web/valet
 ```
 
 The flag is one-shot — it does not persist in the bootstrap state file. Subsequent runs without the var go back to the skip-when-healthy default.
