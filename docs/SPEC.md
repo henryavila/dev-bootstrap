@@ -103,19 +103,40 @@ Every `verify.sh` MUST:
 ### Interface
 
 ```bash
-bash setup.sh                          # all topics in order
-SKIP_TOPICS="60-web-stack" bash setup.sh
-ONLY_TOPICS="00-core 10-languages" bash setup.sh
-DRY_RUN=1 bash setup.sh                # print what would run without executing
-bash setup.sh --help                   # list topics + env vars
+bash setup.sh                          # interactive Blink menu → engine apply
+bash setup.sh --list-bundles           # list topic/bundle + default mark
+bash setup.sh --no-mesh                # omit membership: mesh from the catalog
+bash setup.sh --no-mesh --bundle languages/php
+SKIP_TOPICS="identity personal" bash setup.sh   # CI hatch only
+DRY_RUN=1 bash setup.sh                # print what the engine would do
+bash setup.sh --help                   # usage
 ```
+
+> **Legacy:** `ONLY_TOPICS=…` is **not** a working v2 selection API in `setup.sh`.
+> Selection is `~/.config/mesh/selections.list`, the Blink menu, and/or repeated
+> `--bundle topic/bundle` flags. `scripts/commands/topic.sh` may still export
+> `ONLY_TOPICS` for older wrappers — do not document it as the product path.
+
+### `membership: mesh` and `MESH_NO_MESH`
+
+Manifest bundles may declare `membership: mesh` (schema enum). The five
+membership bundles are: `personal/personal`, `identity/identity`,
+`syncthing/syncthing`, `remote-access/tailscale`, `remote-access/code-server`.
+
+| Mode | Behavior |
+|------|----------|
+| Unflagged | Membership bundles stay in the catalog; `personal` and `identity` remain required locks alongside `foundation/base`, `git/config`, `shell-terminal/cli-tools`, `shell-terminal/zsh`. |
+| `--no-mesh` / `MESH_NO_MESH=1` | Catalog omits membership bundles (remove, do not grey). Unlock list (`git/config`, `shell-terminal/cli-tools`, `shell-terminal/zsh`) loses required locks and starts unchecked. Headless default without `--bundle` is **only** `foundation/base`. Engine apply **aborts nonzero** if any membership bundle appears in the resolved selection/closure. `atuin-login` is a no-op. |
+
+`mesh menu --no-mesh` exports the same `MESH_NO_MESH=1` before launching the TUI.
 
 ### Recognized env vars
 
 | Var | Effect |
 |-----|--------|
-| `SKIP_TOPICS` | list of topics to skip (space-separated) |
-| `ONLY_TOPICS` | run only these (ignore the rest) |
+| `SKIP_TOPICS` | CI hatch: space-separated topic ids dropped from the resolved selection |
+| `ONLY_TOPICS` | **Legacy / dead in v2 `setup.sh`** — not a working selection API |
+| `MESH_NO_MESH=1` | Same as `--no-mesh` (exported by the flag before menu/apply) |
 | `DRY_RUN=1` | don't execute, just list |
 | `MESH_IDENTITY_REPO` | URL of the personal dotfiles repo (used by topic `95-dotfiles-personal`) |
 | `MESH_IDENTITY_DIR` | clone destination (default: `~/mesh-identity`) |

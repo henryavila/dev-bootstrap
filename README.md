@@ -57,6 +57,26 @@ Running without any control env var opens a `whiptail` menu that asks:
 
 If `whiptail` isn't installed, the bootstrap installs it first (`apt install whiptail` on Linux/WSL; `brew install newt` on Mac — whiptail ships inside the `newt` formula).
 
+**Guest / server mode (`--no-mesh`)** — install tools without joining the mesh
+(no identity clone, Tailscale, Syncthing, or code-server):
+
+```bash
+# interactive picker without membership bundles
+bash setup.sh --no-mesh
+mesh menu --no-mesh
+
+# headless: only foundation/base (then add bundles explicitly)
+NON_INTERACTIVE=1 bash setup.sh --no-mesh
+bash setup.sh --no-mesh --non-interactive --bundle languages/php
+
+# inspect the filtered catalog
+bash setup.sh --no-mesh --list-bundles
+```
+
+Under `--no-mesh`, bundles tagged `membership: mesh` are omitted from the
+catalog; apply aborts if any reappear in the resolved selection. Headless
+default is `foundation/base` only.
+
 **Automation / CI mode** (no menu — env vars and flags):
 
 ```bash
@@ -67,31 +87,14 @@ bash setup.sh --dry-run
 NON_INTERACTIVE=1 bash setup.sh
 bash setup.sh --non-interactive
 
-# run specific topics only
-ONLY_TOPICS="00-core 10-languages" bash setup.sh
-ONLY_TOPICS="20 30" bash setup.sh
+# list every topic/bundle + default mark
+bash setup.sh --list-bundles
 
-# list official topic numbers
-bash setup.sh --list-topics
-
-# enable opt-in topics
-INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash setup.sh
-
-# pull personal dotfiles at the end
-MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git bash setup.sh
-
-# also configure npm globals under ~/.npm-global and persist PATH via dotfiles
-MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git MESH_NPM_GLOBAL=1 bash setup.sh
-
-# install AI tools from the dotfiles manifest without applying personal dotfiles
-INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git bash setup.sh
+# headless selection without the menu (repeatable)
+bash setup.sh --non-interactive --bundle languages/php --bundle databases/mysql
 ```
 
-The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) any control var (`INCLUDE_*`, `MESH_IDENTITY_REPO`, `MESH_NPM_GLOBAL`, `MESH_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) is already set; (c) stdin/stdout isn't a TTY (pipe, cron, CI).
-
-`--list-topics` is read-only and intentionally lightweight. It is the official
-source for topic numbers used by `ONLY_TOPICS` and by the `mesh topic` wrapper
-from the dotfiles layer.
+The menu is automatically skipped when any of these is true: (a) `NON_INTERACTIVE=1` or `--non-interactive`; (b) stdin/stdout isn't a TTY (pipe, cron, CI); (c) one or more `--bundle` flags were passed.
 
 Right after the menu (or immediately, when skipped), the bootstrap runs `sudo -v` to warm up the sudo cache — one password prompt, then subsequent `sudo` calls within the cache window (~5–15min) are silent.
 
@@ -152,11 +155,12 @@ Primarily for automation / CI — the interactive menu fills these in for human 
 |------------|--------|
 | `--non-interactive` / `NON_INTERACTIVE=1` | Skip the menu even on a TTY |
 | `--dry-run` / `DRY_RUN=1` | Print what would run without executing (also skips `sudo -v`) |
-| `--list-topics` | List official topic numbers and names without running installers |
+| `--list-bundles` | List every `topic/bundle` and its default mark (required / default on / opt-in) |
+| `--no-mesh` / `MESH_NO_MESH=1` | Omit `membership: mesh` bundles from the catalog; headless default is `foundation/base` only |
+| `--bundle topic/bundle` | Add a bundle to the headless selection (repeatable; implies non-interactive) |
 | `--help` / `-h` | Usage message |
-| `SKIP_TOPICS` | space-separated list of topics to skip |
-| `ONLY_TOPICS` | run only these topics; accepts full names (`20-terminal-ux`) or numeric shorthand (`20`) |
-| `DEV_BOOTSTRAP_REQUIRE_ONLY_TOPICS=1` | strict topic mode used by `mesh topic`: if an explicitly requested opt-in topic is disabled, fail instead of silently skipping it |
+| `SKIP_TOPICS` | CI hatch: space-separated **topic ids** dropped from the resolved selection (not a product catalog mode) |
+| `ONLY_TOPICS` | **Legacy / dead in v2 `setup.sh`** — not a working selection API; use `--bundle`, the Blink menu, or a saved `selections.list` |
 | `MESH_IDENTITY_REPO` | URL/path of the dotfiles repo used by `82-ai-tools` and `95-dotfiles-personal` (accepts `file://` for local testing) |
 | `MESH_IDENTITY_DIR` | clone destination (default `~/mesh-identity`) |
 | `MESH_NPM_GLOBAL=1` | pass opt-in to the dotfiles installer to set npm global prefix to `~/.npm-global` and persist `~/.npm-global/bin` on shell PATH |
