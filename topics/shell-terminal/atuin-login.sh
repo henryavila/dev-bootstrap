@@ -9,6 +9,8 @@
 case ":$PATH:" in *":$HOME/.atuin/bin:"*) ;; *) PATH="$HOME/.atuin/bin:$PATH" ;; esac
 
 check() {
+    # --no-mesh: never touch atuin login / status (guest/server hosts).
+    [[ "${MESH_NO_MESH:-0}" == "1" ]] && return 0
     command -v atuin >/dev/null 2>&1 || [[ -x "$HOME/.atuin/bin/atuin" ]] || return 0
     # Codex review 2026-05-19 (D-F001): install() returns 0 (success) on
     # 3 skip conditions (opt-out, non-interactive, no TTY). check()/verify
@@ -22,6 +24,10 @@ check() {
 }
 
 install() {
+    if [[ "${MESH_NO_MESH:-0}" == "1" ]]; then
+        echo "[atuin-login] MESH_NO_MESH=1 — skipping atuin login." >&2
+        return 0
+    fi
     command -v atuin >/dev/null 2>&1 || [[ -x "$HOME/.atuin/bin/atuin" ]] || return 0
     if [[ "${ATUIN_LOGIN_AUTO:-1}" != "1" ]]; then
         echo "[atuin-login] ATUIN_LOGIN_AUTO=0 — skipping inline login. Run 'atuin login' when ready." >&2

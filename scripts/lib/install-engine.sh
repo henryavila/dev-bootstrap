@@ -108,6 +108,8 @@ export MESH_LIB_DIR="$ENGINE_DIR"
 . "$ENGINE_DIR/state-dir.sh"
 # shellcheck disable=SC1091
 . "$ENGINE_DIR/autoupdate-policy.sh"
+# shellcheck disable=SC1091
+. "$ENGINE_DIR/no-mesh.sh"
 
 DRY_RUN=0
 SELECTIONS_FILE=""
@@ -363,6 +365,17 @@ _bundle_requires() {
     )
 }
 
+# Echo BUNDLE_<idx>_MEMBERSHIP for topic/idx (empty when untagged).
+_bundle_membership() {
+    local topic="$1" idx="$2"
+    (
+        # shellcheck disable=SC1090
+        . "$WORK/topic__$topic.vars"
+        local mv="BUNDLE_${idx}_MEMBERSHIP"
+        printf '%s' "${!mv:-}"
+    )
+}
+
 # rc 0 if the bundle's platforms: list is empty or includes $PLATFORM.
 _bundle_applies_platform() {
     local topic="$1" idx="$2"
@@ -445,6 +458,25 @@ while [[ "${#queue[@]}" -gt 0 ]]; do
         fi
     done < <(_bundle_requires "$topic" "$idx")
 done
+
+# ─── no-mesh membership deny (fail-closed, plan P3) ───────────────────────────
+# After orphan filter + requires_bundles closure: if MESH_NO_MESH=1 and any
+# selected/closed bundle carries membership=mesh, abort nonzero and mutate
+# nothing (before markers / print-closure / apply).
+if no_mesh_active; then
+    for entry in "${SEL_ENTRIES[@]+"${SEL_ENTRIES[@]}"}"; do
+        topic="${entry%%/*}"; bundle="${entry#*/}"
+        _ensure_topic_parsed "$topic" || exit 65
+        if ! idx="$(_bundle_index "$topic" "$bundle")"; then
+            log_error "selected bundle does not exist: $entry"
+            exit 64
+        fi
+        if no_mesh_omit_bundle "$(_bundle_membership "$topic" "$idx")"; then
+            log_error "no-mesh: refusing to apply membership bundle '$entry' (MESH_NO_MESH=1)"
+            exit 64
+        fi
+    done
+fi
 
 # ─── stable baseline order: (topic.order, bundle index) ───────────────────────
 # Selections may arrive in any order (alpha glob, menu toggle order, hand-edited
