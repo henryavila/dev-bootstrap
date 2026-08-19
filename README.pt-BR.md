@@ -41,18 +41,17 @@ cd ~/dev-bootstrap
 bash setup.sh
 ```
 
-Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
+Ao rodar sem flags de controle, o bootstrap abre o menu interativo **Blink**
+(Ink). Escolha ids `topic/bundle` do catálogo vivo em `topics/*/` (por exemplo
+`web/valet`, `remote-access/tailscale`, `ai/claude-code`, `personal/personal`),
+ajuste identidade git / paths quando pedido, confirme, e o engine aplica a
+seleção em `~/.config/mesh/selections.list`. Cancelar aborta limpo.
 
-1. Quais topics opt-in ativar (`60-web-stack` / `70-remote-access` / `82-ai-tools` / `90-editor` / `95-dotfiles-personal` — você desmarca o que não quer).
-2. `GIT_NAME` / `GIT_EMAIL` (pula silenciosamente se `git config --global` já tiver esses valores).
-3. `MESH_IDENTITY_REPO` + `MESH_IDENTITY_DIR` (só se você marcou `82-ai-tools`, `95-dotfiles-personal` ou `npm-global`).
-4. `CODE_DIR` — seu dev root, onde os repos ficam (default `~/code`); exportado no shell (auto-cd + atalhos tmux) e usado como raiz de sites do web stack quando instalado.
-5. Tela final com resumo e confirmação — cancelar em qualquer tela aborta limpo (sem estado parcial).
+> Nota histórica: releases antigas usavam checklist `whiptail` sobre topics
+> numerados `00-*` / `60-web-stack`. Essa UX sumiu; não trate ids numerados nem
+> `INCLUDE_*=1` como o caminho de produto atual.
 
-Se `whiptail` não estiver instalado, o bootstrap instala antes (`apt install whiptail` no Linux/WSL; `brew install newt` no Mac — whiptail vem dentro da formula `newt`).
-
-**Modo convidado / servidor (`--no-mesh`)** — instalar ferramentas sem entrar na mesh
-(sem clone de identity, Tailscale, Syncthing ou code-server):
+**Modo convidado / servidor (`--no-mesh`)** — instalar ferramentas sem entrar na mesh:
 
 ```bash
 # picker interativo sem bundles de membership
@@ -67,9 +66,19 @@ bash setup.sh --no-mesh --non-interactive --bundle languages/php
 bash setup.sh --no-mesh --list-bundles
 ```
 
-Sob `--no-mesh`, bundles com `membership: mesh` somem do catálogo; o apply
-aborta se algum reaparecer na seleção resolvida. Default headless é só
-`foundation/base`.
+Sob `--no-mesh` / `MESH_NO_MESH=1`:
+
+- Cinco bundles `membership: mesh` são **omitidos do catálogo** (removidos, não
+  acinzentados): `personal/personal`, `identity/identity`, `syncthing/syncthing`,
+  `remote-access/tailscale`, `remote-access/code-server`.
+- Lista de unlock (`git/config`, `shell-terminal/cli-tools`, `shell-terminal/zsh`)
+  perde locks required e começa **desmarcada**.
+- Default headless sem `--bundle` é **só** `foundation/base`.
+- O apply do engine **aborta com nonzero** (fail-closed) se algum bundle de
+  membership reaparecer na seleção/closure resolvida.
+- `atuin-login` é **no-op**.
+- O caminho **sem flag** ainda mantém `personal` / `identity` como locks
+  required junto de `foundation/base` e da lista de unlock.
 
 **Modo automação / CI** (sem menu — env vars e flags):
 
@@ -93,22 +102,28 @@ Logo após o menu (ou imediatamente, quando pulado), o bootstrap roda `sudo -v` 
 
 ## Topics
 
-| Topic | Instala / aplica | Opt-in |
-|-------|------------------|--------|
-| `00-core` | git, curl, build-essential, jq, unzip, envsubst (gettext) | — |
-| `10-languages` | Node via fnm + LTS, PHP (multi-version via ondrej ppa / brew; escolhido no menu), Python 3 | — |
-| `20-terminal-ux` | fzf, bat, eza, zoxide, ripgrep, fd, starship (Catppuccin Mocha), lazygit, delta + Nerd Font CaskaydiaCove | — |
-| `30-shell` | loaders `~/.bashrc` / `~/.zshrc` + `~/.inputrc` (word-kill, completion niceties) | — |
-| `40-tmux` | tmux + `~/.tmux.conf` (prefixo `Ctrl+a`) | — |
-| `50-git` | gitconfig global opinionado (delta, zdiff3, aliases) + `~/.bashrc.d/50-git.sh` com aliases `g` / `gs` / `gco` / `whoops` / `gmm` + `__git_complete` | — |
-| `60-web-stack` | **MySQL 8** (`mysql-server-8.0` WSL / `mysql@8.0` Mac), Redis, Nginx, PHP-FPM, mkcert, catchall `*.localhost` | `INCLUDE_WEBSTACK=1` |
-| `70-remote-access` | sshd (com hardening via `sshd_config.d/99-${USER}.conf`), Tailscale, mosh + drop-in systemd que seta MTU 1200 em `tailscale0` (prevenção do SSH KEX PQ hang) | `INCLUDE_REMOTE=1` |
-| `80-claude-code` | Claude Code CLI + **Syncthing daemon** (P2P sync) — fundação do Claude Sync cross-machine via camada de dotfiles | — |
-| `82-ai-tools` | instala ferramentas de workflow com IA pelo manifesto dos dotfiles: mdProbe para revisão de Markdown/MCP, Atomic Skills para prompts/skills reutilizáveis e RTK para compactar saída de shell antes de chegar ao agente; usa `$MESH_IDENTITY_REPO` só como fonte do manifesto/installer, sem aplicar dotfiles pessoais | `INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=<url>` |
-| `90-editor` | `~/.local/bin/typora-wait` — abre `.md` no Typora GUI a partir do terminal; WSL delega pra `Typora.exe` via interop (`wslpath -w`), macOS usa `open -W -a Typora` (LaunchServices) | `INCLUDE_EDITOR=1` |
-| `95-dotfiles-personal` | clona `$MESH_IDENTITY_REPO` em `$MESH_IDENTITY_DIR` (default `~/mesh-identity`) + roda o `install.sh` dele | `INCLUDE_IDENTITY=1 MESH_IDENTITY_REPO=<url>` |
+Catálogo vivo em `topics/<id>/` (sem numeração). Selecione bundles no Blink,
+`selections.list`, ou `--bundle topic/bundle`. Lista completa:
+`bash setup.sh --list-bundles`.
 
-Cada topic tem o próprio `README.md`. Fluxo interno: `install.$OS.sh` (se existe) ou `install.sh` (fallback OS-agnóstico), depois `lib/deploy.sh` processa `templates/` quando houver. Templates `bashrc.d-<topic>.sh` / `zshrc.d-<topic>.sh` mapeiam automaticamente pra `~/.bashrc.d/<topic>.sh` / `~/.zshrc.d/<topic>.sh`.
+| Topic | Bundles de exemplo | Notas |
+|-------|--------------------|-------|
+| `foundation` | `foundation/base` | Pacotes core (git, curl, jq, envsubst, …) |
+| `languages` | `languages/node`, `languages/php` | Node via fnm, multi-PHP, Python |
+| `shell-terminal` | `shell-terminal/cli-tools`, `shell-terminal/zsh`, `shell-terminal/tmux` | fzf/bat/eza/starship/atuin, zsh+completions, tmux |
+| `git` | `git/config`, `git/lazygit`, `git/gpg-signing` | gitconfig global + aliases de shell |
+| `web` | `web/valet`, `web/nginx-php-fpm`, `web/mailpit`, `web/ngrok` | Stack HTTPS local / nginx+PHP-FPM |
+| `databases` | `databases/mysql`, `databases/redis`, `databases/postgresql` | Servidores DB + drivers |
+| `containers` | `containers/docker` | Docker / Colima |
+| `remote-access` | `remote-access/ssh`, `remote-access/mosh`, `remote-access/tailscale`, `remote-access/code-server` | `tailscale` + `code-server` são `membership: mesh` |
+| `syncthing` | `syncthing/syncthing` | Sync P2P — `membership: mesh` |
+| `identity` | `identity/identity` | gh + identidade SSH da máquina — `membership: mesh` |
+| `personal` | `personal/personal` | Clone/apply mesh-identity — `membership: mesh` |
+| `ai` | `ai/claude-code`, `ai/mdprobe`, `ai/atomic-skills`, `ai/rtk` | CLI de agente + ferramentas de workflow |
+
+Cada topic tem o próprio `README.md` (exceto dirs finos de membership que
+apontam pro manifesto). Bundles em `topics/*/manifest.yaml`; o engine aplica
+itens selecionados e faz deploy de `topics/<id>/templates/`.
 
 ## Env vars e flags CLI
 
@@ -118,15 +133,17 @@ Primariamente para automação / CI — o menu interativo preenche essas vars pr
 |------------|--------|
 | `--non-interactive` / `NON_INTERACTIVE=1` | Pula menu mesmo em TTY |
 | `--dry-run` / `DRY_RUN=1` | Imprime o que rodaria sem executar (também pula `sudo -v`) |
+| `--list-bundles` | Lista cada `topic/bundle` e sua marca default (required / default on / opt-in) |
+| `--no-mesh` / `MESH_NO_MESH=1` | Omite os cinco bundles `membership: mesh` (remove, não acinzenta); unlock `git/config` + `shell-terminal/cli-tools` + `shell-terminal/zsh` (desmarcados); default headless só `foundation/base`; apply fail-closed; `atuin-login` no-op |
+| `--bundle topic/bundle` | Adiciona um bundle à seleção headless (repetível; implica non-interactive) |
 | `--help` / `-h` | Mensagem de uso |
-| `SKIP_TOPICS` | lista espaço-separada de topics a pular (hatch de CI) |
+| `SKIP_TOPICS` | hatch de CI: ids de topic separados por espaço removidos da seleção resolvida |
 | `ONLY_TOPICS` | **Legacy / dead no v2 `setup.sh`** — não é API de seleção; use `--bundle`, o menu Blink ou `selections.list` |
-| `MESH_NO_MESH=1` | igual a `--no-mesh` (exportado pela flag antes do menu/apply) |
 | `MESH_IDENTITY_REPO` | URL/path do repo dotfiles pessoal (aceita `file://` para testes locais) |
 | `MESH_IDENTITY_DIR` | destino do clone (default `~/mesh-identity`) |
-| `GIT_NAME` / `GIT_EMAIL` | identidade — aplicada só se `user.name` / `user.email` ainda não existem (topic 50-git preserva existentes) |
+| `GIT_NAME` / `GIT_EMAIL` | identidade — aplicada só se `user.name` / `user.email` ainda não existem |
 | `CODE_DIR` | dev root — onde seus repos ficam (default `~/code`); auto-cd no shell + raiz de sites do web stack |
-| `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | ativa topic opt-in |
+| `INCLUDE_WEBSTACK` / `INCLUDE_REMOTE` / `INCLUDE_EDITOR` | **Legacy** — preferir Blink / `--bundle` / `selections.list` |
 | `NO_COLOR=1` | desabilita output colorido (auto se não for TTY) |
 
 ## Notas sobre MySQL 8

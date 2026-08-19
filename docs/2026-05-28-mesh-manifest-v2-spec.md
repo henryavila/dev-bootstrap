@@ -1,12 +1,17 @@
 # mesh manifest.yaml v2 — schema spec
 
-> **Status:** draft (T-100 of F9.6 initiative). Approved corte ε layout
-> (12 topics + 30 bundles). Supersedes the v1 `items.yaml` flat schema.
+> **HISTORICAL ARCHIVE (2026-05-28 draft).** Live schema truth is
+> `schema/manifest.schema.json` (includes `membership: mesh`) plus
+> `docs/SPEC.md` §4. Required-always-on / “ALWAYS selected” rules here are
+> **superseded** by `--no-mesh` unlock + catalog-omit behavior. Do not
+> hand-edit catalogs from this draft alone.
 >
-> **Purpose:** authoritative reference for the new hierarchical manifest
-> format. Used by: bash engine (`yaml-parse.sh`), TUI app
-> (`manifest-reader.ts`), validators (`validate-manifest.sh`),
-> documentation, and humans hand-editing topic catalogs.
+> **Status:** historical draft (T-100 of F9.6 initiative). Approved corte ε
+> layout (12 topics + 30 bundles) at the time. Supersedes the v1 `items.yaml`
+> flat schema, but is itself superseded for membership / guest mode.
+>
+> **Original purpose:** hierarchical manifest reference for engine/TUI/
+> validators/humans — retained for archaeology only.
 
 ---
 

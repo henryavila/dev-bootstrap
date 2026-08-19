@@ -1,20 +1,26 @@
-# ALIASES — universal (installed by dev-bootstrap)
+# ALIASES — universal (installed by mesh-workstation)
 
 Compact list of the aliases **every dev who ran `setup.sh`** receives, regardless of personal dotfiles. Personal dotfiles can add or override (via `~/.bashrc.d/99-personal-aliases.sh` / `~/.zshrc.d/99-personal-aliases.sh` — the `99-` prefix loads them last). For a consolidated inventory including personal ones, see the `docs/ALIASES.md` in that dev's dotfiles repo.
 
+Fragments deploy when the owning **Blink / `--bundle` / `selections.list`**
+selection installed that bundle (legacy `INCLUDE_*=1` env gates are not the
+user-facing activation path).
+
 ## Sources in this repo
 
-| Fragment | Topic | Contents |
-|----------|-------|----------|
-| `topics/30-shell/templates/{bash,zsh}rc.d-30-shell.sh.template` | always-on | navigation (`..`, `home`), shell shortcuts (`h`, `c`, `cla`), grep colored, `alert` (Linux desktop notify), `mkd`/`md`/`fs`/`tre` helpers |
-| `topics/20-terminal-ux/templates/{bash,zsh}rc.d-20-terminal-ux.sh.template` | always-on | listing (`ls`/`ll`/`la`), view (`cat`→bat), Phase E replacements (`top`→btop, `df`→duf, `du`→dust, `ping`→gping, `http`→xh, `ps`→procs) |
-| `topics/40-tmux/templates/{bash,zsh}rc.d-40-tmux.sh` | always-on | tmux shortcuts: `tl` list, `ta` attach, `tn` new, **`tm`** go to 'main' without nesting |
-| `topics/50-git/templates/{bash,zsh}rc.d-50-git.sh` | always-on | shell-level git aliases (g/gs/gco…) + autocomplete |
-| `topics/60-web-stack/templates/{bash,zsh}rc.d-60-web-stack.sh` | `INCLUDE_WEBSTACK=1` | Laravel (`art`, `artisan`, `cinst`, `migrate`…) + service restart (`srn`, `srp`, `srr`…) |
-| `topics/70-remote-access/templates/{bash,zsh}rc.d-70-remote-access.sh` | `INCLUDE_REMOTE=1` | Tailscale (`ts`, `tip`, `tup`, `tping`, `tssh`…) + `tip-of()` function |
-| `topics/50-git/data/gitconfig.keys` | always-on | git-level aliases (`git co`, `git st`…) via `git config --global alias.X Y` |
+| Fragment | Bundle | Contents |
+|----------|--------|----------|
+| `topics/shell-terminal/templates/zsh/{bash,zsh}rc.d-30-shell.sh.template` | `shell-terminal/zsh` | navigation (`..`, `home`), shell shortcuts (`h`, `c`, `cla`), grep colored, `alert` (Linux desktop notify), `mkd`/`md`/`fs`/`tre` helpers |
+| `topics/shell-terminal/templates/cli-tools/{bash,zsh}rc.d-20-terminal-ux.sh.template` | `shell-terminal/cli-tools` | listing (`ls`/`ll`/`la`), view (`cat`→bat), Phase E replacements (`top`→btop, `df`→duf, `du`→dust, `ping`→gping, `http`→xh, `ps`→procs) |
+| `topics/shell-terminal/templates/tmux/{bash,zsh}rc.d-40-tmux.sh` | `shell-terminal/tmux` | tmux shortcuts: `tl` list, `ta` attach, `tn` new, **`tm`** go to 'main' without nesting |
+| `topics/git/templates/config/{bash,zsh}rc.d-50-git.sh` | `git/config` | shell-level git aliases (g/gs/gco…) + autocomplete |
+| `topics/web/templates/serve/{bash,zsh}rc.d-60-web-stack.sh` | `web/valet` or `web/nginx-php-fpm` | Laravel (`art`, `artisan`, `cinst`, `migrate`…) + service restart (`srn`, `srp`, `srr`…) |
+| `topics/remote-access/templates/tailscale/{bash,zsh}rc.d-70-remote-access.sh` | `remote-access/tailscale` | Tailscale (`ts`, `tip`, `tup`, `tping`, `tssh`…) + `tip-of()` function |
+| `topics/git/data/gitconfig.keys` | `git/config` | git-level aliases (`git co`, `git st`…) via `git config --global alias.X Y` |
 
-Opt-in fragments (60-web-stack, 70-remote-access) only deploy when the corresponding topic ran. If you ship the bootstrap without Laravel / Tailscale, those fragments aren't installed, their aliases aren't declared.
+Opt-in fragments (web serve, Tailscale) only deploy when the corresponding
+bundle was selected. Without Laravel / Tailscale in the selection, those
+fragments aren't installed and their aliases aren't declared.
 
 ## 30-shell — navigation + shell basics
 
@@ -119,9 +125,10 @@ The fragment calls `__git_complete` for `g`, `gco`, `gb`, `gp`, `gps`, `gd` — 
 
 Zsh uses stock `compinit` — already resolves completion on aliases automatically.
 
-## 60-web-stack — Laravel + services (opt-in)
+## web serve — Laravel + services (opt-in)
 
-Only deployed when `INCLUDE_WEBSTACK=1`.
+Only deployed when a web serve bundle (`web/valet` or `web/nginx-php-fpm`) was
+selected in Blink / `--bundle` / `selections.list`.
 
 ### Laravel / Composer
 
@@ -149,9 +156,11 @@ PHP version is detected at load time, so `srp`/`ssp` always target the current d
 | `srp` / `ssp` | php${ver}-fpm restart / status |
 | `srr` / `ssr` | redis restart / status |
 
-## 70-remote-access — Tailscale (opt-in)
+## remote-access/tailscale — Tailscale (opt-in; `membership: mesh`)
 
-Only deployed when `INCLUDE_REMOTE=1`. Entire fragment gated on `command -v tailscale` — no-op when not installed.
+Only deployed when `remote-access/tailscale` was selected (omitted under
+`--no-mesh`). Entire fragment gated on `command -v tailscale` — no-op when not
+installed.
 
 | Alias / fn | Expands to |
 |-----------|-----------|
@@ -165,8 +174,8 @@ Only deployed when `INCLUDE_REMOTE=1`. Entire fragment gated on `command -v tail
 
 ## How to add a new universal alias
 
-1. Decide scope: nav/shortcuts → 30-shell; listing/view/Phase E → 20-terminal-ux; git → 50-git; Laravel/services → 60-web-stack; Tailscale → 70-remote-access; tmux shortcut → 40-tmux; new category → create a new topic or motivate in the PR.
-2. Edit **both** `bashrc.d-<topic>.sh` **and** `zshrc.d-<topic>.sh` for parity.
+1. Decide scope: nav/shortcuts → `shell-terminal/zsh`; listing/view/Phase E → `shell-terminal/cli-tools`; git → `git/config`; Laravel/services → `web/*` serve templates; Tailscale → `remote-access/tailscale`; tmux → `shell-terminal/tmux`; new category → new bundle or motivate in the PR.
+2. Edit **both** bash and zsh fragments under the live `topics/<id>/templates/…` path for parity.
 3. Add a `# shellcheck shell=bash` directive as the first comment line of the zsh fragment (shellcheck can't natively lint zsh).
 4. Update this `docs/ALIASES.md`.
 5. Add a regression test in `tests/integration/regression-recent-fixes.test.sh` asserting the alias is present.

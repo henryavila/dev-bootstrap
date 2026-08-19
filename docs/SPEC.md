@@ -1,8 +1,18 @@
-# dev-bootstrap — Specification
+# mesh-workstation — Specification
 
-**Version:** 1.0
-**Date:** 2026-04-19
-**Status:** approved for implementation
+**Version:** 1.0 (contract evolved in place; see §4 for live selection / `--no-mesh`)
+**Date:** 2026-04-19 (base); membership / Blink contract current as of 2026-08
+**Status:** living — §4 Interface + `membership: mesh` / `MESH_NO_MESH` is authoritative
+
+> **Historical v1 runner:** numbered `00-*` topic inventory (§3 layout, §6 “The 12
+> topics”), flow steps that gate `INCLUDE_*` and run per-topic `install.$OS.sh`
+> with “no abort on partial error” (§4 Flow steps 5–7, §11), and `dev-bootstrap`
+> naming elsewhere in this file describe the **pre-engine** bootstrap. The live
+> product contract is §4: Blink menu / `selections.list` / `--bundle`, plus the
+> `membership: mesh` + `MESH_NO_MESH` matrix. Membership apply is **fail-closed**
+> (abort nonzero if a membership bundle reappears under `--no-mesh`); that
+> supersedes the old “single-topic failure does not abort” wording for the
+> membership guard only.
 
 ## 1. Context and purpose
 
@@ -12,7 +22,7 @@ There's no reproducible process for setting up development machines (personal or
 
 ### Goal
 
-Public `dev-bootstrap` repo that:
+Public `mesh-workstation` repo (historically `dev-bootstrap`) that:
 
 1. **Configures new machines** across 3 environments: Windows (WSL bootstrap), native WSL2/Ubuntu, macOS.
 2. **Installs a reproducible stack**: git, Node, PHP 8.4, current Python, Claude Code, modern terminal UX, tmux, optional Laravel stack, optional remote access.
@@ -152,6 +162,14 @@ membership bundles are: `personal/personal`, `identity/identity`,
 
 ### Flow
 
+**Current (v2 engine):** resolve selection from Blink / `selections.list` /
+`--bundle`; under `MESH_NO_MESH=1` omit membership + demote unlock list; engine
+apply is fail-closed on membership leakage; item failures are summarized per
+engine policy.
+
+**Historical v1 topic-runner** (kept for archaeology — do not implement new
+work against this):
+
 ```
 1. OS=$(bash lib/detect-os.sh); export OS
 2. if OS=mac: eval "$(bash lib/detect-brew.sh)"; export BREW_BIN BREW_PREFIX
@@ -170,9 +188,12 @@ membership bundles are: `personal/personal`, `identity/identity`,
    c. bash $installer 2>&1 | tee -a $LOG   (inherits $OS, $BREW_PREFIX, $CODE_DIR, $GIT_NAME, etc.)
    d. if $topic/templates/ exists: bash lib/deploy.sh $topic/templates
    e. capture exit code; mark failure but keep going (no abort on partial error)
+      NOTE: under MESH_NO_MESH, membership leakage still aborts (fail-closed) —
+      that guard overrides this “no abort” sentence.
 7. print summary (passed/failed/skipped)
 8. exit 0 if everything passed, 1 otherwise
 ```
+
 
 **Variables exported by the runner** (inherited by all installers and deploy.sh):
 `OS`, `BREW_BIN`, `BREW_PREFIX` (on Mac), `USER`, `HOME`, `MESH_IDENTITY_REPO`, `MESH_IDENTITY_DIR`, `MESH_NPM_GLOBAL`, `CODE_DIR`, `GIT_NAME`, `GIT_EMAIL`, `INCLUDE_WEBSTACK`, `INCLUDE_REMOTE`, `INCLUDE_EDITOR`, `INCLUDE_POSTGRES`, `POSTGRES_VERSION`, `NGINX_CONF_DIR` (derived by topic 60 before deploy), `NO_COLOR`.
@@ -292,7 +313,14 @@ Colored output helpers: `info`, `ok`, `warn`, `fail`, `banner`. Loaded via `sour
 
 ## 6. The 12 topics
 
+> **Historical inventory.** Numbered `00-core` … `95-dotfiles-personal` names
+> below are the v1 topic-runner layout. Live catalog dirs are unnumbered
+> (`topics/foundation`, `topics/shell-terminal`, `topics/web`, …) with bundles
+> in each `manifest.yaml`. Prefer `bash setup.sh --list-bundles` and §4 for
+> selection / membership rules.
+
 ### `00-core`
+
 
 **Purpose:** minimum tools every dev needs, plus the runner's own dependencies (envsubst).
 
@@ -655,9 +683,13 @@ fi
 
 ## 11. Error handling
 
-- A single-topic failure **does not abort** `setup.sh` — it continues with the rest
-- The final summary lists failures
-- Final exit code: 0 if everything OK, 1 if any failed
+- **Membership guard (current):** under `--no-mesh` / `MESH_NO_MESH=1`, if any
+  `membership: mesh` bundle appears in the resolved selection/closure, apply
+  **aborts nonzero** (fail-closed). This overrides the historical “keep going”
+  rule for that guard only — see §4.
+- **Historical v1 topic-runner:** a single-topic install failure did not abort
+  `setup.sh` — it continued with the rest; the final summary listed failures;
+  final exit code was 0 if everything OK, 1 if any failed.
 - `run_cmd()` helper for sudo with retry: if `sudo` fails due to timeout, retry once after refreshing the cache (`sudo -v`)
 
 ## 12. Acceptance criteria

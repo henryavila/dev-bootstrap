@@ -53,5 +53,5 @@ Disable later: `git config --global --unset commit.gpgsign` + `--unset tag.gpgsi
 
 ## Adding/removing configs
 
-- **Global git config:** edit `data/gitconfig.keys` and run `ONLY_TOPICS=50-git bash setup.sh`.
-- **Shell aliases:** edit `templates/bashrc.d-50-git.sh` (and the zsh equivalent), then rerun the bootstrap. To override locally without editing the bootstrap, use `~/.bashrc.d/99-personal-aliases.sh` in your personal dotfiles (loaded later).
+- **Global git config:** edit `data/gitconfig.keys` and re-apply with `bash setup.sh --non-interactive --bundle git/config`.
+- **Shell aliases:** edit `templates/config/bashrc.d-50-git.sh` (and the zsh equivalent), then re-apply the same bundle. To override locally without editing the bootstrap, use `~/.bashrc.d/99-personal-aliases.sh` in your personal dotfiles (loaded later).

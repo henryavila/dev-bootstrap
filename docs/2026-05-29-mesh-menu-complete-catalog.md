@@ -1,5 +1,10 @@
 # mesh setup wizard — design brief (blink TUI)
 
+> **HISTORICAL ARCHIVE (2026-05-29 design brief).** Identity/Personal
+> “always-on” / required=locked rules here are **superseded** by
+> `membership: mesh` + `--no-mesh` / `MESH_NO_MESH` (omit from catalog; unlock
+> list demoted). Live selection contract: `docs/SPEC.md` §4.
+>
 > **Para:** Claude Design. **Objetivo:** desenhar as telas do wizard de setup do `mesh`.
 > Este doc traz **só** o que a tela precisa: constraints visuais/de interação + os
 > **dados reais** que viram as linhas. Implementação de engine, install scripts e schema

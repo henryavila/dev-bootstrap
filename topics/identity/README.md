@@ -1,7 +1,11 @@
-# 05-identity
+# identity
 
 **Auto-configures per-machine GitHub identity** so private repos (dotfiles)
 can be cloned without manual SSH key management.
+
+`identity/identity` is tagged `membership: mesh` — under `--no-mesh` /
+`MESH_NO_MESH=1` it is **omitted from the catalog** (guest/server installs skip
+this bundle).
 
 ## What it does
 

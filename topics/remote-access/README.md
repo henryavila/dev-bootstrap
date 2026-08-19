@@ -1,6 +1,10 @@
-# 70-remote-access (opt-in)
+# remote-access (opt-in)
 
-Enabled via `INCLUDE_REMOTE=1 bash setup.sh`.
+Select bundles in Blink / `selections.list` or pass `--bundle` (e.g.
+`remote-access/ssh`, `remote-access/mosh`, `remote-access/tailscale`,
+`remote-access/code-server`). `remote-access/tailscale` and
+`remote-access/code-server` are tagged `membership: mesh` — under `--no-mesh`
+they are **omitted from the catalog**.
 
 **Installs:** `openssh-server` + `mosh` + `tailscale`. Activates sshd, enables systemd on WSL (`/etc/wsl.conf`).
 
@@ -130,9 +134,6 @@ The broader pattern: non-interactive SSH on macOS (`ssh user@mac '<cmd>'`) doesn
 
 ## Skip
 
-If you don't use Tailscale or mosh:
-
-```bash
-# don't set INCLUDE_REMOTE=1 (default skip)
-bash setup.sh
-```
+If you don't use Tailscale or mosh, leave those bundles unchecked in Blink (or
+omit `--bundle remote-access/*`). Guests using `--no-mesh` never see the
+membership Tailscale/code-server rows.
