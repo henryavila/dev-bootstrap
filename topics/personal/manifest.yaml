@@ -15,6 +15,7 @@ bundles:
     label: "Personal identity"
     desc: "Clone + apply your mesh-identity repo"
     required: true
+    membership: mesh
     icon_name: home
     options:
       - name: repo

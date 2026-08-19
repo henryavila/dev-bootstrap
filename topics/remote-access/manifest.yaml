@@ -36,6 +36,7 @@ bundles:
   - name: tailscale
     label: "Tailscale"
     desc: "Tailscale mesh VPN + SSH-over-tailnet MTU fix"
+    membership: mesh
     icon_name: globe
     items:
       - name: tailscale-mac
@@ -85,6 +86,7 @@ bundles:
     desc: "VS Code in the browser over your tailnet (opt-in)"
     platforms: [mac]
     default_selected: false
+    membership: mesh
     icon_name: code
     requires_bundles:
       - remote-access/tailscale

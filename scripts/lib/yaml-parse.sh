@@ -22,7 +22,7 @@
 #   TOPIC_LABEL / TOPIC_HINT (strings), TOPIC_REQUIRED / TOPIC_ORDER (1/0, num).
 #     topic.description is UI-only — skipped (not emitted).
 #   BUNDLE_COUNT=N
-#   BUNDLE_<b>_{NAME,LABEL,DESC,ICON_NAME} (str), _{REQUIRED,DEFAULT_SELECTED} (1/0),
+#   BUNDLE_<b>_{NAME,LABEL,DESC,ICON_NAME,MEMBERSHIP} (str), _{REQUIRED,DEFAULT_SELECTED} (1/0),
 #     _{PLATFORMS,REQUIRES_BUNDLES}_COUNT + _<n> (lists).
 #   BUNDLE_<b>_ITEM_COUNT, BUNDLE_<b>_ITEM_<i>_{NAME,TYPE,SPEC,SCRIPT,CHECK,WHEN,
 #     POST,ROLLBACK} (str), _IDEMPOTENT (1/0), _UNINSTALL_TIER (num),
@@ -253,7 +253,7 @@ close_bundle() {
 handle_bundle_key() {
     local key="$1" val="$2" line="$3" col="$4" up
     case "$key" in
-        name|label|desc|icon_name)
+        name|label|desc|icon_name|membership)
             list4=""; cur6=""
             emit_kv "BUNDLE_${bundle_idx}_$(norm_key "$key")" str "$val" "$line" "$col";;
         required)

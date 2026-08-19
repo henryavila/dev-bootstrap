@@ -43,6 +43,7 @@
           "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$" }
         },
         "icon_name": { "type": "string" },
+        "membership": { "type": "string", "enum": ["mesh"] },
         "items": {
           "type": "array",
           "minItems": 1,
