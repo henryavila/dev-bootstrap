@@ -17,6 +17,7 @@ assert_file_exists "$HELPER" "scripts/lib/no-mesh.sh exists"
 . "$HELPER"
 
 # --- helper contract ---
+# shellcheck disable=SC2034 # MESH_NO_MESH is read by no_mesh_active in helpers below
 MESH_NO_MESH=1
 default="$(no_mesh_emit_headless_default)"
 assert_eq "$default" "foundation/base" "no_mesh_emit_headless_default prints foundation/base"
@@ -90,6 +91,7 @@ assert_contains "$body2" "foundation/base" "--bundle list includes foundation/ba
 assert_contains "$body2" "languages/php" "--bundle list includes languages/php"
 assert_not_contains "$body2" "personal/" "--bundle list excludes personal"
 assert_not_contains "$body2" "identity/" "--bundle list excludes identity"
+assert_eq "$rc2" "0" "--bundle no-mesh dry-run exited 0"
 assert_not_contains "$out2" "unknown arg" "--bundle accepted by setup.sh"
 
 # Unflagged emit_default_selections still includes personal (list-bundles path).

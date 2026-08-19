@@ -63,6 +63,7 @@ if [[ -f "$HELPER" ]]; then
     fi
 
     # Empty topics vanish: a topic whose only bundle is membership=mesh emits nothing.
+    # shellcheck disable=SC2034 # MESH_NO_MESH is read by no_mesh_active inside the filter
     MESH_NO_MESH=1
     filtered="$(
         printf '%s\n' \
@@ -76,6 +77,7 @@ if [[ -f "$HELPER" ]]; then
     assert_contains "$filtered" $'remote-access\tssh' "filter keeps untagged ssh"
     assert_not_contains "$filtered" "tailscale" "filter drops membership tailscale"
     assert_contains "$filtered" $'foundation\tbase' "filter keeps foundation/base"
+    unset MESH_NO_MESH
 fi
 
 # --- setup.sh: --no-mesh in the same arg loop as --list-bundles, export before menu ---
