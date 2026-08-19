@@ -62,7 +62,9 @@ install() { (
     #   1. MESH_IDENTITY_REPO set (menu option / env / default_from) → clone+pull.
     #   2. An existing checkout at $MESH_IDENTITY_DIR → reuse it (derive the URL).
     #   3. Interactive TTY → onboarding prompt (existing URL, or create-from-template).
-    #   4. Nothing → fail with an actionable message.
+    #   4. Headless with nothing configured → skip with a critical followup (do not
+    #      abort the whole engine run — foundation/languages must still land).
+    #   5. Interactive with nothing after prompt → fail actionable.
     if [[ -z "${MESH_IDENTITY_REPO:-}" ]]; then
         if [[ -d "$MESH_IDENTITY_DIR/.git" ]]; then
             MESH_IDENTITY_REPO="$(git -C "$MESH_IDENTITY_DIR" remote get-url origin 2>/dev/null || true)"
@@ -73,6 +75,11 @@ install() { (
     fi
 
     if [[ -z "${MESH_IDENTITY_REPO:-}" && "${CREATE_IDENTITY_FROM_TEMPLATE:-0}" != "1" && ! -d "$MESH_IDENTITY_DIR/.git" ]]; then
+        if [[ "${NON_INTERACTIVE:-0}" == "1" ]]; then
+            followup critical "Personal identity skipped (headless, no MESH_IDENTITY_REPO). Re-run with MESH_IDENTITY_REPO=owner/repo or interactively: bash setup.sh"
+            warn "personal/personal: skipping — no identity repo in non-interactive mode"
+            return 0
+        fi
         fail "no mesh-identity repo: set it in the 'Personal identity' options, export MESH_IDENTITY_REPO, or run setup.sh interactively to create one"
         return 1
     fi

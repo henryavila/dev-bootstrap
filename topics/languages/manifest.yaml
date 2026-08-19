@@ -15,6 +15,7 @@ bundles:
     label: "Node.js"
     desc: "Node LTS via fnm — the JS/TS runtime"
     icon_name: node
+    requires_bundles: [foundation/base]
     options:
       - name: npm-global-prefix
         type: toggle
@@ -25,6 +26,10 @@ bundles:
       - name: node-fnm
         type: custom
         script: ./node-fnm.sh
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/node
+        idempotent: true
       - name: npm-global
         type: custom
         script: ./npm-global.sh
@@ -34,6 +39,7 @@ bundles:
     label: "PHP"
     desc: "Multi-version PHP + PECL + Composer + Python"
     icon_name: php
+    requires_bundles: [foundation/base]
     options:
       - name: versions
         type: multiselect
@@ -62,4 +68,8 @@ bundles:
         type: custom
         script: ./mac/orphan-ini-cleanup.sh
         platforms: [mac]
+        idempotent: true
+      - name: php-use-bin
+        type: deploy
+        spec: ./templates/php
         idempotent: true

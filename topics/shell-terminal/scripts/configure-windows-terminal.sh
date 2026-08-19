@@ -87,9 +87,29 @@ for c in "${candidates[@]}"; do
     fi
 done
 
+# Prefer the Store package path when creating a seed file (most common install
+# from winget Microsoft.WindowsTerminal). Creating settings.json before the
+# first WT launch lets us merge Catppuccin + font without a manual open.
 if [[ -z "$SETTINGS" ]]; then
-    info "Windows Terminal settings.json not found (launch WT once then re-run)"
-    exit 0
+    seed_dir="$win_userprofile_unix/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState"
+    if [[ -d "$seed_dir" ]] || mkdir -p "$seed_dir" 2>/dev/null; then
+        SETTINGS="$seed_dir/settings.json"
+        info "Windows Terminal settings.json missing — seeding $SETTINGS"
+        cat > "$SETTINGS" <<'JSON'
+{
+    "$help": "https://aka.ms/terminal-documentation",
+    "$schema": "https://aka.ms/terminal-profiles-schema",
+    "profiles": {
+        "defaults": {},
+        "list": []
+    },
+    "schemes": []
+}
+JSON
+    else
+        followup manual "Windows Terminal settings.json not found and could not be created. Launch Windows Terminal once, then re-run: bash setup.sh --bundle shell-terminal/fonts"
+        exit 0
+    fi
 fi
 
 info "using $SETTINGS"

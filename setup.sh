@@ -127,8 +127,28 @@ if [[ "${SHOW_HELP:-0}" == "1" ]]; then usage; exit 0; fi
 # spec defaults required=0 / default_selected=1 via ${VAR:-default}).
 # Under MESH_NO_MESH=1 with no explicit --bundle list, emit only foundation/base
 # (membership omitted; unlock list unchecked — see scripts/lib/no-mesh.sh).
+# Lean first-run when the Blink menu cannot open (usually: Node not on PATH yet).
+# Installs the required shell/foundation path + Node so a second interactive
+# `bash setup.sh` can open the menu. Avoids silently applying the full
+# default-on fleet (DBs, web, AI, …) without operator consent.
+emit_lean_bootstrap_selections() {
+    printf '%s\n' \
+        foundation/base \
+        identity/identity \
+        git/config \
+        shell-terminal/cli-tools \
+        shell-terminal/zsh \
+        shell-terminal/fonts \
+        languages/node \
+        personal/personal
+}
+
 emit_default_selections() {
     if no_mesh_emit_default_or_bundles; then
+        return 0
+    fi
+    if [[ "${MESH_LEAN_BOOTSTRAP:-0}" == "1" ]]; then
+        emit_lean_bootstrap_selections
         return 0
     fi
     local mf topic vf
@@ -345,10 +365,15 @@ if should_run_menu; then
         info "menu cancelled — nothing was applied."
         exit 130
     elif [[ "$menu_rc" -ne 0 ]]; then
-        # Menu not built / Node missing / no TTY / crashed — fall back to the
-        # saved or default selection (e.g. an automation/bootstrap run).
-        warn "interactive bundle menu unavailable — falling back to the saved/default selection"
-        NON_INTERACTIVE=1; export NON_INTERACTIVE
+        # Menu not built / Node missing / crashed — do NOT flip NON_INTERACTIVE.
+        # That flag means the operator asked for headless; missing Node must not
+        # block personal identity TTY prompts. Use a lean bootstrap selection
+        # (foundation + shell + node + personal) instead of the full default-on
+        # fleet so virgin machines get Node/PATH without surprise DB/web installs.
+        warn "interactive bundle menu unavailable — using lean bootstrap selection (foundation/shell/node/personal)"
+        warn "re-run bash setup.sh after Node is on PATH to open the full Blink menu"
+        MESH_LEAN_BOOTSTRAP=1; export MESH_LEAN_BOOTSTRAP
+        followup info "Blink menu was skipped (Node missing or menu failed). After this run, open a new shell and re-run bash setup.sh for the full picker."
     fi
     # menu_rc == 0 → selections.list was written; proceed with it.
 fi
@@ -425,6 +450,8 @@ elif [[ ! -f "$SELECTIONS_FILE" || "${#CLI_BUNDLES[@]}" -gt 0 ]]; then
         else
             if no_mesh_active; then
                 echo "# mesh selections — no-mesh headless default (foundation/base only)"
+            elif [[ "${MESH_LEAN_BOOTSTRAP:-0}" == "1" ]]; then
+                echo "# mesh selections — lean bootstrap (menu unavailable; foundation/shell/node/personal)"
             else
                 echo "# mesh selections — auto-generated default (every bundle except default_selected:false)"
             fi

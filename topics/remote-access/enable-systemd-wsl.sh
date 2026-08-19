@@ -2,6 +2,10 @@
 # Custom installer: enable systemd in /etc/wsl.conf.
 # Requires `wsl --shutdown` from PowerShell to apply.
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$HERE/../../scripts/lib/log.sh"
+
 check() {
     # /etc/wsl.conf is root:root mode 0644 on every Ubuntu/Debian WSL
     # image — world-readable, so sudo is unnecessary here. Keeping the
@@ -24,8 +28,8 @@ install() {
 systemd=true
 EOF
     fi
-    echo "[systemd-wsl] systemd enabled in /etc/wsl.conf"
-    echo "[systemd-wsl] you must run 'wsl --shutdown' from PowerShell + relaunch for it to activate" >&2
+    ok "systemd enabled in /etc/wsl.conf"
+    followup critical "WSL systemd will not activate until you run \`wsl --shutdown\` from Windows PowerShell, then reopen Ubuntu. Without that, docker / mesh services / user linger stay degraded."
 }
 
 verify() {

@@ -38,7 +38,9 @@ fi
 
 if ! command -v node >/dev/null 2>&1; then
     log_error "Node.js is required for the interactive menu."
-    log_error "Install it first: brew install node (macOS) or apt install nodejs (Linux)"
+    log_error "Install the mesh-managed Node (fnm LTS), then re-open a shell:"
+    log_error "  bash setup.sh --non-interactive --bundle languages/node"
+    log_error "Or: MESH_IDENTITY_REPO=… bash setup.sh   # lean first-run also installs languages/node"
     exit 1
 fi
 
