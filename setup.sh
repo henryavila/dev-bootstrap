@@ -191,6 +191,12 @@ if [[ "$LIST_BUNDLES" == "1" ]]; then
                 mem="${!mem_v:-}"
                 [[ -n "$name" ]] || continue
                 no_mesh_omit_bundle "$mem" && continue
+                # Under --no-mesh the unlock list loses required locks and starts
+                # unchecked (mirrors applyNoMeshUnlocks in the Blink menu).
+                if no_mesh_is_unlock_key "$topic/$name"; then
+                    req=0
+                    ds=0
+                fi
                 if [[ "$req" == "1" ]]; then mark="required"
                 elif [[ "$ds" == "0" ]]; then mark="opt-in (default off)"
                 else mark="default on"; fi

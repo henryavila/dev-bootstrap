@@ -85,11 +85,15 @@ if command -v script >/dev/null 2>&1; then
     if grep -q 'LOGIN_CALLED' "$TMP/atuin.log" 2>/dev/null; then
         pass "unflagged install() on a TTY calls atuin login"
     else
-        # Some environments' `script` still leave [[ -t 0 ]] false; fall back to
-        # static contract that the login line remains for the unflagged path.
+        # `script` present but TTY probe did not reach login — still require the
+        # unflagged source contract, and fail closed if MESH_NO_MESH leaked in.
         assert_file_contains "$SCRIPT" 'atuin login' \
             "unflagged path still contains atuin login (TTY probe inconclusive)"
-        pass "unflagged TTY probe inconclusive — source contract asserted"
+        if grep -q 'MESH_NO_MESH=1' "$TMP/atuin.log" 2>/dev/null; then
+            fail "unflagged TTY probe saw MESH_NO_MESH skip — env leaked"
+        else
+            pass "unflagged TTY probe inconclusive — source contract asserted (no no-mesh skip)"
+        fi
     fi
 else
     assert_file_contains "$SCRIPT" 'atuin login' \

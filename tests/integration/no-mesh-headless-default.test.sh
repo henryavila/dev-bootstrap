@@ -67,14 +67,9 @@ assert_not_contains "$body1" "identity/" "default list excludes identity"
 assert_not_contains "$body1" "git/config" "default list excludes unlock git/config"
 assert_not_contains "$body1" "shell-terminal/" "default list excludes unlock shell-terminal"
 
-# Engine dry-run may still exit nonzero on host quirks; the list write is the contract.
-# Prefer rc 0, but do not fail the suite solely on engine dry-run rc if the list is correct.
-if [[ "$rc1" -eq 0 ]]; then
-    pass "no-mesh headless dry-run exited 0"
-else
-    pass "no-mesh headless dry-run exited $rc1 (list write already asserted; engine rc soft)"
-fi
+assert_eq "$rc1" "0" "no-mesh headless dry-run exited 0"
 assert_not_contains "$out1" "unknown arg" "--no-mesh/--dry-run accepted"
+assert_not_contains "$out1" "no-mesh: refusing" "headless foundation-only does not hit membership deny"
 
 # --- --bundle languages/php adds php, still excludes personal ---
 home2="$TMP/home-bundle"

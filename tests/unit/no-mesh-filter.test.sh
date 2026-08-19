@@ -136,6 +136,22 @@ assert_not_contains "$flagged" "remote-access/code-server" "flagged catalog omit
 assert_not_contains "$flagged" "syncthing/" "flagged catalog omits empty syncthing topic"
 assert_contains "$flagged" "foundation/base" "flagged catalog still lists foundation/base"
 assert_contains "$flagged" "remote-access/ssh" "flagged catalog still lists untagged ssh"
+# Unlock list stays visible but is not required under --no-mesh (Decision 10).
+assert_contains "$flagged" "git/config" "flagged catalog still lists unlock git/config"
+assert_contains "$flagged" "shell-terminal/cli-tools" "flagged catalog still lists unlock cli-tools"
+assert_contains "$flagged" "shell-terminal/zsh" "flagged catalog still lists unlock zsh"
+printf '%s\n' "$flagged" | grep -E '^git/config[[:space:]]+required[[:space:]]*$' >/dev/null 2>&1 \
+    && fail "flagged --list-bundles must not mark git/config required" \
+    || pass "flagged --list-bundles does not mark git/config required"
+printf '%s\n' "$flagged" | grep -E '^shell-terminal/cli-tools[[:space:]]+required[[:space:]]*$' >/dev/null 2>&1 \
+    && fail "flagged --list-bundles must not mark cli-tools required" \
+    || pass "flagged --list-bundles does not mark cli-tools required"
+printf '%s\n' "$flagged" | grep -E '^shell-terminal/zsh[[:space:]]+required[[:space:]]*$' >/dev/null 2>&1 \
+    && fail "flagged --list-bundles must not mark zsh required" \
+    || pass "flagged --list-bundles does not mark zsh required"
+printf '%s\n' "$flagged" | grep -E '^foundation/base[[:space:]]+required[[:space:]]*$' >/dev/null 2>&1 \
+    && pass "flagged --list-bundles still marks foundation/base required" \
+    || fail "flagged --list-bundles must still mark foundation/base required"
 
 # --- command wrappers: help documents --no-mesh; menu accepts it without launching TUI ---
 assert_file_contains "$CMD_MENU" 'no-mesh)' \

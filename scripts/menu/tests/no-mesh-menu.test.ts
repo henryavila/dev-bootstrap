@@ -109,3 +109,21 @@ describe('no-mesh catalog (MESH_NO_MESH=1)', () => {
     expect(requiredKeys(rawRefs).has('git/config')).toBe(true);
   });
 });
+
+describe('NO_MESH_UNLOCK_KEYS sync with no-mesh.sh', () => {
+  it('matches the bash NO_MESH_UNLOCK_KEYS array', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { resolve } = require('node:path') as typeof import('node:path');
+    const sh = readFileSync(
+      resolve(__dirname, '../../../scripts/lib/no-mesh.sh'),
+      'utf8',
+    );
+    const block = sh.match(/NO_MESH_UNLOCK_KEYS=\(([\s\S]*?)\)/);
+    expect(block, 'NO_MESH_UNLOCK_KEYS array in no-mesh.sh').toBeTruthy();
+    const bashKeys = block![1]
+      .split(/\n/)
+      .map((l) => l.replace(/#.*$/, '').trim())
+      .filter(Boolean);
+    expect([...NO_MESH_UNLOCK_KEYS].sort()).toEqual([...bashKeys].sort());
+  });
+});

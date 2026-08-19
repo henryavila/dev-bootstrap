@@ -51,6 +51,26 @@ Ao rodar sem nenhuma env var, o bootstrap abre um menu `whiptail` que pergunta:
 
 Se `whiptail` não estiver instalado, o bootstrap instala antes (`apt install whiptail` no Linux/WSL; `brew install newt` no Mac — whiptail vem dentro da formula `newt`).
 
+**Modo convidado / servidor (`--no-mesh`)** — instalar ferramentas sem entrar na mesh
+(sem clone de identity, Tailscale, Syncthing ou code-server):
+
+```bash
+# picker interativo sem bundles de membership
+bash setup.sh --no-mesh
+mesh menu --no-mesh
+
+# headless: só foundation/base (depois adicione bundles explicitamente)
+NON_INTERACTIVE=1 bash setup.sh --no-mesh
+bash setup.sh --no-mesh --non-interactive --bundle languages/php
+
+# inspecionar o catálogo filtrado
+bash setup.sh --no-mesh --list-bundles
+```
+
+Sob `--no-mesh`, bundles com `membership: mesh` somem do catálogo; o apply
+aborta se algum reaparecer na seleção resolvida. Default headless é só
+`foundation/base`.
+
 **Modo automação / CI** (sem menu — env vars e flags):
 
 ```bash
@@ -61,21 +81,14 @@ bash setup.sh --dry-run
 NON_INTERACTIVE=1 bash setup.sh
 bash setup.sh --non-interactive
 
-# rodar só alguns topics
-ONLY_TOPICS="00-core 10-languages" bash setup.sh
+# listar todo topic/bundle + marca default
+bash setup.sh --list-bundles
 
-# ativar topics opt-in
-INCLUDE_WEBSTACK=1 INCLUDE_REMOTE=1 bash setup.sh
-
-# aplicar dotfiles pessoais no fim
-MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git bash setup.sh
-
-# instalar ferramentas de IA pelo manifesto dos dotfiles, sem aplicar dados pessoais
-INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=git@github.com:you/dotfiles.git bash setup.sh
+# seleção headless sem menu (repetível)
+bash setup.sh --non-interactive --bundle languages/php --bundle databases/mysql
 ```
 
-O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) qualquer var de controle (`INCLUDE_*`, `MESH_IDENTITY_REPO`, `MESH_NPM_GLOBAL`, `MESH_AI_PACKAGES`, `ONLY_TOPICS`, `CI`) já vem do env; (c) stdin/stdout não é TTY (pipe, cron, CI).
-
+O menu é pulado automaticamente quando: (a) `NON_INTERACTIVE=1` ou `--non-interactive`; (b) stdin/stdout não é TTY (pipe, cron, CI); (c) um ou mais `--bundle` foram passados.
 Logo após o menu (ou imediatamente, quando pulado), o bootstrap roda `sudo -v` pra warmup do cache — uma única prompt de senha, e as chamadas `sudo` subsequentes dentro da janela do cache (~5–15min) são silenciosas.
 
 ## Topics
@@ -106,8 +119,9 @@ Primariamente para automação / CI — o menu interativo preenche essas vars pr
 | `--non-interactive` / `NON_INTERACTIVE=1` | Pula menu mesmo em TTY |
 | `--dry-run` / `DRY_RUN=1` | Imprime o que rodaria sem executar (também pula `sudo -v`) |
 | `--help` / `-h` | Mensagem de uso |
-| `SKIP_TOPICS` | lista espaço-separada de topics a pular |
-| `ONLY_TOPICS` | rodar apenas estes topics |
+| `SKIP_TOPICS` | lista espaço-separada de topics a pular (hatch de CI) |
+| `ONLY_TOPICS` | **Legacy / dead no v2 `setup.sh`** — não é API de seleção; use `--bundle`, o menu Blink ou `selections.list` |
+| `MESH_NO_MESH=1` | igual a `--no-mesh` (exportado pela flag antes do menu/apply) |
 | `MESH_IDENTITY_REPO` | URL/path do repo dotfiles pessoal (aceita `file://` para testes locais) |
 | `MESH_IDENTITY_DIR` | destino do clone (default `~/mesh-identity`) |
 | `GIT_NAME` / `GIT_EMAIL` | identidade — aplicada só se `user.name` / `user.email` ainda não existem (topic 50-git preserva existentes) |

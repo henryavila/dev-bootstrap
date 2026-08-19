@@ -158,7 +158,7 @@ membership bundles are: `personal/personal`, `identity/identity`,
    (if brew isn't installed yet on the first run, that's fine — topic 00-core
     doesn't depend on brew; detection re-runs after 00-core if needed)
 3. list topics/*/ in alphabetical order
-4. apply SKIP_TOPICS / ONLY_TOPICS filters
+4. resolve selection from Blink menu, `selections.list`, and/or repeated `--bundle` flags; apply `SKIP_TOPICS` CI hatch if set; under `MESH_NO_MESH=1` omit `membership: mesh` and demote the unlock list
 5. for opt-in topics, check the corresponding env var:
      60-web-stack    requires INCLUDE_WEBSTACK=1    (skip with message otherwise)
      70-remote-access    requires INCLUDE_REMOTE=1
@@ -562,12 +562,20 @@ jobs:
       - uses: actions/checkout@v4
       - name: bootstrap (safe topics)
         run: |
-          ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash setup.sh
+          bash setup.sh --non-interactive \
+            --bundle foundation/base \
+            --bundle languages/php \
+            --bundle shell-terminal/cli-tools \
+            --bundle shell-terminal/zsh \
+            --bundle git/config
       - name: idempotency check (2nd run)
         run: |
-          ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash setup.sh
+          bash setup.sh --non-interactive \
+            --bundle foundation/base \
+            --bundle languages/php \
+            --bundle shell-terminal/cli-tools \
+            --bundle shell-terminal/zsh \
+            --bundle git/config
       - name: verify
         run: for t in topics/{00-core,10-languages,20-terminal-ux,30-shell,40-tmux,50-git,80-claude-code}; do
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
@@ -578,12 +586,20 @@ jobs:
       - uses: actions/checkout@v4
       - name: bootstrap
         run: |
-          ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash setup.sh
+          bash setup.sh --non-interactive \
+            --bundle foundation/base \
+            --bundle languages/php \
+            --bundle shell-terminal/cli-tools \
+            --bundle shell-terminal/zsh \
+            --bundle git/config
       - name: idempotency check
         run: |
-          ONLY_TOPICS="00-core 10-languages 20-terminal-ux 30-shell 40-tmux 50-git 80-claude-code" \
-            bash setup.sh
+          bash setup.sh --non-interactive \
+            --bundle foundation/base \
+            --bundle languages/php \
+            --bundle shell-terminal/cli-tools \
+            --bundle shell-terminal/zsh \
+            --bundle git/config
       - name: verify
         run: for t in topics/{00-core,10-languages,20-terminal-ux,30-shell,40-tmux,50-git,80-claude-code}; do
                [ -x "$t/verify.sh" ] && bash "$t/verify.sh"; done
