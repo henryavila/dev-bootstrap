@@ -21,11 +21,10 @@ import { detectPlatform } from './core/platform.js';
 import {
   readAllManifests,
   filterByPlatform,
-  flattenBundles,
   indexByKey,
 } from './core/manifest-reader.js';
 import { scanAll } from './core/scanner.js';
-import { initialSelection, requiredKeys } from './core/init.js';
+import { applyNoMeshCatalog, initialSelection, requiredKeys } from './core/init.js';
 import { closeRequires, dependentsOf, computeDelta, toggleTopicSelection } from './core/delta.js';
 import { writeSelections, writeRemovals, writeParams, readParams } from './core/selections-io.js';
 import { buildFormSpec, applyFormValues, resolveSelectedDefaults, incompleteRequired, type BundleFormSpec } from './core/form-spec.js';
@@ -80,9 +79,15 @@ export function App({ dryRun, onExit }: AppProps) {
   const ink = useApp();
 
   // ── boot (computed once) ──
+  // MESH_NO_MESH=1: strip membership: mesh rows and demote the unlock list
+  // before requiredKeys / initialSelection so locks and defaults match setup.sh.
   const platform = useMemo(() => detectPlatform(), []);
-  const topics = useMemo(() => filterByPlatform(readAllManifests(), platform), [platform]);
-  const refs = useMemo(() => flattenBundles(topics), [topics]);
+  const catalog = useMemo(() => {
+    const platformTopics = filterByPlatform(readAllManifests(), platform);
+    return applyNoMeshCatalog(platformTopics);
+  }, [platform]);
+  const topics = catalog.topics;
+  const refs = catalog.refs;
   const index = useMemo(() => indexByKey(refs), [refs]);
   const scan = useMemo(() => scanAll(refs, platform), [refs, platform]);
   const required = useMemo(() => requiredKeys(refs), [refs]);
