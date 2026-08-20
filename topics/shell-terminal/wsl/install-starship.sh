@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 check()   { command -v starship >/dev/null 2>&1; }
-install() { set -o pipefail; curl -fsSL https://starship.rs/install.sh | sh -s -- --yes; }
+install() { set -o pipefail; curl -fsSL --connect-timeout 8 --max-time 45 https://starship.rs/install.sh | sh -s -- --yes; }
 verify()  { check; }
 repair() { install; }
 

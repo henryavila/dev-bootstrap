@@ -51,7 +51,7 @@ else
             arch="amd64"
             [[ "$(uname -m)" == "aarch64" ]] && arch="arm64"
             url="https://github.com/axllent/mailpit/releases/download/${mp_ver}/mailpit-linux-${arch}.tar.gz"
-            curl -fsSL -o "$tmp/mp.tgz" "$url"
+            curl -fsSL --connect-timeout 8 --max-time 45 -o "$tmp/mp.tgz" "$url"
             tar -xzf "$tmp/mp.tgz" -C "$tmp" mailpit
             sudo install -m 0755 "$tmp/mailpit" /usr/local/bin/mailpit
             rm -rf "$tmp"

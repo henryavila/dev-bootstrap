@@ -20,17 +20,79 @@ export MESH_GH_API_ATTEMPTS
 
 _rb_log() { printf '[rust-bins-wsl] %s\n' "$*" >&2; }
 
-# Circuit breaker: each binary is attempted at most once per install()/repair()
-# invocation. A second call logs and returns 1 immediately (no re-resolve).
+# Per-source in-process counters (do not inherit a parent shell's leftovers).
+_RB_TRIED_dust=0
+_RB_TRIED_xh=0
+_RB_TRIED_procs=0
+
+# --- Cross-entry circuit breaker (option A) ---------------------------------
+# custom_install runs `( . "$script"; install )`, so in-process `_RB_TRIED_*`
+# reset on every engine entry. Persist a short-lived stamp under TMPDIR so a
+# re-sourced install in the same bootstrap refuses a second download of the
+# same binary. repair() clears stamps for an intentional doctor --fix retry.
+# TTL default 120s (overridable via MESH_RUST_BINS_ATTEMPT_TTL).
+_RB_ATTEMPT_TTL_SECS="${MESH_RUST_BINS_ATTEMPT_TTL:-120}"
+
+_rb_attempt_stamp() {
+    printf '%s/mesh-rust-bins-attempt.%s' "${TMPDIR:-/tmp}" "$1"
+}
+
+# Pending write marker: set immediately before installing the final binary,
+# cleared on success. rollback() removes only still-pending bins so a soft_fail
+# timeout mid-binary-2/3 cannot wipe siblings that already completed.
+_rb_pending_stamp() {
+    printf '%s/mesh-rust-bins-pending.%s' "${TMPDIR:-/tmp}" "$1"
+}
+
+_rb_stamp_mtime() {
+    # WSL/Linux installer — GNU stat.
+    stat -c %Y "$1" 2>/dev/null || echo 0
+}
+
+_rb_clear_attempt_stamps() {
+    local b
+    for b in dust xh procs; do
+        rm -f "$(_rb_attempt_stamp "$b")"
+    done
+}
+
+# Circuit breaker: each binary is attempted at most once per TTL window
+# (cross re-source) and at most once per sourced shell (in-process).
 _rb_guard() {
     local name="$1"
     local var="_RB_TRIED_${name}"
+    local stamp now mtime age
+    stamp="$(_rb_attempt_stamp "$name")"
+
     if [[ "${!var:-0}" -ge 1 ]]; then
         _rb_log "circuit breaker: ${name} already attempted — refusing loop"
         return 1
     fi
+
+    if [[ -f "$stamp" ]]; then
+        now="$(date +%s)"
+        mtime="$(_rb_stamp_mtime "$stamp")"
+        age=$((now - mtime))
+        if [[ "$age" -ge 0 && "$age" -lt "$_RB_ATTEMPT_TTL_SECS" ]]; then
+            _rb_log "circuit breaker: ${name} already attempted — refusing loop"
+            printf -v "$var" '%s' 1
+            return 1
+        fi
+    fi
+
     printf -v "$var" '%s' 1
+    # Record attempt before any network I/O so a kill mid-download still
+    # suppresses re-entry within the TTL.
+    : > "$stamp"
     return 0
+}
+
+_rb_mark_pending() {
+    : > "$(_rb_pending_stamp "$1")"
+}
+
+_rb_clear_pending() {
+    rm -f "$(_rb_pending_stamp "$1")"
 }
 
 _install_dust() {
@@ -49,7 +111,15 @@ _install_dust() {
         return 1
     fi
     tar -C "$tmp" -xzf "$tmp/dust.tgz" --strip-components=1 || { rm -rf "$tmp"; return 1; }
-    install -m 0755 "$tmp/dust" "$HOME/.local/bin/dust" || { rm -rf "$tmp"; return 1; }
+    _rb_mark_pending dust
+    # `command install` — the script defines install(), which would shadow
+    # /usr/bin/install and recurse into the mesh installer.
+    if ! command install -m 0755 "$tmp/dust" "$HOME/.local/bin/dust"; then
+        _rb_clear_pending dust
+        rm -rf "$tmp"
+        return 1
+    fi
+    _rb_clear_pending dust
     rm -rf "$tmp"
     [[ -x "$HOME/.local/bin/dust" ]]
 }
@@ -70,7 +140,13 @@ _install_xh() {
         return 1
     fi
     tar -C "$tmp" -xzf "$tmp/xh.tgz" --strip-components=1 || { rm -rf "$tmp"; return 1; }
-    install -m 0755 "$tmp/xh" "$HOME/.local/bin/xh" || { rm -rf "$tmp"; return 1; }
+    _rb_mark_pending xh
+    if ! command install -m 0755 "$tmp/xh" "$HOME/.local/bin/xh"; then
+        _rb_clear_pending xh
+        rm -rf "$tmp"
+        return 1
+    fi
+    _rb_clear_pending xh
     rm -rf "$tmp"
     [[ -x "$HOME/.local/bin/xh" ]]
 }
@@ -91,7 +167,13 @@ _install_procs() {
         return 1
     fi
     unzip -q -o "$tmp/procs.zip" -d "$tmp" || { rm -rf "$tmp"; return 1; }
-    install -m 0755 "$tmp/procs" "$HOME/.local/bin/procs" || { rm -rf "$tmp"; return 1; }
+    _rb_mark_pending procs
+    if ! command install -m 0755 "$tmp/procs" "$HOME/.local/bin/procs"; then
+        _rb_clear_pending procs
+        rm -rf "$tmp"
+        return 1
+    fi
+    _rb_clear_pending procs
     rm -rf "$tmp"
     [[ -x "$HOME/.local/bin/procs" ]]
 }
@@ -132,12 +214,19 @@ repair() {
     _RB_TRIED_dust=0
     _RB_TRIED_xh=0
     _RB_TRIED_procs=0
+    _rb_clear_attempt_stamps
     install
 }
 
 rollback() {
-    local b
+    # Selective: only remove binaries still marked pending (incomplete write).
+    # Successfully installed siblings must survive aggregate soft_fail / timeout
+    # mid-binary-2/3 — a full wipe destroyed partial success.
+    local b stamp
     for b in dust xh procs; do
-        [[ -x "$HOME/.local/bin/$b" ]] && rm -f "$HOME/.local/bin/$b"
+        stamp="$(_rb_pending_stamp "$b")"
+        if [[ -f "$stamp" ]]; then
+            rm -f "$HOME/.local/bin/$b" "$stamp"
+        fi
     done
 }

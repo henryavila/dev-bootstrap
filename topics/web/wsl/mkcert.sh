@@ -6,6 +6,10 @@
 CERT_DIR="${CERT_DIR:-/etc/nginx/certs}"
 WILDCARD_PEM="$CERT_DIR/wildcard-localhost.pem"
 WILDCARD_KEY="$CERT_DIR/wildcard-localhost-key.pem"
+# Known install path + soft_fail marker: rollback removes only a binary we
+# placed this run. Never auto-untrust system/NSS/Windows CAs.
+MKCERT_BIN="${MKCERT_BIN:-/usr/local/bin/mkcert}"
+MKCERT_BIN_MARKER="${XDG_STATE_HOME:-$HOME/.local/state}/mesh/mkcert-bin-installed"
 
 check() {
     # `test -f` only needs stat() on the file path, which requires +x on
@@ -40,10 +44,16 @@ install() {
         local ver tmp
         ver="$(gh_latest_tag FiloSottile/mkcert)"
         tmp="$(mktemp -d)"
-        curl -fsSL -o "$tmp/mkcert" \
-            "https://github.com/FiloSottile/mkcert/releases/download/${ver}/mkcert-${ver}-linux-amd64"
+        if ! curl -fsSL --connect-timeout 8 --max-time 45 -o "$tmp/mkcert" \
+            "https://github.com/FiloSottile/mkcert/releases/download/${ver}/mkcert-${ver}-linux-amd64"; then
+            echo "[mkcert] download failed (curl non-zero)" >&2
+            rm -rf "$tmp"
+            return 1
+        fi
         # shellcheck disable=SC2033  # coreutils install, not the engine install() fn
-        sudo install -m 0755 "$tmp/mkcert" /usr/local/bin/mkcert
+        sudo install -m 0755 "$tmp/mkcert" "$MKCERT_BIN"
+        mkdir -p "$(dirname "$MKCERT_BIN_MARKER")"
+        : > "$MKCERT_BIN_MARKER"
         rm -rf "$tmp"
     fi
 
@@ -136,15 +146,24 @@ install() {
     else
         echo "[mkcert] powershell.exe unreachable — run scripts/import-mkcert-from-windows.ps1 from Windows side" >&2
     fi
+
+    # Successful full install — drop the soft_fail binary marker so a later
+    # unrelated rollback does not remove a completed mkcert.
+    rm -f "$MKCERT_BIN_MARKER"
 }
 
 verify() {
+    # Fail closed: check() requires binary + wildcard PEMs + rootCA.pem.
+    # Partial trust (binary only / missing CAROOT) must not write an install marker.
     check
 }
 
 repair() { install; }
 
 rollback() {
-    # Cert state has system-wide effects; don't auto-uninstall.
-    :
+    # Best-effort: remove a binary we placed this run. Do not untrust CAs.
+    if [[ -f "$MKCERT_BIN_MARKER" ]]; then
+        [[ -e "$MKCERT_BIN" ]] && sudo rm -f "$MKCERT_BIN"
+        rm -f "$MKCERT_BIN_MARKER"
+    fi
 }
