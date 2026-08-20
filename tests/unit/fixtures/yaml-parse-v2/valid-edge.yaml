@@ -45,3 +45,4 @@ bundles:
         script: ./mac/mosh.sh
         platforms: [mac]
         when: brew_prefix_custom
+        soft_fail: true

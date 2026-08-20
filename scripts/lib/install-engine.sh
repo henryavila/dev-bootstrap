@@ -677,6 +677,7 @@ apply_bundle() {
         local mcheck="${p}_CHECK";     mcheck="${!mcheck:-}"
         local when="${p}_WHEN";        when="${!when:-}"
         local idem="${p}_IDEMPOTENT";  idem="${!idem:-0}"
+        local soft="${p}_SOFT_FAIL";   soft="${!soft:-0}"
         local autoupd="${p}_AUTOUPDATE"; autoupd="${!autoupd:-0}"
         local restart_svc="${p}_RESTART_SERVICE"; restart_svc="${!restart_svc:-}"
         [[ -n "$name" ]] || break
@@ -765,6 +766,42 @@ apply_bundle() {
             # shellcheck disable=SC1090
             . "$driver"
             local prefix="${type//-/_}"
+
+            # soft_fail: external/CDN items may hang or fail without aborting the
+            # whole bootstrap. Warn + followup, then exit 0 so later items run.
+            _soft_fail_continue() {
+                local reason="$1"
+                log_warn "$bundle/$name: $reason (soft_fail: continuing)"
+                followup manual "$bundle/$name failed — $reason. Retry later when the network allows, or install manually."
+                exit 0
+            }
+            # Wall-clock bound for soft_fail install/repair. Catches hung CDN
+            # transfers that ignore curl --max-time (half-open proxy, etc.).
+            # Returns 124 when the watchdog kills the child (GNU timeout convention).
+            _run_bounded() {
+                local rc=0
+                if [[ "$soft" != "1" ]]; then
+                    "$@" || rc=$?
+                    return "$rc"
+                fi
+                local secs="${MESH_SOFT_FAIL_TIMEOUT:-300}"
+                "$@" &
+                local cmd_pid=$!
+                (
+                    sleep "$secs"
+                    kill -TERM "$cmd_pid" 2>/dev/null || true
+                    sleep 1
+                    kill -KILL "$cmd_pid" 2>/dev/null || true
+                ) &
+                local watch_pid=$!
+                wait "$cmd_pid" || rc=$?
+                kill "$watch_pid" 2>/dev/null || true
+                wait "$watch_pid" 2>/dev/null || true
+                if [[ "$rc" -eq 143 || "$rc" -eq 137 ]]; then
+                    return 124
+                fi
+                return "$rc"
+            }
 
             _run_post_hooks() {
                 local post_count_var="${p}_POST_COUNT" post_count pidx ran post_cmd pe_var
@@ -1090,10 +1127,15 @@ apply_bundle() {
             if [[ "$idem" == "1" ]]; then
                 log_info "$bundle/$name: running (idempotent)"
                 local _rc=0
-                "${prefix}_install" "$arg" || _rc=$?
+                _run_bounded "${prefix}_install" "$arg" || _rc=$?
                 if [[ "$_rc" -ne 0 ]]; then
                     log_warn "$bundle/$name: install failed (rc=$_rc); rollback if present"
                     declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                    if [[ "$soft" == "1" ]]; then
+                        [[ "$_rc" -eq 124 ]] \
+                            && _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s" \
+                            || _soft_fail_continue "install failed (rc=$_rc)"
+                    fi
                     exit "$_rc"
                 fi
                 install_state_record "$TOPIC" "$name" "$type" "$arg" \
@@ -1123,9 +1165,9 @@ apply_bundle() {
             }
             _repair_once() {
                 if declare -f "${prefix}_repair" >/dev/null 2>&1; then
-                    "${prefix}_repair" "$arg"
+                    _run_bounded "${prefix}_repair" "$arg"
                 else
-                    "${prefix}_install" "$arg"
+                    _run_bounded "${prefix}_install" "$arg"
                 fi
             }
             if _presence_check; then
@@ -1145,15 +1187,26 @@ apply_bundle() {
                 local _rrc=0
                 _repair_once || _rrc=$?
                 if [[ "$_rrc" -eq 75 ]]; then
+                    if [[ "$soft" == "1" ]]; then
+                        _soft_fail_continue "no safe auto-repair available"
+                    fi
                     log_error "$bundle/$name: no safe auto-repair available — manual fix needed"
                     exit 67
                 elif [[ "$_rrc" -ne 0 ]]; then
+                    if [[ "$soft" == "1" ]]; then
+                        [[ "$_rrc" -eq 124 ]] \
+                            && _soft_fail_continue "repair timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s" \
+                            || _soft_fail_continue "repair failed (rc=$_rrc)"
+                    fi
                     log_error "$bundle/$name: repair action failed (rc=$_rrc)"
                     exit "$_rrc"
                 fi
                 local _reverc=0
                 _strong_probe || _reverc=$?
                 if [[ "$_reverc" -ne 0 ]]; then
+                    if [[ "$soft" == "1" ]]; then
+                        _soft_fail_continue "still broken after repair"
+                    fi
                     log_error "$bundle/$name: still broken after repair — manual intervention required"
                     exit 67
                 fi
@@ -1165,10 +1218,15 @@ apply_bundle() {
 
             log_info "$bundle/$name: installing"
             local _install_rc=0
-            "${prefix}_install" "$arg" || _install_rc=$?
+            _run_bounded "${prefix}_install" "$arg" || _install_rc=$?
             if [[ "$_install_rc" -ne 0 ]]; then
                 log_warn "$bundle/$name: install failed (rc=$_install_rc); rollback if present"
                 declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                if [[ "$soft" == "1" ]]; then
+                    [[ "$_install_rc" -eq 124 ]] \
+                        && _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s" \
+                        || _soft_fail_continue "install failed (rc=$_install_rc)"
+                fi
                 exit "$_install_rc"
             fi
 
@@ -1184,6 +1242,9 @@ apply_bundle() {
             if (( _post_ok == 0 )); then
                 log_warn "$bundle/$name: post-install verification failed; rollback if present"
                 declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
+                if [[ "$soft" == "1" ]]; then
+                    _soft_fail_continue "post-install verification failed"
+                fi
                 exit 67
             fi
 
@@ -1191,7 +1252,16 @@ apply_bundle() {
                 || log_warn "$bundle/$name: failed to record install marker (continuing)"
 
             _run_post_hooks || exit $?
-        ) || { local _rc=$?; log_error "$bundle/$name: failed (rc=$_rc)"; exit $_rc; }
+        ) || {
+            local _rc=$?
+            if [[ "$soft" == "1" ]]; then
+                log_warn "$bundle/$name: failed (rc=$_rc) (soft_fail: continuing)"
+                followup manual "$bundle/$name failed (rc=$_rc). Retry later when the network allows, or install manually."
+            else
+                log_error "$bundle/$name: failed (rc=$_rc)"
+                exit "$_rc"
+            fi
+        }
         bundle_processed=$((bundle_processed+1))
     done
 

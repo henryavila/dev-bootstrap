@@ -7,7 +7,8 @@ install() {
     local ver tmp
     ver="$(gh_latest_tag jesseduffield/lazygit | sed 's/^v//')"
     tmp="$(mktemp -d)"
-    curl -fsSL -o "$tmp/lg.tgz" \
+    curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 --retry-delay 2 --retry-all-errors \
+        -o "$tmp/lg.tgz" \
         "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${ver}_Linux_x86_64.tar.gz"
     tar -C "$tmp" -xzf "$tmp/lg.tgz" lazygit
     # shellcheck disable=SC2033  # coreutils install, not the engine install() fn

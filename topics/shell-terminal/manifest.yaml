@@ -129,14 +129,17 @@ bundles:
         type: custom
         script: ./wsl/install-starship.sh
         platforms: [wsl]
+        soft_fail: true
       - name: lazygit-wsl
         type: custom
         script: ./wsl/install-lazygit.sh
         platforms: [wsl]
+        soft_fail: true
       - name: git-delta-wsl
         type: custom
         script: ./wsl/install-delta.sh
         platforms: [wsl]
+        soft_fail: true
       - name: atuin-wsl
         type: custom
         script: ./wsl/install-atuin.sh
@@ -145,6 +148,7 @@ bundles:
         type: custom
         script: ./wsl/install-rust-bins.sh
         platforms: [wsl]
+        soft_fail: true
       - name: shell-fragments
         type: deploy
         spec: ./templates/cli-tools

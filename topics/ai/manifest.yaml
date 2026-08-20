@@ -94,6 +94,7 @@ bundles:
       - name: rtk
         type: custom
         script: ./install-rtk.sh
+        soft_fail: true
         autoupdate: true   # leaf CLI proxy; install-rtk.sh update() keeps it fresh
 
   - name: claude-mem
