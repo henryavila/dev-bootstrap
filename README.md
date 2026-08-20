@@ -18,17 +18,19 @@ One of two repos in a layered architecture:
 
 ## Quickstart
 
-### Windows (before WSL)
+Full Windows → WSL walkthrough (exit codes, fonts, systemd, troubleshooting):
+**[docs/INSTALL-WINDOWS-WSL.md](docs/INSTALL-WINDOWS-WSL.md)**.
 
-PowerShell **as Administrator**. On a virgin machine (no Git yet), download and run the host bootstrap directly:
+### A. Windows host (Admin PowerShell) → Ubuntu
+
+On a virgin PC (no Git yet):
 
 ```powershell
-# ExecutionPolicy Bypass avoids Restricted-policy blocks on unsigned .ps1 files
 irm https://raw.githubusercontent.com/henryavila/mesh-workstation/main/windows/install-wsl.ps1 -OutFile $env:TEMP\install-wsl.ps1
 powershell -ExecutionPolicy Bypass -File $env:TEMP\install-wsl.ps1
 ```
 
-Or, if Git is already available:
+If Git is already installed:
 
 ```powershell
 git clone https://github.com/henryavila/mesh-workstation "$env:USERPROFILE\mesh-workstation"
@@ -36,20 +38,24 @@ cd "$env:USERPROFILE\mesh-workstation"
 powershell -ExecutionPolicy Bypass -File .\windows\install-wsl.ps1
 ```
 
-The script enables WSL features, installs **Git** + **Windows Terminal** via winget, then registers **Ubuntu-24.04**. If features were just enabled it exits `2` and asks for a reboot — re-run the same command after reboot to finish. Nerd Font + Terminal theme are applied later inside Ubuntu by `shell-terminal/fonts` (CaskaydiaCove), not on the host script.
+| Exit | Meaning |
+|------|---------|
+| `0` | WSL features OK, Git + Windows Terminal installed, Ubuntu-24.04 registered |
+| `2` | Reboot required — reboot Windows, re-run the same command, then continue |
+| `1` | Hard failure (often missing winget — see the install guide) |
 
-Then open the freshly-installed Ubuntu and follow the WSL instructions below.
+Then open **Ubuntu** from the Start menu and create your Linux user. Host script
+does **not** install the Nerd Font; that happens inside Ubuntu during setup
+(`shell-terminal/fonts` → CaskaydiaCove + Catppuccin in Windows Terminal).
 
-### WSL2/Ubuntu or macOS
+### B. Inside Ubuntu (or native Linux / macOS)
 
-**Before running the bootstrap** (what isn't automated because we need it to *be able to* clone this repo):
+**Phase 0** — only what is needed to clone this repo:
 
 | Platform | One-time prereq |
 |---|---|
-| WSL2 / native Linux (fresh install) | `sudo apt-get update && sudo apt-get install -y git curl ca-certificates` |
-| macOS (fresh install) | Nothing — Xcode Command Line Tools install on demand the first time `setup.sh` invokes `git` |
-
-**Interactive mode (default):**
+| WSL2 / native Linux | `sudo apt-get update && sudo apt-get install -y git curl ca-certificates` |
+| macOS | Nothing — Xcode CLT installs on demand the first time `setup.sh` calls `git` |
 
 ```bash
 git clone https://github.com/henryavila/mesh-workstation ~/mesh-workstation
@@ -57,17 +63,14 @@ cd ~/mesh-workstation
 bash setup.sh
 ```
 
-Running without control flags opens the interactive **Blink** (Ink) menu **when
-Node is already on PATH**. Pick `topic/bundle` ids from the live catalog under
-`topics/*/` (for example `web/valet`, `remote-access/tailscale`,
-`ai/claude-code`, `personal/personal`), set git identity / paths when prompted,
-confirm, then the engine applies the selection to `~/.config/mesh/selections.list`.
-Cancelling aborts cleanly.
+**What happens**
 
-On a virgin box (no Node yet) the first run uses a **lean bootstrap** selection
-(`foundation`, `git/config`, `shell-terminal`, `languages/node`, `personal`) so
-fnm/Node and shell PATH fragments land without silently installing the full
-default-on fleet. Re-run `bash setup.sh` in a new shell to get the full menu.
+1. **First run (no Node on PATH):** lean bootstrap — `foundation`, `git/config`,
+   `shell-terminal` (incl. fonts), `languages/node`, `personal`. Does **not**
+   silently install the full default-on fleet. Identity can still prompt on a TTY.
+2. **Open a new shell** (so fnm PATH fragments load).
+3. **Second run:** `bash setup.sh` opens the **Blink** menu — pick bundles
+   (`web/valet`, `databases/mysql`, `ai/claude-code`, …), confirm, apply.
 
 > Historical note: early releases used a `whiptail` checklist over numbered
 > `00-*` / `60-web-stack` topics. That UX is gone; do not treat numbered topic

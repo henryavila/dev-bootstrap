@@ -167,11 +167,14 @@ Next steps:
        git clone https://github.com/henryavila/mesh-workstation ~/mesh-workstation
        cd ~/mesh-workstation
        bash setup.sh
+     First run (no Node yet) = lean bootstrap. Open a NEW shell, then run
+     bash setup.sh again for the full Blink menu.
   4. Fonts + Windows Terminal theme (CaskaydiaCove Nerd Font, Catppuccin) are
-     applied by the shell-terminal/fonts bundle during setup — no manual
-     Settings > Appearance step.
+     applied by shell-terminal/fonts during setup — no manual Settings step.
 
-If this was the first enable of WSL features on the machine and something looks
-wrong, reboot once and re-run:
+Full guide (troubleshooting, exit codes, systemd):
+  https://github.com/henryavila/mesh-workstation/blob/main/docs/INSTALL-WINDOWS-WSL.md
+
+If features were just enabled and something looks wrong, reboot once and re-run:
   powershell -ExecutionPolicy Bypass -File .\windows\install-wsl.ps1
 "@ -ForegroundColor Green
