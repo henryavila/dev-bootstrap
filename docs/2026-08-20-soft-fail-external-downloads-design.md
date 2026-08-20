@@ -56,3 +56,14 @@ were unbounded).
   or times out; a following item still runs; followup file gets an entry;
   hard-fail neighbour still aborts.
 - Focused suites green; `mesh lint` on touched paths.
+
+## Follow-up 2026-08-20 — loop breaker (CRC)
+
+**Root cause:** `_run_bounded` killed only the top PID, leaving grandchild
+`curl`/subshell orphans that kept resolving/downloading dust tags after the
+item should have moved on. Nested `gh_api`×`curl --retry`×3 binaries amplified
+the “loop on dust tag” appearance on corporate networks.
+
+**Fix:** process-group kill (`set -m` + `kill -$pgid`); default soft_fail
+budget 90s; rust-bins one-shot curl (no `--retry`), `MESH_GH_API_ATTEMPTS=2`,
+per-binary circuit breaker that refuses a second resolve/download.

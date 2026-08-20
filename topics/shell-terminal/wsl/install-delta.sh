@@ -10,7 +10,7 @@ install() {
     trap 'rm -rf "$tmp"' RETURN
     ver="$(gh_latest_tag dandavison/delta)"
     [[ -n "$ver" && "$ver" != "null" ]] || { echo '[delta] could not resolve latest release tag' >&2; return 1; }
-    curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 --retry-delay 2 --retry-all-errors \
+    curl -fsSL --connect-timeout 8 --max-time 45 \
         -o "$tmp/delta.deb" \
         "https://github.com/dandavison/delta/releases/download/${ver}/git-delta_${ver}_amd64.deb"
     sudo dpkg -i "$tmp/delta.deb"
