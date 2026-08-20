@@ -778,26 +778,34 @@ apply_bundle() {
             # Wall-clock bound for soft_fail install/repair. Catches hung CDN
             # transfers that ignore curl --max-time (half-open proxy, etc.).
             # Returns 124 when the watchdog kills the child (GNU timeout convention).
+            #
+            # CRITICAL: kill the process GROUP, not just the top PID. A top-PID
+            # kill leaves grandchild curl/sleep orphans that keep resolving /
+            # downloading (the CRC "loop on dust tag" hang). `set -m` gives the
+            # background job its own PGID (== pid) so `kill -TERM -$pid` reaps
+            # the whole tree.
             _run_bounded() {
                 local rc=0
                 if [[ "$soft" != "1" ]]; then
                     "$@" || rc=$?
                     return "$rc"
                 fi
-                local secs="${MESH_SOFT_FAIL_TIMEOUT:-300}"
+                local secs="${MESH_SOFT_FAIL_TIMEOUT:-90}"
+                set -m
                 "$@" &
                 local cmd_pid=$!
                 (
                     sleep "$secs"
-                    kill -TERM "$cmd_pid" 2>/dev/null || true
-                    sleep 1
-                    kill -KILL "$cmd_pid" 2>/dev/null || true
+                    kill -TERM -"$cmd_pid" 2>/dev/null || kill -TERM "$cmd_pid" 2>/dev/null || true
+                    sleep 2
+                    kill -KILL -"$cmd_pid" 2>/dev/null || kill -KILL "$cmd_pid" 2>/dev/null || true
                 ) &
                 local watch_pid=$!
                 wait "$cmd_pid" || rc=$?
                 kill "$watch_pid" 2>/dev/null || true
                 wait "$watch_pid" 2>/dev/null || true
-                if [[ "$rc" -eq 143 || "$rc" -eq 137 ]]; then
+                set +m 2>/dev/null || true
+                if [[ "$rc" -eq 143 || "$rc" -eq 137 || "$rc" -eq 124 ]]; then
                     return 124
                 fi
                 return "$rc"
@@ -1133,7 +1141,7 @@ apply_bundle() {
                     declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
                     if [[ "$soft" == "1" ]]; then
                         [[ "$_rc" -eq 124 ]] \
-                            && _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s" \
+                            && _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-90}s" \
                             || _soft_fail_continue "install failed (rc=$_rc)"
                     fi
                     exit "$_rc"
@@ -1195,7 +1203,7 @@ apply_bundle() {
                 elif [[ "$_rrc" -ne 0 ]]; then
                     if [[ "$soft" == "1" ]]; then
                         [[ "$_rrc" -eq 124 ]] \
-                            && _soft_fail_continue "repair timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s" \
+                            && _soft_fail_continue "repair timed out after ${MESH_SOFT_FAIL_TIMEOUT:-90}s" \
                             || _soft_fail_continue "repair failed (rc=$_rrc)"
                     fi
                     log_error "$bundle/$name: repair action failed (rc=$_rrc)"
@@ -1224,7 +1232,7 @@ apply_bundle() {
                 declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
                 if [[ "$soft" == "1" ]]; then
                     [[ "$_install_rc" -eq 124 ]] \
-                        && _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s" \
+                        && _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-90}s" \
                         || _soft_fail_continue "install failed (rc=$_install_rc)"
                 fi
                 exit "$_install_rc"

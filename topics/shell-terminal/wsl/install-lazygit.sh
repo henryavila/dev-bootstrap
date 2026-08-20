@@ -7,7 +7,7 @@ install() {
     local ver tmp
     ver="$(gh_latest_tag jesseduffield/lazygit | sed 's/^v//')"
     tmp="$(mktemp -d)"
-    curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 --retry-delay 2 --retry-all-errors \
+    curl -fsSL --connect-timeout 8 --max-time 45 \
         -o "$tmp/lg.tgz" \
         "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${ver}_Linux_x86_64.tar.gz"
     tar -C "$tmp" -xzf "$tmp/lg.tgz" lazygit

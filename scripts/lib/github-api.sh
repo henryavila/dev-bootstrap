@@ -15,18 +15,22 @@
 # any curl/HTTP failure (notably 429). Returns curl's exit code on final fail.
 gh_api_curl() {
     local url="$1" token="${GITHUB_TOKEN:-${GH_TOKEN:-}}" attempt rc
+    # Callers may tighten the budget (e.g. rust-bins soft_fail path) via
+    # MESH_GH_API_ATTEMPTS. Default remains 4 for anonymous 429 backoff.
+    local max_attempts="${MESH_GH_API_ATTEMPTS:-4}"
+    [[ "$max_attempts" -ge 1 ]] || max_attempts=1
     if [[ -z "$token" ]] && command -v gh >/dev/null 2>&1; then
         token="$(gh auth token 2>/dev/null)" || token=""
     fi
     local -a hdrs=(-H "Accept: application/vnd.github+json" \
                    -H "X-GitHub-Api-Version: 2022-11-28")
     [[ -n "$token" ]] && hdrs+=(-H "Authorization: Bearer $token")
-    for attempt in 1 2 3 4; do
-        if curl -fsSL --max-time 20 "${hdrs[@]}" "$url"; then
+    for ((attempt=1; attempt<=max_attempts; attempt++)); do
+        if curl -fsSL --connect-timeout 8 --max-time 20 "${hdrs[@]}" "$url"; then
             return 0
         fi
         rc=$?
-        [[ "$attempt" -lt 4 ]] || return "$rc"
+        [[ "$attempt" -lt "$max_attempts" ]] || return "$rc"
         sleep "$((attempt * 2))"
     done
 }

@@ -309,7 +309,16 @@ bundles:
 YAML
 cat > "$TD/thang/hung-cdn.sh" <<'SH'
 check()   { return 1; }
-install() { echo "hung-cdn" >> "${ENGTEST_OUT:?}/runlog.txt"; sleep 30; }
+install() {
+    echo "hung-cdn" >> "${ENGTEST_OUT:?}/runlog.txt"
+    # Background grandchild that outlives a top-PID-only kill — must die with
+    # process-group kill (mirrors hung curl children under custom_install).
+    (
+        sleep 3
+        echo orphaned >> "${ENGTEST_OUT:?}/orphan.txt"
+    ) &
+    sleep 30
+}
 verify()  { return 1; }
 SH
 cat > "$TD/thang/after-hang.sh" <<'SH'
@@ -328,9 +337,12 @@ ENGTEST_OUT="$OUT" HOME="$HOMEDIR" MESH_INSTALL_STATE_DIR="$ST" \
     --selections "$TMP/sel.hang" --non-interactive >"$TMP/hang.out" 2>&1
 hang_rc=$?
 hang_log="$(cat "$OUT/runlog.txt" 2>/dev/null || true)"
+# Give a would-be orphan time to write if the kill leaked children.
+sleep 4
 assert "soft_fail timeout: run exits 0" "0" "$hang_rc"
 assert "soft_fail timeout: after-hang ran" "yes" "$(printf '%s\n' "$hang_log" | grep -qx 'after-hang' && echo yes || echo no)"
 assert "soft_fail timeout: followup recorded" "yes" "$(grep -q 'hung-cdn' "$FOLLOWUP" && echo yes || echo no)"
+assert "soft_fail timeout: process-group kill (no orphan)" "no" "$(test -f "$OUT/orphan.txt" && echo yes || echo no)"
 
 echo ""
 echo "install-engine.test: $passed passed, $failed failed"
