@@ -769,8 +769,34 @@ apply_bundle() {
 
             # soft_fail: external/CDN items may hang or fail without aborting the
             # whole bootstrap. Warn + followup, then exit 0 so later items run.
+            # A short-lived stamp under MESH_INSTALL_STATE_DIR avoids re-burning
+            # the wall-clock budget on every bootstrap (MESH_SOFT_FAIL_COOLDOWN).
+            _soft_fail_stamp_path() {
+                printf '%s/softfail__%s__%s.stamp' "$(install_state_dir)" "$TOPIC" "$name"
+            }
+            _soft_fail_write_stamp() {
+                local stamp dir
+                stamp="$(_soft_fail_stamp_path)"
+                dir="$(install_state_dir)"
+                mkdir -p "$dir" 2>/dev/null || true
+                : > "$stamp" 2>/dev/null || true
+            }
+            _soft_fail_in_cooldown() {
+                local stamp cooldown now mtime
+                stamp="$(_soft_fail_stamp_path)"
+                [[ -f "$stamp" ]] || return 1
+                [[ "${MESH_SOFT_FAIL_FORCE:-0}" == "1" ]] && return 1
+                [[ "$REPAIR_MODE" -eq 1 ]] && return 1
+                cooldown="${MESH_SOFT_FAIL_COOLDOWN:-3600}"
+                [[ "$cooldown" =~ ^[0-9]+$ ]] || cooldown=3600
+                now="$(date +%s)"
+                mtime="$(stat -c %Y "$stamp" 2>/dev/null || stat -f %m "$stamp" 2>/dev/null || echo 0)"
+                [[ "$mtime" =~ ^[0-9]+$ ]] || return 1
+                (( now - mtime < cooldown ))
+            }
             _soft_fail_continue() {
                 local reason="$1"
+                _soft_fail_write_stamp
                 log_warn "$bundle/$name: $reason (soft_fail: continuing)"
                 followup manual "$bundle/$name failed — $reason. Retry later when the network allows, or install manually."
                 exit 0
@@ -779,26 +805,53 @@ apply_bundle() {
             # transfers that ignore curl --max-time (half-open proxy, etc.).
             # Returns 124 when the watchdog kills the child (GNU timeout convention).
             #
-            # CRITICAL: kill the process GROUP, not just the top PID. A top-PID
-            # kill leaves grandchild curl/sleep orphans that keep resolving /
-            # downloading (the CRC "loop on dust tag" hang). `set -m` gives the
-            # background job its own PGID (== pid) so `kill -TERM -$pid` reaps
-            # the whole tree.
+            # CRITICAL: kill the process GROUP when PGID==pid. A top-PID-only
+            # kill leaves grandchild curl/sleep orphans (CRC "loop on dust tag").
+            # Prefer `set -m` so the job gets its own PGID; if monitor mode is a
+            # no-op / PGID!=pid, fall back to best-effort recursive child reap.
+            #
+            # Default 300s: rust-bins worst case ~261s (3 binaries × ~87s of
+            # API+curl caps). Override via MESH_SOFT_FAIL_TIMEOUT.
             _run_bounded() {
                 local rc=0
                 if [[ "$soft" != "1" ]]; then
                     "$@" || rc=$?
                     return "$rc"
                 fi
-                local secs="${MESH_SOFT_FAIL_TIMEOUT:-90}"
-                set -m
+                local secs="${MESH_SOFT_FAIL_TIMEOUT:-300}"
+                [[ "$secs" =~ ^[0-9]+$ && "$secs" -gt 0 ]] || secs=300
+
+                # Best-effort tree reap when process-group kill is unsafe/unavailable.
+                _soft_fail_reap_tree() {
+                    local sig="$1" root="$2" kid kids
+                    kids="$(pgrep -P "$root" 2>/dev/null || true)"
+                    for kid in $kids; do
+                        _soft_fail_reap_tree "$sig" "$kid"
+                    done
+                    kill "-$sig" "$root" 2>/dev/null || true
+                }
+                _soft_fail_reap() {
+                    local sig="$1" root="$2" use_group="$3"
+                    if [[ "$use_group" -eq 1 ]]; then
+                        kill "-$sig" -"$root" 2>/dev/null || kill "-$sig" "$root" 2>/dev/null || true
+                        return
+                    fi
+                    _soft_fail_reap_tree "$sig" "$root"
+                }
+
+                set -m 2>/dev/null || true
                 "$@" &
                 local cmd_pid=$!
+                local pgid="" use_group=0
+                pgid="$(ps -o pgid= -p "$cmd_pid" 2>/dev/null | tr -d ' \t\n' || true)"
+                if [[ -n "$pgid" && "$pgid" == "$cmd_pid" ]]; then
+                    use_group=1
+                fi
                 (
                     sleep "$secs"
-                    kill -TERM -"$cmd_pid" 2>/dev/null || kill -TERM "$cmd_pid" 2>/dev/null || true
+                    _soft_fail_reap TERM "$cmd_pid" "$use_group"
                     sleep 2
-                    kill -KILL -"$cmd_pid" 2>/dev/null || kill -KILL "$cmd_pid" 2>/dev/null || true
+                    _soft_fail_reap KILL "$cmd_pid" "$use_group"
                 ) &
                 local watch_pid=$!
                 wait "$cmd_pid" || rc=$?
@@ -1013,17 +1066,26 @@ apply_bundle() {
                     log_warn "$bundle/$name: BROKEN (strong probe failed) → attempting repair"
                 fi
                 local _rrc=0
+                # soft_fail items: bound repair/install so a hung CDN cannot stall
+                # the whole doctor --fix sweep (apply-path _repair_once already does).
                 if declare -f "${prefix}_repair" >/dev/null 2>&1; then
-                    "${prefix}_repair" "$arg" || _rrc=$?
+                    _run_bounded "${prefix}_repair" "$arg" || _rrc=$?
                 else
-                    "${prefix}_install" "$arg" || _rrc=$?
+                    _run_bounded "${prefix}_install" "$arg" || _rrc=$?
                 fi
                 if [[ "$_rrc" -eq 75 ]]; then
                     printf '%s\t(no safe auto-repair — define repair())\n' "$bundle/$name" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
                     log_error "$bundle/$name: no safe auto-repair available — manual fix needed"; exit 0
                 elif [[ "$_rrc" -ne 0 ]]; then
-                    printf '%s\t(repair action failed rc=%s)\n' "$bundle/$name" "$_rrc" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
-                    log_error "$bundle/$name: repair action failed (rc=$_rrc)"; exit 0
+                    if [[ "$_rrc" -eq 124 ]]; then
+                        printf '%s\t(repair timed out after %ss)\n' \
+                            "$bundle/$name" "${MESH_SOFT_FAIL_TIMEOUT:-300}" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
+                        log_error "$bundle/$name: repair timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s"
+                    else
+                        printf '%s\t(repair action failed rc=%s)\n' "$bundle/$name" "$_rrc" >> "$REPAIR_FAIL_FILE" 2>/dev/null || true
+                        log_error "$bundle/$name: repair action failed (rc=$_rrc)"
+                    fi
+                    exit 0
                 fi
                 local _reverc=0
                 _repair_probe || _reverc=$?
@@ -1131,18 +1193,30 @@ apply_bundle() {
                 exit 0
             fi
 
+            # Soft-fail cooldown: a recent miss already burned the wall-clock
+            # budget. Skip unless forced or doctor --fix (REPAIR_MODE exits above).
+            if [[ "$soft" == "1" ]] && _soft_fail_in_cooldown; then
+                local _cd="${MESH_SOFT_FAIL_COOLDOWN:-3600}"
+                log_warn "$bundle/$name: soft_fail cooldown active (<${_cd}s) — skipping (MESH_SOFT_FAIL_FORCE=1 or mesh doctor --fix to retry)"
+                followup manual "$bundle/$name skipped — soft_fail cooldown (<${_cd}s). Retry with MESH_SOFT_FAIL_FORCE=1, mesh doctor --fix, or wait for cooldown."
+                exit 0
+            fi
+
             # idempotent items (spec §11): skip pre-check + post-verify, always run.
             if [[ "$idem" == "1" ]]; then
                 log_info "$bundle/$name: running (idempotent)"
                 local _rc=0
                 _run_bounded "${prefix}_install" "$arg" || _rc=$?
                 if [[ "$_rc" -ne 0 ]]; then
+                    # On soft_fail timeout, skip rollback — destroying already-
+                    # verified sibling binaries is worse than leaving orphans.
+                    if [[ "$soft" == "1" && "$_rc" -eq 124 ]]; then
+                        _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s"
+                    fi
                     log_warn "$bundle/$name: install failed (rc=$_rc); rollback if present"
                     declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
                     if [[ "$soft" == "1" ]]; then
-                        [[ "$_rc" -eq 124 ]] \
-                            && _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-90}s" \
-                            || _soft_fail_continue "install failed (rc=$_rc)"
+                        _soft_fail_continue "install failed (rc=$_rc)"
                     fi
                     exit "$_rc"
                 fi
@@ -1203,7 +1277,7 @@ apply_bundle() {
                 elif [[ "$_rrc" -ne 0 ]]; then
                     if [[ "$soft" == "1" ]]; then
                         [[ "$_rrc" -eq 124 ]] \
-                            && _soft_fail_continue "repair timed out after ${MESH_SOFT_FAIL_TIMEOUT:-90}s" \
+                            && _soft_fail_continue "repair timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s" \
                             || _soft_fail_continue "repair failed (rc=$_rrc)"
                     fi
                     log_error "$bundle/$name: repair action failed (rc=$_rrc)"
@@ -1228,12 +1302,15 @@ apply_bundle() {
             local _install_rc=0
             _run_bounded "${prefix}_install" "$arg" || _install_rc=$?
             if [[ "$_install_rc" -ne 0 ]]; then
+                # On soft_fail timeout, skip rollback — may wipe siblings that
+                # already installed inside a multi-binary custom_install.
+                if [[ "$soft" == "1" && "$_install_rc" -eq 124 ]]; then
+                    _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-300}s"
+                fi
                 log_warn "$bundle/$name: install failed (rc=$_install_rc); rollback if present"
                 declare -f "${prefix}_rollback" >/dev/null 2>&1 && "${prefix}_rollback" "$arg"
                 if [[ "$soft" == "1" ]]; then
-                    [[ "$_install_rc" -eq 124 ]] \
-                        && _soft_fail_continue "timed out after ${MESH_SOFT_FAIL_TIMEOUT:-90}s" \
-                        || _soft_fail_continue "install failed (rc=$_install_rc)"
+                    _soft_fail_continue "install failed (rc=$_install_rc)"
                 fi
                 exit "$_install_rc"
             fi

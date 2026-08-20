@@ -319,6 +319,8 @@ install() {
     ) &
     sleep 30
 }
+# Rollback must NOT run on soft_fail wall-clock timeout (partial sibling success).
+rollback() { echo "rolled-back" >> "${ENGTEST_OUT:?}/runlog.txt"; : > "${ENGTEST_OUT:?}/rolled-back.flag"; }
 verify()  { return 1; }
 SH
 cat > "$TD/thang/after-hang.sh" <<'SH'
@@ -343,6 +345,104 @@ assert "soft_fail timeout: run exits 0" "0" "$hang_rc"
 assert "soft_fail timeout: after-hang ran" "yes" "$(printf '%s\n' "$hang_log" | grep -qx 'after-hang' && echo yes || echo no)"
 assert "soft_fail timeout: followup recorded" "yes" "$(grep -q 'hung-cdn' "$FOLLOWUP" && echo yes || echo no)"
 assert "soft_fail timeout: process-group kill (no orphan)" "no" "$(test -f "$OUT/orphan.txt" && echo yes || echo no)"
+assert "soft_fail timeout: no rollback on rc 124" "no" "$(test -f "$OUT/rolled-back.flag" && echo yes || echo no)"
+assert "soft_fail timeout: stamp written" "yes" "$(test -f "$ST/softfail__thang__hung-cdn.stamp" && echo yes || echo no)"
+
+# ── Test 11: soft_fail cooldown skips re-burn; FORCE bypasses ──
+FOLLOWUP="$TMP/followup.cool"
+: > "$FOLLOWUP"
+rm -f "$OUT/runlog.txt" "$OUT/after-hang.done"
+ENGTEST_OUT="$OUT" HOME="$HOMEDIR" MESH_INSTALL_STATE_DIR="$ST" \
+    MESH_FOLLOWUP_FILE="$FOLLOWUP" MESH_SOFT_FAIL_TIMEOUT=1 \
+    MESH_SOFT_FAIL_COOLDOWN=3600 \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.hang" --non-interactive >"$TMP/cool.out" 2>&1
+cool_rc=$?
+cool_log="$(cat "$OUT/runlog.txt" 2>/dev/null || true)"
+assert "soft_fail cooldown: run exits 0" "0" "$cool_rc"
+assert "soft_fail cooldown: hung-cdn NOT re-attempted" "no" "$(printf '%s\n' "$cool_log" | grep -qx 'hung-cdn' && echo yes || echo no)"
+assert "soft_fail cooldown: after-hang still ran" "yes" "$(printf '%s\n' "$cool_log" | grep -qx 'after-hang' && echo yes || echo no)"
+assert "soft_fail cooldown: warn mentions cooldown" "yes" "$(grep -qi 'cooldown' "$TMP/cool.out" && echo yes || echo no)"
+assert "soft_fail cooldown: followup mentions cooldown" "yes" "$(grep -qi 'cooldown' "$FOLLOWUP" && echo yes || echo no)"
+
+FOLLOWUP="$TMP/followup.force"
+: > "$FOLLOWUP"
+rm -f "$OUT/runlog.txt" "$OUT/after-hang.done" "$OUT/orphan.txt" "$OUT/rolled-back.flag"
+ENGTEST_OUT="$OUT" HOME="$HOMEDIR" MESH_INSTALL_STATE_DIR="$ST" \
+    MESH_FOLLOWUP_FILE="$FOLLOWUP" MESH_SOFT_FAIL_TIMEOUT=1 \
+    MESH_SOFT_FAIL_COOLDOWN=3600 MESH_SOFT_FAIL_FORCE=1 \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.hang" --non-interactive >"$TMP/force.out" 2>&1
+force_rc=$?
+force_log="$(cat "$OUT/runlog.txt" 2>/dev/null || true)"
+sleep 4
+assert "soft_fail force: run exits 0" "0" "$force_rc"
+assert "soft_fail force: hung-cdn re-attempted" "yes" "$(printf '%s\n' "$force_log" | grep -qx 'hung-cdn' && echo yes || echo no)"
+assert "soft_fail force: after-hang ran" "yes" "$(printf '%s\n' "$force_log" | grep -qx 'after-hang' && echo yes || echo no)"
+assert "soft_fail force: no orphan" "no" "$(test -f "$OUT/orphan.txt" && echo yes || echo no)"
+
+# ── Test 12: soft_fail REPAIR_MODE hang continues sweep / records unresolved ──
+mkdir -p "$TD/trepair"
+cat > "$TD/trepair/manifest.yaml" <<'YAML'
+topic:
+  label: "RepairHang"
+  order: 70
+bundles:
+  - name: tools
+    label: "Tools"
+    desc: "repair hang then continue"
+    items:
+      - name: hung-repair
+        type: custom
+        script: ./hung-repair.sh
+        soft_fail: true
+      - name: after-repair
+        type: custom
+        script: ./after-repair.sh
+YAML
+cat > "$TD/trepair/hung-repair.sh" <<'SH'
+check()   { return 1; }
+verify()  { return 1; }
+install() {
+    echo "hung-repair" >> "${ENGTEST_OUT:?}/runlog.txt"
+    (
+        sleep 3
+        echo orphaned >> "${ENGTEST_OUT:?}/repair-orphan.txt"
+    ) &
+    sleep 30
+}
+repair() { install "$@"; }
+SH
+cat > "$TD/trepair/after-repair.sh" <<'SH'
+# Broken until repair() runs — proves the sweep continued past hung-repair.
+S="${ENGTEST_OUT:?}/after-repair.fixed"
+check()   { [[ -f "$S" ]]; }
+verify()  { check; }
+install() { : > "$S"; echo "after-repair" >> "${ENGTEST_OUT:?}/runlog.txt"; }
+repair()  { install "$@"; }
+SH
+chmod +x "$TD/trepair/"*.sh
+reset_state
+FOLLOWUP="$TMP/followup.repair"
+: > "$FOLLOWUP"
+# Seed markers so --repair attempts both items (marker-present broken → repair).
+printf 'MESH_ITEM_TOPIC="trepair"\nMESH_ITEM_NAME="hung-repair"\nMESH_ITEM_INSTALLED_AT="2026-01-01T00:00:00Z"\n' \
+    > "$ST/trepair__hung-repair.env"
+printf 'MESH_ITEM_TOPIC="trepair"\nMESH_ITEM_NAME="after-repair"\nMESH_ITEM_INSTALLED_AT="2026-01-01T00:00:00Z"\n' \
+    > "$ST/trepair__after-repair.env"
+printf 'trepair/tools\n' > "$TMP/sel.repair"
+ENGTEST_OUT="$OUT" HOME="$HOMEDIR" MESH_INSTALL_STATE_DIR="$ST" \
+    MESH_FOLLOWUP_FILE="$FOLLOWUP" MESH_SOFT_FAIL_TIMEOUT=1 \
+    bash "$ENGINE" --topics-dir "$TD" --params "$PARAMS" --platform mac \
+    --selections "$TMP/sel.repair" --non-interactive --repair >"$TMP/repair.out" 2>&1
+repair_rc=$?
+repair_log="$(cat "$OUT/runlog.txt" 2>/dev/null || true)"
+sleep 4
+assert "soft_fail repair hang: exits 67 (unresolved)" "67" "$repair_rc"
+assert "soft_fail repair hang: hung-repair was attempted" "yes" "$(printf '%s\n' "$repair_log" | grep -qx 'hung-repair' && echo yes || echo no)"
+assert "soft_fail repair hang: after-repair still swept" "yes" "$(printf '%s\n' "$repair_log" | grep -qx 'after-repair' && echo yes || echo no)"
+assert "soft_fail repair hang: unresolved recorded" "yes" "$(grep -qiE 'hung-repair.*(repair action failed|124|timed out)|repair action failed.*hung-repair' "$TMP/repair.out" && echo yes || echo no)"
+assert "soft_fail repair hang: no orphan" "no" "$(test -f "$OUT/repair-orphan.txt" && echo yes || echo no)"
 
 echo ""
 echo "install-engine.test: $passed passed, $failed failed"
