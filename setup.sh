@@ -506,6 +506,12 @@ if should_run_menu; then
         warn "interactive bundle menu unavailable — using lean bootstrap selection (foundation/shell/node/personal)"
         warn "re-run bash setup.sh after Node is on PATH to open the full Blink menu"
         MESH_LEAN_BOOTSTRAP=1; export MESH_LEAN_BOOTSTRAP
+        # selections.list is only rewritten when absent. A stale/synced file would
+        # keep MESH_LEAN_BOOTSTRAP inert and skip languages/node. When Node itself
+        # is missing, clear it so lean bootstrap actually runs.
+        if ! command -v node >/dev/null 2>&1; then
+            rm -f "$SELECTIONS_FILE"
+        fi
         followup info "Blink menu was skipped (Node missing or menu failed). After this run, open a new shell and re-run bash setup.sh for the full picker."
     fi
     # menu_rc == 0 → selections.list was written; proceed with it.
