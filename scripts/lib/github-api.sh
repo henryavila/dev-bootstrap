@@ -17,7 +17,9 @@ gh_api_curl() {
     local url="$1" token="${GITHUB_TOKEN:-${GH_TOKEN:-}}" attempt rc
     # Callers may tighten the budget (e.g. rust-bins soft_fail path) via
     # MESH_GH_API_ATTEMPTS. Default remains 4 for anonymous 429 backoff.
+    # Non-numeric values must not reach `[[ -ge ]]` under `set -e`.
     local max_attempts="${MESH_GH_API_ATTEMPTS:-4}"
+    [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=4
     [[ "$max_attempts" -ge 1 ]] || max_attempts=1
     if [[ -z "$token" ]] && command -v gh >/dev/null 2>&1; then
         token="$(gh auth token 2>/dev/null)" || token=""
