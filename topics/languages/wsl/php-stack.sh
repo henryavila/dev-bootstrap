@@ -299,7 +299,11 @@ done
 # unixodbc-dev not in PECL list but needed for MSSQL add-on later; leave out here.
 
 # Always need the dev toolchain for PECL builds. Install once.
-core_build_deps=(build-essential pkg-config autoconf)
+# php-pear provides /usr/bin/pecl. It is NOT pulled by php${ver}-dev under
+# --no-install-recommends (and current ondrej php*-dev does not even Recommend
+# it), so omitting it makes pecl-install.sh skip every extension and verify()
+# abort the languages/php item — operators then had to apt-install php-pear by hand.
+core_build_deps=(build-essential pkg-config autoconf php-pear)
 combined_deps=("${core_build_deps[@]}" "${pecl_build_deps[@]+"${pecl_build_deps[@]}"}")
 missing_deps=()
 for p in "${combined_deps[@]}"; do
@@ -320,6 +324,12 @@ for ver in $PHP_VERSIONS; do
     fi
 done
 
+# Fail closed if pecl is still absent after the toolchain apt — silent skip of
+# every baseline extension looks like success until verify() aborts later.
+if [[ ! -x /usr/bin/pecl ]]; then
+    fail "PECL toolchain: /usr/bin/pecl missing after installing php-pear — cannot build baseline extensions"
+    _phpstack_fail=1
+fi
 
 # pecl_install_for_version_linux is provided by lib/pecl-install.sh —
 # single source of truth for the 4-env-var PECL fix. See its header

@@ -47,5 +47,24 @@ else
   pass "menu-unavailable path does not set NON_INTERACTIVE=1"
 fi
 
+# When the Blink menu cannot open because Node is missing, lean must actually
+# rewrite selections even if a stale ~/.config/mesh/selections.list already
+# exists (otherwise MESH_LEAN_BOOTSTRAP=1 is set but the write path is skipped
+# and the engine keeps applying the full/stale fleet without installing Node).
+menu_miss_block="$(awk '
+  /interactive bundle menu unavailable/ {on=1}
+  on {print}
+  on && /followup info.*Blink menu was skipped/ {exit}
+' "$ROOT/setup.sh")"
+
+assert_contains "$menu_miss_block" "MESH_LEAN_BOOTSTRAP=1" \
+  "menu-miss path sets MESH_LEAN_BOOTSTRAP=1"
+if grep -qE 'command -v node' <<< "$menu_miss_block" \
+  && grep -qE 'rm -f .*SELECTIONS_FILE|rm -- .*SELECTIONS_FILE' <<< "$menu_miss_block"; then
+  pass "menu-miss path clears stale selections.list when Node is missing"
+else
+  fail "menu-miss path must rm selections.list when node is absent so lean rewrite runs"
+fi
+
 pass "lean bootstrap selection contract"
-echo "OK"
+summary
