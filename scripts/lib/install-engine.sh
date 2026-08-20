@@ -1340,6 +1340,13 @@ apply_bundle() {
         ) || {
             local _rc=$?
             if [[ "$soft" == "1" ]]; then
+                # Same cooldown stamp as _soft_fail_continue so unexpected
+                # subshell aborts do not re-burn the wall-clock next apply.
+                local _stamp _dir
+                _dir="$(install_state_dir)"
+                _stamp="$_dir/softfail__${TOPIC}__${name}.stamp"
+                mkdir -p "$_dir" 2>/dev/null || true
+                : > "$_stamp" 2>/dev/null || true
                 log_warn "$bundle/$name: failed (rc=$_rc) (soft_fail: continuing)"
                 followup manual "$bundle/$name failed (rc=$_rc). Retry later when the network allows, or install manually."
             else
