@@ -53,6 +53,9 @@ bundles:
       - name: packages
         type: custom
         script: ./wsl/packages.sh
+      # soft_fail kept so bootstrap continues on CDN/trust failure; TLS siblings
+      # (serve-config / nginx-sites / service-convergence) may run degraded.
+      # mkcert verify() fails closed (no install marker) without a trusted rootCA.
       - name: mkcert
         type: custom
         script: ./wsl/mkcert.sh

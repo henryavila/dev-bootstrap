@@ -60,7 +60,8 @@ _rtk_latest_tag() {
     local v
     # awk IGNORECASE is gawk-only; match case-insensitively for BSD awk too so
     # the no-rate-limit redirect path works on macOS (curl -sSI emits `Location:`).
-    v="$(curl -fsSI "https://github.com/${RTK_REPO}/releases/latest" 2>/dev/null \
+    v="$(curl -fsSI --connect-timeout 8 --max-time 45 \
+        "https://github.com/${RTK_REPO}/releases/latest" 2>/dev/null \
         | awk 'tolower($0) ~ /^location:/' \
         | sed -E 's|.*/tag/([^[:space:]]+).*|\1|' \
         | tr -d '\r')"
@@ -117,11 +118,11 @@ install() {
     archive="$tmp/$tarball_name"
     sums="$tmp/checksums.txt"
 
-    if ! curl -fsSL "$checksums_url" -o "$sums"; then
+    if ! curl -fsSL --connect-timeout 8 --max-time 45 "$checksums_url" -o "$sums"; then
         printf 'install-rtk: failed to fetch checksums.txt for %s\n' "$tag" >&2
         rm -rf "$tmp"; return 1
     fi
-    if ! curl -fsSL "$tarball_url" -o "$archive"; then
+    if ! curl -fsSL --connect-timeout 8 --max-time 45 "$tarball_url" -o "$archive"; then
         printf 'install-rtk: failed to fetch %s for %s\n' "$tarball_name" "$tag" >&2
         rm -rf "$tmp"; return 1
     fi
