@@ -71,6 +71,8 @@ export interface Item {
   platforms?: Platform[];
   when?: string;
   idempotent?: boolean;
+  /** Non-fatal on install/verify failure or wall-clock timeout (CDN downloads). */
+  soft_fail?: boolean;
   autoupdate?: boolean;
   restart_service?: string;
   uninstall_tier?: number;

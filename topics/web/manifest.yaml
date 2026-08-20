@@ -56,6 +56,7 @@ bundles:
       - name: mkcert
         type: custom
         script: ./wsl/mkcert.sh
+        soft_fail: true
       - name: serve-config
         type: deploy
         spec: ./templates/serve
@@ -75,6 +76,7 @@ bundles:
       - name: mailpit
         type: custom
         script: ./extras/mailpit.sh
+        soft_fail: true
 
   - name: ngrok
     label: "ngrok"

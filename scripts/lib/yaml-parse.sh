@@ -25,8 +25,8 @@
 #   BUNDLE_<b>_{NAME,LABEL,DESC,ICON_NAME,MEMBERSHIP} (str), _{REQUIRED,DEFAULT_SELECTED} (1/0),
 #     _{PLATFORMS,REQUIRES_BUNDLES}_COUNT + _<n> (lists).
 #   BUNDLE_<b>_ITEM_COUNT, BUNDLE_<b>_ITEM_<i>_{NAME,TYPE,SPEC,SCRIPT,CHECK,WHEN,
-#     POST,ROLLBACK} (str), _IDEMPOTENT (1/0), _UNINSTALL_TIER (num),
-#     _PLATFORMS_COUNT + _<n> (inline list only).
+#     POST,ROLLBACK} (str), _IDEMPOTENT/_SOFT_FAIL/_AUTOUPDATE (1/0),
+#     _UNINSTALL_TIER (num), _PLATFORMS_COUNT + _<n> (inline list only).
 #   BUNDLE_<b>_OPTION_COUNT, BUNDLE_<b>_OPTION_<o>_{NAME,TYPE,LABEL,ENV,
 #     DEFAULT_FROM,WHEN} (str), _{REQUIRED} (1/0), _{REQUIRED_MIN} (num),
 #     _DEFAULT (str, or _DEFAULT_COUNT + _<n> for inline-list default).
@@ -294,6 +294,8 @@ handle_item_key() {
             emit_kv "${base}_$(norm_key "$key")" str "$val" "$line" "$col";;
         idempotent)
             emit_kv "${base}_IDEMPOTENT" bool "$val" "$line" "$col";;
+        soft_fail)
+            emit_kv "${base}_SOFT_FAIL" bool "$val" "$line" "$col";;
         autoupdate)
             emit_kv "${base}_AUTOUPDATE" bool "$val" "$line" "$col";;
         restart_service)

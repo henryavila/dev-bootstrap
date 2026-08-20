@@ -133,6 +133,9 @@ run_valid "$FIX/valid-edge.yaml" '
     [ "$BUNDLE_0_ITEM_1_WHEN" = "option.enable-composer" ] || exit 1
     [ "$BUNDLE_0_ITEM_2_WHEN" = "brew_prefix_custom" ] || exit 1
     [ "$BUNDLE_0_ITEM_2_PLATFORMS_0" = "mac" ] || exit 1
+    # soft_fail: emitted only when present; default absent items stay unset.
+    [ -z "${BUNDLE_0_ITEM_0_SOFT_FAIL:-}" ] || exit 1
+    [ "$BUNDLE_0_ITEM_2_SOFT_FAIL" = 1 ] || exit 1
 '
 
 echo "=== edge fixture META: source + derive_from emitted ==="
