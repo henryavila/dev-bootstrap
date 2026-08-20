@@ -68,3 +68,15 @@ the “loop on dust tag” appearance on corporate networks.
 tree reap); default soft_fail budget 300s (rust-bins worst case ~261s);
 rust-bins one-shot curl (no `--retry`), `MESH_GH_API_ATTEMPTS=2`,
 per-binary circuit breaker that refuses a second resolve/download.
+
+## Follow-up 2026-08-20 — review-fix (PR #38)
+
+Closed adversarial Issues 1–9 except Issue 8 sibling TLS gate (accepted):
+
+- REPAIR_MODE / doctor repair uses `_run_bounded`; rc 124 records unresolved and continues
+- Default `MESH_SOFT_FAIL_TIMEOUT=300`; skip rollback on soft_fail timeout (rc 124)
+- PGID check + recursive tree reap if group kill unavailable
+- Soft-fail cooldown stamp `softfail__topic__name.stamp` (default 3600s; bypass FORCE/repair)
+- rust-bins: TTL attempt stamps, selective pending rollback, `command install`
+- Bounded curl (`--connect-timeout 8 --max-time 45`) on starship/mkcert/mailpit/rtk (+ prior rust/lazygit/delta)
+- mkcert: binary marker rollback; verify fail-closed; soft_fail kept (TLS siblings may degrade)

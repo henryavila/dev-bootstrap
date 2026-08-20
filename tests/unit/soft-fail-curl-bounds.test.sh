@@ -14,6 +14,9 @@ assert() {
 
 SCRIPTS=(
     "$WS/topics/shell-terminal/wsl/install-starship.sh"
+    "$WS/topics/shell-terminal/wsl/install-lazygit.sh"
+    "$WS/topics/shell-terminal/wsl/install-delta.sh"
+    "$WS/topics/shell-terminal/wsl/install-rust-bins.sh"
     "$WS/topics/web/wsl/mkcert.sh"
     "$WS/topics/web/scripts/install-mailpit.sh"
     "$WS/topics/ai/install-rtk.sh"
