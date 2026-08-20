@@ -282,6 +282,132 @@ install_mesh_symlink() {
 }
 install_mesh_symlink
 
+# ─── pre-flight: ensure gh CLI + auth for GitHub API access ───────────────────
+# In --no-mesh mode the identity bundle (which installs gh and runs gh auth
+# login) is filtered out. Downstream items call gh_api_curl() / gh_latest_tag()
+# from github-api.sh, which need a token to avoid the 60-req/hour anonymous
+# rate limit. This pre-flight installs gh and prompts for auth BEFORE the
+# engine so that every item script can authenticate.
+# Never fatal — every failure path warns and degrades to anonymous API access.
+_preflight_gh_auth() {
+    # 1. Already authenticated → nothing to do.
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        info "gh CLI already authenticated — skipping pre-flight auth"
+        return 0
+    fi
+
+    # 2. Token already in env → API access is fine, no need for gh auth.
+    if [[ -n "${GITHUB_TOKEN:-}" || -n "${GH_TOKEN:-}" ]]; then
+        info "GITHUB_TOKEN / GH_TOKEN found in env — skipping pre-flight auth"
+        return 0
+    fi
+
+    # 3. Install gh if not on PATH.
+    if ! command -v gh >/dev/null 2>&1; then
+        info "installing gh CLI for GitHub API access…"
+        if [[ "$OS" == "wsl" || "$OS" == "linux" ]]; then
+            if apt-cache show gh >/dev/null 2>&1; then
+                sudo apt-get update -qq && sudo apt-get install -y -qq gh || {
+                    warn "gh install via apt failed — GitHub API will use anonymous access (60 req/hour)"
+                    return 0
+                }
+            else
+                # Fallback: add GitHub's official APT repo (older distros).
+                sudo mkdir -p -m 755 /etc/apt/keyrings \
+                    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+                        | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null \
+                    && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+                    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+                        | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null \
+                    && sudo apt-get update -qq \
+                    && sudo apt-get install -y -qq gh || {
+                    warn "gh install via GitHub APT repo failed — GitHub API will use anonymous access (60 req/hour)"
+                    return 0
+                }
+            fi
+        elif [[ "$OS" == "mac" ]]; then
+            if [[ -n "${BREW_BIN:-}" ]]; then
+                "$BREW_BIN" install gh || {
+                    warn "gh install via brew failed — GitHub API will use anonymous access (60 req/hour)"
+                    return 0
+                }
+            else
+                warn "brew not available — cannot install gh; GitHub API will use anonymous access (60 req/hour)"
+                return 0
+            fi
+        else
+            warn "unsupported OS for gh pre-flight install — GitHub API will use anonymous access (60 req/hour)"
+            return 0
+        fi
+
+        if ! command -v gh >/dev/null 2>&1; then
+            warn "gh installed but not found on PATH — GitHub API will use anonymous access (60 req/hour)"
+            return 0
+        fi
+        ok "gh CLI installed"
+    fi
+
+    # 4. Authenticate gh if not already logged in.
+    if ! gh auth status >/dev/null 2>&1; then
+        if [[ -t 0 && -e /dev/tty ]]; then
+            info "authenticating gh CLI (opens a browser for GitHub login)…"
+            gh auth login --web --git-protocol https </dev/tty >/dev/tty 2>&1 || {
+                warn "gh auth login cancelled or failed — GitHub API will use anonymous access (60 req/hour)"
+                return 0
+            }
+            ok "gh CLI authenticated"
+        else
+            warn "non-interactive session with no GitHub token — GitHub API will use anonymous access (60 req/hour)"
+            warn "run 'gh auth login' manually, or set GITHUB_TOKEN, to raise the rate limit"
+            return 0
+        fi
+    fi
+
+    # 5. Configure git user.name / user.email if not already set.
+    #    Uses the authenticated gh account as a default suggestion.
+    if [[ -z "$(git config --global user.name 2>/dev/null)" || -z "$(git config --global user.email 2>/dev/null)" ]]; then
+        if [[ -t 0 && -e /dev/tty ]]; then
+            # Try to fetch defaults from the authenticated GitHub account.
+            local gh_name gh_email
+            gh_name="$(gh api user --jq '.name // empty' 2>/dev/null)" || gh_name=""
+            gh_email="$(gh api user --jq '.email // empty' 2>/dev/null)" || gh_email=""
+
+            if [[ -z "$(git config --global user.name 2>/dev/null)" ]]; then
+                local prompt="git user.name"
+                [[ -n "$gh_name" ]] && prompt="git user.name [${gh_name}]"
+                printf '%s: ' "$prompt" >/dev/tty
+                local input_name
+                read -r input_name </dev/tty
+                input_name="${input_name:-$gh_name}"
+                if [[ -n "$input_name" ]]; then
+                    git config --global user.name "$input_name"
+                    ok "git user.name set to '$input_name'"
+                else
+                    warn "git user.name left unconfigured — git commits will fail until set"
+                fi
+            fi
+
+            if [[ -z "$(git config --global user.email 2>/dev/null)" ]]; then
+                local prompt="git user.email"
+                [[ -n "$gh_email" ]] && prompt="git user.email [${gh_email}]"
+                printf '%s: ' "$prompt" >/dev/tty
+                local input_email
+                read -r input_email </dev/tty
+                input_email="${input_email:-$gh_email}"
+                if [[ -n "$input_email" ]]; then
+                    git config --global user.email "$input_email"
+                    ok "git user.email set to '$input_email'"
+                else
+                    warn "git user.email left unconfigured — git commits will fail until set"
+                fi
+            fi
+        else
+            warn "git user.name/email not configured and no TTY — git commits will fail until set"
+            warn "run: git config --global user.name 'Your Name' && git config --global user.email 'you@example.com'"
+        fi
+    fi
+}
+
 # ─── detect OS + brew ────────────────────────────────────────────────────────
 OS="$(bash "$HERE/scripts/lib/detect-os.sh")"
 export OS MESH_OS="$OS"
@@ -322,6 +448,13 @@ fi
 MESH_FOLLOWUP_FILE="$(mktemp -t mesh-workstation-followup.XXXXXX 2>/dev/null || mktemp)"
 export MESH_FOLLOWUP_FILE
 trap 'rm -f "${MESH_FOLLOWUP_FILE:-}"' EXIT
+
+# Pre-flight gh auth: install gh + prompt login so downstream items that call
+# gh_api_curl() / gh_latest_tag() get an authenticated token. Skipped under
+# --dry-run (no side effects) and --adopt (read-only marker backfill).
+if [[ "$DRY_RUN" != "1" && "$ADOPT_MODE" != "1" ]]; then
+    _preflight_gh_auth
+fi
 
 # ─── resolve the selection ───────────────────────────────────────────────────
 SELECTIONS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mesh"

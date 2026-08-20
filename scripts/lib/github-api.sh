@@ -15,6 +15,9 @@
 # any curl/HTTP failure (notably 429). Returns curl's exit code on final fail.
 gh_api_curl() {
     local url="$1" token="${GITHUB_TOKEN:-${GH_TOKEN:-}}" attempt rc
+    if [[ -z "$token" ]] && command -v gh >/dev/null 2>&1; then
+        token="$(gh auth token 2>/dev/null)" || token=""
+    fi
     local -a hdrs=(-H "Accept: application/vnd.github+json" \
                    -H "X-GitHub-Api-Version: 2022-11-28")
     [[ -n "$token" ]] && hdrs+=(-H "Authorization: Bearer $token")
