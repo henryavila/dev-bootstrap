@@ -45,18 +45,21 @@ Public `mesh-workstation` repo (historically `dev-bootstrap`) that:
 
 ### Usage flow
 
+Authoritative operator guide: [`INSTALL-WINDOWS-WSL.md`](INSTALL-WINDOWS-WSL.md).
+
 ```
 ┌─────────────────────────────────────────────────────┐
-│ 0. Windows virgin → irm …/windows/install-wsl.ps1
-│    (enables WSL, installs Git + Windows Terminal,
-│     registers Ubuntu-24.04; reboot+re-run if needed)
-│ 1. In Ubuntu: apt install git curl ca-certificates
-│ 2. git clone …/mesh-workstation && bash setup.sh
-│    (lean bootstrap if Node missing; full Blink menu
-│     once languages/node + shell fragments are on PATH)
-│ 3. Personal identity via menu or MESH_IDENTITY_REPO=
-│ 4. Fonts: shell-terminal/fonts installs CaskaydiaCove
-│    Nerd Font + merges Windows Terminal theme (WSL-side)
+│ 0. Windows Admin → irm …/windows/install-wsl.ps1
+│    (WSL features, Git + Windows Terminal, Ubuntu-24.04;
+│     exit 2 ⇒ reboot + re-run; fonts NOT on host)
+│ 1. Ubuntu first launch → create Linux user
+│ 2. Phase 0: apt install git curl ca-certificates
+│ 3. git clone …/mesh-workstation && bash setup.sh
+│    (1st run: lean bootstrap if Node missing;
+│     new shell + 2nd run: full Blink menu)
+│ 4. personal via TTY prompt or MESH_IDENTITY_REPO=
+│ 5. shell-terminal/fonts → CaskaydiaCove + WT theme
+│ 6. If systemd enabled: wsl --shutdown from Windows
 └─────────────────────────────────────────────────────┘
 ```
 

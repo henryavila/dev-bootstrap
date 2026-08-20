@@ -18,16 +18,19 @@ Um dos dois repos de uma arquitetura em camadas:
 
 ## Quickstart
 
-### Windows (antes do WSL)
+Guia completo Windows → WSL (códigos de saída, fontes, systemd, troubleshooting):
+**[docs/INSTALL-WINDOWS-WSL.md](docs/INSTALL-WINDOWS-WSL.md)** (em inglês).
 
-PowerShell **como administrador**. Em máquina zerada (sem Git), baixe e rode o bootstrap do host:
+### A. Host Windows (PowerShell como Admin) → Ubuntu
+
+Máquina zerada (sem Git):
 
 ```powershell
 irm https://raw.githubusercontent.com/henryavila/mesh-workstation/main/windows/install-wsl.ps1 -OutFile $env:TEMP\install-wsl.ps1
 powershell -ExecutionPolicy Bypass -File $env:TEMP\install-wsl.ps1
 ```
 
-Ou, se o Git já estiver disponível:
+Se o Git já existir:
 
 ```powershell
 git clone https://github.com/henryavila/mesh-workstation "$env:USERPROFILE\mesh-workstation"
@@ -35,20 +38,24 @@ cd "$env:USERPROFILE\mesh-workstation"
 powershell -ExecutionPolicy Bypass -File .\windows\install-wsl.ps1
 ```
 
-O script habilita WSL, instala **Git** + **Windows Terminal** via winget e registra **Ubuntu-24.04**. Se as features acabaram de ser ligadas, sai com código `2` e pede reboot — rode o mesmo comando de novo depois. Fonte Nerd + tema do Terminal vêm depois, dentro do Ubuntu, pelo bundle `shell-terminal/fonts` (CaskaydiaCove).
+| Saída | Significado |
+|-------|-------------|
+| `0` | Features WSL OK, Git + Windows Terminal instalados, Ubuntu-24.04 registrado |
+| `2` | Precisa reboot — reinicie o Windows, rode o mesmo comando de novo |
+| `1` | Falha dura (muitas vezes winget ausente — ver o guia de install) |
 
-Abra o Ubuntu recém-instalado e siga as instruções WSL abaixo.
+Abra o **Ubuntu** no menu Iniciar e crie o usuário Linux. O script do host **não**
+instala a Nerd Font; isso acontece dentro do Ubuntu no setup
+(`shell-terminal/fonts` → CaskaydiaCove + Catppuccin no Windows Terminal).
 
-### WSL2/Ubuntu ou macOS
+### B. Dentro do Ubuntu (ou Linux nativo / macOS)
 
-**Antes do bootstrap** (o que não é automatizado porque precisamos disso para *clonar* este repo):
+**Fase 0** — só o necessário para clonar este repo:
 
 | Plataforma | Pré-req único |
 |---|---|
-| WSL2 / Linux nativo (fresh) | `sudo apt-get update && sudo apt-get install -y git curl ca-certificates` |
-| macOS (fresh) | Nada — Xcode CLT instala sob demanda na primeira vez que o `setup.sh` chama `git` |
-
-**Modo interativo (default):**
+| WSL2 / Linux nativo | `sudo apt-get update && sudo apt-get install -y git curl ca-certificates` |
+| macOS | Nada — Xcode CLT sob demanda na primeira chamada a `git` pelo `setup.sh` |
 
 ```bash
 git clone https://github.com/henryavila/mesh-workstation ~/mesh-workstation
@@ -56,17 +63,14 @@ cd ~/mesh-workstation
 bash setup.sh
 ```
 
-Ao rodar sem flags de controle, o bootstrap abre o menu interativo **Blink**
-(Ink) **quando o Node já está no PATH**. Escolha ids `topic/bundle` do catálogo
-vivo em `topics/*/` (por exemplo `web/valet`, `remote-access/tailscale`,
-`ai/claude-code`, `personal/personal`), ajuste identidade git / paths quando
-pedido, confirme, e o engine aplica a seleção em `~/.config/mesh/selections.list`.
-Cancelar aborta limpo.
+**O que acontece**
 
-Em máquina virgin (sem Node) a primeira run usa uma seleção **lean bootstrap**
-(`foundation`, `git/config`, `shell-terminal`, `languages/node`, `personal`) para
-instalar fnm/Node e fragments de PATH sem aplicar silenciosamente a frota
-default-on inteira. Rode `bash setup.sh` de novo num shell novo para o menu completo.
+1. **Primeira run (sem Node no PATH):** lean bootstrap — `foundation`, `git/config`,
+   `shell-terminal` (incl. fonts), `languages/node`, `personal`. **Não** instala
+   silenciosamente a frota default-on inteira. Identity ainda pode perguntar no TTY.
+2. **Abra um shell novo** (para carregar os fragments do fnm no PATH).
+3. **Segunda run:** `bash setup.sh` abre o menu **Blink** — escolha bundles
+   (`web/valet`, `databases/mysql`, `ai/claude-code`, …), confirme, aplique.
 
 > Nota histórica: releases antigas usavam checklist `whiptail` sobre topics
 > numerados `00-*` / `60-web-stack`. Essa UX sumiu; não trate ids numerados nem
