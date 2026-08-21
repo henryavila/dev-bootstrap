@@ -56,6 +56,21 @@ no_mesh_emit_headless_default() {
     printf '%s\n' 'foundation/base'
 }
 
+# Interactive first-run when the Blink menu cannot open (usually: Node not on
+# PATH yet). Headless `--non-interactive --no-mesh` must NOT use this — that
+# path stays foundation/base only. This list is the no-mesh analogue of
+# setup.sh emit_lean_bootstrap_selections: enough shell + Node to open the
+# menu on a second run, without membership: mesh bundles (identity/personal).
+no_mesh_emit_lean_bootstrap() {
+    printf '%s\n' \
+        foundation/base \
+        git/config \
+        shell-terminal/cli-tools \
+        shell-terminal/zsh \
+        shell-terminal/fonts \
+        languages/node
+}
+
 # Emit the headless selection lines for setup.sh.
 # When no-mesh is active and no explicit bundles were passed, prints only
 # foundation/base. Otherwise returns 1 so the caller uses the unflagged emitter.

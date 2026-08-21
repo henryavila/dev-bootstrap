@@ -28,6 +28,14 @@ check() {
 install() {
     [[ "${CHSH_AUTO:-1}" == "1" ]] || return 0
     command -v zsh >/dev/null 2>&1 || return 0
+    # Do not change the login shell until mesh ~/.zshrc is deployed. A missing
+    # or stock zshrc means Windows Terminal / wsl.exe starts zsh without
+    # ~/.zshrc.d — fzf keybindings then exist only in bash (Debian's
+    # bash-completion package). Re-run after shell-fragments.
+    if [[ ! -f "$HOME/.zshrc" ]] || ! grep -q 'zshrc.d' "$HOME/.zshrc"; then
+        echo "[zsh-default-shell] ~/.zshrc is not mesh-managed yet (does not load zshrc.d) — not changing login shell"
+        return 0
+    fi
     local zsh_bin passwd_shell
     zsh_bin="$(command -v zsh)"
 

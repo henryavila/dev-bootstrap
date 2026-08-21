@@ -125,12 +125,13 @@ if [[ "${SHOW_HELP:-0}" == "1" ]]; then usage; exit 0; fi
 # Default selection = every bundle whose default_selected is not false (required
 # bundles are always in; parser omits the field when absent, so we apply the
 # spec defaults required=0 / default_selected=1 via ${VAR:-default}).
-# Under MESH_NO_MESH=1 with no explicit --bundle list, emit only foundation/base
-# (membership omitted; unlock list unchecked — see scripts/lib/no-mesh.sh).
 # Lean first-run when the Blink menu cannot open (usually: Node not on PATH yet).
 # Installs the required shell/foundation path + Node so a second interactive
 # `bash setup.sh` can open the menu. Avoids silently applying the full
 # default-on fleet (DBs, web, AI, …) without operator consent.
+# Under MESH_NO_MESH=1 the membership bundles (identity/personal) are omitted;
+# see no_mesh_emit_lean_bootstrap. Headless `--non-interactive --no-mesh` does
+# not set MESH_LEAN_BOOTSTRAP and still emits only foundation/base.
 emit_lean_bootstrap_selections() {
     printf '%s\n' \
         foundation/base \
@@ -144,11 +145,19 @@ emit_lean_bootstrap_selections() {
 }
 
 emit_default_selections() {
-    if no_mesh_emit_default_or_bundles; then
+    # Menu-unavailable lean bootstrap must win over the no-mesh headless
+    # default. Otherwise `bash setup.sh --no-mesh` on a virgin box (no Node)
+    # installs only foundation/base, never gets Node, and can never open the
+    # menu on a second run.
+    if [[ "${MESH_LEAN_BOOTSTRAP:-0}" == "1" ]]; then
+        if no_mesh_active; then
+            no_mesh_emit_lean_bootstrap
+        else
+            emit_lean_bootstrap_selections
+        fi
         return 0
     fi
-    if [[ "${MESH_LEAN_BOOTSTRAP:-0}" == "1" ]]; then
-        emit_lean_bootstrap_selections
+    if no_mesh_emit_default_or_bundles; then
         return 0
     fi
     local mf topic vf
@@ -587,10 +596,14 @@ elif [[ ! -f "$SELECTIONS_FILE" || "${#CLI_BUNDLES[@]}" -gt 0 ]]; then
                 printf '%s\n' "${CLI_BUNDLES[@]}"
             fi
         else
-            if no_mesh_active; then
+            if [[ "${MESH_LEAN_BOOTSTRAP:-0}" == "1" ]]; then
+                if no_mesh_active; then
+                    echo "# mesh selections — no-mesh lean bootstrap (menu unavailable; foundation/shell/node)"
+                else
+                    echo "# mesh selections — lean bootstrap (menu unavailable; foundation/shell/node/personal)"
+                fi
+            elif no_mesh_active; then
                 echo "# mesh selections — no-mesh headless default (foundation/base only)"
-            elif [[ "${MESH_LEAN_BOOTSTRAP:-0}" == "1" ]]; then
-                echo "# mesh selections — lean bootstrap (menu unavailable; foundation/shell/node/personal)"
             else
                 echo "# mesh selections — auto-generated default (every bundle except default_selected:false)"
             fi

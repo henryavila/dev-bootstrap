@@ -17,6 +17,8 @@ SCRIPTS=(
     "$WS/topics/shell-terminal/wsl/install-lazygit.sh"
     "$WS/topics/shell-terminal/wsl/install-delta.sh"
     "$WS/topics/shell-terminal/wsl/install-rust-bins.sh"
+    "$WS/topics/shell-terminal/wsl/install-atuin.sh"
+    "$WS/topics/shell-terminal/install-zinit.sh"
     "$WS/topics/web/wsl/mkcert.sh"
     "$WS/topics/web/scripts/install-mailpit.sh"
     "$WS/topics/ai/install-rtk.sh"

@@ -125,6 +125,12 @@ bundles:
         type: apt
         spec: tealdeer
         platforms: [wsl]
+      # Deploy bashrc.d/zshrc.d fzf fragments BEFORE CDN downloads so a hung
+      # atuin/rust-bins install cannot leave fzf wired for bash-completion only.
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/cli-tools
+        idempotent: true
       - name: starship-wsl
         type: custom
         script: ./wsl/install-starship.sh
@@ -144,15 +150,12 @@ bundles:
         type: custom
         script: ./wsl/install-atuin.sh
         platforms: [wsl]
+        soft_fail: true
       - name: rust-bins-wsl
         type: custom
         script: ./wsl/install-rust-bins.sh
         platforms: [wsl]
         soft_fail: true
-      - name: shell-fragments
-        type: deploy
-        spec: ./templates/cli-tools
-        idempotent: true
       # macOS: dual-write pbcopy + OSC 52 when HERDR_ENV=1 so herdr --remote
       # clients receive agent/shell copies (Grok only uses native pbcopy on Mac).
       - name: pbcopy-osc52
@@ -169,6 +172,10 @@ bundles:
     requires_bundles:
       - shell-terminal/cli-tools
     items:
+      - name: zsh-wsl
+        type: apt
+        spec: zsh
+        platforms: [wsl]
       - name: zsh-completions-mac
         type: brew-formula
         spec: zsh-completions
@@ -193,27 +200,35 @@ bundles:
         type: apt
         spec: zsh-syntax-highlighting
         platforms: [wsl]
-      - name: zinit
-        type: custom
-        script: ./install-zinit.sh
-      - name: fzf-tab
-        type: custom
-        script: ./clone-fzf-tab.sh
-      - name: powerlevel10k
-        type: custom
-        script: ./clone-p10k.sh
-      - name: bat-catppuccin-theme
-        type: custom
-        script: ./bat-catppuccin-theme.sh
       - name: shell-bootstrap
         type: custom
         script: ./shell-bootstrap.sh
+      # Deploy ~/.zshrc (sources ~/.zshrc.d, including fzf key-bindings) BEFORE
+      # network clones and chsh. Otherwise Windows Terminal starts zsh with a
+      # stock rc — fzf only works in bash via Debian bash-completion.
+      - name: shell-fragments
+        type: deploy
+        spec: ./templates/zsh
+        idempotent: true
+      - name: zinit
+        type: custom
+        script: ./install-zinit.sh
+        soft_fail: true
+      - name: fzf-tab
+        type: custom
+        script: ./clone-fzf-tab.sh
+        soft_fail: true
+      - name: powerlevel10k
+        type: custom
+        script: ./clone-p10k.sh
+        soft_fail: true
+      - name: bat-catppuccin-theme
+        type: custom
+        script: ./bat-catppuccin-theme.sh
+        soft_fail: true
       - name: zinit-drift-cleanup
         type: custom
         script: ./zinit-drift-cleanup.sh
-      - name: zsh-default-shell
-        type: custom
-        script: ./zsh-default-shell.sh
       - name: shipped-configs
         type: custom
         script: ./link-shipped-configs.sh
@@ -228,9 +243,9 @@ bundles:
         type: custom
         script: ./drift-cleanup.sh
         idempotent: true
-      - name: shell-fragments
-        type: deploy
-        spec: ./templates/zsh
+      - name: zsh-default-shell
+        type: custom
+        script: ./zsh-default-shell.sh
         idempotent: true
 
   - name: tmux

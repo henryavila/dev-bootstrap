@@ -4,10 +4,15 @@
 # Runs under WSL. Does three things, all idempotent:
 #   1. Install CaskaydiaCove Nerd Font on Windows side (via install-nerd-font.ps1)
 #   2. Locate WT's settings.json (Store, Preview, or unpackaged install)
-#   3. Surgical merge of templates/wt-settings-fragment.json via jq:
+#   3. Surgical merge via wt-settings-merge.jq:
 #        - schemes: append Catppuccin Mocha (unique_by name)
-#        - profiles.defaults: shallow-merge font + colorScheme + visual tweaks
-#      Never touches user profiles array, keybindings, theme, or anything else.
+#        - profiles.defaults: fragment fills missing keys (font is deep-merged)
+#        - unhide WSL/Ubuntu profiles; if default is factory PowerShell/cmd,
+#          switch defaultProfile to the current WSL distro
+#      Never overwrites user colorScheme/font keys that are already set.
+#
+# Does NOT seed a missing settings.json (an empty profiles.list prevents WT
+# from auto-generating the Ubuntu profile). Launch WT once, then re-run.
 #
 # Only runs on WSL — silent no-op on native Linux / macOS. Non-fatal on any
 # error (returns 0) so a missing Windows Terminal never aborts the bootstrap.
@@ -87,29 +92,12 @@ for c in "${candidates[@]}"; do
     fi
 done
 
-# Prefer the Store package path when creating a seed file (most common install
-# from winget Microsoft.WindowsTerminal). Creating settings.json before the
-# first WT launch lets us merge Catppuccin + font without a manual open.
+# Never seed a missing settings.json. A skeleton with an empty profiles list
+# stops WT from auto-generating the Ubuntu/WSL profile, so the next launch is
+# PowerShell with no zsh. Wait until the user has opened Windows Terminal once.
 if [[ -z "$SETTINGS" ]]; then
-    seed_dir="$win_userprofile_unix/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState"
-    if [[ -d "$seed_dir" ]] || mkdir -p "$seed_dir" 2>/dev/null; then
-        SETTINGS="$seed_dir/settings.json"
-        info "Windows Terminal settings.json missing — seeding $SETTINGS"
-        cat > "$SETTINGS" <<'JSON'
-{
-    "$help": "https://aka.ms/terminal-documentation",
-    "$schema": "https://aka.ms/terminal-profiles-schema",
-    "profiles": {
-        "defaults": {},
-        "list": []
-    },
-    "schemes": []
-}
-JSON
-    else
-        followup manual "Windows Terminal settings.json not found and could not be created. Launch Windows Terminal once, then re-run: bash setup.sh --bundle shell-terminal/fonts"
-        exit 0
-    fi
+    followup manual "Windows Terminal settings.json not found. Launch Windows Terminal once so it creates the Ubuntu profile, then re-run: bash setup.sh --bundle shell-terminal/fonts"
+    exit 0
 fi
 
 info "using $SETTINGS"
@@ -125,24 +113,23 @@ if [[ ! -f "$FRAGMENT" ]]; then
     warn "wt-settings-fragment.json missing — skipping merge"
     exit 0
 fi
+MERGE_JQ="$HERE/wt-settings-merge.jq"
+if [[ ! -f "$MERGE_JQ" ]]; then
+    warn "wt-settings-merge.jq missing — skipping merge"
+    exit 0
+fi
 
 # ─── Backup + surgical merge ────────────────────────────────────────
 ts="$(date +%Y%m%d-%H%M%S)"
 backup="${SETTINGS}.bak-${ts}"
 cp "$SETTINGS" "$backup"
 
-# jq filter:
-#   .schemes      — append our scheme, dedupe by name
-#   .profiles.defaults — shallow-merge (// preserves user keys)
-#
-# The fragment's "_comment" / "profileDefaults" keys are extracted; we
-# never inject the top-level _comment into settings.json.
+# Shared jq filter (tested in tests/unit/windows-terminal-merge.test.sh):
+#   schemes, defaults (user keys win, font deep-merged), unhide WSL/Ubuntu,
+#   switch defaultProfile off factory PowerShell/cmd onto the WSL distro.
 tmp_merged="$(mktemp)"
-if jq --slurpfile frag "$FRAGMENT" '
-    .schemes = (((.schemes // []) + $frag[0].schemes) | unique_by(.name))
-    | .profiles = (.profiles // {})
-    | .profiles.defaults = (($frag[0].profileDefaults) + (.profiles.defaults // {}))
-' "$SETTINGS" > "$tmp_merged" 2>/dev/null; then
+if jq --slurpfile frag "$FRAGMENT" --arg distro "${WSL_DISTRO_NAME:-}" \
+        -f "$MERGE_JQ" "$SETTINGS" > "$tmp_merged" 2>/dev/null; then
     # Diff: if no change, clean backup + exit quietly.
     if cmp -s "$tmp_merged" "$SETTINGS"; then
         rm -f "$tmp_merged" "$backup"

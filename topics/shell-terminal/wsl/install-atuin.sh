@@ -28,9 +28,9 @@ install() {
 
     local _rc=0
     if [[ "${NON_INTERACTIVE:-0}" == "1" || ! -t 0 ]]; then
-        curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh -s -- --non-interactive || _rc=$?
+        curl --proto '=https' --tlsv1.2 -LsSf --connect-timeout 8 --max-time 45 https://setup.atuin.sh | sh -s -- --non-interactive || _rc=$?
     else
-        curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh || _rc=$?
+        curl --proto '=https' --tlsv1.2 -LsSf --connect-timeout 8 --max-time 45 https://setup.atuin.sh | sh || _rc=$?
     fi
 
     _atuin_restore_rc "$_zsrc" "$_zbak"

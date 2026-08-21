@@ -15,7 +15,7 @@ install()  {
     # its rc edit goes nowhere. `yes n` still auto-answers the annex prompt so the
     # non-interactive run cannot block on stdin.
     local _throwaway; _throwaway="$(mktemp)"
-    yes n | ZSHRC="$_throwaway" bash -c "$(curl --fail --show-error --silent --location \
+    yes n | ZSHRC="$_throwaway" bash -c "$(curl --fail --show-error --silent --location --connect-timeout 8 --max-time 45 \
         https://raw.githubusercontent.com/zdharma-continuum/zinit/HEAD/scripts/install.sh)" \
         >/dev/null 2>&1 || true
     rm -f "$_throwaway"
