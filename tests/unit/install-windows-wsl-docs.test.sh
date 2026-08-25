@@ -54,6 +54,7 @@ assert_pattern_absent "$WEB_README" 'install\.wsl\.sh' \
     "web README does not send cert repair to stale install.wsl.sh"
 for f in "$GUIDE" "$README" "$README_PT" "$WEB_README"; do
     rel="${f#"$WS"/}"
+    # shellcheck disable=SC2088 # literal ~ is the forbidden WSL path under test
     assert_pattern_absent "$f" '~/mesh-workstation/topics/web/scripts/diagnose-wsl-interop' \
         "$rel diagnose path is not ~/mesh-workstation/..."
 done

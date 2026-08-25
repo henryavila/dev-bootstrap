@@ -58,6 +58,7 @@ assert_not_contains "$got_unset" '\\wsl.localhost\Ubuntu\' \
 
 assert_file_contains "$MKCERT_SH" 'mesh_mkcert_from_windows_ps_cmd' \
     "mkcert followup uses the shared Lane-B PowerShell command"
+# shellcheck disable=SC2088 # literal ~ is the forbidden WSL path under test
 assert_pattern_absent "$MKCERT_SH" '~/mesh-workstation/topics/web/scripts/import-mkcert' \
     "mkcert followup is not a WSL ~/mesh-workstation -File path"
 
