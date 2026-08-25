@@ -27,6 +27,7 @@ assert_contains "$bundled" "foundation/base" "explicit --bundle keeps foundation
 assert_contains "$bundled" "languages/php" "explicit --bundle includes languages/php"
 assert_not_contains "$bundled" "personal/" "explicit --bundle does not add personal"
 
+# shellcheck disable=SC2034 # read by no_mesh_active / no_mesh_emit_* below
 MESH_NO_MESH=0
 if no_mesh_emit_default_or_bundles >/dev/null 2>&1; then
     fail "no_mesh_emit_default_or_bundles returns nonzero when unflagged"

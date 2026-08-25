@@ -287,8 +287,8 @@ STUB
 chmod +x "$fx8/fake-brew/bin/brew"
 
 # Use the real repo templates (not synthetic) to catch actual template bugs
-cp "$REPO_ROOT/topics/30-shell/templates/bashrc.template" "$fx8/templates/"
-cp "$REPO_ROOT/topics/30-shell/templates/zshrc.template" "$fx8/templates/"
+cp "$REPO_ROOT/topics/shell-terminal/templates/zsh/bashrc.template" "$fx8/templates/"
+cp "$REPO_ROOT/topics/shell-terminal/templates/zsh/zshrc.template" "$fx8/templates/"
 
 export HOME="$fx8/home"
 export BREW_PREFIX="$fx8/fake-brew"

@@ -152,7 +152,7 @@ assert_eq "$(sed -n '2p' "$ORDER")" "install-repair" "install-engine repair runs
 
 echo
 echo "setup.sh still routes normal setup through install-engine, reserving --repair for repair mode"
-setup_src="$(sed -n '395,406p' "$ROOT/setup.sh")"
+setup_src="$(awk '/^engine_args=\(/,/install-engine\.sh/' "$ROOT/setup.sh")"
 assert_contains "$setup_src" 'engine_args=(--selections "$SELECTIONS_FILE" --platform "$OS")' \
     "setup normal path builds install-engine args without --repair"
 assert_contains "$setup_src" '[[ "$REPAIR_MODE" == "1" ]] && engine_args+=(--repair)' \

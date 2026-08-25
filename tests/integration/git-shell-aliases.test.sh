@@ -8,8 +8,8 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-BASH_FRAGMENT="$REPO_ROOT/topics/50-git/templates/bashrc.d-50-git.sh"
-ZSH_FRAGMENT="$REPO_ROOT/topics/50-git/templates/zshrc.d-50-git.sh"
+BASH_FRAGMENT="$REPO_ROOT/topics/git/templates/config/bashrc.d-50-git.sh"
+ZSH_FRAGMENT="$REPO_ROOT/topics/git/templates/config/zshrc.d-50-git.sh"
 
 assert_file_contains "$BASH_FRAGMENT" "alias gps='g push'" "bash 50-git defines gps as git push"
 assert_file_contains "$ZSH_FRAGMENT" "alias gps='g push'" "zsh 50-git defines gps as git push"

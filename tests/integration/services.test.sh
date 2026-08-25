@@ -846,17 +846,17 @@ assert_not_contains "$(calls brew)" "services restart mysql" \
 out="$(STUB_BREW_MYSQL=started run_svc_mac_brew list --porcelain)"
 assert_contains "$out" "mysql|MySQL|mysqld|databases|brew||mysql|on|on" \
     "Case 14j: a canonical brew MySQL service keeps the brew backend and running/on-boot state"
-out="$(STUB_BREW_INSTALLED_FORMULAS= STUB_BREW_MYSQL=none run_svc_mac_brew list --porcelain 2>&1)"; rc=$?
+out="$(STUB_BREW_INSTALLED_FORMULAS='' STUB_BREW_MYSQL=none run_svc_mac_brew list --porcelain 2>&1)"; rc=$?
 assert_eq "$rc" 0 "Case 14k: default porcelain list exits 0 when no curated mac services are installed"
 assert_eq "$out" "" \
     "Case 14ka: default porcelain list omits uninstalled mac brew services instead of printing stopped/no-boot"
-out="$(STUB_BREW_INSTALLED_FORMULAS= STUB_BREW_MYSQL=none run_svc_mac_brew list 2>&1)"; rc=$?
+out="$(STUB_BREW_INSTALLED_FORMULAS='' STUB_BREW_MYSQL=none run_svc_mac_brew list 2>&1)"; rc=$?
 assert_eq "$rc" 0 "Case 14kb: human list exits 0 when every curated mac service is uninstalled"
 assert_contains "$out" "No installed mesh-owned services" \
     "Case 14kc: human list explains that no curated services are installed"
 assert_not_contains "$out" "mysql" \
     "Case 14kd: human default list does not print the uninstalled mysql row"
-out="$(STUB_BREW_INSTALLED_FORMULAS= STUB_BREW_MYSQL=none run_svc_mac_brew list --all --porcelain 2>&1)"; rc=$?
+out="$(STUB_BREW_INSTALLED_FORMULAS='' STUB_BREW_MYSQL=none run_svc_mac_brew list --all --porcelain 2>&1)"; rc=$?
 assert_eq "$rc" 0 "Case 14ke: --all remains a successful explicit inventory view"
 assert_contains "$out" "mysql|MySQL|mysqld|databases|brew||mysql|off|off" \
     "Case 14kf: --all can still show the curated absent/stopped brew descriptor"

@@ -209,6 +209,7 @@ echo "doctor --fix repairs a selected markerless installed owner but leaves an a
 select_bundle demo/unowned
 rm -f "$SENT"/* 2>/dev/null || true
 set +e
+# shellcheck disable=SC2034 # captured so a noisy --quiet regression is inspectable
 markerless_out="$(doctor_env --fix --quiet 2>&1)"
 markerless_rc=$?
 set -u

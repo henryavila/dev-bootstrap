@@ -77,7 +77,7 @@ fi
 
 echo
 echo "data/*.conf + *.txt files non-empty (SoT files)"
-for data_file in "$REPO_ROOT/topics/10-languages/data/"*.{conf,txt}; do
+for data_file in "$REPO_ROOT/topics/languages/data/"*.{conf,txt}; do
     [[ ! -f "$data_file" ]] && continue
     ASSERT_MSG="$(relpath "$data_file")"
     assert_true "grep -qvE '^\s*(#|$)' '$data_file'"

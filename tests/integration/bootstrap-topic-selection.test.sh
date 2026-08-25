@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # tests/integration/bootstrap-topic-selection.test.sh
+#
+# v2 catalog: setup.sh --list-bundles / --bundle / --no-mesh. The numbered
+# ONLY_TOPICS / INCLUDE_* topic selectors are gone.
 
 set -uo pipefail
 
@@ -12,101 +15,60 @@ TESTROOT="$(mktemp -d /tmp/mesh-workstation-topic-selection.XXXXXX)"
 trap 'rm -rf "$TESTROOT"' EXIT INT TERM
 
 echo
-echo "═══ bootstrap topic selection ═══"
+echo "═══ bootstrap bundle selection ═══"
 
-list_out="$(HOME="$TESTROOT/home-list" bash "$REPO_ROOT/setup.sh" --list-topics 2>&1)"
-assert_contains "$list_out" "20  20-terminal-ux" \
-    "bootstrap --list-topics lists topic numbers from topics/"
-assert_contains "$list_out" "60  60-web-stack" \
-    "bootstrap --list-topics includes opt-in topics"
-assert_contains "$list_out" "82  82-ai-tools" \
-    "bootstrap --list-topics includes the AI tools topic"
-assert_contains "$list_out" "82  82-ai-tools  opt-in: INCLUDE_AI_TOOLS=1 MESH_IDENTITY_REPO=<url>  AI review prompts + token-saving CLI tools" \
-    "bootstrap --list-topics explains topic 82 beyond the gate variables"
+list_out="$(HOME="$TESTROOT/home-list" bash "$REPO_ROOT/setup.sh" --list-bundles 2>&1)"
+assert_contains "$list_out" "foundation/base" \
+    "bootstrap --list-bundles lists foundation/base"
+assert_contains "$list_out" "web/nginx-php-fpm" \
+    "bootstrap --list-bundles includes the WSL web stack"
+assert_contains "$list_out" "ai/" \
+    "bootstrap --list-bundles includes AI bundles"
+assert_contains "$list_out" "personal/personal" \
+    "unflagged --list-bundles still shows personal/personal"
 if [[ ! -e "$TESTROOT/home-list/.local/state/mesh" ]]; then
-    pass "bootstrap --list-topics is read-only and does not create runtime state"
+    pass "bootstrap --list-bundles is read-only and does not create runtime state"
 else
-    fail "bootstrap --list-topics should not create runtime state"
+    fail "bootstrap --list-bundles should not create runtime state"
 fi
 
 dry_out="$(
     HOME="$TESTROOT/home-dry" \
-    ONLY_TOPICS="20 30" \
-    DRY_RUN=1 \
+    XDG_CONFIG_HOME="$TESTROOT/home-dry/.config" \
+    XDG_STATE_HOME="$TESTROOT/home-dry/.local/state" \
     NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
+        bash "$REPO_ROOT/setup.sh" --no-mesh --non-interactive --dry-run \
+            --bundle shell-terminal/cli-tools --bundle shell-terminal/zsh 2>&1
 )"
-assert_contains "$dry_out" "topic :: 20-terminal-ux" \
-    "ONLY_TOPICS accepts short numeric selector 20"
-assert_contains "$dry_out" "topic :: 30-shell" \
-    "ONLY_TOPICS accepts short numeric selector 30"
-assert_not_contains "$dry_out" "topic :: 40-tmux" \
-    "ONLY_TOPICS numeric selectors do not run unrelated topics"
+assert_contains "$dry_out" "shell-terminal/cli-tools" \
+    "--bundle shell-terminal/cli-tools is in the dry-run plan"
+assert_contains "$dry_out" "shell-terminal/zsh" \
+    "--bundle shell-terminal/zsh is in the dry-run plan"
+assert_not_contains "$dry_out" "personal/personal" \
+    "--no-mesh dry-run does not apply personal/personal"
+assert_not_contains "$dry_out" "web/nginx-php-fpm" \
+    "unrelated web stack is not pulled in by a shell-only --bundle list"
 
-single_digit_out="$(
-    HOME="$TESTROOT/home-single" \
-    ONLY_TOPICS="5" \
-    DRY_RUN=1 \
-    NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
+php_out="$(
+    HOME="$TESTROOT/home-php" \
+    XDG_CONFIG_HOME="$TESTROOT/home-php/.config" \
+    XDG_STATE_HOME="$TESTROOT/home-php/.local/state" \
+        bash "$REPO_ROOT/setup.sh" --no-mesh --non-interactive --dry-run \
+            --bundle languages/php 2>&1
 )"
-assert_contains "$single_digit_out" "topic :: 05-identity" \
-    "ONLY_TOPICS accepts single-digit selector 5 for 05-identity"
-
-bad_out="$(
-    HOME="$TESTROOT/home-bad" \
-    ONLY_TOPICS="25" \
-    DRY_RUN=1 \
-    NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
-)"
-bad_rc=$?
-if (( bad_rc != 0 )) && [[ "$bad_out" == *"unknown topic selector '25'"* ]]; then
-    pass "unknown numeric topic selector fails before running topics"
-else
-    fail "unknown numeric topic selector should fail loudly (rc=$bad_rc)"
-    printf '%s\n' "$bad_out" | sed 's/^/        /' >&2
-fi
-
-strict_out="$(
-    HOME="$TESTROOT/home-strict" \
-    INCLUDE_WEBSTACK=0 \
-    ONLY_TOPICS="60" \
-    MESH_REQUIRE_ONLY_TOPICS=1 \
-    DRY_RUN=1 \
-    NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
-)"
-strict_rc=$?
-if (( strict_rc != 0 )) && [[ "$strict_out" == *"60-web-stack is opt-in; set INCLUDE_WEBSTACK=1"* ]]; then
-    pass "strict topic mode fails when an explicitly requested opt-in topic is disabled"
-else
-    fail "strict topic mode should fail for disabled opt-in topic (rc=$strict_rc)"
-    printf '%s\n' "$strict_out" | sed 's/^/        /' >&2
-fi
+assert_contains "$php_out" "languages/php" \
+    "--bundle languages/php is in the dry-run plan"
+assert_not_contains "$php_out" "personal/personal" \
+    "--no-mesh --bundle languages/php does not add personal"
 
 ai_only_out="$(
     HOME="$TESTROOT/home-ai-only" \
-    INCLUDE_AI_TOOLS=1 \
-    INCLUDE_IDENTITY=0 \
-    MESH_IDENTITY_REPO=file://"$REPO_ROOT" \
-    DRY_RUN=1 \
-    NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
+    XDG_CONFIG_HOME="$TESTROOT/home-ai-only/.config" \
+    XDG_STATE_HOME="$TESTROOT/home-ai-only/.local/state" \
+        bash "$REPO_ROOT/setup.sh" --non-interactive --dry-run \
+            --bundle ai/claude-code 2>&1
 )"
-assert_contains "$ai_only_out" "topic :: 82-ai-tools" \
-    "AI tools run as topic 82 when explicitly enabled"
-assert_not_contains "$ai_only_out" "topic :: 95-dotfiles-personal" \
-    "AI tools do not implicitly apply personal dotfiles"
-
-legacy_dotfiles_out="$(
-    HOME="$TESTROOT/home-dotfiles-legacy" \
-    MESH_IDENTITY_REPO=file://"$REPO_ROOT" \
-    DRY_RUN=1 \
-    NON_INTERACTIVE=1 \
-        bash "$REPO_ROOT/setup.sh" --non-interactive 2>&1
-)"
-assert_contains "$legacy_dotfiles_out" "topic :: 95-dotfiles-personal" \
-    "MESH_IDENTITY_REPO alone still enables 95-dotfiles-personal for backward compatibility"
+assert_contains "$ai_only_out" "ai/claude-code" \
+    "AI tools run as ai/claude-code when explicitly bundled"
 
 summary

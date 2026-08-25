@@ -16,7 +16,7 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-PHP_USE="$REPO_ROOT/topics/10-languages/templates/bin/php-use"
+PHP_USE="$REPO_ROOT/topics/languages/templates/php/bin/php-use"
 assert_file_exists "$PHP_USE"
 
 echo "--help / no args prints usage without error"

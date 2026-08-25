@@ -162,7 +162,7 @@ reset_state
 out="$(MESH_COND_OS=wsl MESH_WSL_CORPORATE=1 run_engine --selections "$TMP/sel.opt" --non-interactive)"
 assert "when named true: corp runs" "yes" "$(test -f "$OUT/corp.done" && echo yes || echo no)"
 reset_state
-out="$(run_engine --selections "$TMP/sel.opt" --non-interactive)"
+out="$(MESH_COND_OS=mac MESH_WSL_CORPORATE=0 run_engine --selections "$TMP/sel.opt" --non-interactive)"
 assert "when named false: corp skipped" "yes" "$(echo "$out" | grep -q 'corp: skip (when: wsl_corporate is false)' && echo yes || echo no)"
 
 # ── Test 6: deploy driver renders the fragment into HOME ──

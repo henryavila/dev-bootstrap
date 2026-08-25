@@ -28,7 +28,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-WSL="$ROOT/topics/60-web-stack/wsl/nginx-sites.sh"
+WSL="$ROOT/topics/web/wsl/nginx-sites.sh"
 
 assert_pattern_present() {
     local file="$1" pattern="$2" msg="$3"

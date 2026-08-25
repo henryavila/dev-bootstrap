@@ -12,10 +12,10 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-BASH_FRAGMENT="$ROOT/topics/40-tmux/templates/bashrc.d-40-tmux.sh"
-ZSH_FRAGMENT="$ROOT/topics/40-tmux/templates/zshrc.d-40-tmux.sh"
-BASH_ENV_FRAGMENT="$ROOT/topics/30-shell/templates/bashrc.d-00-mesh-env.sh"
-ZSH_ENV_FRAGMENT="$ROOT/topics/30-shell/templates/zshrc.d-00-mesh-env.sh"
+BASH_FRAGMENT="$ROOT/topics/shell-terminal/templates/tmux/bashrc.d-40-tmux.sh"
+ZSH_FRAGMENT="$ROOT/topics/shell-terminal/templates/tmux/zshrc.d-40-tmux.sh"
+BASH_ENV_FRAGMENT="$ROOT/topics/shell-terminal/templates/zsh/bashrc.d-00-mesh-env.sh"
+ZSH_ENV_FRAGMENT="$ROOT/topics/shell-terminal/templates/zsh/zshrc.d-00-mesh-env.sh"
 TESTROOT="$(mktemp -d /tmp/tmux-auto-main-login-test.XXXXXX)"
 trap 'rm -rf "$TESTROOT"' EXIT INT TERM
 
@@ -138,30 +138,38 @@ make_home "$home_bash"
 run_bash_login "$home_bash"
 assert_log "" "bash login outside tmux does not auto-attach main by default"
 
-home_zsh="$TESTROOT/home-zsh"
-make_home "$home_zsh"
-run_zsh_login "$home_zsh"
-assert_log "" "zsh login outside tmux does not auto-attach main by default"
+if command -v zsh >/dev/null 2>&1; then
+    home_zsh="$TESTROOT/home-zsh"
+    make_home "$home_zsh"
+    run_zsh_login "$home_zsh"
+    assert_log "" "zsh login outside tmux does not auto-attach main by default"
+else
+    pass "zsh login outside tmux skipped (zsh not installed)"
+fi
 
 home_bash_optin="$TESTROOT/home-bash-optin"
 make_home "$home_bash_optin"
 run_bash_login "$home_bash_optin" MESH_TMUX_AUTO_MAIN=1
 assert_log "new-session -A -s main" "MESH_TMUX_AUTO_MAIN=1 enables bash auto-main experiment"
 
-home_zsh_optin="$TESTROOT/home-zsh-optin"
-make_home "$home_zsh_optin"
-run_zsh_login "$home_zsh_optin" MESH_TMUX_AUTO_MAIN=1
-assert_log "new-session -A -s main" "MESH_TMUX_AUTO_MAIN=1 enables zsh auto-main experiment"
+if command -v zsh >/dev/null 2>&1; then
+    home_zsh_optin="$TESTROOT/home-zsh-optin"
+    make_home "$home_zsh_optin"
+    run_zsh_login "$home_zsh_optin" MESH_TMUX_AUTO_MAIN=1
+    assert_log "new-session -A -s main" "MESH_TMUX_AUTO_MAIN=1 enables zsh auto-main experiment"
 
-home_inside="$TESTROOT/home-inside"
-make_home "$home_inside"
-run_zsh_login "$home_inside" TMUX=/tmp/tmux-stub,123,0
-assert_log "" "inside tmux does not auto-start nested client"
+    home_inside="$TESTROOT/home-inside"
+    make_home "$home_inside"
+    run_zsh_login "$home_inside" TMUX=/tmp/tmux-stub,123,0
+    assert_log "" "inside tmux does not auto-start nested client"
 
-home_optout="$TESTROOT/home-optout"
-make_home "$home_optout"
-run_zsh_login "$home_optout" MESH_TMUX_AUTO_MAIN=0
-assert_log "" "MESH_TMUX_AUTO_MAIN=0 keeps auto-attach disabled"
+    home_optout="$TESTROOT/home-optout"
+    make_home "$home_optout"
+    run_zsh_login "$home_optout" MESH_TMUX_AUTO_MAIN=0
+    assert_log "" "MESH_TMUX_AUTO_MAIN=0 keeps auto-attach disabled"
+else
+    pass "zsh auto-main opt-in/inside/opt-out skipped (zsh not installed)"
+fi
 
 home_legacy_bash="$TESTROOT/home-legacy-bash"
 make_home "$home_legacy_bash"
@@ -170,12 +178,16 @@ install_legacy_auto_main_fragment "$home_legacy_bash/.bashrc.d/40-tmux.sh"
 run_bash_login "$home_legacy_bash"
 assert_log "" "30-shell env fragment disables older bash auto-main fragment after update"
 
-home_legacy_zsh="$TESTROOT/home-legacy-zsh"
-make_home "$home_legacy_zsh"
-cp "$ZSH_ENV_FRAGMENT" "$home_legacy_zsh/.zshrc.d/00-mesh-env.sh"
-install_legacy_auto_main_fragment "$home_legacy_zsh/.zshrc.d/40-tmux.sh"
-run_zsh_login "$home_legacy_zsh"
-assert_log "" "30-shell env fragment disables older zsh auto-main fragment after update"
+if command -v zsh >/dev/null 2>&1; then
+    home_legacy_zsh="$TESTROOT/home-legacy-zsh"
+    make_home "$home_legacy_zsh"
+    cp "$ZSH_ENV_FRAGMENT" "$home_legacy_zsh/.zshrc.d/00-mesh-env.sh"
+    install_legacy_auto_main_fragment "$home_legacy_zsh/.zshrc.d/40-tmux.sh"
+    run_zsh_login "$home_legacy_zsh"
+    assert_log "" "30-shell env fragment disables older zsh auto-main fragment after update"
+else
+    pass "legacy zsh auto-main fragment skip skipped (zsh not installed)"
+fi
 
 run_noninteractive_source "$BASH_FRAGMENT"
 assert_log "" "non-interactive source does not auto-attach"

@@ -47,7 +47,12 @@ case "${1:-}" in
   *) exit 0 ;;
 esac
 SH
-chmod +x "$BIN/brew" "$BIN/launchctl" "$BIN/sudo"
+cat > "$BIN/uname" <<'SH'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-s" ]] && { printf 'Darwin\n'; exit 0; }
+exec /usr/bin/uname "$@"
+SH
+chmod +x "$BIN/brew" "$BIN/launchctl" "$BIN/sudo" "$BIN/uname"
 
 run_php_uninstall() {
     FAKE_FORMULAS="$FORM" BREW_BIN="$BIN/brew" BREW_PREFIX="$BREW" \

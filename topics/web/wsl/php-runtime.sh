@@ -48,7 +48,10 @@ _mesh_web_php_runtime_versions() {
     local default_bin=""
     if [[ -x "$bin_dir/php" ]]; then
         default_bin="$bin_dir/php"
-    else
+    elif [[ -z "${PHP_CLI_BIN_DIR:-}" ]]; then
+        # Only search PATH when the caller did not pin a bin dir. An explicit
+        # PHP_CLI_BIN_DIR (engine tests, isolated apply) must not pick up a
+        # foreign /usr/bin/php from the host PATH.
         default_bin="$(command -v php 2>/dev/null || true)"
     fi
     ver="$(_mesh_web_php_version_from_bin "$default_bin")" || {
@@ -64,7 +67,7 @@ _mesh_web_php_runtime_default() {
         local bin_dir="${PHP_CLI_BIN_DIR:-/usr/bin}"
         if [[ -x "$bin_dir/php" ]]; then
             default_bin="$bin_dir/php"
-        else
+        elif [[ -z "${PHP_CLI_BIN_DIR:-}" ]]; then
             default_bin="$(command -v php 2>/dev/null || true)"
         fi
         default="$(_mesh_web_php_version_from_bin "$default_bin" 2>/dev/null || true)"

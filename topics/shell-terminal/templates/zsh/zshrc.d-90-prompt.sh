@@ -1,10 +1,13 @@
 # shellcheck shell=bash
+# shellcheck disable=SC1090
 # ~/.zshrc.d/90-prompt.sh — mesh-owned zsh prompt + plugins.
 # Loaded by ~/.zshrc from ~/.zshrc.d/. Does NOT require ~/.zshrc.local or
 # mesh-identity, so --no-mesh / guest machines still get p10k (git status)
 # and the apt/brew zsh plugins. Identity may still override from
 # ~/.zshrc.local, which ~/.zshrc sources after this directory.
 
+# Dynamic path: apt vs brew vs ~/.local. Missing files are a silent no-op.
+# shellcheck disable=SC1090
 _mesh_source_if() { [ -r "$1" ] && . "$1"; }
 
 # Autosuggestions (apt on WSL, brew on mac). Missing files are a silent no-op.

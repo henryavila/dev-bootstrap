@@ -17,6 +17,7 @@ assert_file_exists "$HELPER" "scripts/lib/no-mesh.sh exists"
 # shellcheck source=/dev/null
 . "$HELPER"
 
+# shellcheck disable=SC2034 # read by no_mesh_emit_lean_bootstrap
 MESH_NO_MESH=1
 if declare -f no_mesh_emit_lean_bootstrap >/dev/null 2>&1; then
     lean="$(no_mesh_emit_lean_bootstrap)"
@@ -61,8 +62,10 @@ out1="$(
     XDG_CONFIG_HOME="$home1/.config" \
     XDG_STATE_HOME="$home1/.local/state" \
     MESH_LEAN_BOOTSTRAP=1 \
-    bash "$SETUP" --no-mesh --dry-run 2>&1
+    bash "$SETUP" --no-mesh --non-interactive --dry-run 2>&1
 )" || rc1=$?
+assert_eq "$rc1" "0" "no-mesh lean dry-run exits 0"
+assert_contains "$out1" "foundation/base" "lean dry-run log mentions foundation/base"
 
 sel1="$home1/.config/mesh/selections.list"
 # --dry-run + no-mesh currently persists; lean rewrite must land in that file

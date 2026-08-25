@@ -4,5 +4,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
 WS="$(cd "$HERE/../.." && pwd)" || exit 1
 cd "$WS/scripts/menu" || exit 1
+if [[ ! -d node_modules/vitest ]]; then
+    npm ci --no-audit --no-fund >/dev/null
+fi
 npx vitest run tests/no-mesh-menu.test.ts
 exit $?

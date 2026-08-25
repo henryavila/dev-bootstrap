@@ -34,9 +34,8 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-PG_SCRIPT="$ROOT/topics/60-web-stack/scripts/install-postgres.sh"
-MAC_INSTALL="$ROOT/topics/60-web-stack/extras/postgres.sh"
-WSL_INSTALL="$ROOT/topics/60-web-stack/extras/postgres.sh"
+PG_SCRIPT="$ROOT/topics/databases/scripts/install-postgres.sh"
+MAC_INSTALL="$ROOT/topics/databases/postgresql.sh"
 PG_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/postgres-install-test.XXXXXX")"
 trap 'rm -rf "$PG_TEST_ROOT"' EXIT INT TERM
 
@@ -465,9 +464,10 @@ assert_pattern_present "$PG_SCRIPT" 'pg_lsclusters --no-header' \
 assert_pattern_present "$PG_SCRIPT" 'no cluster exists' \
     "no-cluster case emits actionable followup critical"
 
-# systemctl errors captured into variables, escalated.
-assert_pattern_present "$PG_SCRIPT" 'enable_err="\$\(sudo systemctl enable "\$unit" 2>&1\)"' \
-    "systemctl enable captures stderr (no 2>/dev/null)"
+# T-006: install starts the unit for role/db setup but does not force-enable
+# at boot (services.default owns that). Start errors are still captured.
+assert_pattern_present "$PG_SCRIPT" 'no longer force-enables' \
+    "install does not force-enable postgres at boot (services.default owns enable)"
 
 assert_pattern_present "$PG_SCRIPT" 'start_err="\$\(sudo systemctl start "\$unit" 2>&1\)"' \
     "systemctl start captures stderr"
@@ -572,20 +572,13 @@ echo "═══ Layer 3 — install.{mac,wsl}.sh wiring (anchored, mutation-resi
 # check line AND the bash invocation line, but each independently. So
 # deleting the bash line still passed. Anchor to the gate-then-bash
 # block.
-# Post-migration: postgres lives in extras/postgres.sh (type:custom wrapper).
-# The INCLUDE_POSTGRES gate is the first line of check() AND install(); the
-# bash invocation lives further down in install(). Anchor both within the
-# whole file (block-within-5-lines no longer applies since the contract
-# wrapper splits the gate across functions).
-assert_pattern_present "$MAC_INSTALL" 'INCLUDE_POSTGRES' \
-    "extras/postgres.sh: gates on INCLUDE_POSTGRES"
+# Post-migration: postgres lives in databases/postgresql.sh (type:custom wrapper).
+# Bundle selection is the gate (no INCLUDE_*); major version comes from
+# POSTGRES_VERSION. The wrapper invokes scripts/install-postgres.sh.
+assert_pattern_present "$MAC_INSTALL" 'POSTGRES_VERSION' \
+    "postgresql.sh: reads POSTGRES_VERSION"
 assert_pattern_present "$MAC_INSTALL" 'bash .*install-postgres\.sh' \
-    "extras/postgres.sh: invokes scripts/install-postgres.sh"
-# Same file is the wrapper for both platforms (engine-driven; no .mac/.wsl split)
-assert_pattern_present "$WSL_INSTALL" 'INCLUDE_POSTGRES' \
-    "extras/postgres.sh: gates on INCLUDE_POSTGRES (same file, both platforms)"
-assert_pattern_present "$WSL_INSTALL" 'bash .*install-postgres\.sh' \
-    "extras/postgres.sh: invokes scripts/install-postgres.sh (same file, both platforms)"
+    "postgresql.sh: invokes scripts/install-postgres.sh"
 
 echo
 echo "═══ Layer 5 — README + SPEC docs ═══"

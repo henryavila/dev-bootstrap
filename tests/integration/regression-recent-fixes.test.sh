@@ -117,8 +117,8 @@ assert_pattern_present "$WSL" 'force-confdef' \
 echo
 echo "═══ Sudo cache refresh at topic entry (long topics outlast 5-15min cache) ═══"
 
-assert_pattern_present "$WSL" 'sudo -v' \
-    "60-web-stack/install.wsl.sh — sudo -v keepalive at topic entry"
+assert_pattern_present "$WSL" 'sudo -n -v' \
+    "60-web-stack/install.wsl.sh — sudo -n -v keepalive at topic entry (no pts hang)"
 
 # 60-web-stack/install.mac.sh has its own sudo -v before the valet block
 assert_pattern_present "$MAC" 'sudo -v' \

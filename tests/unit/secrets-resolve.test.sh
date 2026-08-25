@@ -18,10 +18,15 @@ trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"
 mkdir -p "$HOME" "$TMP/bin"
 unset COMPOSER_HOME XDG_CONFIG_HOME NPM_CONFIG_USERCONFIG 2>/dev/null || true
-# Isolated PATH: fake bin first (for the authoritative-composer case), then the
-# system coreutils dirs — which do NOT contain composer, so the fallback chain
-# is exercised deterministically regardless of the host's real composer install.
-export PATH="$TMP/bin:/usr/bin:/bin"
+# Isolated PATH: only the fake bin dir. GHA Ubuntu images ship composer in
+# /usr/bin (and /bin is usr-merged), so adding those dirs would make
+# `composer config --global home` win over the ~/.composer legacy branch.
+for _cmd in cat chmod rm dirname mkdir wc tr; do
+    _src="$(command -v "$_cmd" 2>/dev/null)" || continue
+    ln -sf "$_src" "$TMP/bin/$_cmd"
+done
+unset _cmd _src
+export PATH="$TMP/bin"
 
 . "$WS/scripts/lib/secrets-resolve.sh"
 
@@ -41,7 +46,7 @@ eq "composer legacy dir" "$(secrets_resolve_home composer-home)" "$HOME/.compose
 
 # --- composer-home: real composer binary is authoritative ---
 cat > "$TMP/bin/composer" <<EOF
-#!/usr/bin/env bash
+#!/bin/bash
 [ "\$1" = "config" ] && { echo "$TMP/from-composer"; exit 0; }
 exit 1
 EOF

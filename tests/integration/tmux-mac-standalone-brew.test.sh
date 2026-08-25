@@ -63,11 +63,11 @@ if PATH="$STUBBIN:$PATH" \
    FAKE_BREW_PREFIX="$FAKE_PREFIX" \
    BREW_BIN='' \
    BREW_PREFIX='' \
-   bash "$ROOT/topics/40-tmux/install.sh" >"$LOG" 2>&1; then
-    pass "40-tmux/install.mac.sh runs standalone with BREW_BIN unset"
+   bash -c '. "$1"; check' _ "$ROOT/topics/shell-terminal/clone-catppuccin.sh" >"$LOG" 2>&1; then
+    pass "shell-terminal/clone-catppuccin.sh check() runs standalone with BREW_BIN unset"
 else
     rc=$?
-    fail "40-tmux/install.mac.sh exited $rc with BREW_BIN unset"
+    fail "clone-catppuccin.sh check() exited $rc with BREW_BIN unset"
     sed 's/^/      /' "$LOG" >&2
 fi
 
@@ -78,7 +78,9 @@ else
     pass "standalone topic install does not emit BREW_BIN not set"
 fi
 
-assert_file_contains "$LOG" "tmux-mac: already present" \
-    "40-tmux/install.sh used detected fake brew via engine"
+# tmux itself is a brew-formula item now; this custom clone must not
+# assume setup.sh exported BREW_BIN.
+assert_false "grep -q 'BREW_BIN not set' '$LOG'" \
+    "catppuccin clone does not require BREW_BIN from setup.sh"
 
 summary

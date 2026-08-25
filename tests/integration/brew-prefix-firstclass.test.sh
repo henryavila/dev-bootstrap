@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/integration/brew-prefix-firstclass.test.sh
 #
-# Camada 4 (Mac §4.7.5): topics/00-core/install.mac.sh must support an
+# Camada 4 (Mac §4.7.5): topics/foundation/mac/core.sh must support an
 # explicit, persistent choice of Homebrew prefix:
 #   - canonical (/opt/homebrew, /usr/local) → official installer
 #   - custom path (e.g. /Volumes/External/homebrew) → git clone
@@ -24,16 +24,16 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-TOPIC="$ROOT/topics/00-core/install.mac.sh"
+TOPIC="$ROOT/topics/foundation/mac/core.sh"
 BOOT="$ROOT/setup.sh"
 
-assert_file_exists "$TOPIC" "topics/00-core/install.mac.sh exists"
+assert_file_exists "$TOPIC" "topics/foundation/mac/core.sh exists"
 
 # ---------------------------------------------------------------------
 # Decision ladder structure
 # ---------------------------------------------------------------------
 echo
-echo "═══ topics/00-core/install.mac.sh — decision ladder ═══"
+echo "═══ topics/foundation/mac/core.sh — decision ladder ═══"
 
 assert_pattern_present "$TOPIC" 'source.*lib/state\.sh' \
     "00-core sources lib/state.sh"
@@ -152,18 +152,18 @@ assert_pattern_present "$BOOT" 'source.*lib/state\.sh' \
 assert_pattern_present "$BOOT" 'state_load' \
     "setup.sh calls state_load before topics run"
 
-# state_load must come BEFORE the first run_topic invocation (so 00-core
+# state_load must come BEFORE the install-engine invocation (so foundation/base
 # sees previously-persisted BREW_PREFIX)
 state_load_line="$(grep -nE '^state_load' "$BOOT" | head -1 | cut -d: -f1)"
-first_run_topic_line="$(grep -nE '^[[:space:]]*run_topic[[:space:]]' "$BOOT" | head -1 | cut -d: -f1)"
-if [[ -n "$state_load_line" ]] && [[ -n "$first_run_topic_line" ]]; then
-    if [[ "$state_load_line" -lt "$first_run_topic_line" ]]; then
-        pass "state_load (line $state_load_line) precedes first run_topic (line $first_run_topic_line)"
+engine_line="$(grep -nE 'scripts/lib/install-engine\.sh' "$BOOT" | head -1 | cut -d: -f1)"
+if [[ -n "$state_load_line" ]] && [[ -n "$engine_line" ]]; then
+    if [[ "$state_load_line" -lt "$engine_line" ]]; then
+        pass "state_load (line $state_load_line) precedes install-engine (line $engine_line)"
     else
-        fail "state_load must come before run_topic (got state_load=$state_load_line, run_topic=$first_run_topic_line)"
+        fail "state_load must come before install-engine (got state_load=$state_load_line, engine=$engine_line)"
     fi
 else
-    fail "could not locate both state_load and run_topic in setup.sh"
+    fail "could not locate both state_load and install-engine.sh in setup.sh"
 fi
 
 # ---------------------------------------------------------------------
@@ -236,11 +236,12 @@ EXEC_STATE="$EXEC_TMP/state-dir"
 
 if PATH="$EXEC_TMP/bin:$PATH" \
    MESH_STATE_DIR="$EXEC_STATE" \
-   bash "$ROOT/topics/00-core/install.mac.sh" >"$EXEC_LOG" 2>&1; then
-    pass "install.mac.sh exits 0 with brew already on PATH (regression: was 'unbound variable')"
+   MESH_COND_OS=mac \
+   bash -c '. "$1"; install' _ "$TOPIC" >"$EXEC_LOG" 2>&1; then
+    pass "foundation/mac/core.sh install() exits 0 with brew already on PATH (regression: was 'unbound variable')"
 else
     rc=$?
-    fail "install.mac.sh exited $rc — log follows:"
+    fail "foundation/mac/core.sh install() exited $rc — log follows:"
     sed 's/^/      /' "$EXEC_LOG" >&2
 fi
 

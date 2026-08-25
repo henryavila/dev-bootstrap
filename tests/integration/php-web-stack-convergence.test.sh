@@ -2,8 +2,9 @@
 # tests/integration/php-web-stack-convergence.test.sh
 #
 # WSL PHP -> nginx/php-fpm convergence contract. The web owner must run only
-# after languages/php, reject any PHP/FPM stderr, preserve activation failures,
-# and publish convergence only after the serving services are healthy.
+# after languages/php, reject fatal PHP/FPM stderr (startup/load errors),
+# ignore known-benign JIT notices, preserve activation failures, and publish
+# convergence only after the serving services are healthy.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -167,6 +168,9 @@ SH
 if [[ "${FAKE_WSL_MODE:-ok}" == "fpm-stderr" ]]; then
     printf 'Zend OPcache cannot be loaded twice in FPM\n' >&2
 fi
+if [[ "${FAKE_WSL_MODE:-ok}" == "fpm-jit-stderr" ]]; then
+    printf '[25-Aug-2026 07:59:02] NOTICE: PHP message: PHP Warning:  JIT is incompatible with third party extensions that override zend_execute_ex(). JIT disabled. in Unknown on line 0\n' >&2
+fi
 printf 'PHP-FPM 8.4 fixture\n'
 SH
     cp "$case_dir/bin/php-fpm8.4" "$case_dir/bin/php-fpm8.5"
@@ -326,6 +330,7 @@ run_wsl_owner_runtime() {
     nginx_port="$(cat "$case_dir/nginx-port" 2>/dev/null || printf '1')"
     socket_dir="$(cat "$case_dir/socket-dir")"
     (
+        hash -r 2>/dev/null || true
         unset PHP_VERSIONS PHP_DEFAULT
         HOME="$case_dir/home" \
         PATH="$case_dir/bin:${FAKE_RUNTIME_BASE_PATH:-$PATH}" \
@@ -499,7 +504,22 @@ MISSING_RUNTIME_CASE="$ROOT/missing-runtime-case"
 make_wsl_case "$MISSING_RUNTIME_CASE"
 rm -f "$MISSING_RUNTIME_CASE/bin/php" \
     "$MISSING_RUNTIME_CASE/bin/php8.4" "$MISSING_RUNTIME_CASE/bin/php8.5"
-missing_runtime_out="$(FAKE_RUNTIME_BASE_PATH=/usr/bin:/bin \
+# php-owner.sh loops $PHP_VERSIONS after resolve_php_env; with no binaries it
+# must not be given a leftover 8.4/8.5 list from the fixture template.
+cat > "$MISSING_RUNTIME_CASE/php-owner.sh" <<'SH'
+verify() {
+    local ver
+    for ver in ${PHP_VERSIONS:-}; do
+        [[ -x "$PHP_CLI_BIN_DIR/php${ver}" ]] || return 1
+        "$PHP_CLI_BIN_DIR/php${ver}" -v >/dev/null || return $?
+    done
+    return 0
+}
+SH
+# Isolate from the host PHP on /usr/bin (this WSL box has php 8.4).
+MISSING_PATH="$MISSING_RUNTIME_CASE/empty-path"
+mkdir -p "$MISSING_PATH"
+missing_runtime_out="$(FAKE_RUNTIME_BASE_PATH="$MISSING_PATH:/bin" \
     run_wsl_owner_runtime "$MISSING_RUNTIME_CASE" 8.4 2>&1)"
 missing_runtime_rc=$?
 assert_ne "$missing_runtime_rc" "0" \
@@ -511,8 +531,9 @@ assert_eq "$(cat "$MISSING_RUNTIME_CASE/calls")" "" \
 
 missing_packages_check_out="$(
     (
+        hash -r 2>/dev/null || true
         unset PHP_VERSIONS PHP_DEFAULT
-        PATH="$MISSING_RUNTIME_CASE/bin:/usr/bin:/bin" \
+        PATH="$MISSING_RUNTIME_CASE/bin:/bin:$MISSING_PATH" \
         PHP_CLI_BIN_DIR="$MISSING_RUNTIME_CASE/bin" \
             bash -c '. "$1"; check' _ "$PROD_WSL_PACKAGES"
     ) 2>&1
@@ -525,8 +546,9 @@ assert_contains "$missing_packages_check_out" "no declared or executable PHP run
 
 missing_packages_verify_out="$(
     (
+        hash -r 2>/dev/null || true
         unset PHP_VERSIONS PHP_DEFAULT
-        PATH="$MISSING_RUNTIME_CASE/bin:/usr/bin:/bin" \
+        PATH="$MISSING_RUNTIME_CASE/bin:/bin:$MISSING_PATH" \
         PHP_CLI_BIN_DIR="$MISSING_RUNTIME_CASE/bin" \
             bash -c '. "$1"; verify' _ "$PROD_WSL_PACKAGES"
     ) 2>&1
@@ -540,8 +562,9 @@ assert_contains "$missing_packages_verify_out" "no declared or executable PHP ru
 : > "$MISSING_RUNTIME_CASE/sudo-calls"
 missing_packages_install_out="$(
     (
+        hash -r 2>/dev/null || true
         unset PHP_VERSIONS PHP_DEFAULT
-        PATH="$MISSING_RUNTIME_CASE/bin:/usr/bin:/bin" \
+        PATH="$MISSING_RUNTIME_CASE/bin:/bin:$MISSING_PATH" \
         PHP_CLI_BIN_DIR="$MISSING_RUNTIME_CASE/bin" \
         FAKE_SUDO_CALLS="$MISSING_RUNTIME_CASE/sudo-calls" \
             bash -c '. "$1"; install' _ "$PROD_WSL_PACKAGES"
@@ -562,7 +585,7 @@ SH
 chmod +x "$MISSING_RUNTIME_CASE/bin/dpkg"
 whitespace_packages_out="$(
     PHP_VERSIONS='   ' PHP_DEFAULT=' ' \
-    PATH="$MISSING_RUNTIME_CASE/bin:/usr/bin:/bin" \
+    PATH="$MISSING_RUNTIME_CASE/bin:/bin:$MISSING_PATH" \
     PHP_CLI_BIN_DIR="$MISSING_RUNTIME_CASE/bin" \
         bash -c '. "$1"; verify' _ "$PROD_WSL_PACKAGES" 2>&1
 )"
@@ -574,8 +597,9 @@ assert_contains "$whitespace_packages_out" "declared PHP runtime list contains n
 
 missing_deploy_out="$(
     (
+        hash -r 2>/dev/null || true
         unset PHP_VERSIONS PHP_DEFAULT
-        PATH="$MISSING_RUNTIME_CASE/bin:/usr/bin:/bin" \
+        PATH="$MISSING_RUNTIME_CASE/bin:/bin:$MISSING_PATH" \
         MESH_OS=wsl \
         PHP_CLI_BIN_DIR="$MISSING_RUNTIME_CASE/bin" \
             bash -c '. "$1"; rc=$?; printf "PHP_DEFAULT=<%s> PHP_VERSIONS=<%s>\n" "${PHP_DEFAULT:-}" "${PHP_VERSIONS:-}"; exit "$rc"' \
@@ -657,12 +681,25 @@ FPM_STDERR_CASE="$ROOT/fpm-stderr-case"
 make_wsl_case "$FPM_STDERR_CASE"
 fpm_stderr_out="$(run_wsl_owner "$FPM_STDERR_CASE" fpm-stderr 2>&1)"
 fpm_stderr_rc=$?
-assert_ne "$fpm_stderr_rc" "0" "any PHP-FPM stderr keeps WSL web repair red"
+assert_ne "$fpm_stderr_rc" "0" "fatal PHP-FPM stderr keeps WSL web repair red"
 assert_contains "$fpm_stderr_out" "php-fpm8.4 health failed before service activation" \
     "dirty FPM is classified before systemd activation"
 assert_contains "$fpm_stderr_out" "Zend OPcache cannot be loaded twice" \
     "alternate PHP-FPM diagnostic remains visible"
 assert_eq "$(cat "$FPM_STDERR_CASE/calls")" "" "dirty FPM prevents every systemd activation"
+
+echo
+echo "WSL PHP-FPM JIT-disabled notice does not block service activation"
+JIT_CASE="$ROOT/fpm-jit-case"
+make_wsl_case "$JIT_CASE"
+start_socket_fixture "$JIT_CASE" listen || exit 2
+jit_out="$(run_wsl_owner "$JIT_CASE" fpm-jit-stderr 2>&1)"
+jit_rc=$?
+assert_eq "$jit_rc" "0" "JIT-incompatible-with-extensions notice on php-fpm --version is not a health failure"
+assert_not_contains "$jit_out" "health failed before service activation" \
+    "benign JIT stderr is not classified as dirty FPM"
+assert_contains "$(cat "$JIT_CASE/calls")" "restart nginx" \
+    "JIT notice still allows nginx activation"
 
 echo
 echo "WSL activation rc is preserved and stops dependent activation"

@@ -83,6 +83,19 @@ _wsl_web_fpm_bin() {
     command -v "php-fpm${ver}" 2>/dev/null || return 1
 }
 
+# php-fpm --version writes some notices to stderr while still exiting 0.
+# "JIT is incompatible with third party extensions" is one of those: PECL
+# redis/igbinary/mongodb override zend_execute_ex(), PHP disables JIT, the
+# process is healthy. Treating any stderr as fatal aborted WSL web stack
+# install (and the Docker smoke) on an otherwise working php-fpm.
+_wsl_web_fpm_stderr_fatal() {
+    local leftover
+    leftover="$(printf '%s\n' "${1:-}" \
+        | grep -vE 'JIT is incompatible with third party extensions|JIT disabled' \
+        | grep -vE '^[[:space:]]*$' || true)"
+    [[ -n "$leftover" ]]
+}
+
 _wsl_web_fpm_probes_clean() {
     local versions ver fpm stderr rc
     versions="$(_wsl_web_versions)" || return 1
@@ -94,7 +107,7 @@ _wsl_web_fpm_probes_clean() {
         stderr=""
         rc=0
         stderr="$("$fpm" --version 2>&1 >/dev/null)" || rc=$?
-        if [[ "$rc" -ne 0 || -n "$stderr" ]]; then
+        if [[ "$rc" -ne 0 ]] || _wsl_web_fpm_stderr_fatal "$stderr"; then
             echo "[web/nginx-php-fpm] php-fpm${ver} health failed before service activation (rc=$rc); repair languages/php first" >&2
             [[ -n "$stderr" ]] && printf '%s\n' "$stderr" | sed -n '1,4p' >&2
             return 1

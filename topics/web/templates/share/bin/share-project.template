@@ -21,21 +21,6 @@
 # on every run; paid tiers let you pin a custom subdomain.
 set -euo pipefail
 
-if ! command -v ngrok >/dev/null 2>&1; then
-    echo "✗ ngrok not installed." >&2
-    echo "  Re-run bootstrap with INCLUDE_NGROK=1 (or pick it in the menu)." >&2
-    echo "  Or manually: https://ngrok.com/download" >&2
-    exit 1
-fi
-
-# Warn (but don't block) if no authtoken yet — ngrok will print its own
-# error, but being explicit helps new users.
-if ! ngrok config check >/dev/null 2>&1; then
-    echo "! no ngrok authtoken set. Get one at:" >&2
-    echo "    https://dashboard.ngrok.com/get-started/your-authtoken" >&2
-    echo "  then run: ngrok config add-authtoken <token>" >&2
-fi
-
 usage() {
     sed -n '2,21p' "$0" | sed 's/^# //; s/^#$//'
     exit "${1:-0}"
@@ -52,6 +37,21 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$name" ]] && usage 1
+
+if ! command -v ngrok >/dev/null 2>&1; then
+    echo "✗ ngrok not installed." >&2
+    echo "  Re-run bootstrap with INCLUDE_NGROK=1 (or pick it in the menu)." >&2
+    echo "  Or manually: https://ngrok.com/download" >&2
+    exit 1
+fi
+
+# Warn (but don't block) if no authtoken yet — ngrok will print its own
+# error, but being explicit helps new users.
+if ! ngrok config check >/dev/null 2>&1; then
+    echo "! no ngrok authtoken set. Get one at:" >&2
+    echo "    https://dashboard.ngrok.com/get-started/your-authtoken" >&2
+    echo "  then run: ngrok config add-authtoken <token>" >&2
+fi
 
 if [[ -n "$port" ]]; then
     # Direct port tunnel (bypasses nginx; useful for raw dev servers)
