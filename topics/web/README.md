@@ -29,7 +29,7 @@ Selected in the interactive menu (the `web` topic). The bundles are: `valet`
 
 ## Multi-PHP
 
-PHP versions are driven by a single source of truth: `topics/10-languages/data/php-versions.conf`.
+PHP versions are driven by a single source of truth: `topics/languages/data/php-versions.conf`.
 
 ```
 8.2
@@ -64,12 +64,13 @@ PHP_VERSIONS="8.4 8.5" PHP_DEFAULT=8.5 \
 
 Every PHP version gets the same baseline. Lists live at:
 
-- `topics/10-languages/data/php-extensions-apt.txt` — apt packages (`php{VER}-bcmath` etc.), 18 today
-- `topics/10-languages/data/php-extensions-pecl.txt` — PECL builds (igbinary, imagick, mongodb, redis), ABI-matched per version
-- `topics/10-languages/data/php-extensions-mssql.txt` — opt-in (sqlsrv + pdo_sqlsrv)
+- `topics/languages/data/php-extensions-apt.txt` — apt packages (`php{VER}-bcmath` etc.), 18 today
+- `topics/languages/data/php-extensions-pecl.txt` — PECL builds (igbinary, imagick, mongodb, redis), ABI-matched per version
+- `topics/languages/data/php-extensions-mssql.txt` — opt-in (sqlsrv + pdo_sqlsrv)
 
 To add a new apt extension: append a line (e.g. `gmp` → `php8.4-gmp`). To add a PECL extension with build deps: `myext:linux-deps:mac-deps`.
 
+<a id="https-that-works"></a>
 ## HTTPS that works — including from Windows browsers
 
 The WSL installer:
@@ -79,6 +80,33 @@ The WSL installer:
 3. **Imports the rootCA into the Windows user's certificate store** (`HKCU:\Root`) via a PowerShell script invoked over WSL interop. This is what makes `https://foo.localhost` green-padlocked in Chrome/Edge running on Windows — the browsers there consult the Windows store, not WSL's.
 
 **Firefox users** on Windows: set `security.enterprise_roots.enabled = true` in `about:config`. Firefox reads the Windows store only when that flag is on.
+
+### Symptom: Windows Chrome/Edge rejects `*.localhost`
+
+`NET::ERR_CERT_AUTHORITY_INVALID` on `https://foo.localhost` after a successful
+WSL web install. curl inside Ubuntu may already be fine. Do **not** install a
+certificate by hand and do not edit `C:\Windows\System32\drivers\etc\hosts`.
+
+### Cause
+
+Windows browsers consult the **Windows** store, not WSL's. The mkcert item
+imports `rootCA.pem` into `HKCU:\Root` via `powershell.exe` from Linux
+(best-effort). Corporate WSL often has broken binfmt/9P, so that call times
+out. `check()` does not verify the Windows store, so `mesh doctor --fix` can
+report healthy while Chrome still rejects the cert.
+
+### Fix
+
+From the clone root (repo-relative — do not hardcode a home path):
+
+```bash
+bash topics/web/scripts/diagnose-wsl-interop.sh
+```
+
+The script probes interop and **always prints the exact Windows PowerShell
+command** for `import-mkcert-from-windows.ps1` (Lane B: `wsl.exe` from Windows,
+independent of binfmt). Run that printed line in Windows PowerShell, then fully
+quit and reopen the browser.
 
 ## The two catchalls
 
@@ -236,7 +264,7 @@ link-project --list
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `NET::ERR_CERT_AUTHORITY_INVALID` in Chrome/Edge on Windows | mkcert CA not imported into Windows store | Re-run `install.wsl.sh` — the PowerShell step will import if missing |
+| `NET::ERR_CERT_AUTHORITY_INVALID` in Chrome/Edge on Windows | mkcert CA not imported into Windows store | `bash topics/web/scripts/diagnose-wsl-interop.sh` — run the printed PowerShell command on Windows, then restart the browser |
 | Firefox keeps showing cert error | Firefox ignores Windows store by default | Set `security.enterprise_roots.enabled = true` in `about:config` |
 | `php -m` doesn't show sqlsrv after MSSQL install | PECL build hit a missing `php{VER}-dev` header | `sudo apt install php{VER}-dev && sudo pecl install -f sqlsrv` |
 | `*.localhost` works in browser but `curl foo.localhost` fails | curl linked against a libc that doesn't follow RFC 6761 (rare) | Add `127.0.0.1 foo.localhost` to `/etc/hosts` manually (only for that edge case) |

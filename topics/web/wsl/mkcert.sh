@@ -111,8 +111,13 @@ install() {
     fi
 
     # Windows trust import — best-effort with Lane B fallback noted on failure.
-    local rootca pwsh
+    local rootca pwsh here scripts_dir lane_b
     rootca="$(mkcert -CAROOT)/rootCA.pem"
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    scripts_dir="$(cd "$here/../scripts" && pwd)"
+    # shellcheck source=/dev/null
+    . "$scripts_dir/mkcert-windows-unc.sh"
+    lane_b="$(mesh_mkcert_from_windows_ps_cmd "$scripts_dir")"
     pwsh=""
     for cand in powershell.exe pwsh.exe \
                 "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe" \
@@ -125,10 +130,10 @@ install() {
     if [[ ! -f "$rootca" ]]; then
         echo "[mkcert] rootCA missing at $rootca — Windows browsers will distrust *.localhost" >&2
         echo "[mkcert] retry: rerun this topic after 'mkcert -CAROOT' shows a directory" >&2
+        echo "[mkcert] after rootCA exists, on Windows: $lane_b" >&2
     elif [[ -n "$pwsh" ]]; then
-        local here ps_src win_tmp_win win_tmp_unix stamp rootca_win ps_win
-        here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        ps_src="$here/../scripts/import-mkcert-windows.ps1"
+        local ps_src win_tmp_win win_tmp_unix stamp rootca_win ps_win
+        ps_src="$scripts_dir/import-mkcert-windows.ps1"
         # Copy CA + importer onto a native Windows path. powershell.exe spawned
         # from WSL deadlocks if it then reads `\\wsl.localhost\...` (9P reentry).
         win_tmp_win="$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')"
@@ -147,17 +152,20 @@ install() {
                 "\$env:ROOTCA_PATH = '$rootca_win'; & '$ps_win'" 2>&1 \
                 | sed 's/^/    /' \
                 || {
-                    echo "[mkcert] interop import failed (or hit 45s timeout) — run scripts/import-mkcert-from-windows.ps1 from Windows" >&2
+                    echo "[mkcert] interop import failed (or hit 45s timeout) — on Windows: $lane_b" >&2
                     if declare -F followup >/dev/null 2>&1; then
-                        followup manual "Windows does not yet trust *.localhost HTTPS. In an interactive Windows PowerShell (click Yes on the security dialog): powershell -ExecutionPolicy Bypass -File ~/mesh-workstation/topics/web/scripts/import-mkcert-from-windows.ps1"
+                        followup manual "Windows does not yet trust *.localhost HTTPS. In Windows PowerShell (click Yes on the security dialog): $lane_b"
                     fi
                 }
             rm -f "$win_tmp_unix/${stamp}-rootCA.pem" "$win_tmp_unix/${stamp}-import.ps1"
         else
-            echo "[mkcert] could not stage CA on Windows TEMP — run scripts/import-mkcert-from-windows.ps1 from Windows side" >&2
+            echo "[mkcert] could not stage CA on Windows TEMP — on Windows: $lane_b" >&2
         fi
     else
-        echo "[mkcert] powershell.exe unreachable — run scripts/import-mkcert-from-windows.ps1 from Windows side" >&2
+        echo "[mkcert] powershell.exe unreachable — on Windows: $lane_b" >&2
+        if declare -F followup >/dev/null 2>&1; then
+            followup manual "Windows does not yet trust *.localhost HTTPS. In Windows PowerShell (click Yes on the security dialog): $lane_b"
+        fi
     fi
 
     # Successful full install — drop the soft_fail binary marker so a later
