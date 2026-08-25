@@ -22,8 +22,8 @@ install() {
     fi
     if ! systemctl --user enable --now syncthing.service 2>/dev/null; then
         echo "[syncthing-service-wsl] systemctl --user failed — starting syncthing manually" >&2
-        syncthing serve --no-browser >/dev/null 2>&1 &
-        disown
+        syncthing serve --no-browser </dev/null >/dev/null 2>&1 &
+        disown 2>/dev/null || true
         # Confirm the fallback process is actually alive; otherwise report
         # install failure rather than silently returning 0 from disown.
         if ! pgrep -u "$USER" -f 'syncthing serve' >/dev/null 2>&1; then

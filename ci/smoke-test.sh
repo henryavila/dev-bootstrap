@@ -166,7 +166,12 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 #     never become active and the item cannot converge. Packages, mkcert, and
 #     site templates still install; listener health is covered by
 #     tests/integration/php-web-stack-convergence.test.sh.
-: "${CI_SKIP_ITEMS:=rust-bins-wsl mysql-wsl redis-wsl postgresql mssql-driver service-convergence}"
+#
+#   syncthing-service-wsl / moshi-hook-wsl-service — user daemons. Without
+#     systemd they fall back to `cmd &`; that child inherits the engine's
+#     stdout and `bash install-engine | tee` never sees EOF, so smoke hits
+#     the 600s cap after "engine: applied". Binaries still install.
+: "${CI_SKIP_ITEMS:=rust-bins-wsl mysql-wsl redis-wsl postgresql mssql-driver service-convergence syncthing-service-wsl moshi-hook-wsl-service}"
 RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' MESH_SKIP_ITEMS='$CI_SKIP_ITEMS' NON_INTERACTIVE=1 bash ~/mesh-workstation/setup.sh"
 [[ -n "$CI_SKIP_ITEMS" ]] && printf '>>> skipping items (MESH_SKIP_ITEMS): %s\n' "$CI_SKIP_ITEMS"
 
@@ -176,10 +181,10 @@ start=$(date +%s)
 set +e
 if [[ -n "$TIMEOUT_BIN" ]]; then
     "$TIMEOUT_BIN" "$TIMEOUT_SECS" \
-        docker run --rm -e GITHUB_TOKEN -e GH_TOKEN "$IMAGE" bash -c "$RUN_CMD" \
+        docker run --rm --init -e GITHUB_TOKEN -e GH_TOKEN "$IMAGE" bash -c "$RUN_CMD" \
         2>&1 | tee "$LOGFILE"
 else
-    docker run --rm -e GITHUB_TOKEN -e GH_TOKEN "$IMAGE" bash -c "$RUN_CMD" \
+    docker run --rm --init -e GITHUB_TOKEN -e GH_TOKEN "$IMAGE" bash -c "$RUN_CMD" \
         2>&1 | tee "$LOGFILE"
 fi
 rc=${PIPESTATUS[0]}

@@ -1423,3 +1423,8 @@ if (( bundles_skipped > 0 )); then
 else
     log_info "engine: applied $bundles_done bundle(s) on $PLATFORM"
 fi
+
+# Item installers (syncthing, moshi-hook) may background daemons. Non-interactive
+# bash waits for those jobs on exit, so a piped engine (`| tee`) never finishes.
+disown -a >/dev/null 2>&1 || true
+exit 0

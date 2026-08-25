@@ -87,8 +87,10 @@ UNIT
         systemctl --user enable --now "${name}.service" 2>/dev/null
     else
         printf '[%s] systemd --user not available — starting via nohup (will not survive WSL restart)\n' "$name" >&2
-        nohup $exec_line >/dev/null 2>&1 &
-        disown
+        # stdin too: a leftover tty/pipe keeps `bash install-engine | tee` from
+        # seeing EOF after the engine prints "applied".
+        nohup $exec_line </dev/null >/dev/null 2>&1 &
+        disown 2>/dev/null || true
     fi
 }
 
