@@ -13,8 +13,8 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-BASH_FRAGMENT="$REPO_ROOT/topics/40-tmux/templates/bashrc.d-40-tmux.sh"
-ZSH_FRAGMENT="$REPO_ROOT/topics/40-tmux/templates/zshrc.d-40-tmux.sh"
+BASH_FRAGMENT="$REPO_ROOT/topics/shell-terminal/templates/tmux/bashrc.d-40-tmux.sh"
+ZSH_FRAGMENT="$REPO_ROOT/topics/shell-terminal/templates/tmux/zshrc.d-40-tmux.sh"
 TESTROOT="$(mktemp -d /tmp/tmux-main-helper-test.XXXXXX)"
 trap 'rm -rf "$TESTROOT"' EXIT INT TERM
 

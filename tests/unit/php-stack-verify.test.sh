@@ -44,6 +44,7 @@ fi
 case "${1:-}" in
     --ini) printf 'Configuration File (php.ini) Path: /fake\n' ;;
     -v|--version) printf 'PHP 8.5.0\n' ;;
+    -m) printf 'igbinary\nimagick\nmongodb\npcov\nredis\n' ;;
 esac
 exit 0
 EOF

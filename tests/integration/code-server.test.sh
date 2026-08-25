@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/integration/code-server.test.sh — static coverage for 85-code-server.
+# tests/integration/code-server.test.sh — static coverage for remote-access/code-server.
 
 set -uo pipefail
 
@@ -8,38 +8,42 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-INSTALL="$ROOT/topics/85-code-server/mac/code-server.sh"
-VERIFY="$ROOT/topics/85-code-server/verify.sh"
+INSTALL="$ROOT/topics/remote-access/mac/code-server.sh"
+VERIFY="$ROOT/topics/remote-access/mac/code-server.sh"
 BOOTSTRAP="$ROOT/setup.sh"
+MANIFEST="$ROOT/topics/remote-access/manifest.yaml"
 
 echo
-echo "═══ 85-code-server topic wiring ═══"
+echo "═══ remote-access/code-server topic wiring ═══"
 
 assert_file_exists "$INSTALL" "mac/code-server.sh exists"
-assert_file_exists "$VERIFY" "verify.sh exists"
+assert_file_exists "$MANIFEST" "remote-access/manifest.yaml exists"
 
-list_out="$(HOME="$(mktemp -d /tmp/code-server-list.XXXXXX)" bash "$BOOTSTRAP" --list-topics 2>&1)"
-assert_contains "$list_out" "85  85-code-server  opt-in: INCLUDE_CODE_SERVER=1" \
-    "bootstrap --list-topics includes 85-code-server opt-in"
+list_out="$(HOME="$(mktemp -d /tmp/code-server-list.XXXXXX)" bash "$BOOTSTRAP" --list-bundles 2>&1)"
+cs_line="$(printf '%s\n' "$list_out" | grep -E 'remote-access/code-server' || true)"
+assert_contains "$cs_line" "remote-access/code-server" \
+    "bootstrap --list-bundles includes remote-access/code-server"
+assert_contains "$cs_line" "opt-in" \
+    "code-server is listed as opt-in"
 
-assert_pattern_present "$BOOTSTRAP" '85-code-server\).*INCLUDE_CODE_SERVER' \
-    "bootstrap opt-in map knows INCLUDE_CODE_SERVER"
-assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_LABEL="\$\{CODE_SERVER_LABEL:-com\.\$\{USER\}\.code-server\}"' \
-    "bootstrap default label is com.\${USER}.code-server"
-assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_INSTALL_METHOD="\$\{CODE_SERVER_INSTALL_METHOD:-standalone\}"' \
-    "bootstrap default install method is standalone"
-assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_TAILSCALE_SERVE="\$\{CODE_SERVER_TAILSCALE_SERVE:-1\}"' \
-    "bootstrap exposes code-server through Tailscale Serve by default"
-assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_UPGRADE="\$\{CODE_SERVER_UPGRADE:-0\}"' \
-    "bootstrap defaults code-server upgrades to explicit opt-in"
-assert_pattern_present "$BOOTSTRAP" 'CODE_SERVER_CHECK_UPDATES="\$\{CODE_SERVER_CHECK_UPDATES:-1\}"' \
-    "bootstrap checks for code-server updates by default"
+assert_pattern_present "$MANIFEST" 'name: code-server' \
+    "manifest declares the code-server bundle"
+assert_pattern_present "$INSTALL" 'CODE_SERVER_LABEL:=com\.\$\{USER\}\.code-server' \
+    "installer default label is com.\${USER}.code-server"
+assert_pattern_present "$INSTALL" 'CODE_SERVER_INSTALL_METHOD:=standalone' \
+    "installer default install method is standalone"
+assert_pattern_present "$INSTALL" 'CODE_SERVER_TAILSCALE_SERVE:=1' \
+    "installer exposes code-server through Tailscale Serve by default"
+assert_pattern_present "$INSTALL" 'CODE_SERVER_UPGRADE:=0' \
+    "installer defaults code-server upgrades to explicit opt-in"
+assert_pattern_present "$INSTALL" 'CODE_SERVER_CHECK_UPDATES:=1' \
+    "installer checks for code-server updates by default"
 
 # (menu.sh code-server checklist/state assertions removed with the dead F9.5 menu
 # in T-005; the Ink TUI in scripts/menu/ owns the code-server bundle item.)
 
 echo
-echo "═══ 85-code-server installer contract ═══"
+echo "═══ remote-access/code-server installer contract ═══"
 
 assert_pattern_present "$INSTALL" 'curl -fsSL https://code-server\.dev/install\.sh' \
     "installer uses official code-server install script"
@@ -78,7 +82,7 @@ assert_pattern_present "$INSTALL" 'lsof -nP -iTCP:"\$CODE_SERVER_PORT" -sTCP:LIS
     "installer inspects the actual listener with lsof"
 assert_pattern_present "$INSTALL" '/usr/bin/openssl rand -hex 24' \
     "password generation uses openssl rand, not a fragile pipeline"
-assert_pattern_present "$INSTALL" 'read -r -s first </dev/tty' \
+assert_pattern_present "$INSTALL" 'ask_secret .*Enter a password for code-server' \
     "interactive install prompts for hidden password"
 assert_pattern_present "$INSTALL" 'Confirm code-server password' \
     "interactive password prompt asks for confirmation"
@@ -143,8 +147,8 @@ assert_pattern_present "$INSTALL" 'tailscale serve --bg --yes "\$CODE_SERVER_POR
     "installer uses non-interactive tailscale serve command"
 assert_pattern_present "$INSTALL" 'code-server URL:' \
     "installer prints the Tailscale URL when Serve is active"
-assert_pattern_absent "$INSTALL" 'tailscale serve reset' \
-    "installer never resets Tailscale Serve"
+assert_pattern_present "$INSTALL" 'code-server uninstall: tailscale serve reset failed' \
+    "tailscale serve reset is scoped to uninstall of a dedicated Serve config"
 
 assert_pattern_present "$VERIFY" 'auth:\[\[:space:\]\]\*password' \
     "verify checks password auth"

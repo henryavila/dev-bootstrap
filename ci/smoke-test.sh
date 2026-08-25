@@ -160,7 +160,13 @@ printf '\n>>> running bootstrap (SKIP_TOPICS="%s", timeout %ss)\n\n' \
 #     can't pass. (Tracked separately: the php topic builds PECL extensions yet
 #     nothing installs php-pear, so every PECL ext silently skips — a likely real
 #     gap on fresh WSL too, deserving its own fix rather than a blind one here.)
-: "${CI_SKIP_ITEMS:=rust-bins-wsl mysql-wsl redis-wsl postgresql mssql-driver}"
+#
+#   service-convergence — WSL nginx/php-fpm activation via systemctl + socket
+#     listeners. The hermetic image has no systemd PID 1, so php-fpm/nginx
+#     never become active and the item cannot converge. Packages, mkcert, and
+#     site templates still install; listener health is covered by
+#     tests/integration/php-web-stack-convergence.test.sh.
+: "${CI_SKIP_ITEMS:=rust-bins-wsl mysql-wsl redis-wsl postgresql mssql-driver service-convergence}"
 RUN_CMD="SKIP_TOPICS='$SKIP_TOPICS' PHP_VERSIONS='$CI_PHP_VERSIONS' MESH_SKIP_ITEMS='$CI_SKIP_ITEMS' NON_INTERACTIVE=1 bash ~/mesh-workstation/setup.sh"
 [[ -n "$CI_SKIP_ITEMS" ]] && printf '>>> skipping items (MESH_SKIP_ITEMS): %s\n' "$CI_SKIP_ITEMS"
 

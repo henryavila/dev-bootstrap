@@ -46,10 +46,13 @@ chmod +x "$ID/install.sh"
     && git add . \
     && git commit -q -m "initial identity config" )
 
+printf 'n\n' > "$SANDBOX/prompt.in"
 run_config() {
     HOME="$HOME_FAKE" \
     MESH_CONFIG_IDENTITY_DIR="$ID" \
     MESH_CONFIG_PICKER=bash \
+    MESH_PROMPT_TUI=off \
+    MESH_PROMPT_IN="$SANDBOX/prompt.in" \
     "$@"
 }
 
@@ -68,6 +71,8 @@ edit_out="$(
     HOME="$HOME_FAKE" \
     MESH_CONFIG_IDENTITY_DIR="$ID" \
     MESH_CONFIG_TEST_INSTALL_LOG="$INSTALL_LOG" \
+    MESH_PROMPT_TUI=off \
+    MESH_PROMPT_IN="$SANDBOX/prompt.in" \
     MESH_CONFIG_EDITOR="bash -c 'printf \"# edited\\n\" >> \"\$1\"' mesh-config-editor" \
     bash "$RUNNER" aliases 2>&1
 )"
@@ -86,6 +91,8 @@ no_install_out="$(
     HOME="$HOME_FAKE" \
     MESH_CONFIG_IDENTITY_DIR="$ID" \
     MESH_CONFIG_TEST_INSTALL_LOG="$INSTALL_LOG" \
+    MESH_PROMPT_TUI=off \
+    MESH_PROMPT_IN="$SANDBOX/prompt.in" \
     MESH_CONFIG_EDITOR="bash -c 'printf \"# second\\n\" >> \"\$1\"' mesh-config-editor" \
     bash "$RUNNER" zshrc.local --no-install --no-diff 2>&1
 )"
@@ -129,6 +136,7 @@ commit_out="$(
     HOME="$HOME_COMMIT" \
     MESH_CONFIG_IDENTITY_DIR="$ID_COMMIT" \
     MESH_CONFIG_TEST_INSTALL_LOG="$COMMIT_LOG" \
+    MESH_PROMPT_TUI=off \
     MESH_PROMPT_IN="$PROMPT_IN" \
     MESH_PROMPT_OUT="$PROMPT_OUT" \
     MESH_CONFIG_EDITOR="bash -c 'printf \"alias bb=two\\n\" >> \"\$1\"' mesh-config-editor" \

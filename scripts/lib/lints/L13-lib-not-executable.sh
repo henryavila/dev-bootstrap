@@ -14,11 +14,20 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 
-hits=$(find "$ROOT/scripts/lib" -type f -name '*.sh' -perm -u+x 2>/dev/null \
-    | grep -vE '/(yaml-parse)\.sh$' || true)
+# Prefer git index modes: WSL /mnt/<drive> (drvfs) reports every file as
+# executable, so `find -perm -u+x` false-positives the whole tree.
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    hits=$(git -C "$ROOT" ls-files -s -- scripts/lib \
+        | awk '$1 == "100755" { print $4 }' \
+        | grep '\.sh$' \
+        | grep -vE '(^|/)yaml-parse\.sh$' || true)
+else
+    hits=$(find "$ROOT/scripts/lib" -type f -name '*.sh' -perm -u+x 2>/dev/null \
+        | grep -vE '/(yaml-parse)\.sh$' || true)
+fi
 
 if [[ -n "$hits" ]]; then
-    printf '%s\n' "$hits" | sed "s|^$ROOT/|L13: |; s|$| (source-only; chmod -x)|"
+    printf '%s\n' "$hits" | sed "s|^$ROOT/||; s|^|L13: |; s|$| (source-only; chmod -x)|"
     exit 1
 fi
 exit 0

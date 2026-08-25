@@ -21,7 +21,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$ROOT/tests/lib/assert.sh"
 
 LIB="$ROOT/scripts/lib/launch-wrapper.sh"
-TOPIC="$ROOT/topics/80-claude-code/syncthing-service-mac.sh"
+TOPIC="$ROOT/topics/syncthing/syncthing-service-mac.sh"
 
 # ---------------------------------------------------------------------
 # Layer 1: lib/launch-wrapper.sh unit behavior
@@ -254,7 +254,7 @@ assert_pattern_absent "$TOPIC" 'workaround: create ~/Library/LaunchAgents' \
 # ---------------------------------------------------------------------
 # Layer 3: 60-web-stack (redis) integration
 # ---------------------------------------------------------------------
-WS_TOPIC="$ROOT/topics/60-web-stack/mac/redis.sh"
+WS_TOPIC="$ROOT/topics/databases/mac/redis.sh"
 echo
 echo "═══ topics/60-web-stack/mac/redis.sh — redis wrapper integration ═══"
 assert_pattern_present "$WS_TOPIC" '(source|^[[:space:]]*\.).*lib/launch-wrapper\.sh' \
@@ -278,7 +278,7 @@ assert_pattern_present "$WS_TOPIC" 'BREW_BIN.*services start redis' \
 # ---------------------------------------------------------------------
 # Layer 4: install-mailpit.sh integration
 # ---------------------------------------------------------------------
-MP="$ROOT/topics/60-web-stack/scripts/install-mailpit.sh"
+MP="$ROOT/topics/web/scripts/install-mailpit.sh"
 echo
 echo "═══ install-mailpit.sh — mailpit wrapper integration ═══"
 assert_pattern_present "$MP" 'source.*lib/launch-wrapper\.sh' \

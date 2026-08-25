@@ -16,9 +16,14 @@ assert() {
 }
 
 # Lints are source-only (run via `bash "$lint"`); they must be readable but NOT
-# executable (L13 enforces chmod -x under scripts/lib/).
+# committed executable (L13). On drvfs the working-tree +x bit lies, so the
+# git index mode is the source of truth.
 [[ -r "$LINT" ]] || { echo "L21 lint missing/unreadable: $LINT" >&2; exit 1; }
-[[ -x "$LINT" ]] && { echo "L21 lint must NOT be executable (L13): $LINT" >&2; exit 1; }
+_l21_mode="$(git -C "$WS" ls-files -s -- scripts/lib/lints/L21-no-broken-pipe-grep-q.sh 2>/dev/null | awk '{print $1}')"
+if [[ "$_l21_mode" == "100755" ]]; then
+    echo "L21 lint must NOT be executable (L13): $LINT" >&2
+    exit 1
+fi
 
 # (1) Real repo must be clean.
 bash "$LINT" >/dev/null 2>&1; assert "L21 passes on the real repo" "0" "$?"

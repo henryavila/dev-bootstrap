@@ -75,6 +75,6 @@ out=$(env -i HOME="$SANDBOX" PATH="/usr/bin:/bin:/Volumes/External/homebrew/bin"
     "$SANDBOX/.local/bin/mesh" topic list 2>&1)
 rc=$?
 assert_eq "$rc" 0 "Test 6a: topic list from clean env exits 0"
-assert_contains "$out" "00-core" "Test 6b: topic list output reached"
+assert_contains "$out" "foundation/base" "Test 6b: topic list output reached"
 
 summary

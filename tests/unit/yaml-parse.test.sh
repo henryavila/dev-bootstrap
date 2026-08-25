@@ -73,9 +73,10 @@ run_valid "$TOPICS/web/manifest.yaml" '
     [ "$BUNDLE_0_NAME" = "valet" ] || exit 1
     [ "$BUNDLE_0_PLATFORMS_COUNT" = 1 ] || exit 1
     [ "$BUNDLE_0_PLATFORMS_0" = "mac" ] || exit 1
-    [ "$BUNDLE_0_REQUIRES_BUNDLES_COUNT" = 2 ] || exit 1
-    [ "$BUNDLE_0_REQUIRES_BUNDLES_0" = "databases/mysql" ] || exit 1
-    [ "$BUNDLE_0_REQUIRES_BUNDLES_1" = "databases/redis" ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_COUNT" = 3 ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_0" = "languages/php" ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_1" = "databases/mysql" ] || exit 1
+    [ "$BUNDLE_0_REQUIRES_BUNDLES_2" = "databases/redis" ] || exit 1
     [ "$BUNDLE_0_ITEM_COUNT" = 5 ] || exit 1
     [ "$BUNDLE_0_ITEM_3_IDEMPOTENT" = 1 ] || exit 1
     # serve-config: deploy-type item (template render) appended to valet.

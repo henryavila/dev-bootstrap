@@ -14,6 +14,9 @@ assert_file_contains "$SCRIPT" 'MESH_NO_MESH' \
 
 TMP="$(mktemp -d /tmp/atuin-no-mesh.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
+# Isolate HOME so atuin-login.sh cannot prepend ~/.atuin/bin (real OAuth login).
+mkdir -p "$TMP/home"
+export HOME="$TMP/home"
 
 # Fake atuin that records invocations; `login` fails the test if reached under no-mesh.
 mkdir -p "$TMP/bin"
@@ -78,7 +81,9 @@ export ATUIN_LOGIN_AUTO=1
 if command -v script >/dev/null 2>&1; then
     rc=0
     # script -q -c '...' /dev/null provides a TTY for stdin checks on Linux.
-    script -q -c "PATH='$TMP/bin:$PATH' ATUIN_LOG='$TMP/atuin.log' ATUIN_LOGIN_AUTO=1 NON_INTERACTIVE=0 bash -c '
+    # HOME is the isolated tmp home so ~/.atuin/bin cannot win PATH.
+    timeout 8 script -q -c "HOME='$TMP/home' PATH='$TMP/bin:$PATH' ATUIN_LOG='$TMP/atuin.log' ATUIN_LOGIN_AUTO=1 NON_INTERACTIVE=0 MESH_NO_MESH=0 bash -c '
+        unset MESH_NO_MESH
         source \"$SCRIPT\"
         install
     '" /dev/null >/dev/null 2>&1 || rc=$?

@@ -126,7 +126,8 @@ SH
 
     (
         PATH="$fakebin:$PATH"
-        PHP_ORPHAN_SENTINEL="$root/php-called"
+        # shellcheck disable=SC2034 # consumed by the sourced WSL verify fixture
+        export PHP_ORPHAN_SENTINEL="$root/php-called"
         # shellcheck disable=SC1091
         source "$FIXTURES/wsl-weak-verify.sh"
         verify
@@ -148,7 +149,7 @@ run_fixture_clean_php_contract() {
     cp "$FIXTURES/orphan-ini-php.sh" "$phpbin/php"
     chmod +x "$phpbin/php"
 
-    # shellcheck disable=SC1091
+    # shellcheck disable=SC1090,SC1091
     source "$MAC_STACK"
     out="$(BREW_PREFIX="$brew" _php_cli_starts_clean "8.5" 2>&1)"
     rc=$?

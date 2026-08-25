@@ -12,10 +12,10 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-BASH_FRAGMENT="$ROOT/topics/40-tmux/templates/bashrc.d-40-tmux.sh"
-ZSH_FRAGMENT="$ROOT/topics/40-tmux/templates/zshrc.d-40-tmux.sh"
-BASH_ENV_FRAGMENT="$ROOT/topics/30-shell/templates/bashrc.d-00-mesh-env.sh"
-ZSH_ENV_FRAGMENT="$ROOT/topics/30-shell/templates/zshrc.d-00-mesh-env.sh"
+BASH_FRAGMENT="$ROOT/topics/shell-terminal/templates/tmux/bashrc.d-40-tmux.sh"
+ZSH_FRAGMENT="$ROOT/topics/shell-terminal/templates/tmux/zshrc.d-40-tmux.sh"
+BASH_ENV_FRAGMENT="$ROOT/topics/shell-terminal/templates/zsh/bashrc.d-00-mesh-env.sh"
+ZSH_ENV_FRAGMENT="$ROOT/topics/shell-terminal/templates/zsh/zshrc.d-00-mesh-env.sh"
 TESTROOT="$(mktemp -d /tmp/tmux-auto-main-login-test.XXXXXX)"
 trap 'rm -rf "$TESTROOT"' EXIT INT TERM
 

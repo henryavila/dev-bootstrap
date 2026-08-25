@@ -30,6 +30,8 @@ export MESH_PBCOPY_FAKE_CLIP="$FAKE_CLIP"
 
 # Load file into variable NAME preserving trailing newlines.
 # Usage: load_raw VAR path   — sets $VAR (not via $(...), which strips).
+got=""
+osc=""
 load_raw() {
     local __name="$1" __path="$2" __d
     __d=$(cat "$__path"; printf x) || true

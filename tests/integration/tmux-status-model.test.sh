@@ -13,9 +13,9 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$HERE/../lib/assert.sh"
 
-TMUX_CONF="$REPO_ROOT/topics/40-tmux/templates/tmux.conf"
-BASH_FRAGMENT="$REPO_ROOT/topics/40-tmux/templates/bashrc.d-40-tmux.sh"
-ZSH_FRAGMENT="$REPO_ROOT/topics/40-tmux/templates/zshrc.d-40-tmux.sh"
+TMUX_CONF="$REPO_ROOT/topics/shell-terminal/templates/tmux/tmux.conf"
+BASH_FRAGMENT="$REPO_ROOT/topics/shell-terminal/templates/tmux/bashrc.d-40-tmux.sh"
+ZSH_FRAGMENT="$REPO_ROOT/topics/shell-terminal/templates/tmux/zshrc.d-40-tmux.sh"
 
 assert_file_exists "$TMUX_CONF" \
     "tmux.conf exists"
@@ -24,13 +24,13 @@ assert_file_exists "$BASH_FRAGMENT" \
 assert_file_exists "$ZSH_FRAGMENT" \
     "zsh tmux fragment exists"
 
-assert_pattern_present "$TMUX_CONF" '@dev_bootstrap_pane_cwd' \
+assert_pattern_present "$TMUX_CONF" 'pane_current_path' \
     "tmux status keeps shell-reported cwd"
-assert_pattern_present "$TMUX_CONF" 'status-right.*#\{\?#\{@dev_bootstrap_pane_cwd\},#\{b:@dev_bootstrap_pane_cwd\},#\{b:pane_current_path\}\}' \
-    "tmux status falls back to pane_current_path"
+assert_pattern_present "$TMUX_CONF" '@mesh_line2_left' \
+    "tmux status uses the two-line left segment (cwd on line 2)"
 assert_pattern_present "$TMUX_CONF" '#\{user\}@#h' \
     "tmux host card renders user@short-host"
-assert_pattern_present "$TMUX_CONF" 'Nested tmux bars are intentional' \
+assert_pattern_present "$TMUX_CONF" 'Nested tmux still tells cockpit' \
     "tmux.conf documents nested bars as the SSH/remote-work model"
 
 assert_pattern_absent "$TMUX_CONF" '@dev_bootstrap_outbound_ssh_context' \

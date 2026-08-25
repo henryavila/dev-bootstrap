@@ -118,7 +118,7 @@ EOF
 
 # H4 fix: removed the "external-canary" tautology (counted files nothing creates).
 # Real sandbox proof = mtime snapshot of real $HOME's fingerprint vs after.
-REAL_HOME_MTIME=$(stat -f '%m' "$HOME" 2>/dev/null || stat -c '%Y' "$HOME" 2>/dev/null || echo 0)
+REAL_HOME_MTIME=$(stat -c '%Y' "$HOME" 2>/dev/null || stat -f '%m' "$HOME" 2>/dev/null || echo 0)
 
 # Run bridge with sandboxed HOME (pipefail above ensures bridge's rc propagates).
 # CP4 A3 F-001: explicit acks the v0 prototype gate.
@@ -140,11 +140,13 @@ assert "lock file released after exit" \
 # Step 2: snapshot dir exists
 SNAP="$FIX/home/.local/state/dev-bootstrap/snapshots/$(hostname)-pre-migration"
 assert "snapshot directory created" "[ -d '$SNAP' ]"
-assert "snapshot has brew-formula.txt" "[ -f '$SNAP/brew-formula.txt' ]"
-# CX-M2 (checkpoint-3): brew-cask is the second brew snapshot — was claimed
-# in RESULT but never asserted. brew is present on this Mac dev host so the
-# file must exist; on hosts without brew, the bridge correctly omits both.
-assert "snapshot has brew-cask.txt (brew present)" "[ -f '$SNAP/brew-cask.txt' ]"
+if command -v brew >/dev/null 2>&1; then
+    assert "snapshot has brew-formula.txt" "[ -f '$SNAP/brew-formula.txt' ]"
+    assert "snapshot has brew-cask.txt (brew present)" "[ -f '$SNAP/brew-cask.txt' ]"
+else
+    assert "snapshot omits brew files when brew is absent" \
+        "[ ! -f '$SNAP/brew-formula.txt' ] && [ ! -f '$SNAP/brew-cask.txt' ]"
+fi
 
 # Step 3: markers renamed (case-insensitive)
 assert ".bashrc lowercase markers rewritten" \
@@ -162,7 +164,7 @@ assert ".bashrc backup preserves pre-rename content" \
     "grep -q 'dotfiles-managed:' '$FIX/home/.bashrc.mesh-migrate'"
 
 # H4 fix: real sandbox proof — REAL $HOME mtime fingerprint unchanged.
-REAL_HOME_MTIME_AFTER=$(stat -f '%m' "$HOME" 2>/dev/null || stat -c '%Y' "$HOME" 2>/dev/null || echo 0)
+REAL_HOME_MTIME_AFTER=$(stat -c '%Y' "$HOME" 2>/dev/null || stat -f '%m' "$HOME" 2>/dev/null || echo 0)
 assert "real \$HOME directory mtime unchanged (sandbox redirect honored)" \
     "[ '$REAL_HOME_MTIME' = '$REAL_HOME_MTIME_AFTER' ]"
 

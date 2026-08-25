@@ -75,7 +75,7 @@ else no "overwrite entry not deployed"; fi
 
 # Test 9: once entry deployed + perms applied
 if [[ -f "$HOME/.gitconfig.local" ]]; then
-  m=$(stat -f '%Lp' "$HOME/.gitconfig.local" 2>/dev/null || stat -c '%a' "$HOME/.gitconfig.local" 2>/dev/null)
+  m=$(stat -c '%a' "$HOME/.gitconfig.local" 2>/dev/null || stat -f '%Lp' "$HOME/.gitconfig.local" 2>/dev/null)
   if [[ "$m" == "600" ]]; then ok "once entry deployed with perms 0600"
   else no "once entry perms = $m (want 600)"; fi
 else no "once entry not deployed"; fi

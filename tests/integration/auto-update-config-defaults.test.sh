@@ -69,6 +69,8 @@ assert_eq "$rc_man" "1" "manual run with empty AUTO_UPDATE_REPOS exits 1"
 
 out_miss="$(AUTO_UPDATE_CONF="$TMP/no-such-conf" AUTO_UPDATE_STATE_DIR="$TMP/st4" \
     bash "$AU" --from-shell-start 2>&1)"; rc_miss=$?
+assert_not_contains "$out_miss" "unbound variable" \
+    "missing config.env does not crash under set -u on shell-start"
 assert_eq "$rc_miss" "0" "--from-shell-start with missing config is a silent skip"
 
 summary

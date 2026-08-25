@@ -231,6 +231,10 @@ case "${1:-}" in
     -h|--help)
         usage
         ;;
+    "")
+        run_platform_mac
+        run_platform_wsl
+        ;;
     *)
         usage >&2
         fail "unknown argument: ${1:-}"

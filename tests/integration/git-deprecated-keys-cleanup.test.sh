@@ -24,8 +24,8 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=../lib/assert.sh
 source "$ROOT/tests/lib/assert.sh"
 
-INSTALL="$ROOT/topics/50-git/gitconfig-apply.sh"
-REMOVED_FILE="$ROOT/topics/50-git/data/gitconfig.removed"
+INSTALL="$ROOT/topics/git/gitconfig-apply.sh"
+REMOVED_FILE="$ROOT/topics/git/data/gitconfig.removed"
 
 assert_file_exists() {
     local file="$1" msg="$2"
@@ -70,7 +70,7 @@ fi
 
 # Comment in gitconfig.keys points users to the new mechanism (so future
 # maintainers know to dual-edit when removing a key)
-KEYS_FILE="$ROOT/topics/50-git/data/gitconfig.keys"
+KEYS_FILE="$ROOT/topics/git/data/gitconfig.keys"
 assert_file_contains "$KEYS_FILE" 'gitconfig\.removed' \
     "gitconfig.keys comment references gitconfig.removed (dual-edit guidance)"
 

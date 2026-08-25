@@ -39,6 +39,7 @@ _cleanup() {
     done
 }
 trap _cleanup EXIT
+_cleanup
 
 # ─── Clean-tree orchestrator pass ──────────────────────────────────
 # Advisory lints (rc=0 + non-empty stdout, e.g. L17) are tolerated; only
@@ -163,11 +164,20 @@ fi
 # L13 — executable in scripts/lib/
 echo
 echo "L13 injection: scripts/lib/__lint-injection__.sh with +x"
-_inject "$REPO_ROOT/scripts/lib/__lint-injection__.sh" \
-    $'# scratch — source-only file marked executable to trigger L13'
-chmod +x "$REPO_ROOT/scripts/lib/__lint-injection__.sh"
-_run_lint_expect_fail "L13-lib-not-executable.sh" "L13:"
-rm -f "$REPO_ROOT/scripts/lib/__lint-injection__.sh"
+_l13_probe="$REPO_ROOT/scripts/lib/.l13-probe.$$"
+: > "$_l13_probe"
+chmod -x "$_l13_probe" 2>/dev/null || true
+if [[ -x "$_l13_probe" ]]; then
+    rm -f "$_l13_probe"
+    pass "L13 injection skipped (filesystem does not honor chmod -x; L13 uses git index modes)"
+else
+    rm -f "$_l13_probe"
+    _inject "$REPO_ROOT/scripts/lib/__lint-injection__.sh" \
+        $'# scratch — source-only file marked executable to trigger L13'
+    chmod +x "$REPO_ROOT/scripts/lib/__lint-injection__.sh"
+    _run_lint_expect_fail "L13-lib-not-executable.sh" "L13:"
+    rm -f "$REPO_ROOT/scripts/lib/__lint-injection__.sh"
+fi
 
 # L14 — absent file path
 echo
