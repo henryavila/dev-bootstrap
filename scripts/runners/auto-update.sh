@@ -123,6 +123,11 @@ if (( RESET_AUTH )); then
 fi
 
 if [[ ! -r "$CONF" ]]; then
+    # --from-shell-start runs on every zsh login. A guest/--no-mesh box has
+    # no auto-update conf yet; yelling here paints the prompt every time.
+    if (( FROM_SHELL_START )); then
+        exit 0
+    fi
     echo "auto-update: config not found at $CONF" >&2
     exit 1
 fi
@@ -137,6 +142,12 @@ source "$CONF"
 # AUTO_EXEC_SHELL are already read with `${…:-0}`, so they need no default.)
 : "${AUTO_UPDATE_FETCH_TIMEOUT:=3}"
 : "${AUTO_UPDATE_SUDO_REGEX:=\\b(apt|brew|pip install|npm i |chsh|sudo)\\b|curl[^|]*\\|[^|]*sh}"
+
+# persist_code_dir writes CODE_DIR into config.env without AUTO_UPDATE_REPOS.
+# Under `set -u`, ${#AUTO_UPDATE_REPOS[@]} then aborts every zsh login.
+if ! declare -p AUTO_UPDATE_REPOS >/dev/null 2>&1; then
+    AUTO_UPDATE_REPOS=()
+fi
 
 # Spec §C10 clean break: per-host .local override removed. ~/.config/mesh/
 # config.env is already per-user/per-host (lives in $HOME), so the separate
@@ -877,6 +888,9 @@ run_update_phase() {
 EXIT_RC=0
 
 if (( ${#AUTO_UPDATE_REPOS[@]} == 0 )); then
+    if (( FROM_SHELL_START )); then
+        exit 0
+    fi
     err "auto-update: AUTO_UPDATE_REPOS is empty in $CONF"
     exit 1
 fi

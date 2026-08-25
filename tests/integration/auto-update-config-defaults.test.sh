@@ -50,4 +50,25 @@ assert_not_contains "$out" "unbound variable" "no unbound-variable crash on a mi
 assert_eq "$rc" "0" "auto-update exits 0 on a minimal config"
 assert_eq "$(git -C "$TMP/work" rev-parse HEAD)" "$NEW" "the update actually completed (HEAD advanced)"
 
+# persist_code_dir may create ~/.config/mesh/config.env with only CODE_DIR.
+# The zsh login hook then sources it as CONF; AUTO_UPDATE_REPOS is unset.
+printf 'CODE_DIR=%s\n' "$TMP/code" > "$TMP/conf-partial"
+mkdir -p "$TMP/st2" "$TMP/st3" "$TMP/st4"
+
+out_ss="$(AUTO_UPDATE_CONF="$TMP/conf-partial" AUTO_UPDATE_STATE_DIR="$TMP/st2" \
+    bash "$AU" --from-shell-start 2>&1)"; rc_ss=$?
+assert_not_contains "$out_ss" "unbound variable" \
+    "CODE_DIR-only config.env does not crash under set -u on shell-start"
+assert_eq "$rc_ss" "0" "--from-shell-start with no AUTO_UPDATE_REPOS is a silent skip"
+
+out_man="$(AUTO_UPDATE_CONF="$TMP/conf-partial" AUTO_UPDATE_STATE_DIR="$TMP/st3" \
+    bash "$AU" 2>&1)"; rc_man=$?
+assert_contains "$out_man" "AUTO_UPDATE_REPOS is empty" \
+    "manual run still reports empty AUTO_UPDATE_REPOS"
+assert_eq "$rc_man" "1" "manual run with empty AUTO_UPDATE_REPOS exits 1"
+
+out_miss="$(AUTO_UPDATE_CONF="$TMP/no-such-conf" AUTO_UPDATE_STATE_DIR="$TMP/st4" \
+    bash "$AU" --from-shell-start 2>&1)"; rc_miss=$?
+assert_eq "$rc_miss" "0" "--from-shell-start with missing config is a silent skip"
+
 summary
