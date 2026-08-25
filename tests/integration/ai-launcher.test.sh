@@ -173,7 +173,10 @@ unset XDG_STATE_HOME
 if command -v jq >/dev/null 2>&1; then
     echo "── runner: mesh ai ──"
     RBIN="$SANDBOX/rbin"; mkdir -p "$RBIN"
-    RHOME="$SANDBOX/rhome"; mkdir -p "$RHOME"   # no ~/.config/mesh/config.env here
+    RHOME="$SANDBOX/rhome"; mkdir -p "$RHOME/.config"
+    # Pin XDG so GHA/setup-node's XDG_CONFIG_HOME=$runner_home/.config cannot
+    # steal ai.env away from the sandbox.
+    export XDG_CONFIG_HOME="$RHOME/.config"
     export HERDR_LOG="$SANDBOX/runner-herdr.log"
     cat > "$RBIN/herdr" <<'STUB'
 #!/usr/bin/env bash
@@ -196,10 +199,18 @@ STUB
     chmod +x "$RBIN/herdr"
 
     run_ia() {  # run the real runner in an isolated env
-        HOME="$RHOME" XDG_STATE_HOME="$SANDBOX/rstate" AI_ROOTS="$R1:$R2" \
+        # Pin XDG_CONFIG_HOME under RHOME: GHA/setup-node often exports
+        # XDG_CONFIG_HOME=$HOME/.config of the runner, so ai.env written
+        # to $RHOME/.config/mesh would never be loaded.
+        HOME="$RHOME" \
+        XDG_CONFIG_HOME="$RHOME/.config" \
+        XDG_STATE_HOME="$SANDBOX/rstate" \
+        AI_ROOTS="$R1:$R2" \
         MESH_AI_PICKER=bash PATH="$RBIN:$PATH" \
         MESH_AI_AGENT=claude MESH_AI_FLAGS_CLAUDE='--dangerously-skip-permissions' \
-            bash "$RUNNER" "$@"
+            env -u MESH_AI_DEFAULT_ACTION -u MESH_AI_DEFAULT_AGENT \
+                -u MESH_AI_OPEN_EXISTING -u MESH_AI_PREFS \
+                bash "$RUNNER" "$@"
     }
 
     # --list: disk catalogue only, never touches herdr.

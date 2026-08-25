@@ -151,15 +151,19 @@ run_bash_interactive ". '$BASH_FRAGMENT'; eval 'ta main'" \
 assert_eq "$(tmux_calls)" "switch-client -t main" \
     "mosh pre-attached tmux: ta helper switches clients instead of nesting"
 
-home_p10k="$TESTROOT/home-p10k"
-run_zsh_p10k_like_startup "$home_p10k"
-assert_eq "$(tmux_calls)" "" \
-    "zsh login with p10k-style redirected fds does not auto-attach main by default"
+if command -v zsh >/dev/null 2>&1; then
+    home_p10k="$TESTROOT/home-p10k"
+    run_zsh_p10k_like_startup "$home_p10k"
+    assert_eq "$(tmux_calls)" "" \
+        "zsh login with p10k-style redirected fds does not auto-attach main by default"
 
-home_p10k_optin="$TESTROOT/home-p10k-optin"
-run_zsh_p10k_like_startup "$home_p10k_optin" MESH_TMUX_AUTO_MAIN=1
-assert_eq "$(tmux_calls)" "new-session -A -s main" \
-    "MESH_TMUX_AUTO_MAIN=1 preserves p10k-style deferred auto-main experiment"
+    home_p10k_optin="$TESTROOT/home-p10k-optin"
+    run_zsh_p10k_like_startup "$home_p10k_optin" MESH_TMUX_AUTO_MAIN=1
+    assert_eq "$(tmux_calls)" "new-session -A -s main" \
+        "MESH_TMUX_AUTO_MAIN=1 preserves p10k-style deferred auto-main experiment"
+else
+    pass "p10k-style zsh auto-main cases skipped (zsh not installed)"
+fi
 
 home_bash="$TESTROOT/home-bash"
 make_bash_home "$home_bash"

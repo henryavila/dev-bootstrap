@@ -36,7 +36,6 @@ source "$ROOT/tests/lib/assert.sh"
 
 PG_SCRIPT="$ROOT/topics/databases/scripts/install-postgres.sh"
 MAC_INSTALL="$ROOT/topics/databases/postgresql.sh"
-WSL_INSTALL="$ROOT/topics/databases/postgresql.sh"
 PG_TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/postgres-install-test.XXXXXX")"
 trap 'rm -rf "$PG_TEST_ROOT"' EXIT INT TERM
 
