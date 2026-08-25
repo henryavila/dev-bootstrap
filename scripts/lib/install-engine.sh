@@ -847,12 +847,15 @@ apply_bundle() {
                 if [[ -n "$pgid" && "$pgid" == "$cmd_pid" ]]; then
                     use_group=1
                 fi
+                # Stdin/stdout must not inherit the engine pipe. Killing this
+                # subshell reparents `sleep` to PID 1; leftover writers kept
+                # `bash install-engine | tee` from seeing EOF in Docker smoke.
                 (
                     sleep "$secs"
                     _soft_fail_reap TERM "$cmd_pid" "$use_group"
                     sleep 2
                     _soft_fail_reap KILL "$cmd_pid" "$use_group"
-                ) &
+                ) </dev/null >/dev/null 2>&1 &
                 local watch_pid=$!
                 wait "$cmd_pid" || rc=$?
                 kill "$watch_pid" 2>/dev/null || true
