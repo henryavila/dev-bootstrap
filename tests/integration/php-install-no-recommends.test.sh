@@ -92,4 +92,13 @@ else
     fail "languages/wsl/php-stack.sh: --no-install-recommends needs a comment naming libapache2-mod-php so future maintainers don't 'clean it up'"
 fi
 
+# add-apt-repository uses api.launchpad.net (often firewalled); the archive
+# itself is ppa.launchpadcontent.net. A clean WSL must still get PHP 8.4.
+assert_file_contains "$ROOT/topics/languages/wsl/php-stack.sh" \
+    'ppa.launchpadcontent.net/ondrej/php' \
+    "php-stack.sh falls back to a direct ondrej/php source when Launchpad API fails"
+assert_file_contains "$ROOT/topics/languages/wsl/php-stack.sh" \
+    'timeout --kill-after=5 30 sudo add-apt-repository' \
+    "php-stack.sh caps add-apt-repository so Launchpad API timeouts do not stall the engine"
+
 summary

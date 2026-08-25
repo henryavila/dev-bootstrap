@@ -52,7 +52,7 @@ install() {
     # make an empty package set look converged.
     local required
     required="$(_required_packages)" || return 1
-    sudo -v 2>/dev/null || true
+    sudo -n -v >/dev/null 2>&1 || true
     export DEBIAN_FRONTEND=noninteractive
     local APT=(-y -q
         -o Dpkg::Options::="--force-confdef"

@@ -8,7 +8,7 @@
 #
 # Run from a Windows PowerShell prompt (NOT from inside WSL):
 #
-#   powershell -ExecutionPolicy Bypass -File '\\wsl.localhost\Ubuntu-24.04\home\<user>\dev-bootstrap\topics\60-web-stack\scripts\import-mkcert-from-windows.ps1'
+#   powershell -ExecutionPolicy Bypass -File '\\wsl.localhost\Ubuntu-24.04\home\<user>\mesh-workstation\topics\web\scripts\import-mkcert-from-windows.ps1'
 #
 # Or with explicit args when auto-detection fails:
 #
@@ -95,6 +95,22 @@ function _DecodeWslBytes {
     return ([System.Text.Encoding]::UTF8.GetString($Bytes) -replace "`0", "").Trim()
 }
 
+# PowerShell 5.1: indexing a single string with [0] yields [char], which has
+# no .Trim(). Wrap -split in @() so one distro / one token stays a string.
+function Get-FirstToken {
+    param(
+        [string]$Text,
+        [string]$SplitPattern = '[\r\n]+'
+    )
+    $parts = @(
+        $Text -split $SplitPattern |
+            ForEach-Object { ([string]$_).Trim() } |
+            Where-Object { $_ }
+    )
+    if ($parts.Count -eq 0) { return '' }
+    return [string]$parts[0]
+}
+
 # ─── Sanity: wsl.exe on PATH ─────────────────────────────────────────
 $wslExe = Get-Command wsl.exe -ErrorAction SilentlyContinue
 if (-not $wslExe) {
@@ -107,16 +123,20 @@ if (-not $Distro) {
     # `wsl -l --quiet` lists distros one per line, default first.
     $r = Invoke-WslExe '-l' '--quiet'
     if ($r.ExitCode -eq 0 -and $r.Stdout) {
-        $Distro = ($r.Stdout -split "[\r\n]+" | Where-Object { $_.Trim() })[0].Trim()
+        $Distro = Get-FirstToken $r.Stdout
     }
 
     # Fallback: parse `wsl -l -v`, find the line with '*'.
     if (-not $Distro) {
         $r = Invoke-WslExe '-l' '-v'
         if ($r.ExitCode -eq 0 -and $r.Stdout) {
-            $line = ($r.Stdout -split "[\r\n]+" | Where-Object { $_ -match '^\s*\*' })[0]
-            if ($line) {
-                $Distro = (($line -replace '^\s*\*\s*', '') -split '\s+')[0].Trim()
+            $star = @(
+                $r.Stdout -split "[\r\n]+" |
+                    Where-Object { $_ -match '^\s*\*' }
+            )
+            if ($star.Count -gt 0) {
+                $line = [string]$star[0]
+                $Distro = Get-FirstToken ($line -replace '^\s*\*\s*', '') '\s+'
             }
         }
     }
@@ -140,7 +160,7 @@ Then re-run with -Distro:
 if (-not $WslUser) {
     $r = Invoke-WslExe '-d' $Distro '--exec' 'whoami'
     if ($r.ExitCode -eq 0 -and $r.Stdout) {
-        $WslUser = $r.Stdout
+        $WslUser = ([string]$r.Stdout).Trim()
     }
     if (-not $WslUser) {
         $sample = if ($r.Stderr) { $r.Stderr } elseif ($r.RawBytes.Length -gt 0) {
@@ -161,24 +181,24 @@ If that works but this script doesn't, pass -WslUser explicitly:
     Write-Host "[info] Using WSL user: $WslUser"
 }
 
-# ─── Read the rootCA via `wsl.exe --exec cat` ────────────────────────
+# ─── Stage the rootCA onto a native Windows path via /mnt/c ──────────
+# Do not `wsl.exe cat` the PEM: some hosts emit UTF-16 on that pipe and
+# the cert parse fails. Copy into %TEMP% from inside Linux instead.
 $caPathInWsl = "/home/$WslUser/.local/share/mkcert/rootCA.pem"
-Write-Host "[info] Reading $caPathInWsl from $Distro via wsl.exe…"
+$tmpCa = Join-Path $env:TEMP "mkcert-rootCA-$([guid]::NewGuid()).pem"
+$tmpDrive = $tmpCa.Substring(0, 1).ToLowerInvariant()
+$tmpUnix = '/mnt/' + $tmpDrive + ($tmpCa.Substring(2) -replace '\\', '/')
+Write-Host "[info] Copying $caPathInWsl from $Distro to $tmpCa"
 
-$r = Invoke-WslExe '-d' $Distro '--exec' 'cat' $caPathInWsl
-if ($r.ExitCode -ne 0 -or -not $r.RawBytes -or $r.RawBytes.Length -lt 100) {
-    Write-Error "[fail] Could not read $caPathInWsl from $Distro"
+$r = Invoke-WslExe '-d' $Distro '-u' $WslUser '--exec' 'cp' $caPathInWsl $tmpUnix
+if ($r.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $tmpCa) -or ((Get-Item -LiteralPath $tmpCa).Length -lt 100)) {
+    Write-Error "[fail] Could not copy $caPathInWsl from $Distro to $tmpCa"
     if ($r.Stderr) { Write-Error "       stderr: $($r.Stderr)" }
     Write-Error "       Verify:  wsl.exe -d '$Distro' ls -la /home/$WslUser/.local/share/mkcert/"
     exit 1
 }
 
-# Write the raw cert bytes to a temp file for Import-Certificate.
-# DO NOT use `> file` or `Out-File` — both corrupt the PEM with BOM/
-# UTF-16 encoding. `WriteAllBytes` preserves the bytes exactly.
-$tmpCa = Join-Path $env:TEMP "mkcert-rootCA-$([guid]::NewGuid()).pem"
 try {
-    [System.IO.File]::WriteAllBytes($tmpCa, $r.RawBytes)
 
     # ─── Thumbprint check (idempotent) ───────────────────────────────
     $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $tmpCa
@@ -193,7 +213,14 @@ try {
         return
     }
 
-    Import-Certificate -FilePath $tmpCa -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+    $cerPath = [System.IO.Path]::ChangeExtension($tmpCa, '.cer')
+    [System.IO.File]::WriteAllBytes($cerPath, $cert.Export(
+        [System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+    try {
+        Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+    } finally {
+        Remove-Item -LiteralPath $cerPath -ErrorAction SilentlyContinue
+    }
     Write-Host "[ok] mkcert rootCA imported into CurrentUser\Root"
     Write-Host "     thumbprint: $thumbprint"
     Write-Host "[info] Chrome / Edge / curl-wincrypt will trust *.localhost on next launch"

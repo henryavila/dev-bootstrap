@@ -258,7 +258,7 @@ install() {
     _wsl_web_php_owner_clean || return 1
     _wsl_web_fpm_probes_clean || return 1
     _wsl_web_ss_bin >/dev/null || return 1
-    sudo -v 2>/dev/null || true
+    sudo -n -v >/dev/null 2>&1 || true
     _wsl_web_nginx_config_clean || return $?
 
     versions="$(_wsl_web_versions)" || return 1

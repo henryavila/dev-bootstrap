@@ -210,10 +210,38 @@ PHP_DEFAULT="${PHP_DEFAULT:-$(echo "$PHP_VERSIONS" | tr ' ' '\n' | sort -V | tai
 info "PHP versions to install: $PHP_VERSIONS (default: $PHP_DEFAULT)"
 export PHP_DEFAULT
 
-# Ensure ondrej/php PPA is enabled (once — all versions share it)
+# Ensure ondrej/php PPA is enabled (once — all versions share it).
+# add-apt-repository talks to api.launchpad.net via launchpadlib; on a
+# clean WSL that call can hang until TCP timeout while the actual package
+# archive (ppa.launchpadcontent.net) is reachable. Cap it and fall back
+# to a signed-by source file.
 if ! grep -Rq 'ondrej/php' /etc/apt/sources.list.d/ 2>/dev/null; then
     info "enabling ondrej/php PPA"
-    sudo add-apt-repository -y ppa:ondrej/php
+    local ppa_ok=0
+    if command -v timeout >/dev/null 2>&1; then
+        timeout --kill-after=5 30 sudo add-apt-repository -y ppa:ondrej/php && ppa_ok=1
+    else
+        sudo add-apt-repository -y ppa:ondrej/php && ppa_ok=1
+    fi
+    if [[ "$ppa_ok" -ne 1 ]]; then
+        warn "add-apt-repository failed or timed out — writing ondrej/php source directly"
+        local keyring=/etc/apt/keyrings/ondrej-php.gpg
+        local list=/etc/apt/sources.list.d/ondrej-php.list
+        local codename
+        # shellcheck disable=SC1091
+        codename="$(. /etc/os-release && printf '%s' "${UBUNTU_CODENAME:-}")"
+        [[ -n "$codename" ]] || { fail "could not detect Ubuntu codename for ondrej/php PPA"; return 1; }
+        sudo mkdir -p /etc/apt/keyrings
+        if ! curl -fsSL --connect-timeout 8 --max-time 30 \
+            'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x4F4EA0AAE5267A6C' \
+            | gpg --dearmor | sudo tee "$keyring" >/dev/null; then
+            fail "could not fetch ondrej/php signing key"
+            return 1
+        fi
+        sudo chmod go+r "$keyring"
+        printf 'deb [signed-by=%s] https://ppa.launchpadcontent.net/ondrej/php/ubuntu %s main\n' \
+            "$keyring" "$codename" | sudo tee "$list" >/dev/null
+    fi
     sudo apt-get update -qq
 fi
 

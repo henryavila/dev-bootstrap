@@ -28,7 +28,8 @@ if (-not (Test-Path -LiteralPath $rootCA)) {
     exit 1
 }
 
-# Load the cert to read its thumbprint
+# Load the cert (PEM or DER). Export DER .cer — Import-Certificate is picky
+# about .pem and about files still sitting on `\\wsl.localhost\`.
 try {
     $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 `
         -ArgumentList $rootCA
@@ -49,13 +50,22 @@ if ($existing) {
     exit 0
 }
 
-# Import
+# CurrentUser\Root import always raises Windows' Protected Roots confirmation
+# (cannot be suppressed). Interactive sessions: click Yes. Headless / WSL
+# interop: the caller wraps this in `timeout 45` and falls back to
+# import-mkcert-from-windows.ps1 from a real Windows prompt.
+$cerPath = Join-Path $env:TEMP ("mkcert-rootCA-" + $thumbprint + ".cer")
 try {
-    Import-Certificate -FilePath $rootCA -CertStoreLocation Cert:\CurrentUser\Root |
+    [System.IO.File]::WriteAllBytes($cerPath, $cert.Export(
+        [System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+    Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\Root |
         Out-Null
 } catch {
     Write-Host "[fail] Import-Certificate failed: $_"
+    Write-Host "[info] CurrentUser\Root requires clicking Yes on the Windows security dialog"
     exit 1
+} finally {
+    Remove-Item -LiteralPath $cerPath -ErrorAction SilentlyContinue
 }
 
 Write-Host "[ok] mkcert rootCA imported into CurrentUser\Root"

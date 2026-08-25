@@ -440,8 +440,16 @@ fi
 # ─── sudo warmup + legacy NOPASSWD cleanup ───────────────────────────────────
 # Skipped under --adopt: a read-only marker backfill must never warm sudo or
 # mutate sudoers (its probes are check()/verify() only — no privileged action).
+#
+# `sudo -v` prompts when %sudo requires a password (verifypw=all), even if a
+# later NOPASSWD:ALL matches. WSL still allocates a pts, so hiding sudo
+# validate behind a redirected stderr hangs forever on NON_INTERACTIVE / piped runs.
 if [[ "$DRY_RUN" != "1" && "$ADOPT_MODE" != "1" ]]; then
-    sudo -v 2>/dev/null || warn "sudo cache warmup failed (non-fatal — items will prompt individually)"
+    if [[ "${NON_INTERACTIVE:-0}" == "1" ]] || ! [[ -t 0 && -t 1 ]]; then
+        sudo -n -v >/dev/null 2>&1 || warn "sudo cache warmup failed (non-fatal — items will prompt individually)"
+    else
+        sudo -v || warn "sudo cache warmup failed (non-fatal — items will prompt individually)"
+    fi
 fi
 # Pre-v2026-04-22 remote-access left a permanent NOPASSWD sudoers entry.
 # Clean it up unconditionally so forks inherit the fix.

@@ -35,7 +35,7 @@ check() {
 }
 
 install() {
-    sudo -v 2>/dev/null || true
+    sudo -n -v >/dev/null 2>&1 || true
     export DEBIAN_FRONTEND=noninteractive
 
     # Install mkcert binary if missing.
@@ -126,22 +126,35 @@ install() {
         echo "[mkcert] rootCA missing at $rootca — Windows browsers will distrust *.localhost" >&2
         echo "[mkcert] retry: rerun this topic after 'mkcert -CAROOT' shows a directory" >&2
     elif [[ -n "$pwsh" ]]; then
-        local here ps_win rootca_win
+        local here ps_src win_tmp_win win_tmp_unix stamp rootca_win ps_win
         here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        if wslpath -w "$rootca" >/dev/null 2>&1; then
-            rootca_win="$(wslpath -w "$rootca")"
-            ps_win="$(wslpath -w "$here/../scripts/import-mkcert-windows.ps1")"
-            # Wrap in `timeout 45` — interop call can block indefinitely
-            # if binfmt_misc is half-registered, /mnt/c is in I/O-error
-            # state, or a hidden UAC prompt is up on the Windows side.
+        ps_src="$here/../scripts/import-mkcert-windows.ps1"
+        # Copy CA + importer onto a native Windows path. powershell.exe spawned
+        # from WSL deadlocks if it then reads `\\wsl.localhost\...` (9P reentry).
+        win_tmp_win="$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')"
+        if [[ -n "$win_tmp_win" ]] && win_tmp_unix="$(wslpath -u "$win_tmp_win" 2>/dev/null)" \
+            && [[ -d "$win_tmp_unix" && -f "$ps_src" ]]; then
+            stamp="mesh-mkcert-$$"
+            cp "$rootca" "$win_tmp_unix/${stamp}-rootCA.pem"
+            cp "$ps_src" "$win_tmp_unix/${stamp}-import.ps1"
+            rootca_win="${win_tmp_win}\\${stamp}-rootCA.pem"
+            ps_win="${win_tmp_win}\\${stamp}-import.ps1"
+            # Wrap in `timeout 45` — Root CA import can still raise a Windows
+            # confirmation dialog that nobody will click from this side.
             # shellcheck disable=SC2016
             timeout --kill-after=5 45 \
                 "$pwsh" -NoProfile -ExecutionPolicy Bypass -Command \
                 "\$env:ROOTCA_PATH = '$rootca_win'; & '$ps_win'" 2>&1 \
                 | sed 's/^/    /' \
-                || echo "[mkcert] interop import failed (or hit 45s timeout) — run scripts/import-mkcert-from-windows.ps1 from Windows" >&2
+                || {
+                    echo "[mkcert] interop import failed (or hit 45s timeout) — run scripts/import-mkcert-from-windows.ps1 from Windows" >&2
+                    if declare -F followup >/dev/null 2>&1; then
+                        followup manual "Windows does not yet trust *.localhost HTTPS. In an interactive Windows PowerShell (click Yes on the security dialog): powershell -ExecutionPolicy Bypass -File ~/mesh-workstation/topics/web/scripts/import-mkcert-from-windows.ps1"
+                    fi
+                }
+            rm -f "$win_tmp_unix/${stamp}-rootCA.pem" "$win_tmp_unix/${stamp}-import.ps1"
         else
-            echo "[mkcert] wslpath -w failed — run scripts/import-mkcert-from-windows.ps1 from Windows side" >&2
+            echo "[mkcert] could not stage CA on Windows TEMP — run scripts/import-mkcert-from-windows.ps1 from Windows side" >&2
         fi
     else
         echo "[mkcert] powershell.exe unreachable — run scripts/import-mkcert-from-windows.ps1 from Windows side" >&2

@@ -34,4 +34,27 @@ else
 fi
 assert_file_contains "$PS1" 'INSTALL-WINDOWS-WSL.md' "PS1 next-steps point at the install guide"
 
+MKCERT_FROM="$WS/topics/web/scripts/import-mkcert-from-windows.ps1"
+MKCERT_SH="$WS/topics/web/wsl/mkcert.sh"
+assert_file_exists "$MKCERT_FROM" "import-mkcert-from-windows.ps1 exists"
+assert_file_exists "$MKCERT_SH" "topics/web/wsl/mkcert.sh exists"
+if grep -nE 'dev-bootstrap|60-web-stack' "$MKCERT_FROM" >/dev/null 2>&1; then
+    fail "import-mkcert-from-windows.ps1 must not mention dev-bootstrap or 60-web-stack"
+    grep -nE 'dev-bootstrap|60-web-stack' "$MKCERT_FROM" | sed 's/^/      /' >&2
+else
+    pass "import-mkcert-from-windows.ps1 has no stale bootstrap paths"
+fi
+assert_file_contains "$MKCERT_SH" '%TEMP%' "mkcert stages CA on Windows TEMP (avoid \\\\wsl\$ deadlock)"
+
+# PS 5.1: `("Ubuntu-24.04")[0].Trim()` throws — [char] has no Trim.
+# A one-distro `wsl -l --quiet` hits that. Get-FirstToken must wrap -split in @().
+if grep -nE '\)\[0\]\.Trim\(\)' "$MKCERT_FROM" >/dev/null 2>&1; then
+    fail "import-mkcert-from-windows.ps1 must not index a split result with [0].Trim() (PS 5.1 [char] trap)"
+    grep -nE '\)\[0\]\.Trim\(\)' "$MKCERT_FROM" | sed 's/^/      /' >&2
+else
+    pass "import-mkcert-from-windows.ps1 avoids PS 5.1 [char].Trim() trap"
+fi
+assert_file_contains "$MKCERT_FROM" 'function Get-FirstToken' \
+    "import-mkcert-from-windows.ps1 defines Get-FirstToken for one-distro hosts"
+
 summary

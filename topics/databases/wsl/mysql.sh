@@ -127,7 +127,7 @@ install() {
         return 0
     fi
 
-    sudo -v 2>/dev/null || true
+    sudo -n -v >/dev/null 2>&1 || true
     export DEBIAN_FRONTEND=noninteractive
 
     sudo apt-get update -q
@@ -185,7 +185,7 @@ uninstall() {
         return 0
     fi
 
-    sudo -v 2>/dev/null || true
+    sudo -n -v >/dev/null 2>&1 || true
 
     # Stop the server before package removal (best-effort; either init path).
     if _server_running; then

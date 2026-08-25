@@ -32,7 +32,7 @@ check() {
 }
 
 install() {
-    sudo -v 2>/dev/null || true
+    sudo -n -v >/dev/null 2>&1 || true
     sudo mkdir -p "$NGINX_AVAILABLE_DIR" "$NGINX_ENABLED_DIR" "$NGINX_SNIPPET_DIR" "$NGINX_MAP_DIR"
 
     # Legacy single-file catchall cleanup

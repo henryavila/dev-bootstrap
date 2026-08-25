@@ -103,10 +103,12 @@ export VISUAL="${VISUAL:-$EDITOR}"
 export MESH_TMUX_AUTO_MAIN=0
 
 # ---------- Modular fragments ----------
+# *.sh = deploy auto-map (zshrc.d-*.sh). *.zsh = shell-bootstrap symlinks
+# (auto-update.zsh, mesh-guard.zsh). Unmatched globs stay literal; skip them.
 if [ -d "$HOME/.zshrc.d" ]; then
-    for f in "$HOME"/.zshrc.d/*.sh; do
+    for f in "$HOME"/.zshrc.d/*.sh "$HOME"/.zshrc.d/*.zsh; do
         # shellcheck source=/dev/null
-        [ -r "$f" ] && source "$f"
+        [ -e "$f" ] && [ -r "$f" ] && source "$f"
     done
     unset f
 fi

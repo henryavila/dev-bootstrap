@@ -405,7 +405,16 @@ done
 
 if [[ "$sudo_needed" -eq 1 ]]; then
     info "deploy.sh: destinations outside \$HOME detected — sudo required"
-    if ! sudo -v; then
+    # Prefer `sudo -n true` (actual command). Bare `sudo -v` hangs on WSL pts
+    # when %sudo requires a password (verifypw=all), even with NOPASSWD:ALL.
+    if sudo -n true >/dev/null 2>&1; then
+        :
+    elif [[ "${NON_INTERACTIVE:-0}" != "1" ]] && [[ -t 0 && -t 1 ]]; then
+        if ! sudo -v; then
+            fail "deploy.sh: sudo not available / denied"
+            exit 1
+        fi
+    else
         fail "deploy.sh: sudo not available / denied"
         exit 1
     fi

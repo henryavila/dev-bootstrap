@@ -25,7 +25,7 @@ _apply_boot_state() {
 
 install() {
     check && return 0
-    sudo -v 2>/dev/null || true
+    sudo -n -v >/dev/null 2>&1 || true
     export DEBIAN_FRONTEND=noninteractive
     sudo apt-get update -q
     sudo apt-get install -y -q \
@@ -64,7 +64,7 @@ uninstall() {
     command -v apt-get >/dev/null 2>&1 || return 0
 
     if dpkg -s "$PKG" >/dev/null 2>&1; then
-        sudo -v 2>/dev/null || true
+        sudo -n -v >/dev/null 2>&1 || true
         export DEBIAN_FRONTEND=noninteractive
         local rc=0
         sudo apt-get purge -y -qq "$PKG" 2>/dev/null || rc=$?

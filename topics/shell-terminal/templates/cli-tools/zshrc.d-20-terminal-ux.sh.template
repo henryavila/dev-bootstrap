@@ -3,7 +3,7 @@
 # Loaded by ~/.zshrc from ~/.zshrc.d/
 
 # Starship is deliberately NOT initialized on zsh: Powerlevel10k owns
-# the prompt (loaded by ~/.zshrc.local via zinit). Running
+# the prompt (loaded by ~/.zshrc.d/90-prompt.sh). Running
 # `starship init zsh` here would register a competing precmd hook that
 # wastes CPU on every prompt redraw and can invalidate p10k's instant
 # prompt cache. Starship is still initialized on bash (see bashrc.d

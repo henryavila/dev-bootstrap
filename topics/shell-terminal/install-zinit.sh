@@ -7,8 +7,8 @@ install()  {
     # $ZSHRC (default ~/.zshrc), CREATING the file — `yes n` only declines the
     # optional *annexes*, not that core edit (the old "pipe n leaves ~/.zshrc
     # alone" assumption was wrong). mesh owns ~/.zshrc (deployed WITH its
-    # "managed by mesh-workstation" marker by shell-fragments, and loads zinit
-    # from ~/.zshrc.local by design), so an unmarked ~/.zshrc left here makes the
+    # "managed by mesh-workstation" marker by shell-fragments; p10k/plugins
+    # load from ~/.zshrc.d/90-prompt.sh), so an unmarked ~/.zshrc left here makes the
     # deploy overwrite-guard refuse it and ABORTS the whole bootstrap. The
     # installer honours a ZSHRC override (install.sh: ZSHRC="${ZSHRC:-…/.zshrc}"),
     # so point it at a throwaway: zinit still clones to ~/.local/share/zinit, but
