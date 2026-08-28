@@ -7,8 +7,17 @@
 # installed Node earlier in the same run, and the item dies with rc 127. Activate
 # the fnm-managed default Node first (mirrors the npx driver + node-fnm.sh); no-op
 # when npm is already resolvable (brew/apt Node, or an already-activated shell).
+_npm_is_native() {
+    case "${1:-}" in
+        ''|/mnt/[a-zA-Z]/*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 _npm_global_ensure_on_path() {
-    command -v npm >/dev/null 2>&1 && return 0
+    local npm_bin
+    npm_bin="$(command -v npm 2>/dev/null || true)"
+    _npm_is_native "$npm_bin" && return 0
     if ! command -v fnm >/dev/null 2>&1 && [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
         PATH="$HOME/.local/share/fnm:$PATH"; export PATH
     fi
@@ -16,7 +25,8 @@ _npm_global_ensure_on_path() {
         eval "$(fnm env 2>/dev/null || true)"
         fnm use default >/dev/null 2>&1 || true
     fi
-    command -v npm >/dev/null 2>&1
+    npm_bin="$(command -v npm 2>/dev/null || true)"
+    _npm_is_native "$npm_bin"
 }
 
 # check uses --parseable + non-empty output (regex metachars in scoped pkg

@@ -292,8 +292,11 @@ elif [[ -z "$existing_pg_ver" ]]; then
                 info "writing PGDG GPG keyring atomically"
                 sudo install -d -m 0755 /etc/apt/keyrings
                 tmp_key=$(sudo mktemp)
+                # Dearmor as the user, then sudo tee. `curl | sudo gpg --dearmor`
+                # hangs forever on Ubuntu 24.04: Defaults use_pty gives gpg a
+                # tty, so it waits for a key paste instead of reading the pipe.
                 if ! curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-                        | sudo gpg --dearmor -o "$tmp_key"; then
+                        | gpg --batch --dearmor | sudo tee "$tmp_key" >/dev/null; then
                     sudo rm -f "$tmp_key"
                     followup critical "failed to fetch+dearmor PGDG GPG key — inspect network and curl/gpg availability"
                     exit 1

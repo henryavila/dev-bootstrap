@@ -483,6 +483,15 @@ assert_pattern_present "$PG_SCRIPT" 'tmp_key=\$\(sudo mktemp\)' \
 assert_pattern_present "$PG_SCRIPT" 'sudo mv "\$tmp_key" "\$KEYRING"' \
     "keyring atomically renamed only after successful dearmor"
 
+assert_pattern_present "$PG_SCRIPT" 'gpg --batch --dearmor \| sudo tee "\$tmp_key"' \
+    "PGDG key dearmored without sudo gpg (Ubuntu 24.04 use_pty hangs curl|sudo gpg --dearmor)"
+
+if grep -vE '^[[:space:]]*#' "$PG_SCRIPT" | grep -qE 'curl .*\|[[:space:]]*sudo gpg --dearmor'; then
+    fail "install-postgres.sh must not pipe curl into sudo gpg --dearmor (hangs under Defaults use_pty)"
+else
+    pass "install-postgres.sh does not pipe curl into sudo gpg --dearmor"
+fi
+
 assert_pattern_present "$PG_SCRIPT" 'sudo gpg --show-keys "\$KEYRING"' \
     "keyring re-validated on re-run (catches corrupt files from prior partial failures)"
 
