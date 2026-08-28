@@ -570,6 +570,12 @@ else
         echo
         echo "${C_WARN}Missing '$DOCTOR_MARKER_STRING' marker (hand-edited? not from your installer?):${C_RESET}"
         for m in "${marker_miss_items[@]}"; do echo "  ! $m"; done
+        echo "  ${C_DIM}next: mesh reinstall shell${C_RESET}"
+        echo "  ${C_DIM}    (doctor --fix does not rewrite shell rc files)${C_RESET}"
+        echo "  ${C_DIM}    move personal snippets to ~/.zshrc.local / ~/.bashrc.local, then:${C_RESET}"
+        echo "  ${C_DIM}      mv ~/.zshrc ~/.zshrc.unmanaged.bak   # if unmarked${C_RESET}"
+        echo "  ${C_DIM}      mv ~/.bashrc ~/.bashrc.unmanaged.bak # if unmarked${C_RESET}"
+        echo "  ${C_DIM}      mesh reinstall shell${C_RESET}"
     fi
     if (( count_launchd_phantom > 0 )); then
         echo
@@ -629,7 +635,7 @@ else
 fi
 
 # Exit code: 0 iff no drift/missing/phantom/unresolved health finding
-if (( count_drift > 0 || count_missing > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 || count_ext_brew_mount > 0 || count_engine_health > 0 || count_local_only > 0 )); then
+if (( count_drift > 0 || count_missing > 0 || count_marker_miss > 0 || count_launchd_phantom > 0 || count_composer_phar > 0 || count_ext_brew_mount > 0 || count_engine_health > 0 || count_local_only > 0 )); then
     exit 1
 fi
 exit 0

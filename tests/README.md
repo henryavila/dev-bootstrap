@@ -14,6 +14,12 @@ bash tests/run-all.sh cli/php      # any test whose path contains "cli/php"
 VERBOSE=1 bash tests/run-all.sh    # don't suppress per-test stdout
 ```
 
+WSL e2e for `mesh reinstall shell` (Windows only, throwaway distro, not in `run-all.sh`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tests\e2e\reinstall-shell-wsl-gate.ps1
+```
+
 Exit code is 0 if every file passes, 1 if any fails. Failed files print
 their full output so CI / terminals point at the line causing the regression.
 

@@ -25,6 +25,9 @@ _mesh_update_print_help() {
 Recovery:
   Broken PHP, Valet, nginx, or php-fpm runtime:
     mesh doctor --fix
+  Messy bash/zsh, unmanaged rc, login-shell mismatch:
+    mesh reinstall shell
+    --fix does not rewrite shell rc files and will not touch PHP/databases.
   New owner on an upgraded marker-owned bundle:
     mesh doctor --fix    Adopt it when healthy, or repair and then record it.
   Reapply the complete saved selection after an update:
