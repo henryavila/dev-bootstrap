@@ -9,7 +9,9 @@
 # The driver now calls _npx_ensure_on_path() to activate the fnm-managed default
 # Node first. This pins the contract WITHOUT needing fnm/Node present:
 #   - the helper exists and every npx verb calls it
-#   - npx already on PATH ⇒ fast no-op (returns 0, never touches fnm)
+#   - Unix-side npx already on PATH ⇒ fast no-op (returns 0, never touches fnm)
+#   - Windows-interop npx (/mnt/c/...) is NOT a no-op — it must not short-circuit
+#     fnm (live WSL failure: "WSL 1 is not supported")
 #   - npx absent AND no fnm ⇒ returns non-zero gracefully (no set -e abort)
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,11 +36,21 @@ done
 [[ -z "$miss" ]] && ok "every npx verb calls _npx_ensure_on_path" \
                  || bad "verbs missing the activation call:$miss"
 
-# ── behavioural: npx already on PATH ⇒ no-op success ──
+# ── behavioural: Unix-side npx already on PATH ⇒ no-op success ──
 mkdir -p "$ROOT/bin"; printf '#!/bin/sh\nexit 0\n' > "$ROOT/bin/npx"; chmod +x "$ROOT/bin/npx"
 ( PATH="$ROOT/bin:$PATH"; _npx_ensure_on_path ) \
-  && ok "_npx_ensure_on_path is a no-op (rc 0) when npx is already on PATH" \
+  && ok "_npx_ensure_on_path is a no-op (rc 0) when Unix-side npx is already on PATH" \
   || bad "_npx_ensure_on_path failed even though npx was on PATH"
+
+_npx_is_native "$ROOT/bin/npx" \
+  && ok "_npx_is_native accepts a Unix-side path" \
+  || bad "_npx_is_native rejected $ROOT/bin/npx"
+_npx_is_native "/mnt/c/Program Files/nodejs/npx" \
+  && bad "_npx_is_native accepted Windows-interop npx" \
+  || ok "_npx_is_native rejects /mnt/c/... npx (Windows interop)"
+_npx_is_native "" \
+  && bad "_npx_is_native accepted empty path" \
+  || ok "_npx_is_native rejects empty path"
 
 # ── behavioural: npx absent + no fnm ⇒ graceful non-zero, no set -e abort ──
 mkdir -p "$ROOT/eh"

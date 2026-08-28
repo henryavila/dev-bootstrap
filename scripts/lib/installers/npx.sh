@@ -40,15 +40,29 @@ _npx_extract_package() {
     printf '%s' "${spec%% *}"
 }
 
+# True when $1 is a Unix-side npx (fnm / apt / brew). WSL appends the Windows
+# PATH, so `command -v npx` can resolve `/mnt/c/Program Files/nodejs/npx` —
+# that binary then dies with "WSL 1 is not supported" /
+# "Could not determine Node.js install directory". Treat those as missing.
+_npx_is_native() {
+    case "${1:-}" in
+        ''|/mnt/[a-zA-Z]/*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 # `npx` ships with Node. mesh installs Node via fnm (~/.local/share/fnm), whose
 # shell activation the engine's non-interactive per-item subshell never runs — so
 # on a FRESH bootstrap (Node installed earlier in the same run) `npx` is not yet
 # on PATH and the item dies with rc 127 (the live CI-smoke symptom for claudebar).
 # Activate the fnm-managed default Node so npx resolves, mirroring
-# topics/languages/node-fnm.sh. No-op when npx is already on PATH (brew/apt Node,
-# or a shell that already activated fnm). Best-effort: returns npx's availability.
+# topics/languages/node-fnm.sh. No-op when a Unix-side npx is already on PATH
+# (brew/apt Node, or a shell that already activated fnm). Windows-interop npx
+# does not count. Best-effort: returns npx's availability.
 _npx_ensure_on_path() {
-    command -v npx >/dev/null 2>&1 && return 0
+    local npx_bin
+    npx_bin="$(command -v npx 2>/dev/null || true)"
+    _npx_is_native "$npx_bin" && return 0
     if ! command -v fnm >/dev/null 2>&1 && [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
         PATH="$HOME/.local/share/fnm:$PATH"; export PATH
     fi
@@ -58,7 +72,8 @@ _npx_ensure_on_path() {
         eval "$(fnm env 2>/dev/null || true)"
         fnm use default >/dev/null 2>&1 || true
     fi
-    command -v npx >/dev/null 2>&1
+    npx_bin="$(command -v npx 2>/dev/null || true)"
+    _npx_is_native "$npx_bin"
 }
 
 npx_check() { return 1; }

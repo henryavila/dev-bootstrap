@@ -14,7 +14,12 @@ check() {
 
 install() {
     info "installing moshi-hook via getmoshi.app installer"
-    curl -fsSL https://getmoshi.app/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+    # The upstream installer runs `moshi-hook set --first-run`, which opens
+    # /dev/tty even under curl|sh. Engine apply has a controlling tty (WSL
+    # pts) but no operator at the keyboard, so that prompt hangs the whole
+    # bootstrap. Skip it; defaults apply until the user runs first-run later.
+    curl -fsSL https://getmoshi.app/install.sh \
+        | INSTALL_DIR="$HOME/.local/bin" MOSHI_HOOK_SKIP_FIRST_RUN=1 sh
 }
 
 verify() {
@@ -45,7 +50,8 @@ update() {
     local before after
     before="$(_moshi_version)"
     info "updating moshi-hook to latest via getmoshi.app installer"
-    curl -fsSL https://getmoshi.app/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+    curl -fsSL https://getmoshi.app/install.sh \
+        | INSTALL_DIR="$HOME/.local/bin" MOSHI_HOOK_SKIP_FIRST_RUN=1 sh
     after="$(_moshi_version)"
     if [[ -n "$before" && -n "$after" && "$before" == "$after" ]]; then
         info "moshi-hook already at $after — no service restart needed"

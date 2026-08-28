@@ -40,8 +40,15 @@ SOURCES_LIST="/etc/apt/sources.list.d/mssql-release.list"
 if [[ ! -f "$KEYRING" ]]; then
     info "adding Microsoft GPG keyring"
     sudo install -d -m 0755 /etc/apt/keyrings
-    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
-        | sudo gpg --dearmor -o "$KEYRING"
+    # Dearmor as the user, then sudo tee. `curl | sudo gpg --dearmor` hangs
+    # on Ubuntu 24.04 (Defaults use_pty gives gpg a tty instead of the pipe).
+    if ! curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+            | gpg --batch --dearmor | sudo tee "$KEYRING" >/dev/null; then
+        sudo rm -f "$KEYRING"
+        fail "failed to fetch+dearmor Microsoft GPG key"
+        exit 1
+    fi
+    sudo chmod 0644 "$KEYRING"
 fi
 
 if [[ ! -f "$SOURCES_LIST" ]]; then
