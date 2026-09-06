@@ -122,7 +122,7 @@ while (( i < $# )); do
     fi
 done
 printf 'applied\n' >> "$trace"
-exit 0
+exit "${MESH_TEST_ENGINE_RC:-0}"
 SH
 chmod +x "$FAKE_ENGINE"
 
@@ -191,6 +191,20 @@ assert_false "grep -q 'databases/mysql' '$TRACE'"
 assert_eq "$(cat "$CFG/mesh/selections.list")" "$(cat "$SANDBOX/selections.before")" \
     "apply does not rewrite selections.list"
 assert_contains "$apply_out" "tmux kill-server" "summary mentions tmux kill-server"
+
+echo
+echo "── engine failure propagates and cleans temporary selection ──"
+: > "$TRACE"
+if failure_out="$(MESH_TEST_ENGINE_RC=42 run_reinstall shell 2>&1)"; then
+    failure_rc=0
+else
+    failure_rc=$?
+fi
+assert_eq "$failure_rc" "42" "engine failure retains its exit code"
+assert_contains "$failure_out" "engine exited 42" "engine failure is reported"
+assert_not_contains "$failure_out" "apply finished" "failed engine does not report success"
+selection_path="$(sed -n 's/^selections-file://p' "$TRACE")"
+assert_false "[ -e '$selection_path' ]"
 
 echo
 echo "── module registers the public command ──"

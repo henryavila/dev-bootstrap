@@ -183,13 +183,14 @@ reinstall_shell_run() {
 
     platform="$(reinstall_shell_resolve_platform)"
     echo "applying via $engine (platform=$platform)"
-    set +e
-    bash "$engine" \
+    if bash "$engine" \
         --selections "$sel" \
         --non-interactive \
-        --platform "$platform"
-    rc=$?
-    set -e
+        --platform "$platform"; then
+        rc=0
+    else
+        rc=$?
+    fi
     rm -f "$sel"
     if [[ "$rc" -ne 0 ]]; then
         echo "mesh reinstall shell: engine exited $rc" >&2
