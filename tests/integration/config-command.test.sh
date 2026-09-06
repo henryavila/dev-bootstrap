@@ -63,6 +63,77 @@ assert_contains "$list_out" "shell/aliases.sh" "list includes source path"
 assert_contains "$list_out" ".bashrc.d/99-personal-aliases.sh" "list includes bash destination"
 assert_contains "$list_out" ".zshrc.d/99-personal-aliases.sh" "duplicate source destinations are collapsed"
 
+assert_contains "$list_out" "mesh config shell/aliases.sh" "list shows copyable command"
+
+echo
+echo "missing configured editor falls back to vim"
+mkdir -p "$SANDBOX/bin"
+cat > "$SANDBOX/bin/vim" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" > "$MESH_CONFIG_TEST_EDITOR_LOG"
+SH
+chmod +x "$SANDBOX/bin/vim"
+for editor_var in MESH_CONFIG_EDITOR VISUAL EDITOR; do
+    rm -f "$SANDBOX/editor.log"
+    fallback_out="$(run_config env -u MESH_CONFIG_EDITOR -u VISUAL -u EDITOR \
+        PATH="$SANDBOX/bin:$PATH" "$editor_var=mesh-editor-does-not-exist" \
+        MESH_CONFIG_TEST_EDITOR_LOG="$SANDBOX/editor.log" \
+        bash "$RUNNER" shell/aliases.sh 2>&1)"
+    fallback_rc=$?
+    assert_eq "$fallback_rc" "0" "$editor_var missing editor recovers"
+    assert_contains "$fallback_out" "falling back to vim" "$editor_var explains fallback"
+    assert_eq "$(cat "$SANDBOX/editor.log")" "$ID/shell/aliases.sh" "vim receives source path"
+done
+
+quoted_out="$(run_config env MESH_CONFIG_EDITOR="'$SANDBOX/bin/vim' -f" \
+    MESH_CONFIG_TEST_EDITOR_LOG="$SANDBOX/editor.log" \
+    bash "$RUNNER" shell/aliases.sh 2>&1)"
+assert_eq "$?" "0" "quoted editor with arguments succeeds"
+assert_eq "$(cat "$SANDBOX/editor.log")" "-f $ID/shell/aliases.sh" "editor arguments preserved"
+
+rm -f "$SANDBOX/editor.log"
+default_out="$(run_config env -u MESH_CONFIG_EDITOR -u VISUAL -u EDITOR \
+    PATH="$SANDBOX/bin:$PATH" MESH_CONFIG_TEST_EDITOR_LOG="$SANDBOX/editor.log" \
+    bash "$RUNNER" shell/aliases.sh 2>&1)"
+assert_eq "$?" "0" "unset editors use Vim"
+assert_eq "$(cat "$SANDBOX/editor.log")" "$ID/shell/aliases.sh" "default invokes Vim"
+
+mkdir -p "$HOME_FAKE/editor space"
+cp "$SANDBOX/bin/vim" "$HOME_FAKE/editor space/vim"
+for editor_spec in "~/editor\ space/vim -f" "'$HOME_FAKE/editor space/vim' -f"; do
+    rm -f "$SANDBOX/editor.log"
+    path_out="$(run_config env MESH_CONFIG_EDITOR="$editor_spec" \
+        MESH_CONFIG_TEST_EDITOR_LOG="$SANDBOX/editor.log" \
+        bash "$RUNNER" shell/aliases.sh 2>&1)"
+    assert_eq "$?" "0" "editor path with spaces succeeds"
+    assert_eq "$(cat "$SANDBOX/editor.log")" "-f $ID/shell/aliases.sh" "editor path expansion preserves args"
+done
+
+# A second source contains the first source path: copyable commands must still
+# select one exact source without opening the interactive picker.
+cp "$ID/deploy.map" "$SANDBOX/map-before"
+printf 'shell/aliases.sh.backup | ~/.aliases-backup\n' >> "$ID/deploy.map"
+printf '# backup\n' > "$ID/shell/aliases.sh.backup"
+exact_out="$(run_config env MESH_CONFIG_EDITOR="$SANDBOX/bin/vim" \
+    MESH_CONFIG_TEST_EDITOR_LOG="$SANDBOX/editor.log" \
+    bash "$RUNNER" shell/aliases.sh 2>&1)"
+assert_eq "$?" "0" "exact source wins over substring matches"
+assert_eq "$(cat "$SANDBOX/editor.log")" "$ID/shell/aliases.sh" "copyable command selects exact source"
+
+# Isolate PATH to make absence of Vim deterministic without touching the host.
+mkdir -p "$SANDBOX/no-vim"
+for tool in dirname uname awk tr mktemp cp rm grep cat; do
+    ln -s "$(command -v "$tool")" "$SANDBOX/no-vim/$tool"
+done
+missing_out="$(run_config env PATH="$SANDBOX/no-vim" \
+    MESH_CONFIG_EDITOR=mesh-editor-does-not-exist \
+    /bin/bash "$RUNNER" shell/aliases.sh 2>&1)"
+assert_eq "$?" "1" "missing configured editor and Vim fails"
+assert_contains "$missing_out" "vim is unavailable" "missing Vim gives actionable error"
+assert_not_contains "$missing_out" "deploy complete" "missing editor does not deploy"
+
+cp "$SANDBOX/map-before" "$ID/deploy.map"
+
 echo
 echo "edit -> diff -> install"
 INSTALL_LOG="$SANDBOX/install.log"

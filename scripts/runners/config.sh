@@ -122,7 +122,14 @@ _config_rows() {
 }
 
 _config_filter() {
-    local term="$1" lc label src dsts modes hay
+    local term="$1" lc label src dsts modes hay exact
+    # Commands printed by list identify a source exactly, even when its path
+    # also appears in another mapping's destination or as a path prefix.
+    exact="$(_config_rows | awk -F '\t' -v source="$term" '$2 == source')"
+    if [[ -n "$exact" ]]; then
+        printf '%s\n' "$exact"
+        return 0
+    fi
     lc="$(_config_lower "$term")"
     _config_rows | while IFS=$'\t' read -r label src dsts modes; do
         if [[ -z "$lc" ]]; then
@@ -137,15 +144,16 @@ _config_filter() {
 }
 
 _config_list() {
-    local term="$1" rows line label src dsts modes
+    local term="$1" rows line label src dsts modes quoted
     rows="$(_config_filter "$term")"
     [[ -n "$rows" ]] || _config_die "no config matches '${term:-<all>}'"
-    printf '%-30s  %-38s  %s\n' "Name" "Source" "Destinations"
-    printf '%-30s  %-38s  %s\n' "----" "------" "------------"
+    printf '%-30s  %-64s  %s\n' "Name" "Command" "Destinations"
+    printf '%-30s  %-64s  %s\n' "----" "-------" "------------"
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         IFS=$'\t' read -r label src dsts modes <<<"$line"
-        printf '%-30s  %-38s  %s\n' "$label" "$src" "$dsts"
+        printf -v quoted '%q' "$src"
+        printf '%-30s  %-64s  %s\n' "$label" "mesh config $quoted" "$dsts"
     done <<<"$rows"
 }
 
@@ -225,19 +233,32 @@ _config_choose() {
     printf '%s\n' "$choice"
 }
 
+# Editor variables support an executable followed by arguments (including quoted
+# executable paths). Inspect only the executable; never eval during discovery.
 _config_editor() {
-    if [[ -n "${MESH_CONFIG_EDITOR:-}" ]]; then
-        printf '%s' "$MESH_CONFIG_EDITOR"
-    elif [[ -n "${VISUAL:-}" ]]; then
-        printf '%s' "$VISUAL"
-    elif [[ -n "${EDITOR:-}" ]]; then
-        printf '%s' "$EDITOR"
-    elif command -v nvim >/dev/null 2>&1; then
-        printf 'nvim'
-    elif command -v vim >/dev/null 2>&1; then
+    local editor executable pattern
+    editor="${MESH_CONFIG_EDITOR:-${VISUAL:-${EDITOR:-}}}"
+    if [[ -n "$editor" ]]; then
+        pattern="^[[:space:]]*['\"]([^'\"]+)['\"]"
+        if [[ "$editor" =~ $pattern ]]; then
+            executable="${BASH_REMATCH[1]}"
+        else
+            # read intentionally interprets backslash-escaped spaces here.
+            # shellcheck disable=SC2162
+            IFS=$' \t' read executable _ <<< "$editor"
+            executable="${executable/#\~\//$HOME/}"
+        fi
+        if [[ -n "$executable" ]] && command -v "$executable" >/dev/null 2>&1; then
+            printf '%s' "$editor"
+            return 0
+        fi
+        log_warn "config: editor '$executable' unavailable; falling back to vim"
+    fi
+    if command -v vim >/dev/null 2>&1; then
         printf 'vim'
     else
-        printf 'vi'
+        log_error "config: vim is unavailable; install Vim or set MESH_CONFIG_EDITOR to an installed editor"
+        return 1
     fi
 }
 
@@ -371,7 +392,7 @@ _config_edit_row() {
 
     before="$(mktemp -t mesh-config-before.XXXXXX)" || return 1
     cp "$src_path" "$before" || { rm -f "$before"; return 1; }
-    editor="$(_config_editor)"
+    editor="$(_config_editor)" || { rm -f "$before"; return 1; }
 
     log_info "config: editing $label ($src)"
     _config_run_editor "$editor" "$src_path" || { rm -f "$before"; return 1; }
